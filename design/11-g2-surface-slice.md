@@ -205,12 +205,12 @@ GPU 离屏（`VelloCpuBackend { UseCpu = false }`，同场景同尺寸）：5.69
 
 后续任务（G2 剩余部分）：
 
-1. **G2-10 scene graph → display list**：元素树遍历、paint 顺序、`Visual` 缓存。
-2. **G2-11 输入路由**：`Win32Window` 事件 → `Element.OnPointerPressed` / `FocusManager`。
-3. **G2-12 文本整段 shaping 接入布局**：`TextBlock` 使用同一 `ShapedBuffer` 绘制。
-4. **G2-13 damage/layer v0**：先全量重绘 + 脏矩形统计，再按脏区裁剪。
-5. **G2-14 像素探针与 golden**：窗口截图 → 容差比较，纳入 CI（可选跳过）。
-6. **G2-15 `CounterApp` / `TaskList` 真窗口可交互**（G2 出口标准）。
+1. **G2-10 scene graph → display list**：元素树遍历、paint 顺序、`Visual` 缓存。—— ✅ 已在 [12 G2 第二切片](./12-g2-interactive-slice.md) 落地。
+2. **G2-11 输入路由**：`Win32Window` 事件 → `Element.OnPointerPressed` / `FocusManager`。—— ✅ 已在 12 落地。
+3. **G2-12 文本整段 shaping 接入布局**：`TextBlock` 使用同一 `ShapedBuffer` 绘制。—— ✅ 已在 12 落地。
+4. **G2-13 damage/layer v0**：先全量重绘 + 脏矩形统计，再按脏区裁剪。—— ⏳ 待做。
+5. **G2-14 像素探针与 golden**：窗口截图 → 容差比较，纳入 CI（可选跳过）。—— ⏳ 待做。
+6. **G2-15 `CounterApp` / `TaskList` 真窗口可交互**（G2 出口标准）。—— ✅ 已在 12 落地（GalleryApp 自检）。
 
 ## 11.9 日志
 

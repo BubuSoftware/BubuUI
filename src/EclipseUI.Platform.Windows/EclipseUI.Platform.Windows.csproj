@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\EclipseUI.Runtime\EclipseUI.Runtime.csproj" />
+    <ProjectReference Include="..\EclipseUI.Rendering\EclipseUI.Rendering.csproj" />
   </ItemGroup>
 
 </Project>

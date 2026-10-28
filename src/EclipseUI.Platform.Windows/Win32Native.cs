@@ -273,6 +273,17 @@ internal static class Win32Native
     public static extern bool SetForegroundWindow(nint hwnd);
 
     [DllImport("user32.dll")]
+    public static extern nint SetCapture(nint hwnd);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool ReleaseCapture();
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool PostMessageW(nint hwnd, uint message, nint wParam, nint lParam);
+
+    [DllImport("user32.dll")]
     public static extern nint GetFocus();
 
     [DllImport("user32.dll")]

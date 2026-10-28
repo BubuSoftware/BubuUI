@@ -213,6 +213,33 @@ public sealed class Win32Window : IDisposable
 
     public void SetTitle(string title) => Win32Native.SetWindowTextW(_hwnd, title);
 
+    /// <summary>请求关闭窗口（走正常 WM_CLOSE → WM_DESTROY → WM_QUIT 流程）。</summary>
+    public void Close()
+    {
+        if (_disposed || IsClosed) return;
+        Win32Native.PostMessageW(_hwnd, Win32Native.WM_CLOSE, nint.Zero, nint.Zero);
+    }
+
+    /// <summary>
+    /// 向客户区投递一次完整的左键按下/释放（设备像素坐标）。
+    /// 走与真实鼠标完全相同的消息路径，供自动化冒烟测试使用。
+    /// </summary>
+    public void PostPointerClick(Point position, bool rightButton = false)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        int x = (int)Math.Round(position.X);
+        int y = (int)Math.Round(position.Y);
+        var lParam = (nint)((y << 16) | (x & 0xFFFF));
+
+        Win32Native.PostMessageW(_hwnd,
+            (uint)(rightButton ? Win32Native.WM_RBUTTONDOWN : Win32Native.WM_LBUTTONDOWN),
+            rightButton ? 2 : 1, lParam);
+        Win32Native.PostMessageW(_hwnd,
+            (uint)(rightButton ? Win32Native.WM_RBUTTONUP : Win32Native.WM_LBUTTONUP),
+            0, lParam);
+    }
+
     /// <summary>按设备无关尺寸请求客户区大小（内部换算 DPI 与边框），用于 resize 冒烟测试。</summary>
     public void SetClientSize(int width, int height)
     {
@@ -444,6 +471,8 @@ public sealed class Win32Window : IDisposable
                 if (InputEnabled)
                 {
                     Win32Native.SetFocus(_hwnd);
+                    // 捕获指针：拖出窗口后仍能收到移动/释放，控件不会“卡在按下态”。
+                    Win32Native.SetCapture(_hwnd);
                     var position = PointFromLParam(lParam);
                     PointerPressed?.Invoke(this, new Win32PointerEventArgs(
                         position, ToLogical(position), message == Win32Native.WM_RBUTTONDOWN));
@@ -457,6 +486,7 @@ public sealed class Win32Window : IDisposable
                 if (InputEnabled)
                 {
                     var position = PointFromLParam(lParam);
+                    Win32Native.ReleaseCapture();
                     PointerReleased?.Invoke(this, new Win32PointerEventArgs(
                         position, ToLogical(position), message == Win32Native.WM_RBUTTONUP));
                 }

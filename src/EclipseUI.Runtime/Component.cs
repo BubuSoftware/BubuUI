@@ -54,14 +54,17 @@ public sealed class HeadlessRoot
     public HeadlessRoot(Element content)
     {
         _content = content;
-        Focus = new FocusManager(content);
+        Input = new InputRouter(content);
     }
 
     public Size AvailableSize { get; set; } = new Size(1280, 800);
 
     public Element Content => _content;
 
-    public FocusManager Focus { get; }
+    /// <summary>指针/键盘路由（与真实窗口宿主共用）。</summary>
+    public InputRouter Input { get; }
+
+    public FocusManager Focus => Input.Focus;
 
     public void UpdateLayout()
     {
@@ -69,47 +72,20 @@ public sealed class HeadlessRoot
         _content.Arrange(new Rect(Point.Zero, _content.DesiredSize));
     }
 
-    // ---- 输入（M4 无头形态：与未来平台宿主共用同一 hit test / 路由路径）----
+    // ---- 输入（M4 无头形态：与平台宿主共用同一 hit test / 路由路径）----
     // 捕获语义：按下即捕获命中元素，释放路由给捕获元素（拖出后释放不会丢状态，
     // 也不会误触其他控件）；释放完成后捕获解除。
 
-    private Element? _captured;
+    public Element? HitTest(Point point) => Input.HitTest(point);
 
-    public Element? HitTest(Point point) => _content.HitTest(point);
+    public void PointerPress(Point point) => Input.PointerPress(point);
 
-    public void PointerPress(Point point)
-    {
-        _captured = _content.HitTest(point);
-        if (_captured is null) return;
-        _captured.RaiseEvent(new PointerEventArgs(InputEvents.PointerPressedEvent, point) { Source = _captured });
-    }
+    public void PointerRelease(Point point) => Input.PointerRelease(point);
 
-    public void PointerRelease(Point point)
-    {
-        var target = _captured ?? _content.HitTest(point);
-        _captured = null;
-        if (target is null) return;
-        target.RaiseEvent(new PointerEventArgs(InputEvents.PointerReleasedEvent, point) { Source = target });
-    }
-
-    public void PointerMove(Point point)
-    {
-        var target = _captured ?? _content.HitTest(point);
-        if (target is null) return;
-        target.RaiseEvent(new PointerEventArgs(InputEvents.PointerMovedEvent, point) { Source = target });
-    }
+    public void PointerMove(Point point) => Input.PointerMove(point);
 
     /// <summary>按键。Tab 由焦点系统拦截做遍历；其余 KeyDown 从焦点元素（或根）路由。</summary>
-    public void KeyPress(Key key)
-    {
-        if (key == Key.Tab)
-        {
-            Focus.MoveNext();
-            return;
-        }
-        var target = Focus.Focused ?? _content;
-        target.RaiseEvent(new KeyEventArgs(InputEvents.KeyDownEvent, key) { Source = target });
-    }
+    public void KeyPress(Key key) => Input.KeyPress(key);
 }
 
 public static class Bind

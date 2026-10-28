@@ -12,15 +12,16 @@
 - `.ui` 前端：Lexer / Parser / AST / 内置目录 / 诊断（EUI001–EUI015）。
 - Roslyn 增量源生成器：code-behind 发现、signal 发现、`@foreach` item 类型推断、代码发射、`#line` 映射。
 - 运行时：`Signal<T>`、`StyledProperty<T>`、元素树、measure/arrange、路由事件、`@if`/`@foreach` 协调器、`Component`、无头宿主。
-- 输入/焦点：HitTest、指针冒泡、按下捕获、Tab 遍历、空格/回车激活。
-- 文本：HarfBuzz shaping spike（真实字体测试），可插入 `TextMeasurer`。
-- 测试：53 个无头测试全绿。
+- 输入/焦点：HitTest、指针冒泡、按下捕获、Tab 遍历、空格/回车激活；`InputRouter` 无头/窗口共用。
+- 文本：HarfBuzz shaping（真实字体测试），`HarfBuzzTextPainter` 让布局与绘制共用 shaping 缓存。
+- 渲染：`DisplayList` 契约、Vello CPU/GPU 后端、`ElementPainter` 场景图遍历、Win32 宿主 + wgpu 上屏。
+- 测试：113 个测试全绿（63 无头 + 50 渲染）。
 
 **尚不具备**
 
-- 任何渲染实现：无 scene graph、display list、Vello/FFI、合成器、damage/layer。
-- 任何平台宿主：无 Win32/macOS/X11 窗口与输入桥接。
-- 样式/主题、虚拟化、控件库。
+- damage/layer、合成器、像素 golden 自动化。
+- 样式/主题、虚拟化、基础控件库。
+- 文本编辑（字符输入/IME）、多行断行、bidi、字体 fallback。
 - LSP / TextMate / VS Code / Rider 插件。
 - 热重载、DevTools、调试映射的 IDE 接入。
 - 3D 视口与 wgpu 直通。
@@ -33,7 +34,7 @@
 | 视角 | 完成度 | 说明 |
 |---|---:|---|
 | 托管核心（编译器前端 + 生成器 + 运行时 + 无头测试） | **65–70%** | 主链路可运行，但有语义缺口（单向绑定、块布局、列表作用域）和工程缺口（增量、诊断覆盖、性能）。 |
-| 0.1 alpha（可交付的 2D 桌面框架） | **35–40%** | 渲染与 Win32 宿主已打通到窗口像素；仍缺 scene graph、样式、基础控件集。 |
+| 0.1 alpha（可交付的 2D 桌面框架） | **40–45%** | 渲染与 Win32 宿主已打通到窗口像素，元素树→display list→上屏与输入路由可用；仍缺样式/主题、基础控件集、damage/layer。 |
 | 完整设计愿景（含 IDE、3D、多平台、DevTools、1.0 硬化） | **10–15%** | IDE、3D、平台扩展、无障碍与稳定性尚未开始。 |
 
 ### 分领域状态
@@ -44,9 +45,9 @@
 | 源生成器 | 🟢 可用 MVP | 单向绑定、语法级表达式重写、按文件增量、组件注册表、`#line` 列映射 |
 | 运行时/属性/信号 | 🟢 可用基础 | 属性存储去装箱、生命周期 Unmount、样式优先级、性能基准 |
 | 布局 | 🟡 部分 | Grid/Wrap/Scroll、块布局透明化、约束与裁剪、虚拟化 |
-| 文本 | 🟡 Spike | 整段 shaping、断行、bidi、fallback、emoji、glyph 缓存、display list 集成 |
-| 输入/焦点 | 🟡 窗口事件层已通 | 元素路由、IME、滚轮/触摸、Shift+Tab、无障碍 |
-| 渲染/合成器 | 🟡 CPU + GPU 上屏可用 | scene graph、damage/layer、帧预算 |
+| 文本 | 🟡 单行 shaping 已接入 | 断行、bidi、fallback、emoji、glyph 缓存、display list 集成 |
+| 输入/焦点 | 🟡 元素路由已通 | 字符输入/IME、滚轮/触摸、Shift+Tab、无障碍 |
+| 渲染/合成器 | 🟡 scene graph + 上屏可用 | damage/layer、合成器、帧预算 |
 | 样式/主题 | 🔴 未开始 | 选择器编译、资源查找、亮暗主题、控件模板 |
 | 控件库 | 🟡 极简 | TextBlock/Button/CheckBox/StackPanel/ListBoxItem 之外的基础控件 |
 | IDE | 🔴 未开始 | TextMate、LSP server、VS Code/Rider 壳 |
@@ -132,15 +133,17 @@
 
 **目标**：`.ui` → 元素树 → 布局 → scene graph → display list → 窗口像素。
 
-**进度**（2026-10-28）：第一切片已完成 —— Win32 宿主 + wgpu surface 上屏 + resize 冒烟，
-详见 [11 G2 第一切片](./11-g2-surface-slice.md)。剩余：scene graph 遍历、输入路由、damage/layer、golden。
+**进度**（2026-10-28）：前两切片已完成——Win32 宿主 + wgpu surface 上屏 + resize 冒烟
+（[11 G2 第一切片](./11-g2-surface-slice.md)）；元素树→display list、输入路由、文本 shaping 接入、
+Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-slice.md)）。
+剩余：damage/layer、像素 golden、目标机 60fps 复测。
 
 | 子项 | 状态 |
 |---|---|
 | Vello GPU 后端与 surface/swapchain 集成 | ✅ Dx12 上屏，截图与 CPU 输出一致 |
-| Win32 窗口宿主（窗口、resize、DPI、鼠标/键盘桥接） | ✅ 事件层完成，元素路由待接 |
-| Scene graph / paint 遍历 / display list 构建 | ⏳ 当前用手写 display list 替身 |
-| 文本整段 shaping 接入布局与绘制 | ⏳ shaping 已可用，布局接线待做 |
+| Win32 窗口宿主（窗口、resize、DPI、鼠标/键盘桥接） | ✅ 事件 → InputRouter → 元素树 |
+| Scene graph / paint 遍历 / display list 构建 | ✅ `ElementPainter` 全量遍历 |
+| 文本整段 shaping 接入布局与绘制 | ✅ `ITextPainter` + `ITextMeasurer` 共用 shaping 缓存 |
 | damage/layer v0 | ⏳ 全量重绘 |
 | 像素探针与 golden 测试 | ⏳ 截图工具已就绪（`tools/capture-window.ps1`） |
 
@@ -155,10 +158,10 @@
 
 **出口标准**
 
-- `CounterApp`、`TaskList` 在真实窗口可交互。
-- resize/DPI 变化不崩、不闪。
-- 1280×800 简单场景稳定 60fps（目标机实测）。
-- `dotnet test` 含渲染测试且跨机器稳定（容差/探针策略）。
+- `CounterApp`、`TaskList` 在真实窗口可交互。—— ✅ GalleryApp 自检 6 步全过（[12](./12-g2-interactive-slice.md)）。
+- resize/DPI 变化不崩、不闪。—— ✅ 860×600 ↔ 1000×760 自检 + 第一切片 4 档尺寸冒烟。
+- 1280×800 简单场景稳定 60fps（目标机实测）。—— ⏳ 本机稳态帧成本 4.49 ms（p95 5.95），受 29 Hz 虚拟显示限制待目标机复测。
+- `dotnet test` 含渲染测试且跨机器稳定（容差/探针策略）。—— ✅ 113 个测试（63 无头 + 50 渲染），GPU 用例无设备自动跳过。
 
 **已知约束**（第一切片测得）：测试机显示器 29 Hz，`Fifo` 下 33.3ms/帧是正确行为；
 60fps 结论必须在目标机（真实显示器）上用 `--no-vsync` 的 `Immediate` 模式复测。

@@ -23,6 +23,9 @@ public sealed class Button : Element
 
     public override bool IsFocusable => true;
 
+    /// <summary>指针按下未释放（绘制按下态用）。</summary>
+    public bool IsPressed => _pressed;
+
     public string Label
     {
         get => GetValue(LabelProperty);
@@ -73,6 +76,9 @@ public sealed class CheckBox : Element
     }
 
     public override bool IsFocusable => true;
+
+    /// <summary>指针按下未释放（绘制按下态用）。</summary>
+    public bool IsPressed => _pressed;
 
     public bool Checked
     {

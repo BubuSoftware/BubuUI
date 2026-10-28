@@ -1,7 +1,8 @@
 # 模板引擎优先的自绘 UI 框架 — 设计文档集
 
 > 从头开发一个模板引擎 first 的类 Blazor 自绘 UI 框架的设计与实施计划。
-> 状态：架构设计定稿 + G1 渲染 Gate 已出结论（Go） + G2 第一切片（窗口 + GPU 上屏）通过 · 日期：2026-10-28
+> 状态：架构设计定稿 + G1 渲染 Gate 已出结论（Go） + G2 第一切片（窗口 + GPU 上屏）
+> 与第二切片（场景图 + 输入路由 + 可交互 Gallery）通过 · 日期：2026-10-28
 
 ## 文档导航
 
@@ -18,6 +19,7 @@
 | 9 | [开发计划](./09-development-plan.md) | 总体进度、G1–G8 路线图、里程碑出口标准、下一任务详细规划 |
 | 10 | [G1 渲染 Gate 执行清单](./10-g1-render-gate.md) | 可勾选任务、契约、验收标准、指标表与 go/no-go |
 | 11 | [G2 第一切片：窗口 + GPU Surface](./11-g2-surface-slice.md) | Win32 宿主、wgpu 上屏、sRGB/RenderFormat 坑、帧时间基线、resize 冒烟 |
+| 12 | [G2 第二切片：场景图 + 输入路由](./12-g2-interactive-slice.md) | 元素树→display list、无头/窗口共用输入路由、文本 shaping 接入、Gallery 自检 |
 
 ## 报告
 

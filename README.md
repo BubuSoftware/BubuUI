@@ -6,7 +6,10 @@
 > **G1 渲染 Gate 已出结论：Go（有条件）**——Vello 后端在 Windows GPU 上 200 元素 1280×800 ≈ 6.4 ms/帧，
 > 功能矩阵 8/9，CPU/GPU 像素一致。报告见 [render-gate-2026-11](./design/reports/render-gate-2026-11.md)。
 > **G2 第一切片已通过**：Win32 窗口 + wgpu(Dx12) surface 上屏，resize 冒烟通过，见
-> [11 G2 第一切片](./design/11-g2-surface-slice.md)。样式主题、IDE 支持为后续里程碑。
+> [11 G2 第一切片](./design/11-g2-surface-slice.md)。
+> **G2 第二切片已通过**：元素树→display list、输入路由、文本 shaping 接入布局与绘制；
+> CounterApp/TaskList 在真实窗口可交互，1000×760/25 元素稳态帧成本 ≈ 4.4 ms（p95 5.8 ms），见
+> [12 G2 第二切片](./design/12-g2-interactive-slice.md)。样式主题、IDE 支持为后续里程碑。
 
 ## 核心理念
 
@@ -20,22 +23,27 @@
 design/                          设计文档（8 篇，定稿）
 src/
   EclipseUI.Runtime/             运行时：signals、StyledProperty 属性引擎、元素树、
-                                 measure/arrange 布局、块协调器、路由事件、输入/焦点、
-                                 Component、无头宿主（hit test + 指针/键盘注入）
+                                 measure/arrange 布局、块协调器、路由事件、InputRouter 输入/焦点、
+                                 Panel.Padding/ClipToBounds、Component、无头宿主
   EclipseUI.Text.Shaping/        HarfBuzz shaping（HarfBuzzSharp）：先 shaping 再测量，
-                                 glyph run 供布局与未来 display list 共用（M1 spike）
+                                 HarfBuzzTextPainter 让布局与绘制共用同一 shaping 缓存
   EclipseUI.Compiler/            .ui 编译器前端：Lexer / Parser / AST / 内置目录 / 诊断（netstandard2.0）
   EclipseUI.Compiler.Generator/  Roslyn 增量源生成器：code-behind 发现、@foreach item 类型推断、
                                  代码发射（#line 映射回 .ui，诊断与断点共用）
 samples/CounterApp/              两个样例组件：Counter（计数器/条件/双向绑定）、
                                  TaskList（@foreach Key 对齐）；生成的 C# 落盘在 Generated/ 供检视
-tests/EclipseUI.Headless.Tests/  53 个无头测试：属性引擎、signals、布局、块协调、输入/焦点、
-                                 shaping、编译器、端到端（含泄漏回归）
-tests/EclipseUI.Rendering.Tests/ 36 个渲染测试：图元/作用域/文本/功能矩阵/确定性/CPU-GPU 交叉一致
+samples/GalleryApp/              G2 验收样例：Counter + TaskList 真窗口交互、--selfcheck、
+                                 CPU/窗口截图与帧时间统计
+tests/EclipseUI.Headless.Tests/  63 个无头测试：属性引擎、signals、布局（含 padding）、块协调、
+                                 输入/焦点路由、shaping、编译器、端到端（含泄漏回归）
+tests/EclipseUI.Rendering.Tests/ 50 个渲染测试：图元/作用域/文本/功能矩阵/确定性/CPU-GPU 交叉一致、
+                                 场景图绘制语义
 src/EclipseUI.Rendering/         渲染契约：DisplayList、DrawCommand、Brush、Transform、PngEncoder、
-                                 IRenderBackend（CPU 目标）、ISurfacePresenter（上屏目标）
+                                 SceneGraph/ElementPainter（元素树→display list）、IRenderBackend、
+                                 ISurfacePresenter（上屏目标）
 src/EclipseUI.Rendering.Vello/   Vello 后端：VelloSceneBuilder（CPU/GPU 共用）、CPU 离屏、wgpu surface
-src/EclipseUI.Platform.Windows/  Win32 窗口宿主：消息循环、DPI、resize、鼠标/键盘事件
+src/EclipseUI.Platform.Windows/  Win32 窗口宿主：消息循环、DPI、resize、鼠标/键盘事件、
+                                 WindowHost（布局+绘制+上屏帧循环）
 samples/RenderSpike/             G1 像素管线 spike：PNG 输出 + 性能 bench
 samples/WindowSpike/             G2 上屏 spike：动画场景 + 帧时间分段 + resize 自检
 tools/capture-window.ps1         截取真实窗口客户区 PNG，用于像素核对
@@ -54,6 +62,11 @@ dotnet run --project samples/RenderSpike -c Release -- bench
 # G2：真实窗口（Esc/关闭按钮退出；--frames N 自动退出）
 dotnet run --project samples/WindowSpike -c Release -- --frames 300
 dotnet run --project samples/WindowSpike -c Release -- --selfcheck   # resize 冒烟
+
+# G2 验收：Counter + TaskList 真窗口交互（消息 → 输入路由 → 信号 → 重绘）
+dotnet run --project samples/GalleryApp -c Release
+dotnet run --project samples/GalleryApp -c Release -- --selfcheck --no-vsync   # 6 步自检
+dotnet run --project samples/GalleryApp -c Release -- --cpu --shot out/gallery-cpu.png
 ```
 
 模板（`samples/CounterApp/Counter.ui`）：
@@ -95,40 +108,46 @@ public partial class Counter
   条件内容挂内容订阅表（卸载即释放）、item 模板挂 scope 订阅表（条目移除即释放），
   从机制上杜绝 toggle/增删条目时的订阅泄漏。
 - **双向绑定**：`Checked:bind={showButton}` 生成 `Bind.TwoWay`，值短路防回环。
-- **输入与焦点（M4 无头形态）**：`HitTest` 树遍历（子元素局部坐标约定，同 WPF/Avalonia）、
-  指针事件经命中目标冒泡 + **按下捕获语义**（拖出后释放不丢状态、不误触其他控件）、
-  `FocusManager` Tab 环形遍历 + Got/LostFocus 路由事件、空格/回车激活（键盘可交互 demo）。
-- **文本 shaping（M1 spike）**：`ITextShaper` 契约 + `HarfBuzzTextShaper`（HarfBuzzSharp），
-  RTL 簇序、比例字宽、行盒高度均有真实字体（arial.ttf）测试；可整体替换
-  `TextMeasurer.Current` 接入布局——布局测量与绘制共用同一 shaping 结果。
+- **输入与焦点**：`InputRouter` 统一 hit test、按下捕获、指针移动/释放与键盘路由；
+  无头宿主（`HeadlessRoot`）与 Win32 窗口宿主共用同一条路径。点击保持最深层命中、
+  键盘焦点交给最近可聚焦祖先；`FocusManager` 负责 Tab 环形遍历与 Got/LostFocus，
+  空格/回车激活（键盘可交互 demo）。按下即 Win32 `SetCapture`，拖出窗口释放不会丢状态。
+- **场景图绘制（G2 第二切片）**：`ElementPainter` 遍历元素树，按 `FinalRect` 累加根坐标，
+  输出卡片/按钮/勾选框/文本/焦点环/裁剪指令；DPI 作为一次根变换。
+  块协调器视觉透明（布局透明留给 G3）。详见 [12 G2 第二切片](./design/12-g2-interactive-slice.md)。
+- **文本 shaping**：`ITextShaper` 契约 + `HarfBuzzTextShaper`（HarfBuzzSharp），
+  RTL 簇序、比例字宽、行盒高度均有真实字体（arial.ttf）测试；`HarfBuzzTextPainter`
+  同时实现 `ITextPainter` 与 `ITextMeasurer`，布局与绘制共用同一个 shaping 缓存。
 - **诊断即生命线**：未知标签/属性给最近似名建议；字面量按目标类型编译期转换，
   格式错=编译错误（EUI001–EUI015）；表达式经 `#line` 映射，Roslyn 报错直接落在 `.ui` 上。
 - **无头测试**：不开窗口断言元素树、布局结果、signal 行为、事件冒泡、命中与焦点（设计文档 07 的落地）。
-- **GPU 上屏（G2 第一切片）**：`DisplayList` → `VelloSurfaceBackend` → wgpu(Dx12) surface → 窗口像素；
-  纯 Win32 宿主（无 WinForms/WPF），`WM_SIZE`/`WM_DPICHANGED` 触发 `surface.Configure`，
-  指针/键盘/字符事件回显到画面。踩过的坑与数据见 [11 G2 第一切片](./design/11-g2-surface-slice.md)。
+- **GPU 上屏（G2）**：`DisplayList` → `VelloSurfaceBackend` → wgpu(Dx12) surface → 窗口像素；
+  `WindowHost` 把 Measure/Arrange → `ElementPainter` → present 串成帧循环，
+  纯 Win32 宿主（无 WinForms/WPF），`WM_SIZE`/`WM_DPICHANGED` 触发 `surface.Configure`。
+  踩过的坑与数据见 [11 G2 第一切片](./design/11-g2-surface-slice.md)。
 
 ## 当前边界（已知限制）
 
 - `@switch` 未支持；item 模板内引用 signal / 双向绑定未支持（EUI014）。
-- 文本测量默认仍为确定性 naive 实现（测试数值稳定）；shaping 版可插入。
-- 输入为无头注入形态：Win32 指针/键盘已能到窗口事件层，但尚未路由进元素树；IME 未接。
+- 文本：无头测试默认用确定性 naive 测量；窗口样例接入 HarfBuzz。多行断行、bidi 混排、字体 fallback 未实现。
+- 输入：无头注入与 Win32 鼠标/键盘已共用 `InputRouter` 并路由进元素树；字符输入（`WM_CHAR`）、
+  IME、Shift+Tab 未接（暂无文本编辑控件）。
 - 生成代码不入库（内存生成）；`Generated/` 落盘仅作检视。
 - 渲染：`DisplayList` → Vello CPU（PNG/CI）与 GPU surface（真实窗口）两条路径已通；
-  **scene graph、damage/layer、合成器仍未实现**，窗口样例用手写 display list 驱动。
+  scene graph 已落地（G2 第二切片），**damage/layer、合成器、样式系统仍未实现**；
+  主题是 `ElementTheme` 临时数据，文本主/次色暂按字号阈值区分。
 - 字体 fallback 未实现（缺字显示 `.notdef`）；CPU 光栅化每次约 60 ms 固定开销，仅用于 CI/离线导出。
 - 测试机显示器为 29 Hz，`Fifo` 下 33.3ms/帧属正常；60fps 结论需在目标机用 `--no-vsync` 复测。
 
 ## 下一步（按开发计划）
 
-G1 已出结论（Go），G2 第一切片（窗口 + 上屏）已通过。当前优先级是 **G2 剩余部分**：
-scene graph 遍历 → display list、输入路由、damage/layer、golden 测试，最终让
-`CounterApp` / `TaskList` 在真实窗口可交互。
+G1 已出结论（Go），G2 前两切片已通过：`CounterApp` / `TaskList` 已在真实窗口可交互。
+当前优先级是 **G2 剩余部分**：damage/layer v0、像素 golden、目标机 60fps 复测。
 完整路线图见 [09 开发计划](./design/09-development-plan.md)，G1 数据见
 [render-gate-2026-11](./design/reports/render-gate-2026-11.md)，G2 进度见
-[11 G2 第一切片](./design/11-g2-surface-slice.md)。
+[11 G2 第一切片](./design/11-g2-surface-slice.md) 与 [12 G2 第二切片](./design/12-g2-interactive-slice.md)。
 
-1. **G2 剩余**：scene graph 遍历 + 输入路由 + 文本接入布局 + damage/layer + 像素 golden。
+1. **G2 剩余**：damage/layer v0 + 像素 golden + 目标机 60fps。
 2. **G3 语义/编译器硬化**（与 G2 并行）：块布局透明化、单向绑定、列表作用域、语法级表达式重写、组件注册表。
 3. **G4 样式/控件/虚拟化**：选择器编译、亮暗主题、基础控件集、`VirtualizingPanel`。
 4. **G5 IDE P0–P1**：TextMate grammar + LSP server（表达式投影进 Roslyn）+ VS Code/Rider 壳。

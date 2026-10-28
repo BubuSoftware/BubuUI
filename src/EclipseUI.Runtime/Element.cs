@@ -153,6 +153,12 @@ public abstract class Element
         get { yield break; }
     }
 
+    /// <summary>
+    /// 绘制透明：节点仍参与布局（G3 才做真正的布局透明），但不产生自己的背景/边框。
+    /// 块协调器（<c>@if</c> / <c>@foreach</c>）覆盖为 true，避免把模板块画成卡片。
+    /// </summary>
+    public virtual bool IsVisualTransparent => false;
+
     /// <summary>沿祖先链标脏（脏标记传播：祖先的 measure 依赖子树的 desired）。</summary>
     public void InvalidateMeasure()
     {

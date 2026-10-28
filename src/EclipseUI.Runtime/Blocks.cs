@@ -28,6 +28,8 @@ public sealed class BlockScope
 /// </summary>
 public sealed class ConditionalBlock : StackPanelBase, IDisposable
 {
+    /// <inheritdoc />
+    public override bool IsVisualTransparent => true;
     private Func<bool>? _condition;
     private Func<List<IDisposable>, Element[]>? _contentBuilder;
     private List<IDisposable>? _depSubscriptions;
@@ -99,6 +101,9 @@ public sealed class ConditionalBlock : StackPanelBase, IDisposable
 /// </summary>
 public sealed class ForEachBlock<T> : StackPanelBase, IDisposable
 {
+    /// <inheritdoc />
+    public override bool IsVisualTransparent => true;
+
     private sealed class Entry
     {
         public Entry(object key, BlockScope scope)

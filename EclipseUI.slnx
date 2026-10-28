@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/samples/">
     <Project Path="samples/CounterApp/CounterApp.csproj" />
+    <Project Path="samples/GalleryApp/GalleryApp.csproj" />
     <Project Path="samples/RenderSpike/RenderSpike.csproj" />
     <Project Path="samples/WindowSpike/WindowSpike.csproj" />
   </Folder>
