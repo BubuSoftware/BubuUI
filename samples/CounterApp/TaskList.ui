@@ -1,0 +1,8 @@
+<StackPanel Gap="4">
+    <TextBlock FontSize="20">Tasks</TextBlock>
+    @foreach (var t in tasks) {
+        <ListBoxItem Key={t.Id}>
+            <TextBlock>{t.Name}</TextBlock>
+        </ListBoxItem>
+    }
+</StackPanel>

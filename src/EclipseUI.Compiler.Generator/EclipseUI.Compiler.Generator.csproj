@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RootNamespace>EclipseUI.Compiler.Generator</RootNamespace>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <IsRoslynComponent>true</IsRoslynComponent>
+    <Description>EclipseUI .ui → C# Roslyn incremental source generator.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.9.2" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- 编译器前端以源码形式并入生成器程序集，避免多文件分析器加载问题 -->
+  <ItemGroup>
+    <Compile Include="..\EclipseUI.Compiler\**\*.cs" LinkBase="Compiler"
+             Exclude="..\EclipseUI.Compiler\obj\**\*.cs;..\EclipseUI.Compiler\bin\**\*.cs" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,5 @@
+<StackPanel Gap="4">
+    @if (showExtra) {
+        <CheckBox Checked:bind={extra}>Extra enabled</CheckBox>
+    }
+</StackPanel>

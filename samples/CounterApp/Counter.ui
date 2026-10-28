@@ -1,0 +1,9 @@
+<StackPanel Gap="8">
+    <TextBlock FontSize="30">You pressed {count} times</TextBlock>
+
+    <CheckBox Checked:bind={showButton}>Button visible</CheckBox>
+
+    @if (showButton) {
+        <Button OnClick={() => count.value++}>+1</Button>
+    }
+</StackPanel>

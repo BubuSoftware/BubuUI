@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>EclipseUI</RootNamespace>
+    <Description>EclipseUI runtime: signals, property engine, element tree, layout, block coordinators.</Description>
+  </PropertyGroup>
+
+</Project>
