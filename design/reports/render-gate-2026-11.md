@@ -139,10 +139,17 @@ dotnet run --project samples/RenderSpike -c Release -- bench
 
 ## 10. 后续 backlog（G2 输入）
 
-1. wgpu surface 呈现 + 帧循环（阻塞项）。
+> 状态更新（2026-10-28）：第 1、5 项已在 G2 第一切片完成 / 收敛，见 [11 G2 第一切片](../11-g2-surface-slice.md)。
+> - #1 ✅ wgpu surface 呈现 + 帧循环已打通（Dx12，截图与 CPU 输出一致）。
+> - #5 ✅ 结论：GPU 路径 resize 只需 `surface.Configure`，`WgpuRenderer` 无尺寸状态，无需重建；
+>   异步重建仅对 CPU 离屏路径有意义。
+
+1. ~~wgpu surface 呈现 + 帧循环（阻塞项）~~ ✅
 2. scene graph → display list 的遍历与裁剪剔除。
 3. damage/layer v0：先全量重绘，再按脏矩形。
 4. 字体 fallback 链 + 字形缓存（跨字号/DPI）。
-5. `Renderer` 异步重建与尺寸变更策略。
+5. ~~`Renderer` 异步重建与尺寸变更策略~~ ✅（仅 CPU 路径遗留）
 6. CPU FFI 固定开销定位（可选：直接绑定 `vello_cpu`）。
 7. 像素测试基础设施：探针 DSL + 失败时输出 diff 图。
+8. 表面格式与 `RenderParams.Format` 必须匹配；优先非 sRGB 表面（避免二次编码发白）。
+9. alpha.3 绑定缺陷：`WgpuInstance.GetInfo()` 会 abort，adapter 信息暂不可得。

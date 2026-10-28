@@ -5,7 +5,8 @@
 > 状态：M1（托管部分 + HarfBuzz shaping spike）+ M2 编译器 MVP + M3 无头垂直切片 + M4 输入与焦点（无头形态）已落地；
 > **G1 渲染 Gate 已出结论：Go（有条件）**——Vello 后端在 Windows GPU 上 200 元素 1280×800 ≈ 6.4 ms/帧，
 > 功能矩阵 8/9，CPU/GPU 像素一致。报告见 [render-gate-2026-11](./design/reports/render-gate-2026-11.md)。
-> 平台窗口宿主、样式主题、IDE 支持为后续里程碑；当前优先级是 **G2 2D 垂直切片**。
+> **G2 第一切片已通过**：Win32 窗口 + wgpu(Dx12) surface 上屏，resize 冒烟通过，见
+> [11 G2 第一切片](./design/11-g2-surface-slice.md)。样式主题、IDE 支持为后续里程碑。
 
 ## 核心理念
 
@@ -30,13 +31,29 @@ samples/CounterApp/              两个样例组件：Counter（计数器/条件
                                  TaskList（@foreach Key 对齐）；生成的 C# 落盘在 Generated/ 供检视
 tests/EclipseUI.Headless.Tests/  53 个无头测试：属性引擎、signals、布局、块协调、输入/焦点、
                                  shaping、编译器、端到端（含泄漏回归）
+tests/EclipseUI.Rendering.Tests/ 36 个渲染测试：图元/作用域/文本/功能矩阵/确定性/CPU-GPU 交叉一致
+src/EclipseUI.Rendering/         渲染契约：DisplayList、DrawCommand、Brush、Transform、PngEncoder、
+                                 IRenderBackend（CPU 目标）、ISurfacePresenter（上屏目标）
+src/EclipseUI.Rendering.Vello/   Vello 后端：VelloSceneBuilder（CPU/GPU 共用）、CPU 离屏、wgpu surface
+src/EclipseUI.Platform.Windows/  Win32 窗口宿主：消息循环、DPI、resize、鼠标/键盘事件
+samples/RenderSpike/             G1 像素管线 spike：PNG 输出 + 性能 bench
+samples/WindowSpike/             G2 上屏 spike：动画场景 + 帧时间分段 + resize 自检
+tools/capture-window.ps1         截取真实窗口客户区 PNG，用于像素核对
 ```
 
 ## 快速开始
 
 ```bash
 dotnet build EclipseUI.slnx
-dotnet test  tests/EclipseUI.Headless.Tests/EclipseUI.Headless.Tests.csproj
+dotnet test  EclipseUI.slnx
+
+# G1：离屏 PNG 与性能表
+dotnet run --project samples/RenderSpike -c Release
+dotnet run --project samples/RenderSpike -c Release -- bench
+
+# G2：真实窗口（Esc/关闭按钮退出；--frames N 自动退出）
+dotnet run --project samples/WindowSpike -c Release -- --frames 300
+dotnet run --project samples/WindowSpike -c Release -- --selfcheck   # resize 冒烟
 ```
 
 模板（`samples/CounterApp/Counter.ui`）：
@@ -87,24 +104,31 @@ public partial class Counter
 - **诊断即生命线**：未知标签/属性给最近似名建议；字面量按目标类型编译期转换，
   格式错=编译错误（EUI001–EUI015）；表达式经 `#line` 映射，Roslyn 报错直接落在 `.ui` 上。
 - **无头测试**：不开窗口断言元素树、布局结果、signal 行为、事件冒泡、命中与焦点（设计文档 07 的落地）。
+- **GPU 上屏（G2 第一切片）**：`DisplayList` → `VelloSurfaceBackend` → wgpu(Dx12) surface → 窗口像素；
+  纯 Win32 宿主（无 WinForms/WPF），`WM_SIZE`/`WM_DPICHANGED` 触发 `surface.Configure`，
+  指针/键盘/字符事件回显到画面。踩过的坑与数据见 [11 G2 第一切片](./design/11-g2-surface-slice.md)。
 
 ## 当前边界（已知限制）
 
 - `@switch` 未支持；item 模板内引用 signal / 双向绑定未支持（EUI014）。
 - 文本测量默认仍为确定性 naive 实现（测试数值稳定）；shaping 版可插入。
-- 输入为无头注入形态：IME、真实平台指针/键盘桥接待平台宿主。
+- 输入为无头注入形态：Win32 指针/键盘已能到窗口事件层，但尚未路由进元素树；IME 未接。
 - 生成代码不入库（内存生成）；`Generated/` 落盘仅作检视。
-- 渲染已有离屏后端（Vello CPU/GPU + `DisplayList`），但**没有 surface 上屏、scene graph、合成器**；
-  平台窗口宿主、样式主题、LSP 未开始。
+- 渲染：`DisplayList` → Vello CPU（PNG/CI）与 GPU surface（真实窗口）两条路径已通；
+  **scene graph、damage/layer、合成器仍未实现**，窗口样例用手写 display list 驱动。
 - 字体 fallback 未实现（缺字显示 `.notdef`）；CPU 光栅化每次约 60 ms 固定开销，仅用于 CI/离线导出。
+- 测试机显示器为 29 Hz，`Fifo` 下 33.3ms/帧属正常；60fps 结论需在目标机用 `--no-vsync` 复测。
 
 ## 下一步（按开发计划）
 
-G1 已出结论（Go）。当前优先级是 **G2 2D 垂直切片**：把 `.ui` → 元素树 → 布局 → display list → 真实窗口打通。
+G1 已出结论（Go），G2 第一切片（窗口 + 上屏）已通过。当前优先级是 **G2 剩余部分**：
+scene graph 遍历 → display list、输入路由、damage/layer、golden 测试，最终让
+`CounterApp` / `TaskList` 在真实窗口可交互。
 完整路线图见 [09 开发计划](./design/09-development-plan.md)，G1 数据见
-[render-gate-2026-11](./design/reports/render-gate-2026-11.md)。
+[render-gate-2026-11](./design/reports/render-gate-2026-11.md)，G2 进度见
+[11 G2 第一切片](./design/11-g2-surface-slice.md)。
 
-1. **G2 2D 垂直切片**：wgpu surface 上屏 + scene graph + Win32 宿主 + 文本接入 + 像素测试。
-3. **G3 语义/编译器硬化**（与 G2 并行）：块布局透明化、单向绑定、列表作用域、语法级表达式重写、组件注册表。
-4. **G4 样式/控件/虚拟化**：选择器编译、亮暗主题、基础控件集、`VirtualizingPanel`。
-5. **G5 IDE P0–P1**：TextMate grammar + LSP server（表达式投影进 Roslyn）+ VS Code/Rider 壳。
+1. **G2 剩余**：scene graph 遍历 + 输入路由 + 文本接入布局 + damage/layer + 像素 golden。
+2. **G3 语义/编译器硬化**（与 G2 并行）：块布局透明化、单向绑定、列表作用域、语法级表达式重写、组件注册表。
+3. **G4 样式/控件/虚拟化**：选择器编译、亮暗主题、基础控件集、`VirtualizingPanel`。
+4. **G5 IDE P0–P1**：TextMate grammar + LSP server（表达式投影进 Roslyn）+ VS Code/Rider 壳。

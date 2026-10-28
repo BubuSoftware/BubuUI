@@ -33,7 +33,7 @@
 | 视角 | 完成度 | 说明 |
 |---|---:|---|
 | 托管核心（编译器前端 + 生成器 + 运行时 + 无头测试） | **65–70%** | 主链路可运行，但有语义缺口（单向绑定、块布局、列表作用域）和工程缺口（增量、诊断覆盖、性能）。 |
-| 0.1 alpha（可交付的 2D 桌面框架） | **30–35%** | 缺渲染、平台宿主、样式、基础控件集；这些是剩余工作量的大头。 |
+| 0.1 alpha（可交付的 2D 桌面框架） | **35–40%** | 渲染与 Win32 宿主已打通到窗口像素；仍缺 scene graph、样式、基础控件集。 |
 | 完整设计愿景（含 IDE、3D、多平台、DevTools、1.0 硬化） | **10–15%** | IDE、3D、平台扩展、无障碍与稳定性尚未开始。 |
 
 ### 分领域状态
@@ -45,13 +45,13 @@
 | 运行时/属性/信号 | 🟢 可用基础 | 属性存储去装箱、生命周期 Unmount、样式优先级、性能基准 |
 | 布局 | 🟡 部分 | Grid/Wrap/Scroll、块布局透明化、约束与裁剪、虚拟化 |
 | 文本 | 🟡 Spike | 整段 shaping、断行、bidi、fallback、emoji、glyph 缓存、display list 集成 |
-| 输入/焦点 | 🟡 无头可用 | 平台输入桥接、IME、滚轮/触摸、Shift+Tab、无障碍 |
-| 渲染/合成器 | 🔴 未开始 | DisplayList、Vello 后端、scene graph、damage/layer、帧循环 |
+| 输入/焦点 | 🟡 窗口事件层已通 | 元素路由、IME、滚轮/触摸、Shift+Tab、无障碍 |
+| 渲染/合成器 | 🟡 CPU + GPU 上屏可用 | scene graph、damage/layer、帧预算 |
 | 样式/主题 | 🔴 未开始 | 选择器编译、资源查找、亮暗主题、控件模板 |
 | 控件库 | 🟡 极简 | TextBlock/Button/CheckBox/StackPanel/ListBoxItem 之外的基础控件 |
 | IDE | 🔴 未开始 | TextMate、LSP server、VS Code/Rider 壳 |
 | 工具链 | 🔴 基本未开始 | 热重载、断点映射、DevTools、无头测试 SDK |
-| 平台 | 🔴 未开始 | Win32 先行，macOS/Linux 后续 |
+| 平台 | 🟡 Win32 宿主已可用 | macOS/Linux、多窗口、设备丢失恢复 |
 | 3D | 🔴 未开始 | 视口、texture 混排、输入拾取、wgpu 直通 |
 | 工程化 | 🟡 早期 | CI、LICENSE、打包、benchmark、AOT、发布流程 |
 
@@ -132,6 +132,18 @@
 
 **目标**：`.ui` → 元素树 → 布局 → scene graph → display list → 窗口像素。
 
+**进度**（2026-10-28）：第一切片已完成 —— Win32 宿主 + wgpu surface 上屏 + resize 冒烟，
+详见 [11 G2 第一切片](./11-g2-surface-slice.md)。剩余：scene graph 遍历、输入路由、damage/layer、golden。
+
+| 子项 | 状态 |
+|---|---|
+| Vello GPU 后端与 surface/swapchain 集成 | ✅ Dx12 上屏，截图与 CPU 输出一致 |
+| Win32 窗口宿主（窗口、resize、DPI、鼠标/键盘桥接） | ✅ 事件层完成，元素路由待接 |
+| Scene graph / paint 遍历 / display list 构建 | ⏳ 当前用手写 display list 替身 |
+| 文本整段 shaping 接入布局与绘制 | ⏳ shaping 已可用，布局接线待做 |
+| damage/layer v0 | ⏳ 全量重绘 |
+| 像素探针与 golden 测试 | ⏳ 截图工具已就绪（`tools/capture-window.ps1`） |
+
 **范围**
 
 - Scene graph / paint 遍历 / display list 构建。
@@ -147,6 +159,9 @@
 - resize/DPI 变化不崩、不闪。
 - 1280×800 简单场景稳定 60fps（目标机实测）。
 - `dotnet test` 含渲染测试且跨机器稳定（容差/探针策略）。
+
+**已知约束**（第一切片测得）：测试机显示器 29 Hz，`Fifo` 下 33.3ms/帧是正确行为；
+60fps 结论必须在目标机（真实显示器）上用 `--no-vsync` 的 `Immediate` 模式复测。
 
 ### G3：语义与编译器硬化（6–8 周，可与 G2 并行）
 

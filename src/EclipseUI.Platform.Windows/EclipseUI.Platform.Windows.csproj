@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>EclipseUI.Platform.Windows</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Description>EclipseUI Win32 window host: window, message loop, resize/DPI, mouse and keyboard bridging.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\EclipseUI.Runtime\EclipseUI.Runtime.csproj" />
+  </ItemGroup>
+
+</Project>

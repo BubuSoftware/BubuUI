@@ -2,10 +2,12 @@
   <Folder Name="/samples/">
     <Project Path="samples/CounterApp/CounterApp.csproj" />
     <Project Path="samples/RenderSpike/RenderSpike.csproj" />
+    <Project Path="samples/WindowSpike/WindowSpike.csproj" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/EclipseUI.Compiler.Generator/EclipseUI.Compiler.Generator.csproj" />
     <Project Path="src/EclipseUI.Compiler/EclipseUI.Compiler.csproj" />
+    <Project Path="src/EclipseUI.Platform.Windows/EclipseUI.Platform.Windows.csproj" />
     <Project Path="src/EclipseUI.Rendering.Vello/EclipseUI.Rendering.Vello.csproj" />
     <Project Path="src/EclipseUI.Rendering/EclipseUI.Rendering.csproj" />
     <Project Path="src/EclipseUI.Runtime/EclipseUI.Runtime.csproj" />
