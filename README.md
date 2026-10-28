@@ -2,8 +2,10 @@
 
 模板引擎优先的自绘 UI 框架。设计文档见 [design/](./design/README.md)，执行计划见 [开发计划](./design/09-development-plan.md) 与 [G1 渲染 Gate 执行清单](./design/10-g1-render-gate.md)。
 
-> 状态：M1（托管部分 + HarfBuzz shaping spike）+ M2 编译器 MVP + M3 无头垂直切片 + M4 输入与焦点（无头形态）已落地，`dotnet test` 全绿。
-> 渲染后端（Vello/FFI）、平台窗口宿主、样式主题、IDE 支持为后续里程碑；当前优先级是 **G1 渲染 Gate**（未开始）。
+> 状态：M1（托管部分 + HarfBuzz shaping spike）+ M2 编译器 MVP + M3 无头垂直切片 + M4 输入与焦点（无头形态）已落地；
+> **G1 渲染 Gate 已出结论：Go（有条件）**——Vello 后端在 Windows GPU 上 200 元素 1280×800 ≈ 6.4 ms/帧，
+> 功能矩阵 8/9，CPU/GPU 像素一致。报告见 [render-gate-2026-11](./design/reports/render-gate-2026-11.md)。
+> 平台窗口宿主、样式主题、IDE 支持为后续里程碑；当前优先级是 **G2 2D 垂直切片**。
 
 ## 核心理念
 
@@ -90,18 +92,19 @@ public partial class Counter
 
 - `@switch` 未支持；item 模板内引用 signal / 双向绑定未支持（EUI014）。
 - 文本测量默认仍为确定性 naive 实现（测试数值稳定）；shaping 版可插入。
-- 输入为无头注入形态：IME、真实平台指针/键盘桥接待平台宿主（M4 后半）。
+- 输入为无头注入形态：IME、真实平台指针/键盘桥接待平台宿主。
 - 生成代码不入库（内存生成）；`Generated/` 落盘仅作检视。
-- 渲染管线、平台窗口宿主、样式主题、LSP 未开始——见设计文档里程碑。
+- 渲染已有离屏后端（Vello CPU/GPU + `DisplayList`），但**没有 surface 上屏、scene graph、合成器**；
+  平台窗口宿主、样式主题、LSP 未开始。
+- 字体 fallback 未实现（缺字显示 `.notdef`）；CPU 光栅化每次约 60 ms 固定开销，仅用于 CI/离线导出。
 
 ## 下一步（按开发计划）
 
-当前优先级是 **G1 渲染 Gate**：先用 2–3 周验证 Vello 最小像素闭环，再进入 2D 垂直切片。
-完整路线图见 [09 开发计划](./design/09-development-plan.md)，当前任务看板见
-[10 G1 执行清单](./design/10-g1-render-gate.md)。
+G1 已出结论（Go）。当前优先级是 **G2 2D 垂直切片**：把 `.ui` → 元素树 → 布局 → display list → 真实窗口打通。
+完整路线图见 [09 开发计划](./design/09-development-plan.md)，G1 数据见
+[render-gate-2026-11](./design/reports/render-gate-2026-11.md)。
 
-1. **G1 渲染 Gate**：`DisplayList` 契约 + `vello_cpu` PNG + 文本 glyph + 功能/性能矩阵 + go/no-go。
-2. **G2 2D 垂直切片**：scene graph + Win32 宿主 + 文本接入 + 像素测试。
+1. **G2 2D 垂直切片**：wgpu surface 上屏 + scene graph + Win32 宿主 + 文本接入 + 像素测试。
 3. **G3 语义/编译器硬化**（与 G2 并行）：块布局透明化、单向绑定、列表作用域、语法级表达式重写、组件注册表。
 4. **G4 样式/控件/虚拟化**：选择器编译、亮暗主题、基础控件集、`VirtualizingPanel`。
 5. **G5 IDE P0–P1**：TextMate grammar + LSP server（表达式投影进 Roslyn）+ VS Code/Rider 壳。
