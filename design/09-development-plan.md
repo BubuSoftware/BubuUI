@@ -1,6 +1,8 @@
 # 9. 开发计划（2026-10 基线）
 
-> 本文是 `design/01`–`08` 的执行计划，不改变已定架构决策，只把“做什么、先做什么、何时算完成”落到可检查的里程碑。
+> 本文是 `design/01`–`15` 的执行计划，不改变已定架构决策，只把“做什么、先做什么、何时算完成”落到可检查的里程碑。
+> 状态与反应式的实现级规范见 [spec/03](../spec/03-reactivity-and-binding.md)，其 S1–S5 分阶段分别落在本文 G3（S1–S3）、G4（S4）与 G8（S5）。
+> 模板语法与生成形态分别以 [spec/01](../spec/01-template-syntax.md)、[spec/02](../spec/02-generated-code-contract.md) 为准；v4 差距台账见 design/03 §3.5.4。
 >
 > **排期假设**：1–2 名全职工程师、Windows 优先、2 周一个迭代。若增至 3–4 人且能并行拆分，整体时间可压缩约 30–40%；若只有 1 人且同时承担 IDE/平台适配，按区间上限估算。
 
@@ -8,23 +10,26 @@
 
 **已具备**
 
-- 设计文档 8 篇（痛点、架构、模板引擎、运行时、布局/渲染/输入、IDE、工具链、里程碑）。
+- 设计文档 01–15（痛点、架构、模板引擎、运行时、布局/渲染/输入、IDE、工具链、里程碑、
+  各 G 阶段切片记录、控件契约、状态与反应式）。
 - `.ui` 前端：Lexer / Parser / AST / 内置目录 / 诊断（EUI001–EUI015）。
-- Roslyn 增量源生成器：code-behind 发现、signal 发现、`@foreach` item 类型推断、代码发射、`#line` 映射。
-- 运行时：`Signal<T>`、`StyledProperty<T>`、元素树、measure/arrange、路由事件、`@if`/`@foreach` 协调器、`Component`、无头宿主。
+- Roslyn 增量源生成器：code-behind 发现、模板解析与动态点生成、`@foreach` item 类型推断、代码发射、`#line` 映射。
+- 运行时：`Signal<T>`（遗留原语，不参与模板反应式）、`StyledProperty<T>`、元素树、measure/arrange、路由事件、`@if`/`@foreach` 协调器、`Component`、无头宿主。
 - 输入/焦点：HitTest、指针冒泡、按下捕获、Tab 遍历、空格/回车激活；`InputRouter` 无头/窗口共用。
 - 文本：HarfBuzz shaping（真实字体测试），`HarfBuzzTextPainter` 让布局与绘制共用 shaping 缓存。
-- 渲染：`DisplayList` 契约、Vello CPU/GPU 后端、`ElementPainter` 场景图遍历、Win32 宿主 + wgpu 上屏。
-- 测试：113 个测试全绿（63 无头 + 50 渲染）。
+- 渲染：`DisplayList` 契约、Vello CPU/GPU 后端、`ElementPainter` 场景图遍历、Win32 宿主 + wgpu 上屏、
+  元素级 damage 与空闲跳帧。
+- 测试：124 个测试全绿（63 无头 + 61 渲染）。
 
 **尚不具备**
 
-- damage/layer、合成器、像素 golden 自动化。
+- retained layer / 合成器 / 真正的局部重绘、像素 golden 自动化。
 - 样式/主题、虚拟化、基础控件库。
 - 文本编辑（字符输入/IME）、多行断行、bidi、字体 fallback。
+- 控件/组件标签契约：标准控件之外无法在 `.ui` 中声明新控件或组件（见 [14](./14-control-template-contract.md)）。
 - LSP / TextMate / VS Code / Rider 插件。
 - 热重载、DevTools、调试映射的 IDE 接入。
-- 3D 视口与 wgpu 直通。
+- WebGPU 视口控件（不做 3D 引擎）。
 - CI、LICENSE、NuGet 打包、benchmark、AOT 冒烟。
 
 ## 9.2 总体进度评估
@@ -33,8 +38,8 @@
 
 | 视角 | 完成度 | 说明 |
 |---|---:|---|
-| 托管核心（编译器前端 + 生成器 + 运行时 + 无头测试） | **65–70%** | 主链路可运行，但有语义缺口（单向绑定、块布局、列表作用域）和工程缺口（增量、诊断覆盖、性能）。 |
-| 0.1 alpha（可交付的 2D 桌面框架） | **40–45%** | 渲染与 Win32 宿主已打通到窗口像素，元素树→display list→上屏与输入路由可用；仍缺样式/主题、基础控件集、damage/layer。 |
+| 托管核心（编译器前端 + 生成器 + 运行时 + 无头测试） | **65–70%** | 主链路可运行，但有语义缺口（状态与反应式 S1–S5、块布局、列表作用域）和工程缺口（增量、诊断覆盖、性能）。 |
+| 0.1 alpha（可交付的 2D 桌面框架） | **42–47%** | 渲染与 Win32 宿主已打通到窗口像素，元素树→display list→上屏、输入路由与 damage v0 可用；仍缺样式/主题、基础控件集、layer/合成器。 |
 | 完整设计愿景（含 IDE、3D、多平台、DevTools、1.0 硬化） | **10–15%** | IDE、3D、平台扩展、无障碍与稳定性尚未开始。 |
 
 ### 分领域状态
@@ -42,18 +47,18 @@
 | 领域 | 状态 | 到 0.1 还差什么 |
 |---|---|---|
 | 模板前端 | 🟢 可用 MVP | `@switch`、附加属性、泛型标签、具名插槽、trivia/pretty-printer、Roslyn 语义分析 |
-| 源生成器 | 🟢 可用 MVP | 单向绑定、语法级表达式重写、按文件增量、组件注册表、`#line` 列映射 |
-| 运行时/属性/信号 | 🟢 可用基础 | 属性存储去装箱、生命周期 Unmount、样式优先级、性能基准 |
+| 源生成器 | 🟢 可用 MVP | v4 失效重算生成（`Render`/`U{N}`/块 `Refresh`）、`P={expr}` 重算、按文件增量、组件注册表、`#line` 列映射 |
+| 运行时/属性 | 🟢 可用基础 | 失效队列与 `Render`、属性存储去装箱、生命周期 Unmount、样式优先级、性能基准 |
 | 布局 | 🟡 部分 | Grid/Wrap/Scroll、块布局透明化、约束与裁剪、虚拟化 |
 | 文本 | 🟡 单行 shaping 已接入 | 断行、bidi、fallback、emoji、glyph 缓存、display list 集成 |
 | 输入/焦点 | 🟡 元素路由已通 | 字符输入/IME、滚轮/触摸、Shift+Tab、无障碍 |
-| 渲染/合成器 | 🟡 scene graph + 上屏可用 | damage/layer、合成器、帧预算 |
+| 渲染/合成器 | 🟡 scene graph + 上屏 + damage v0 | retained layer/合成器、局部重绘、帧预算 |
 | 样式/主题 | 🔴 未开始 | 选择器编译、资源查找、亮暗主题、控件模板 |
 | 控件库 | 🟡 极简 | TextBlock/Button/CheckBox/StackPanel/ListBoxItem 之外的基础控件 |
 | IDE | 🔴 未开始 | TextMate、LSP server、VS Code/Rider 壳 |
 | 工具链 | 🔴 基本未开始 | 热重载、断点映射、DevTools、无头测试 SDK |
 | 平台 | 🟡 Win32 宿主已可用 | macOS/Linux、多窗口、设备丢失恢复 |
-| 3D | 🔴 未开始 | 视口、texture 混排、输入拾取、wgpu 直通 |
+| GPU/3D | 🔴 未开始 | WebGPU 视口控件、同 device 纹理混排、输入转发；不做 3D 引擎/拾取 |
 | 工程化 | 🟡 早期 | CI、LICENSE、打包、benchmark、AOT、发布流程 |
 
 ## 9.3 范围定义
@@ -70,7 +75,7 @@
 - 无头测试 + 像素探针；
 - 生成器诊断（未知标签/属性/字面量格式/表达式错误）在 IDE 中可见。
 
-不包含：LSP 补全、热重载、3D、多平台、完整无障碍、DevTools。
+不包含：LSP 补全、热重载、3D/WebGPU 控件、多平台、完整无障碍、DevTools。
 
 ### 1.0
 
@@ -78,7 +83,7 @@
 
 - VS Code + Rider 的补全/悬停/跳转/重命名；
 - 热重载与 `#line` 调试映射；
-- 3D 视口与 2D/3D 同帧混排；
+- WebGPU 视口控件与 2D/3D 同帧混排；
 - macOS/Linux 平台；
 - IME、无障碍、DPI、本地化/RTL；
 - API 稳定性承诺、性能预算、发布与兼容策略。
@@ -90,7 +95,7 @@
 | **G1 渲染 gate** | 2026-11（2–3 周） | Vello 最小像素闭环 + 功能/性能数据 | ✅ Go（有条件） |
 | **0.1 alpha** | 2027 Q2–Q3 | 2D 渲染、Win32 宿主、样式、基础控件、虚拟化起步 | `CounterApp`/`TaskList` 真窗口可交互；像素测试稳定 |
 | **0.2 alpha** | 2027 Q4 | IDE 诊断 + 补全（VS Code 先行）、热重载原型 | VS Code 中 `.ui` 可补全/报错；改 UI 不丢状态 |
-| **0.5 beta** | 2028 Q1–Q2 | 3D 视口、macOS/Linux、DevTools、无障碍起步 | 两个平台跑通；3D 与 2D 同帧 |
+| **0.5 beta** | 2028 Q1–Q2 | WebGPU 控件、macOS/Linux、DevTools、无障碍起步 | 两个平台跑通；WebGPU 内容与 2D 同帧 |
 | **1.0** | 2028 Q3–Q4 | API 冻结、IME、性能/稳定性、文档与发布 | 外部项目可无痛升级；性能预算达标 |
 
 > 这是 1–2 人团队的“现实区间”。如果只有 1 人且 IDE/平台同时推进，按每个阶段上限再加 20–30%。
@@ -133,10 +138,11 @@
 
 **目标**：`.ui` → 元素树 → 布局 → scene graph → display list → 窗口像素。
 
-**进度**（2026-10-28）：前两切片已完成——Win32 宿主 + wgpu surface 上屏 + resize 冒烟
+**进度**（2026-10-28）：前三切片已完成——Win32 宿主 + wgpu surface 上屏 + resize 冒烟
 （[11 G2 第一切片](./11-g2-surface-slice.md)）；元素树→display list、输入路由、文本 shaping 接入、
-Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-slice.md)）。
-剩余：damage/layer、像素 golden、目标机 60fps 复测。
+Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-slice.md)）；
+元素级脏区检测、空闲跳帧与覆盖率统计（[13 G2 第三切片](./13-g2-damage-v0.md)）。
+剩余：retained layer / 局部重绘、像素 golden、目标机 60fps 复测。
 
 | 子项 | 状态 |
 |---|---|
@@ -144,7 +150,7 @@ Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-s
 | Win32 窗口宿主（窗口、resize、DPI、鼠标/键盘桥接） | ✅ 事件 → InputRouter → 元素树 |
 | Scene graph / paint 遍历 / display list 构建 | ✅ `ElementPainter` 全量遍历 |
 | 文本整段 shaping 接入布局与绘制 | ✅ `ITextPainter` + `ITextMeasurer` 共用 shaping 缓存 |
-| damage/layer v0 | ⏳ 全量重绘 |
+| damage/layer v0 | ✅ `RenderVersion` + 快照 diff + 空闲跳帧；retained layer/局部重绘待后续（[13](./13-g2-damage-v0.md)） |
 | 像素探针与 golden 测试 | ⏳ 截图工具已就绪（`tools/capture-window.ps1`） |
 
 **范围**
@@ -153,7 +159,7 @@ Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-s
 - Vello GPU 后端与 surface/swapchain 集成。
 - Win32 窗口宿主：窗口、resize、DPI、鼠标/键盘桥接。
 - 文本整段 shaping 接入布局与绘制。
-- damage/layer v0：先全量重绘，再按脏区域优化。
+- damage/layer v0：元素级脏区 + 空闲跳帧（已完成）；retained layer / 局部重绘排入后续切片。
 - 像素探针与 golden 测试。
 
 **出口标准**
@@ -161,7 +167,7 @@ Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-s
 - `CounterApp`、`TaskList` 在真实窗口可交互。—— ✅ GalleryApp 自检 6 步全过（[12](./12-g2-interactive-slice.md)）。
 - resize/DPI 变化不崩、不闪。—— ✅ 860×600 ↔ 1000×760 自检 + 第一切片 4 档尺寸冒烟。
 - 1280×800 简单场景稳定 60fps（目标机实测）。—— ⏳ 本机稳态帧成本 4.49 ms（p95 5.95），受 29 Hz 虚拟显示限制待目标机复测。
-- `dotnet test` 含渲染测试且跨机器稳定（容差/探针策略）。—— ✅ 113 个测试（63 无头 + 50 渲染），GPU 用例无设备自动跳过。
+- `dotnet test` 含渲染测试且跨机器稳定（容差/探针策略）。—— ✅ 124 个测试（63 无头 + 61 渲染），GPU 用例无设备自动跳过。
 
 **已知约束**（第一切片测得）：测试机显示器 29 Hz，`Fifo` 下 33.3ms/帧是正确行为；
 60fps 结论必须在目标机（真实显示器）上用 `--no-vsync` 的 `Immediate` 模式复测。
@@ -171,18 +177,32 @@ Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-s
 **范围**
 
 - 控制流块布局透明化（`@if`/`@foreach` 不再作为 StackPanel 参与布局）。
-- 单向绑定 `Prop={expr}`。
-- `ForEachBlock.Dispose` 泄漏修复；item 模板内嵌套块的 Key 复用更新。
+- 状态与反应式 S1–S3（[spec/03](../spec/03-reactivity-and-binding.md)）：`Component.Invalidate`/`ProcessInvalidations`/`Render`、
+  `U{N}`/`R{N}` 生成、根级 `P={expr}`/文本重算、块 v4（`BlockScope.RenderActions` 与显式 `Refresh`）、
+  `@bind-P` 双向与 `UiBinding`、组件 `{P}Changed`、item 身份重建与 `ForEachBlock.Dispose` 泄漏修复；
+  诊断 EUI007/EUI010/EUI033/EUI037/EUI040/EUI043。
+  S4（所有权/深度排序、参数推送与相等保护、异步/后台失效、`ShouldRender`）随 G4 推进，S5 收口归 G8。
 - 语法级表达式重写（Roslyn SyntaxRewriter，替代正则）。
-- 组件注册表：从 Compilation 收集元素/属性/事件/内容模型。
-- 按文件增量生成；`#line` 列映射；诊断覆盖 EUI005/008/009/011/012/014/015。
-- 属性存储去装箱、Signal 写入分配优化、benchmark 基线。
+- 组件注册表：从 Compilation 收集元素/属性/事件/内容模型（契约、数据模型与阶段 C1–C6 见
+  [14 控件与模板契约](./14-control-template-contract.md)）。
+- 控件契约落地：目录从符号派生（C1–C2，含**输入事件字段从 `InputEvents` 迁入 `Element`**，
+  模板事件表面 1 → 8、属性项 6 → 17）、转换器与 EUI016–EUI026 + EUI031 诊断（C3）、组件标签
+  （参数/委托事件/`[UiParameter(Required=true)]`/`{P}Changed`，C4）、`Ref={field}` 与剩余语法收敛（C5）。
+  契约 v4 换轨见 [14 §14.18](./14-control-template-contract.md)。
+- 按文件增量生成；`#line` 列映射；诊断覆盖 EUI005/008/009/011/012/013/015。
+- 属性存储去装箱、失效队列分配预算、benchmark 基线。
 
 **出口标准**
 
 - 列表间距/条件布局有回归测试。
 - 组件注册表能发现样例项目与一个测试用第三方程序集。
-- 生成器在大型项目上增量时间可测，避免全量重跑。
+- 内置控件目录由符号派生（手写目录删除），目录与 `StyledPropertyRegistry` 的一致性测试通过。
+- 控件/组件标签契约（[14](./14-control-template-contract.md)）C1–C5 落地：自定义控件与组件可写入 `.ui`，
+  元数据错误在声明处或使用点报 EUI016–EUI031、EUI033/EUI037/EUI040/EUI043/EUI045（停用码零出现）。
+- 状态与反应式 S1–S3 出口按 [spec/03 §13.1](../spec/03-reactivity-and-binding.md#131-阶段定义) 执行：`dotnet test` 全绿、
+  失效合并、无泄漏、普通状态驱动的 Gallery/TaskList、无 `SetValue` 生成。
+- 生成器增量口径按 14.10.3 实测确立：目录每轮重建（14 程序集 / 688 类型全扫 45.1 ms），
+  但无关改动后每个生成文件的 `IncrementalStepRunReason` 必须是 `Cached`/`Unchanged`。
 
 ### G4：样式、控件与虚拟化（8–10 周）
 
@@ -191,12 +211,15 @@ Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-s
 - 选择器编译（AOT 友好）、样式优先级、资源查找、亮暗主题。
 - 控件集：ListBox、TextBox、ScrollViewer、Grid、WrapPanel、Slider 等。
 - `VirtualizingPanel` 与 item 模板的容器复用。
+- 状态与反应式 S4：组件所有权/深度排序、参数推送与相等保护、异步/后台失效、`ShouldRender`（[spec/03 §13.1](../spec/03-reactivity-and-binding.md#131-阶段定义)）。
+- 控件契约 C6：具名插槽 + `ContentSlot` 宿主、附加属性、泛型标签（14 §14.12）。
 - 键盘/焦点/IME 接口预留。
 
 **出口标准**
 
 - 主题切换 demo；样式变更只重排/重绘受影响子树。
 - 1000+ 条目列表滚动流畅；容器复用有测试。
+- 状态与反应式 S4 出口按 [spec/03 §13.1](../spec/03-reactivity-and-binding.md#131-阶段定义)：所有权/参数推送/异步失效/`ShouldRender` 测试通过。
 
 ### G5：IDE P0–P1（12–16 周）
 
@@ -220,7 +243,7 @@ Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-s
 
 - 热重载：模板重编译 + Key 对齐 + 状态保留。
 - `#line` 断点映射接入 DAP。
-- DevTools：元素树检查器、signals 依赖图、帧剖析。
+- DevTools：元素树检查器、失效链（`Invalidate` → `Render` → 块 `Refresh`）与帧剖析。
 - 无头测试 SDK 与 CI 模板。
 
 **出口标准**
@@ -229,19 +252,41 @@ Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-s
 - 断点可直接下在 `{}` 表达式上。
 - CI 可跑无头 + 像素测试。
 
-### G7：3D 与平台扩展（10–14 周）
+### G7：WebGPU 控件与平台扩展（10–14 周）
+
+> 范围修订（2026-10-28）：3D 只做 **WebGPU 视口控件**，不做 3D 引擎、材质/场景图、相机与拾取。
+> 应用自带渲染器；框架负责布局、裁剪、DPI、输入、纹理合成与 damage。
 
 **范围**
 
-- 3D 视口组件 + offscreen texture → Vello image 混排。
-- wgpu 直通协议、输入转发、CPU/GPU picking 两档。
-- macOS（Metal）/Linux（Vulkan）宿主。
-- 跨端渲染正确性与性能回归。
+- `WebGpuView` 控件：元素布局/裁剪/DPI/hit test；`OnDemand` / `Continuous` 帧调度。
+- 向应用暴露 WebGPU 语义的 device/queue 与离屏目标纹理；应用自行建管线与编码。
+- 合成：同 device 纹理 → Vello image（`CreateImageFromTexture`）单次 submit；
+  CPU/CI 用 readback 兜底。
+- 输入转发：指针/键盘/滚轮事件交给应用；框架不做 3D 拾取。
+- 样例：raw WebGPU 旋转三角形/立方体 + 2D UI 混排、resize/DPI、多视口。
+- macOS（Metal）/Linux（Vulkan）宿主与跨端回归。
+
+**任务顺序**
+
+1. **G7-0 spike**：同 device 纹理导入/单次 submit/同步与生命周期（先证伪风险）。
+2. G7-1 控件契约与布局/裁剪/DPI。
+3. G7-2 合成路径（共享纹理 + readback 兜底）。
+4. G7-3 damage/帧调度集成（视口矩形脏区，不整窗恒脏）。
+5. G7-4 输入转发 + 样例 + 测试。
+6. G7-5 平台扩展。
+
+> G7-0 与控件本体不依赖 IDE/样式系统，可在 G2 结束后单独提前插队（1–2 周 spike + 控件），
+> 平台扩展仍留在 G7。
 
 **出口标准**
 
-- 2D/3D 同帧、同一 device/queue 单次 submit。
+- WebGPU 内容与 2D 同帧、同一 device/queue 单次 submit；resize/DPI 下无撕裂/错位。
+- 视口空闲时不额外提交；动画视口只标记自身矩形。
 - 至少两个平台跑通 0.1 场景。
+
+**非目标**：3D 引擎、场景图、材质、相机、动画时间线、glTF、3D picking、
+完整 WebGPU JS API 兼容层。
 
 ### G8：1.0 硬化（10–12 周）
 
@@ -250,11 +295,13 @@ Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-s
 - 无障碍（UIA/屏幕阅读器）、IME 完整链路、DPI/多显示器。
 - 本地化/RTL、剪贴板/拖放、多窗口/对话框。
 - 性能预算、内存/启动、AOT/裁剪、API 稳定性与兼容策略。
+- 状态与反应式 S5：基准/预算、AOT 样例、线程断言、`:bind`/`:value` 清理与最终审计（[spec/03 §13.1](../spec/03-reactivity-and-binding.md#131-阶段定义)）。
 - 文档、示例、迁移指南、发布流程。
 
 **出口标准**
 
 - 性能预算达标；无已知 P0/P1 缺陷。
+- 状态与反应式 S5 出口按 [spec/03 §13.1](../spec/03-reactivity-and-binding.md#131-阶段定义)：基准/AOT/线程断言与弃用清理完成。
 - 外部项目可在不修改模板语义的情况下升级。
 
 ## 9.6 关键路径与并行
@@ -265,7 +312,7 @@ G1 渲染 gate
         │                      │
         │                      └─ G5 IDE P0–P1 ── G6 工具链
         │
-        └─ G7 3D + 平台扩展
+        └─ G7 WebGPU 控件 + 平台扩展
 
 G3 语义/编译器硬化：从 G1 结束后并行，最迟在 G4 前完成关键项
 ```
@@ -273,7 +320,7 @@ G3 语义/编译器硬化：从 G1 结束后并行，最迟在 G4 前完成关�
 - **关键路径**：G1 → G2 → G4 → G8。
 - **G3 必须并行**：它修的是会污染 demo 的语义问题，不能等渲染做完再补。
 - **G5 依赖 G3 的组件注册表**：没有符号元数据，LSP 补全只能靠硬编码。
-- **G7 依赖 G2 的帧循环/display list**：不要在渲染契约稳定前做 3D。
+- **G7 依赖 G2 的帧循环/display list**：不要在渲染契约稳定前做 WebGPU 控件。
 
 ## 9.7 下一任务详细计划：G1 渲染 Gate
 
@@ -291,7 +338,7 @@ G3 语义/编译器硬化：从 G1 结束后并行，最迟在 G4 前完成关�
 **非目标（本阶段不做）**
 
 - 完整 scene graph、动画、damage/layer 优化；
-- 3D 引擎、材质/场景图；
+- 3D 引擎、材质/场景图（3D 仅规划为 WebGPU 视口控件）；
 - 样式系统、控件库、LSP；
 - 最终 display list 二进制格式（先验证绘制正确性，再谈跨语言编码）；
 - 热重载、DevTools。
@@ -431,7 +478,7 @@ public interface IRenderBackend : IDisposable
 
 1. 冻结 `DisplayList` v0 契约，进入 G2。
 2. 先做 scene graph + paint 遍历 + Win32 宿主，不急着做 damage/layer。
-3. 并行启动 G3 的块布局透明化、单向绑定、`ForEachBlock.Dispose`。
+3. 并行启动 G3 的块布局透明化、状态与反应式 S1–S3（`Invalidate`/`Render`/`P={expr}`/块 `Refresh`/item 重建/`@bind-P`）、`ForEachBlock.Dispose`。
 4. 用 `CounterApp`/`TaskList` 作为 G2 的验收 demo。
 
 **若 No-Go**
@@ -445,8 +492,8 @@ public interface IRenderBackend : IDisposable
 | 任务 | 工期 | 验收 |
 |---|---:|---|
 | 控制流块布局透明化 | 2–3d | `TaskList` item 间距 = 根 `Gap`；`@if` 多根元素按父容器布局 |
-| `ForEachBlock.Dispose` 释放 item 作用域 | 0.5d | 组件 Dispose 后 `Signal.SubscriberCount == 0` |
-| 单向绑定 `Prop={expr}` | 1–2d | signal 变化后属性跟随；`:bind` 行为不变 |
+| `ForEachBlock.Dispose` 释放 item 作用域 | 0.5d | 组件 Dispose 后条目作用域资源全部释放（无泄漏） |
+| S1–S2 失效重算：`Invalidate`/`Render`/`U{N}` + 块 v4 | 2–3d | 失效后属性/文本重算；块 `Refresh()` 正确重建；`@bind-P`（S3）行为不变 |
 | 语法级表达式重写 | 3–5d | 字符串字面量/同名局部变量不被误改；回归测试 |
 | 组件注册表（Roslyn 符号收集） | 1–2w | 样例项目 + 测试第三方程序集可被发现 |
 | CI + LICENSE + 打包骨架 | 1–2d | Windows/Linux 矩阵跑 `dotnet test`；NuGet 可本地打包 |

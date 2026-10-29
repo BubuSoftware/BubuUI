@@ -1,0 +1,5 @@
+<StackPanel Gap={gap}>
+    <TextBlock>{message}</TextBlock>
+    <Button OnClick={() => Bump()}>bump</Button>
+    <Button OnClick={() => Fail()}>fail</Button>
+</StackPanel>

@@ -53,6 +53,7 @@ public sealed class ElementCollection : IReadOnlyList<Element>
         child._needsMeasure = true;
         child._needsArrange = true;
         _owner.InvalidateMeasure();
+        _owner.InvalidateRender();
     }
 
     public bool Remove(Element child)
@@ -61,6 +62,7 @@ public sealed class ElementCollection : IReadOnlyList<Element>
         {
             child._parent = null;
             _owner.InvalidateMeasure();
+            _owner.InvalidateRender();
             return true;
         }
         return false;
@@ -73,6 +75,7 @@ public sealed class ElementCollection : IReadOnlyList<Element>
             child._parent = null;
         _items.Clear();
         _owner.InvalidateMeasure();
+        _owner.InvalidateRender();
     }
 
     public IEnumerator<Element> GetEnumerator() => _items.GetEnumerator();
@@ -91,12 +94,20 @@ public abstract class Element
     private Size _lastMeasureConstraint;
     internal bool _needsMeasure = true;
     internal bool _needsArrange = true;
+    private long _renderVersion;
     private Dictionary<StyledProperty, object?>? _localValues;
     private Dictionary<RoutedEvent, List<Action<RoutedEventArgs>>>? _handlers;
 
     public Element? Parent => _parent;
     public Size DesiredSize => _desired;
     public Rect FinalRect => _final;
+
+    /// <summary>
+    /// 视觉版本：任何可能改变像素的变更（属性、按下态、焦点、子树增删）都会递增。
+    /// 脏区跟踪把它与上一帧矩形快照结合使用：版本变化一定进脏区，
+    /// 版本不变也可能因布局移动进入脏区。
+    /// </summary>
+    public long RenderVersion => _renderVersion;
 
     /// <summary>属性变更通知（值短路：相等不触发）。</summary>
     public event Action<Element, StyledProperty>? PropertyChanged;
@@ -119,6 +130,7 @@ public abstract class Element
 
         (_localValues ??= new Dictionary<StyledProperty, object?>())[property] = value;
         PropertyChanged?.Invoke(this, property);
+        InvalidateRender();
         switch (property.Invalidate)
         {
             case InvalidateKind.Measure: InvalidateMeasure(); break;
@@ -133,6 +145,7 @@ public abstract class Element
         foreach (var descendant in Descendants())
         {
             descendant.PropertyChanged?.Invoke(descendant, property);
+            descendant.InvalidateRender();
             if (property.Invalidate == InvalidateKind.Measure)
                 descendant.InvalidateMeasure();
         }
@@ -179,6 +192,9 @@ public abstract class Element
             node = node._parent;
         }
     }
+
+    /// <summary>标记视觉内容已变（不涉及布局）；脏区跟踪据此判断重绘范围。</summary>
+    public void InvalidateRender() => _renderVersion++;
 
     public void Measure(Size available)
     {

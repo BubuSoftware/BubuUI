@@ -48,33 +48,35 @@
   与 Skia 尚有差距。对策：M1 spike 按功能清单逐项验证（见里程碑），未过清单的
   功能在框架层降级实现或明确不支持，而不是回退其他后端。
 
-### 3D 管线（一等能力，非远期）
+### WebGPU 视口（一等能力，不做 3D 引擎）
 
-**需求定性：跨端统一的 3D 接口是正式需求。** 这正是选 Vello/wgpu 栈的战略理由——
-wgpu（Vulkan/Metal/DX12/WebGPU/WebGL 的统一抽象）同时承载 Vello 的 2D 与自写/集成
-的 3D，**2D/3D 同源混排是 tgfx/Skia 栈物理上给不了的能力**。
+**需求定性：跨端统一的 GPU 视口是正式需求，但框架不提供开箱即用的 3D 渲染引擎。**
+控件只负责给出“一块 WebGPU 画布”；3D 场景、材质、相机、动画、模型加载都在应用/生态侧。
 
-- **框架定位（范围假设，可调整）**：提供 **3D 视口组件 + wgpu 直通协议 + 可选的
-  薄 3D 组件层**；**不自研完整 3D 引擎**（场景图/材质系统/动画系统不在 UI 框架
-  的职责内，交给生态：数学 glam、模型 glTF、PBR 可集成 wgpu 系 3D 库如
-  rend3/three-d，或用户经直通协议自带渲染器）。
-- **混排模式（默认）**：3D 内容先渲到 offscreen texture → Vello 以 image brush
-  绘入视口矩形。理由：Vello 天然支持 image，与 damage/layer/transform/裁剪完全
-  兼容；备选同 surface 分 render pass + scissor（省一次 copy，留作优化项）。
-- **帧编排**：2D 与 3D 在同一 device/queue，单次 submit 完成一帧；3D 视口是
-  **恒脏 layer**（持续动画，每帧重绘），合成器对视口区域做直通管理。
-- **数据流**：display list 增加 3D 命令段（视口矩形、纹理句柄、直通回调索引），
-  FFI 面相应扩展；3D 绘制指令本体不进 2D display list，由直通协议单独携带。
-- **输入与拾取**：视口内鼠标/触摸事件转发至 3D 层；深度拾取提供两档——
-  CPU readback（简单场景）与 GPU picking（离屏 id 渲染），接口在框架层统一。
-- **跨端**：wgpu 统一兑现——Windows(DX12/Vulkan)、macOS(Metal)、Linux(Vulkan)、
-  移动端、浏览器(WebGPU/WebGL) 一套代码；**跨端渲染正确性只需在一个抽象上兑现一次**。
-- **spike 验证**（并入 M1，见里程碑）：2D/3D 同帧混排、3D 纹理喂回 Vello 的
-  帧开销、直通协议在 wgpu 现有帧结构（surface view/encoder）上的切入点。
+- **控件形态**：`WebGpuView`（暂定名），普通元素，参与 measure/arrange、hit test、
+  裁剪、DPI 与 damage；display list 不增加 3D 命令段。
+- **应用契约**：控件向应用暴露 WebGPU 语义的设备/队列与离屏目标纹理，应用自行建管线、
+  编码绘制；框架不解释绘制内容。
+- **API 形态**：优先直接暴露 VelloSharp 使用的 wgpu 绑定（与 Vello 共享 device/queue），
+  **不实现完整的 WebGPU JS API 兼容层**；跨端需要时再在其上做薄封装。
+- **合成（默认）**：应用先渲到 offscreen texture → Vello 以 image 绘入视口矩形。
+  VelloSharp.Gpu 已提供 `CreateImageFromTexture`，目标是与 Vello 共用同一 device/queue、
+  单次 submit；不做独立子窗口 / swapchain overlay（会破坏裁剪、层级与合成）。
+- **降级**：CPU/CI 或纹理无法共享时走 readback → `Image.FromPixels`，功能可用、性能不保证。
+- **帧调度**：`OnDemand`（应用调用 `RequestFrame`）或 `Continuous`（动画）；
+  视口按自身矩形计入脏区，不默认把整窗标脏。
+- **输入**：普通元素事件（指针/键盘/滚轮）转发给应用；相机控制与拾取由应用实现，
+  **框架不做 3D picking**。
+- **非目标**：3D 引擎、场景图、材质系统、相机/动画时间线、glTF 加载、深度拾取、内置 3D 组件。
+- **spike（G7-0）**：同 device 纹理导入与单次 submit 实测、纹理生命周期/同步、
+  resize/DPI 重建、readback 兜底成本。
 
 ## 输入
 
 - 绘制完成即拥有精确 bounds，hit test 是树遍历。
 - 路由事件在元素树上 tunnel/bubble（见 04 运行时）。
+- 7 个输入/焦点事件（PointerPressed/Released/Moved、KeyDown/Up、GotFocus/LostFocus）当前声明在静态类
+  `InputEvents` 上（[Input.cs:20-28](../src/EclipseUI.Runtime/Input.cs#L20)）；按契约 v2（D11）在 C2 迁入 `Element`，
+  迁移后模板才能在任何标签上写 `OnPointerPressed={...}` 这类处理器（现手写目录只有 `OnClick`）。
 - 焦点系统 + IME 是深水区：文本编辑器需要 selection / undo / IME 组合事件，
   设计上预留接口，排在里程碑 M4（IME 靠后）。

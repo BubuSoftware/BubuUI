@@ -208,7 +208,7 @@ GPU 离屏（`VelloCpuBackend { UseCpu = false }`，同场景同尺寸）：5.69
 1. **G2-10 scene graph → display list**：元素树遍历、paint 顺序、`Visual` 缓存。—— ✅ 已在 [12 G2 第二切片](./12-g2-interactive-slice.md) 落地。
 2. **G2-11 输入路由**：`Win32Window` 事件 → `Element.OnPointerPressed` / `FocusManager`。—— ✅ 已在 12 落地。
 3. **G2-12 文本整段 shaping 接入布局**：`TextBlock` 使用同一 `ShapedBuffer` 绘制。—— ✅ 已在 12 落地。
-4. **G2-13 damage/layer v0**：先全量重绘 + 脏矩形统计，再按脏区裁剪。—— ⏳ 待做。
+4. **G2-13 damage/layer v0**：元素级脏区 + 空闲跳帧已完成（[13](./13-g2-damage-v0.md)）；retained layer / 局部重绘待后续。
 5. **G2-14 像素探针与 golden**：窗口截图 → 容差比较，纳入 CI（可选跳过）。—— ⏳ 待做。
 6. **G2-15 `CounterApp` / `TaskList` 真窗口可交互**（G2 出口标准）。—— ✅ 已在 12 落地（GalleryApp 自检）。
 
@@ -227,4 +227,4 @@ GPU 离屏（`VelloCpuBackend { UseCpu = false }`，同场景同尺寸）：5.69
   - `Fifo` 的 33.3ms 由 29 Hz 显示器决定，不是掉帧；真实成本看 `Immediate`；
   - GPU 路径 resize 只需 `surface.Configure`，无需重建 renderer；
   - `WgpuInstance.GetInfo()` 在 alpha.3 会 abort，adapter 信息不可得。
-- 明日：G2-10 scene graph 遍历 + G2-11 输入路由；并行 G3 的块布局透明化与单向绑定。
+- 明日：G2-10 scene graph 遍历 + G2-11 输入路由；并行 G3 的块布局透明化与状态/反应式（后由 [15](./15-state-and-reactivity.md) 的 S1–S3 定义，v4 换轨后以 [spec/03](../spec/03-reactivity-and-binding.md) 为准）。

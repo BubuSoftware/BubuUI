@@ -12,8 +12,7 @@ public class CounterEndToEndTests
     private static (Counter Component, HeadlessRoot Root, TextBlock Text, CheckBox CheckBox) Mount()
     {
         var component = new Counter();
-        component.Mount();
-        var root = new HeadlessRoot(component.Root);
+        var root = new HeadlessRoot(component);
         root.UpdateLayout();
         return (component, root,
             component.Root.Descendants<TextBlock>().Single(),
@@ -37,6 +36,7 @@ public class CounterEndToEndTests
         var button = root.Content.Descendants<Button>().Single();
 
         button.Click();
+        root.UpdateLayout();
         Assert.Equal("You pressed 1 times", text.FullText());
     }
 
@@ -47,6 +47,7 @@ public class CounterEndToEndTests
 
         checkbox.Toggle();
         root.Content.Descendants<Button>().Single().Click();
+        root.UpdateLayout();
 
         checkbox.Toggle(); // 隐藏按钮
         root.UpdateLayout();
@@ -55,6 +56,7 @@ public class CounterEndToEndTests
         checkbox.Toggle(); // 重新显示（改 UI 不丢组件状态）
         root.UpdateLayout();
         root.Content.Descendants<Button>().Single().Click();
+        root.UpdateLayout();
         Assert.Equal("You pressed 2 times", text.FullText());
     }
 
@@ -77,8 +79,7 @@ public class PrefsEndToEndTests
         // 修复回归：条件内容里的 :bind 曾被发成 Track（组件级），
         // toggle 一次泄漏一个订阅；现在挂在内容订阅表上，卸载即释放。
         var component = new Prefs();
-        component.Mount();
-        var root = new HeadlessRoot(component.Root);
+        var root = new HeadlessRoot(component);
         root.UpdateLayout();
 
         Assert.Equal(0, component.extra.SubscriberCount);
@@ -110,8 +111,7 @@ public class TaskListEndToEndTests
     public void Items_AreReconciledByKey_WithTargetedUpdates()
     {
         var component = new TaskList();
-        component.Mount();
-        var root = new HeadlessRoot(component.Root);
+        var root = new HeadlessRoot(component);
         root.UpdateLayout();
 
         component.tasks.Value = new List<TaskItem>
@@ -144,8 +144,7 @@ public class TaskListEndToEndTests
     public void EmptyList_RendersHeaderOnly()
     {
         var component = new TaskList();
-        component.Mount();
-        var root = new HeadlessRoot(component.Root);
+        var root = new HeadlessRoot(component);
         root.UpdateLayout();
 
         component.tasks.Value = new List<TaskItem>();

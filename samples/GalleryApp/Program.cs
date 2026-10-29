@@ -18,6 +18,7 @@ string? shotPath = null;
 bool vsync = true;
 bool useCpu = false;
 bool selfCheck = false;
+bool alwaysRender = false;
 int maxFps = 0;
 
 for (int i = 0; i < args.Length; i++)
@@ -45,6 +46,9 @@ for (int i = 0; i < args.Length; i++)
         case "--cpu":
             useCpu = true;
             break;
+        case "--always-render":
+            alwaysRender = true;
+            break;
         case "--selfcheck":
             selfCheck = true;
             frames ??= 150;
@@ -66,13 +70,14 @@ if (harfBuzz is not null) TextMeasurer.Current = harfBuzz;
 
 var theme = new ElementTheme();
 var scene = BuildGallery();
-var gallery = scene.Root;
+var galleryRoot = new GalleryRoot(scene.Counter, scene.Tasks, scene.Root);
+galleryRoot.Mount();
+var gallery = galleryRoot.Root;
 var counter = scene.Counter;
 var taskList = scene.Tasks;
 var addTaskButton = scene.AddButton;
 
-using (counter)
-using (taskList)
+using (galleryRoot)
 {
     if (useCpu || !OperatingSystem.IsWindows())
         return RunCpu();
@@ -92,7 +97,8 @@ using (taskList)
         Theme = theme,
         TextPainter = textPainter,
         MaxFramesPerSecond = maxFps,
-    });
+        AlwaysRender = alwaysRender,
+    }, galleryRoot);
 
     var clicks = 0;
     var checkBox = gallery.Descendants().OfType<CheckBox>().First();
@@ -100,45 +106,67 @@ using (taskList)
     var measured = new List<double>();
     const int warmupFrames = 60;
     var step = 0;
+    var fullFrames = 0;
+    var partialFrames = 0;
+    double partialArea = 0, maxPartialCoverage = 0;
 
-    host.FrameRendered += (_, e) =>
+    host.FrameTicked += (_, e) =>
     {
-        if (e.Frame == 1)
+        if (e.Iteration == 1)
             Console.WriteLine($"first frame: {presenter.Width}x{presenter.Height} px, {gallery.Descendants().Count()} elements");
-        if (e.Frame > warmupFrames) measured.Add(e.TotalMilliseconds);
+
+        if (e.Presented)
+        {
+            if (e.Damage.IsFull)
+            {
+                fullFrames++;
+            }
+            else
+            {
+                partialFrames++;
+                var coverage = e.Damage.Coverage(e.LogicalSize);
+                partialArea += coverage;
+                maxPartialCoverage = Math.Max(maxPartialCoverage, coverage);
+                if (selfCheck)
+                    Console.WriteLine($"selfcheck: damage {e.Damage.Rects.Count} rect(s), {coverage:P2}");
+            }
+
+            if (e.Iteration > warmupFrames)
+                measured.Add(e.TotalMilliseconds);
+        }
 
         if (!selfCheck) return;
 
         // 用真实的 WM_LBUTTONDOWN/UP 消息驱动：覆盖 消息 → InputRouter → 信号 → 重建 全链路。
         switch (step)
         {
-            case 0 when e.Frame >= 5:
+            case 0 when e.Iteration >= 5:
                 window.PostPointerClick(ToDevice(checkBox, window.ScaleFactor));
                 step = 1;
                 break;
-            case 1 when e.Frame >= 10:
+            case 1 when e.Iteration >= 10:
                 Require("checkbox toggles showButton", counter.showButton.Value);
                 var plus = gallery.Descendants().OfType<Button>().FirstOrDefault(b => b.Label == "+1");
                 Require("conditional +1 button mounted", plus is not null);
                 if (plus is not null) window.PostPointerClick(ToDevice(plus, window.ScaleFactor));
                 step = 2;
                 break;
-            case 2 when e.Frame >= 15:
+            case 2 when e.Iteration >= 15:
                 Require("+1 click increments count", counter.count.Value == 1);
                 window.PostPointerClick(ToDevice(addTaskButton, window.ScaleFactor));
                 step = 3;
                 break;
-            case 3 when e.Frame >= 20:
+            case 3 when e.Iteration >= 20:
                 Require("add task appends item", taskList.tasks.Value.Count == 4);
                 window.SetClientSize(860, 600);
                 step = 4;
                 break;
-            case 4 when e.Frame >= 30:
+            case 4 when e.Iteration >= 30:
                 Require("surface follows resize", presenter.Width == window.ClientWidth && presenter.Height == window.ClientHeight);
                 window.SetClientSize(width, height);
                 step = 5;
                 break;
-            case 5 when e.Frame >= 40:
+            case 5 when e.Iteration >= 40:
                 Require("surface restored after resize", presenter.Width == window.ClientWidth && presenter.Height == window.ClientHeight);
                 step = 6;
                 break;
@@ -151,11 +179,17 @@ using (taskList)
 
     var rendered = host.Run(frames);
 
-    var measuredAvg = measured.Count == 0 ? host.AverageFrameMilliseconds : measured.Average();
-    var measuredP95 = measured.Count == 0 ? measuredAvg : Percentile(measured, 0.95);
-    Console.WriteLine($"frames={rendered} warmup={Math.Min(warmupFrames, rendered)} " +
-                      $"frame={measuredAvg:F2}ms p95={measuredP95:F2}ms " +
+    var measuredAvg = measured.Count == 0 ? 0 : measured.Average();
+    var measuredP95 = measured.Count == 0 ? 0 : Percentile(measured, 0.95);
+    var frameSummary = measured.Count == 0 ? "n/a" : $"{measuredAvg:F2}ms p95={measuredP95:F2}ms";
+    var coverageSummary = partialFrames == 0
+        ? "n/a"
+        : $"{partialArea / partialFrames:P2} avg, {maxPartialCoverage:P2} max";
+    Console.WriteLine($"ticks={host.Ticks} rendered={rendered} skipped={host.SkippedFrames} " +
+                      $"measured={measured.Count} " +
+                      $"frame={frameSummary} " +
                       $"logical={window.LogicalClientSize.Width:F0}x{window.LogicalClientSize.Height:F0} scale={window.ScaleFactor:F2}");
+    Console.WriteLine($"damage: full={fullFrames} partial={partialFrames} coverage(avg/max)={coverageSummary}");
     Console.WriteLine($"state: counter={counter.count.Value} showButton={counter.showButton.Value} " +
                       $"tasks={taskList.tasks.Value.Count} buttonClicks={clicks}");
 
@@ -272,6 +306,7 @@ int RunCpu()
     var input = new InputRouter(gallery);
     var checkBox = gallery.Descendants().OfType<CheckBox>().First();
     Click(input, checkBox);
+    galleryRoot.ProcessInvalidations();
     Console.WriteLine($"cpu: checkbox -> showButton={counter.showButton.Value}");
 
     gallery.Measure(size);
@@ -279,6 +314,7 @@ int RunCpu()
 
     var button = gallery.Descendants().OfType<Button>().FirstOrDefault(b => b.Label == "+1");
     if (button is not null) Click(input, button);
+    galleryRoot.ProcessInvalidations();
     Console.WriteLine($"cpu: +1 -> count={counter.count.Value}");
 
     gallery.Measure(size);
@@ -348,4 +384,26 @@ void SavePng(Element root, Size logicalSize, double scale, Element? focus, strin
     PngEncoder.Write(path, target);
 
     Console.WriteLine($"shot: {path} ({widthPx}x{heightPx} px, {list.Commands.Count} commands, hash={target.ContentHash():X16})");
+}
+
+// G2 场景是手工元素树；根组件只承担所有权与失效队列，供 WindowHost 每帧处理。
+sealed class GalleryRoot : Component
+{
+    private readonly Counter _counter;
+    private readonly TaskList _tasks;
+    private readonly Element _tree;
+
+    public GalleryRoot(Counter counter, TaskList tasks, Element tree)
+    {
+        _counter = counter;
+        _tasks = tasks;
+        _tree = tree;
+    }
+
+    protected override Element Build()
+    {
+        Track(_counter);
+        Track(_tasks);
+        return _tree;
+    }
 }

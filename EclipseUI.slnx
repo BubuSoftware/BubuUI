@@ -15,6 +15,7 @@
     <Project Path="src/EclipseUI.Text.Shaping/EclipseUI.Text.Shaping.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/EclipseUI.Compiler.Tests/EclipseUI.Compiler.Tests.csproj" />
     <Project Path="tests/EclipseUI.Headless.Tests/EclipseUI.Headless.Tests.csproj" />
     <Project Path="tests/EclipseUI.Rendering.Tests/EclipseUI.Rendering.Tests.csproj" />
   </Folder>

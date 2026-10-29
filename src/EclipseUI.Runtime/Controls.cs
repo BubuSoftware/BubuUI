@@ -16,7 +16,7 @@ public sealed class Button : Element
 
     public Button()
     {
-        AddHandler(InputEvents.PointerPressedEvent, () => _pressed = true);
+        AddHandler(InputEvents.PointerPressedEvent, OnPointerPressed);
         AddHandler(InputEvents.PointerReleasedEvent, OnPointerReleased);
         AddHandler(InputEvents.KeyDownEvent, OnKeyDown);
     }
@@ -34,10 +34,18 @@ public sealed class Button : Element
 
     public void Click() => RaiseEvent(new RoutedEventArgs(ClickEvent));
 
+    private void OnPointerPressed()
+    {
+        if (_pressed) return;
+        _pressed = true;
+        InvalidateRender();
+    }
+
     private void OnPointerReleased()
     {
         if (!_pressed) return;
         _pressed = false;
+        InvalidateRender();
         Click();
     }
 
@@ -70,7 +78,7 @@ public sealed class CheckBox : Element
 
     public CheckBox()
     {
-        AddHandler(InputEvents.PointerPressedEvent, () => _pressed = true);
+        AddHandler(InputEvents.PointerPressedEvent, OnPointerPressed);
         AddHandler(InputEvents.PointerReleasedEvent, OnPointerReleased);
         AddHandler(InputEvents.KeyDownEvent, OnKeyDown);
     }
@@ -94,10 +102,18 @@ public sealed class CheckBox : Element
 
     public void Toggle() => Checked = !Checked;
 
+    private void OnPointerPressed()
+    {
+        if (_pressed) return;
+        _pressed = true;
+        InvalidateRender();
+    }
+
     private void OnPointerReleased()
     {
         if (!_pressed) return;
         _pressed = false;
+        InvalidateRender();
         Toggle();
     }
 

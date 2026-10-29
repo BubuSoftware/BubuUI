@@ -13,12 +13,14 @@ namespace EclipseUI.Rendering;
 /// <item>根元素由宿主 arrange 到整个可视区；根自身不画卡片，只画主题 surface。</item>
 /// </list>
 ///
-/// G2 仍为全量重绘；damage/layer 由后续切片在 display list 之前裁剪。
+/// G2 仍为全量构建 display list；<see cref="BuildFrame"/> 额外产出元素级脏区，
+/// 宿主据此跳过空闲帧的上屏。真正按脏区裁剪绘制需要 retained layer（后续切片）。
 /// </summary>
 public sealed class ElementPainter
 {
     private readonly ElementTheme _theme;
     private readonly ITextPainter? _text;
+    private readonly DamageTracker _damageTracker = new();
 
     private DisplayList _list = null!;
     private Element? _focused;
@@ -32,10 +34,33 @@ public sealed class ElementPainter
     public ElementTheme Theme => _theme;
 
     /// <summary>
-    /// 构建一帧。坐标使用设备无关单位；<paramref name="scale"/> 为 DPI 缩放，
+    /// 构建一帧（不做脏区跟踪）。会清空脏区历史：下一次 <see cref="BuildFrame"/> 按整帧处理。
+    /// 坐标使用设备无关单位；<paramref name="scale"/> 为 DPI 缩放，
     /// 由根变换一次性放大到设备像素。返回的 list 尺寸为逻辑尺寸。
     /// </summary>
     public DisplayList Build(Element root, Size size, double scale = 1, Element? focused = null)
+    {
+        _damageTracker.Reset();
+        return BuildCore(root, size, scale, focused, tracker: null);
+    }
+
+    /// <summary>
+    /// 构建一帧并返回相对上一帧的脏区。首帧 / 尺寸 / DPI 变化为整帧；
+    /// 脏区为空时宿主可跳过上屏（画面保持不变）。
+    /// </summary>
+    public PaintedFrame BuildFrame(Element root, Size size, double scale = 1, Element? focused = null)
+    {
+        ArgumentNullException.ThrowIfNull(root);
+        var damage = _damageTracker.Begin(size, scale, focused);
+        var list = BuildCore(root, size, scale, focused, _damageTracker);
+        _damageTracker.End();
+        return new PaintedFrame(list, damage);
+    }
+
+    /// <summary>丢弃脏区历史，下一帧强制整帧重绘（窗口遮挡恢复等场景）。</summary>
+    public void ResetDamage() => _damageTracker.Reset();
+
+    private DisplayList BuildCore(Element root, Size size, double scale, Element? focused, DamageTracker? tracker)
     {
         ArgumentNullException.ThrowIfNull(root);
 
@@ -53,7 +78,7 @@ public sealed class ElementPainter
         if (clipSurface)
             list.Add(new PushClip(new Rect(0, 0, size.Width, size.Height)));
 
-        PaintElement(root, Point.Zero, isRoot: true);
+        PaintElement(root, Point.Zero, isRoot: true, tracker);
 
         if (clipSurface) list.Add(new PopClip());
         if (scaled) list.Add(new PopTransform());
@@ -61,10 +86,16 @@ public sealed class ElementPainter
         return list;
     }
 
-    private void PaintElement(Element element, Point offset, bool isRoot)
+    private void PaintElement(Element element, Point offset, bool isRoot, DamageTracker? tracker)
     {
         var final = element.FinalRect;
         var rect = new Rect(offset.X + final.X, offset.Y + final.Y, final.Width, final.Height);
+
+        // 焦点环画在元素矩形之外，脏区必须包含它。
+        var visualBounds = ReferenceEquals(element, _focused) && element.IsFocusable
+            ? Inflate(rect, _theme.FocusRingWidth)
+            : rect;
+        tracker?.Visit(element, visualBounds);
 
         switch (element)
         {
@@ -102,7 +133,7 @@ public sealed class ElementPainter
         if (element is Panel panel)
         {
             foreach (var child in panel.Children)
-                PaintElement(child, rect.Location, isRoot: false);
+                PaintElement(child, rect.Location, isRoot: false, tracker);
         }
 
         if (clip) _list.Add(new PopClip());
@@ -227,3 +258,6 @@ public sealed class ElementPainter
         rect.Width + amount * 2,
         rect.Height + amount * 2);
 }
+
+/// <summary>一帧的绘制结果：display list + 相对上一帧的脏区。</summary>
+public readonly record struct PaintedFrame(DisplayList List, FrameDamage Damage);

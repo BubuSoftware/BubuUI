@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -33,11 +35,9 @@ public sealed class TemplateGenerator : IIncrementalGenerator
     private static void Execute(SourceProductionContext spc, ImmutableArray<AdditionalText> files, Compilation compilation)
     {
         var catalog = UiCatalog.CreateDefault();
-        int index = 0;
 
         foreach (var file in files)
         {
-            index++;
             var sourceText = file.GetText();
             if (sourceText is null) continue;
 
@@ -132,8 +132,17 @@ public sealed class TemplateGenerator : IIncrementalGenerator
                 AccessibilityOf(type), NamespaceName(type), className,
                 itemTypes, signals.Keys.ToArray(), file.Path).Emit();
 
-            spc.AddSource($"{className}_{index}.g.cs", code);
+            spc.AddSource($"{className}.{StableHash(file.Path)}.g.cs", code);
         }
+    }
+
+    private static string StableHash(string path)
+    {
+        using var sha = SHA256.Create();
+        var bytes = sha.ComputeHash(Encoding.UTF8.GetBytes(path));
+        var sb = new StringBuilder(16);
+        for (int i = 0; i < 8; i++) sb.Append(bytes[i].ToString("x2"));
+        return sb.ToString();
     }
 
     private static INamedTypeSymbol? FindCodeBehind(Compilation compilation, string name)

@@ -4,23 +4,30 @@ using EclipseUI.Rendering;
 
 namespace EclipseUI.Platform.Windows;
 
-/// <summary>一帧完成后的统计（时间均为托管侧耗时，不含 GPU 异步完成）。</summary>
+/// <summary>一帧循环的统计（时间均为托管侧耗时，不含 GPU 异步完成）。</summary>
 public sealed class HostFrameEventArgs : EventArgs
 {
-    public HostFrameEventArgs(int frame, double totalMilliseconds, Size logicalSize)
+    public HostFrameEventArgs(int iteration, bool presented, double totalMilliseconds, Size logicalSize, FrameDamage damage)
     {
-        Frame = frame;
+        Iteration = iteration;
+        Presented = presented;
         TotalMilliseconds = totalMilliseconds;
         LogicalSize = logicalSize;
+        Damage = damage;
     }
 
-    /// <summary>从 1 开始的帧序号。</summary>
-    public int Frame { get; }
+    /// <summary>从 1 开始的循环序号（脏区为空时也会递增）。</summary>
+    public int Iteration { get; }
+
+    /// <summary>本帧是否真正上屏；false 表示无脏区已跳过。</summary>
+    public bool Presented { get; }
 
     /// <summary>布局 + display list + 提交的总耗时（毫秒）。</summary>
     public double TotalMilliseconds { get; }
 
     public Size LogicalSize { get; }
+
+    public FrameDamage Damage { get; }
 }
 
 public sealed class WindowHostOptions
@@ -34,6 +41,12 @@ public sealed class WindowHostOptions
 
     /// <summary>主动限帧；0 表示交给 surface（vsync）或 GPU 队列。</summary>
     public int MaxFramesPerSecond { get; init; }
+
+    /// <summary>忽略脏区判定，每帧都上屏（性能对比 / 持续动画场景）。</summary>
+    public bool AlwaysRender { get; init; }
+
+    /// <summary>无脏区且未限帧时的休眠时长，避免空转占满 CPU。</summary>
+    public int IdleSleepMilliseconds { get; init; } = 4;
 }
 
 /// <summary>
@@ -54,6 +67,7 @@ public sealed class WindowHost : IDisposable
     private readonly Win32Window _window;
     private readonly ISurfacePresenter _presenter;
     private readonly Element _root;
+    private readonly Component? _rootComponent;
     private readonly WindowHostOptions _options;
     private readonly ElementPainter _painter;
     private bool _disposed;
@@ -62,17 +76,20 @@ public sealed class WindowHost : IDisposable
         Win32Window window,
         ISurfacePresenter presenter,
         Element root,
-        WindowHostOptions? options = null)
+        WindowHostOptions? options = null,
+        Component? rootComponent = null)
     {
         _window = window ?? throw new ArgumentNullException(nameof(window));
         _presenter = presenter ?? throw new ArgumentNullException(nameof(presenter));
         _root = root ?? throw new ArgumentNullException(nameof(root));
+        _rootComponent = rootComponent;
         _options = options ?? new WindowHostOptions();
 
         _painter = new ElementPainter(_options.Theme, _options.TextPainter);
         Input = new InputRouter(root);
 
         _window.Resized += OnResized;
+        _window.PaintRequested += OnPaintRequested;
         _window.PointerMoved += OnPointerMoved;
         _window.PointerPressed += OnPointerPressed;
         _window.PointerReleased += OnPointerReleased;
@@ -90,22 +107,32 @@ public sealed class WindowHost : IDisposable
 
     public InputRouter Input { get; }
 
-    /// <summary>本次 Run 已渲染的帧数。</summary>
-    public int Frames { get; private set; }
+    /// <summary>本次 Run 的循环次数（包含跳过上屏的空闲帧）。</summary>
+    public int Ticks { get; private set; }
 
-    /// <summary>最近一帧的耗时（毫秒）。</summary>
+    /// <summary>本次 Run 实际 Present 的帧数。</summary>
+    public int RenderedFrames { get; private set; }
+
+    /// <summary>本次 Run 因无脏区而跳过的帧数。</summary>
+    public int SkippedFrames { get; private set; }
+
+    /// <summary>最近一次实际渲染的脏区。</summary>
+    public FrameDamage LastDamage { get; private set; } = new();
+
+    /// <summary>最近一次实际渲染的耗时（毫秒）；跳过帧不更新。</summary>
     public double LastFrameMilliseconds { get; private set; }
 
-    /// <summary>指数滑动平均帧时间（毫秒）。</summary>
+    /// <summary>指数滑动平均帧时间（毫秒，仅统计实际渲染的帧）。</summary>
     public double AverageFrameMilliseconds { get; private set; }
 
     /// <summary>窗口即将关闭。</summary>
     public bool IsExiting { get; private set; }
 
-    public event EventHandler<HostFrameEventArgs>? FrameRendered;
+    /// <summary>每个循环 tick 触发一次；<see cref="HostFrameEventArgs.Presented"/> 区分是否上屏。</summary>
+    public event EventHandler<HostFrameEventArgs>? FrameTicked;
 
     /// <summary>
-    /// 运行消息 + 帧循环。返回已渲染帧数；窗口关闭或达到 <paramref name="maxFrames"/> 时返回。
+    /// 运行消息 + 帧循环。返回实际渲染帧数；窗口关闭或达到 <paramref name="maxFrames"/> 个 tick 时返回。
     /// </summary>
     public int Run(int? maxFrames = null)
     {
@@ -113,6 +140,11 @@ public sealed class WindowHost : IDisposable
 
         _window.Show();
         SyncPresenterSize();
+        _painter.ResetDamage();
+        Ticks = 0;
+        RenderedFrames = 0;
+        SkippedFrames = 0;
+        AverageFrameMilliseconds = 0;
 
         var frameInterval = _options.MaxFramesPerSecond > 0
             ? 1000.0 / _options.MaxFramesPerSecond
@@ -133,19 +165,30 @@ public sealed class WindowHost : IDisposable
 
             var start = Stopwatch.GetTimestamp();
 
+            _rootComponent?.ProcessInvalidations();
             _root.Measure(size);
             _root.Arrange(new Rect(Point.Zero, size));
 
-            var list = _painter.Build(_root, size, _window.ScaleFactor, Input.Focus.Focused);
-            _presenter.Render(list);
+            var frame = _painter.BuildFrame(_root, size, _window.ScaleFactor, Input.Focus.Focused);
+            var presented = _options.AlwaysRender || !frame.Damage.IsEmpty;
+            if (presented)
+            {
+                _presenter.Render(frame.List);
+                RenderedFrames++;
+                LastDamage = frame.Damage;
+                LastFrameMilliseconds = Elapsed(start);
+                AverageFrameMilliseconds = RenderedFrames == 1
+                    ? LastFrameMilliseconds
+                    : AverageFrameMilliseconds + (LastFrameMilliseconds - AverageFrameMilliseconds) * 0.05;
+            }
+            else
+            {
+                SkippedFrames++;
+            }
 
-            var frames = ++Frames;
-            LastFrameMilliseconds = Elapsed(start);
-            AverageFrameMilliseconds = frames == 1
-                ? LastFrameMilliseconds
-                : AverageFrameMilliseconds + (LastFrameMilliseconds - AverageFrameMilliseconds) * 0.05;
-
-            FrameRendered?.Invoke(this, new HostFrameEventArgs(frames, LastFrameMilliseconds, size));
+            Ticks++;
+            FrameTicked?.Invoke(this, new HostFrameEventArgs(
+                Ticks, presented, Elapsed(start), size, frame.Damage));
 
             if (frameInterval > 0)
             {
@@ -154,12 +197,17 @@ public sealed class WindowHost : IDisposable
                 if (remaining > 1.0) Thread.Sleep((int)remaining);
                 while (clock.Elapsed.TotalMilliseconds < frameInterval) Thread.SpinWait(64);
             }
+            else if (!presented && _options.IdleSleepMilliseconds > 0)
+            {
+                // 无脏区时跳过上屏，sleep 避免空转；消息仍在下一轮及时处理。
+                Thread.Sleep(_options.IdleSleepMilliseconds);
+            }
             clock.Restart();
 
-            if (maxFrames is { } limit && frames >= limit) break;
+            if (maxFrames is { } limit && Ticks >= limit) break;
         }
 
-        return Frames;
+        return RenderedFrames;
     }
 
     /// <summary>下一次循环重新同步表面尺寸（例如窗口在 Show 之前创建）。</summary>
@@ -167,7 +215,12 @@ public sealed class WindowHost : IDisposable
         => _presenter.Resize(Math.Max(_window.ClientWidth, 1), Math.Max(_window.ClientHeight, 1));
 
     private void OnResized(object? sender, Win32ResizeEventArgs e)
-        => _presenter.Resize(Math.Max(e.Width, 1), Math.Max(e.Height, 1));
+    {
+        _presenter.Resize(Math.Max(e.Width, 1), Math.Max(e.Height, 1));
+        _painter.ResetDamage();
+    }
+
+    private void OnPaintRequested(object? sender, EventArgs e) => _painter.ResetDamage();
 
     private void OnPointerMoved(object? sender, Win32PointerEventArgs e)
         => Input.PointerMove(e.LogicalPosition);
@@ -201,6 +254,7 @@ public sealed class WindowHost : IDisposable
         _disposed = true;
 
         _window.Resized -= OnResized;
+        _window.PaintRequested -= OnPaintRequested;
         _window.PointerMoved -= OnPointerMoved;
         _window.PointerPressed -= OnPointerPressed;
         _window.PointerReleased -= OnPointerReleased;

@@ -25,5 +25,5 @@ IDE 侧只需接上更新协议。
 ## DevTools
 
 - 元素树检查器（实时改属性）。
-- signals 依赖图可视化。
+- 失效链可视化：组件 `Invalidate` → `Render` → 块 `Refresh` 的调用归属与耗时（无依赖图/订阅关系）。
 - 帧剖析：layout / paint / damage 各自耗时、draw call 统计。

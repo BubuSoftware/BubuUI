@@ -1,7 +1,7 @@
 # 12. G2 第二切片：场景图 + 输入路由 + 可交互 Gallery
 
 > 状态：**已执行，通过** · 时间盒：1 周（G2 第 2 周）· 关联计划：[09 开发计划](./09-development-plan.md#g22d-渲染垂直切片810-周)
-> 前置：[11 G2 第一切片](./11-g2-surface-slice.md) · 后续：damage/layer v0、像素 golden
+> 前置：[11 G2 第一切片](./11-g2-surface-slice.md) · 后续：damage v0（已完成，见 [13](./13-g2-damage-v0.md)）、像素 golden
 >
 > 本文回答 G2 的核心问题：**元素树能不能直接画到窗口，并且 CounterApp / TaskList 在真实窗口里可交互？**
 
@@ -34,7 +34,7 @@
 | G2-11 | 输入路由：窗口事件 → 元素树 / 焦点 | 1d | DONE | `InputRouter`、`WindowHost`、Win32 指针捕获 |
 | G2-12 | 文本 shaping 接入布局与绘制 | 1d | DONE | `ITextPainter` / `HarfBuzzTextPainter` / `ITextMeasurer` |
 | G2-15 | CounterApp + TaskList 真窗口可交互 | 1d | DONE | `samples/GalleryApp`（`--selfcheck` PASS） |
-| G2-13 | damage/layer v0 | 2d | TODO | 脏矩形统计 → 局部重绘 |
+| G2-13 | damage/layer v0 | 2d | DONE | 元素级脏区 + 空闲跳帧，见 [13 G2 第三切片](./13-g2-damage-v0.md)；layer/局部重绘未做 |
 | G2-14 | 像素探针 / golden | 1d | TODO | 截图容差比较纳入 CI |
 
 **关键路径**：G2-10 → G2-12 → G2-15。
@@ -177,7 +177,7 @@ DPI 根变换、块视觉透明、Panel padding、HarfBuzz glyph run、测量/�
 
 | 风险 | 触发信号 | 应对 |
 |---|---|---|
-| 全量重绘随元素增长线性变慢 | 元素数 × 命令数上涨，帧成本同步上涨 | G2-13 脏矩形统计；先量化再裁剪 |
+| 全量重绘随元素增长线性变慢 | 元素数 × 命令数上涨，帧成本同步上涨 | G2-13 已做元素级脏区与空闲跳帧；局部重绘/图层待 retained layer |
 | 主题是硬编码数据 | 新增控件要改 painter + theme | G4 样式系统，painter 改为读解析后的样式 |
 | 文本只有单行 LTR | 多行/混排文本溢出或错位 | 断行 + bidi + fallback 排入 G2/G3 |
 | 字符输入未接 | 无文本编辑控件 | `WM_CHAR` → 文本输入路由，随 TextBox 一起做 |
@@ -186,11 +186,12 @@ DPI 根变换、块视觉透明、Panel padding、HarfBuzz glyph run、测量/�
 
 后续任务（G2 剩余）：
 
-1. **G2-13 damage/layer v0**：全量重绘 + 脏矩形统计，再按脏区裁剪；量化元素数-帧成本曲线。
+1. ~~**G2-13 damage/layer v0**：全量重绘 + 脏矩形统计，再按脏区裁剪；量化元素数-帧成本曲线。~~
+   已完成元素级脏区 + 空闲跳帧，见 [13](./13-g2-damage-v0.md)；局部重绘/图层待 retained layer。
 2. **G2-14 像素探针与 golden**：窗口截图/CPU 渲染 → 容差比较，纳入 CI（无 GPU 跳过）。
 3. **文本整段能力**：多行断行、字体 fallback、glyph 缓存统计。
 4. **输入补全**：`WM_CHAR` 文本输入、Shift+Tab、鼠标悬停/光标形状。
-5. **G3 并行项**：块布局透明化、单向绑定、列表作用域泄漏修复。
+5. **G3 并行项**：块布局透明化、状态与反应式 S1–S3（[spec/03](../spec/03-reactivity-and-binding.md)：`Invalidate`/`Render`/`P={expr}`/块 `Refresh`/item 重建/`@bind-P`）、列表作用域泄漏修复。
 
 ## 12.8 日志
 
