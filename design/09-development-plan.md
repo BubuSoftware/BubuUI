@@ -190,7 +190,7 @@ Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-s
 - 语法级表达式重写（Roslyn SyntaxRewriter，替代正则）。
 - 组件注册表：从 Compilation 收集元素/属性/事件/内容模型（契约、数据模型与阶段 C1–C6 见
   [14 控件与模板契约](./14-control-template-contract.md)）。
-  **进度（2026-11-02）：C1 ✅ / C2 ✅** —— `Runtime/UiAttributes.cs` 六个声明特性 + 内置控件标注、
+  **进度（2026-11-03）：C1 ✅ / C2 ✅ / C3 ✅** —— `Runtime/UiAttributes.cs` 六个声明特性 + 内置控件标注、
   `Compiler.Metadata` 目录模型与 Roslyn 符号扫描器、42 例一致性/快照测试全部落地；
   派生目录 **⊇** 手写目录（属性项 6→17，差集 12 项逐条评审见 [14 §14.12.1](./14-control-template-contract.md)）。
   **C2 切换完成**：分析器与生成器改读派生目录、手写目录删除；`InputEvents` 7 个事件迁入 `Element`
@@ -202,6 +202,10 @@ Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-s
   模板事件表面 1 → 8、属性项 6 → 17）、转换器与 EUI016–EUI026 + EUI031 诊断（C3）、组件标签
   （参数/委托事件/`[UiParameter(Required=true)]`/`{P}Changed`，C4）、`Ref={field}` 与剩余语法收敛（C5）。
   契约 v4 换轨见 [14 §14.18](./14-control-template-contract.md)。
+  **C3 完成（2026-11-03）**：内置转换器补齐（float/decimal/long/short/byte/char/枚举/TimeSpan，
+  接近了 spec/01 §5.2 全表的内置类型）；使用点诊断 `EUI023`（无转换器）、`EUI025`（纯普值重复属性，
+  绑定同名仍 EUI033）、`EUI031`（Class/Style/附加属性/`<Slot>`/`<ContentSlot>`）落地，
+  台账 D2/D3/D6/D14/D19 关闭；落地记录见 [14 §14.12.3](./14-control-template-contract.md)。
 - 按文件增量生成；`#line` 列映射；诊断覆盖 EUI005/008/009/011/012/013/015。
 - 属性存储去装箱、失效队列分配预算、benchmark 基线。
 

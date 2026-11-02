@@ -1,0 +1,319 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using EclipseUI.Compiler;
+using EclipseUI.TestKit;
+using Xunit;
+
+namespace EclipseUI.Headless.Tests;
+
+/// <summary>
+/// C3 切片：转换器扩展（float/decimal/long/short/byte/char/枚举/TimeSpan）、
+/// EUI023（无转换器）、EUI025（完全重复属性）、EUI031（保留语法）。
+/// 规范条文：spec/01 §3.1/§5.2/§6.2；design/14 §14.7.5/§14.12。
+/// </summary>
+public class C3LiteralAndDiagnosticsTests
+{
+    private static (UiDocument Doc, List<UiDiagnostic> Diags) ParseAnalyze(UiCatalog catalog, string text)
+    {
+        var diags = new List<UiDiagnostic>();
+        var doc = FrontEnd.Parse(text, "Test.ui", diags);
+        FrontEnd.Analyze(doc, catalog, diags);
+        return (doc, diags);
+    }
+
+    /// <summary>
+    /// 探针标签：目录从真实运行时扫描而来（§14.11.1），这里在其之上追加一个合成标签，
+    /// 专门用来测 C3 转换器与 EUI023——不是第二份生产目录，只服务诊断测试。
+    /// </summary>
+    private static UiCatalog CatalogWithProbe()
+    {
+        var built = UiTestCatalogs.BuiltIn();
+        UiPropDef P(string name, UiTypeShape shape) => new(
+            name, "global::Probe.Things", "global::Probe.Things", name + "Property", true, shape);
+        var probe = new UiElementDef(
+            "Probe", "global::Probe.Things", UiElementOrigin.Control,
+            UiContentModel.None, null,
+            new Dictionary<string, UiPropDef>(StringComparer.Ordinal)
+            {
+                ["Rate"] = P("Rate", new UiTypeShape(UiTypeShapeKind.Primitive, "float", [])),
+                ["Blend"] = P("Blend", new UiTypeShape(UiTypeShapeKind.Primitive, "decimal", [])),
+                ["Total"] = P("Total", new UiTypeShape(UiTypeShapeKind.Primitive, "long", [])),
+                ["Age"] = P("Age", new UiTypeShape(UiTypeShapeKind.Primitive, "short", [])),
+                ["Cell"] = P("Cell", new UiTypeShape(UiTypeShapeKind.Primitive, "byte", [])),
+                ["Letter"] = P("Letter", new UiTypeShape(UiTypeShapeKind.Primitive, "char", [])),
+                ["Delay"] = P("Delay", new UiTypeShape(UiTypeShapeKind.Other, "System.TimeSpan", [])),
+                ["Mode"] = P("Mode", new UiTypeShape(UiTypeShapeKind.Enum, "Probe.Weather", ["Cloudy", "Sunny"])),
+                ["Widget"] = P("Widget", new UiTypeShape(UiTypeShapeKind.Other, "Probe.Widget", [])),
+            },
+            new Dictionary<string, UiEventDef>(StringComparer.Ordinal),
+            new Dictionary<string, UiParameterDef>(StringComparer.Ordinal),
+            new Dictionary<string, UiSlotDef>(StringComparer.Ordinal), []);
+        return new UiCatalog(built.Elements.Append(probe), built.HiddenTags, built.Problems);
+    }
+
+    [Fact]
+    public void FloatLiteral_Converts()
+    {
+        var catalog = CatalogWithProbe();
+        var (doc, diags) = ParseAnalyze(catalog, """<Probe Rate="8.5" />""");
+        Assert.Empty(diags);
+        Assert.Equal("8.5f", doc.Nodes.OfType<UiElement>().Single().Attributes[0].ConvertedLiteral);
+    }
+
+    [Fact]
+    public void DecimalLiteral_Converts()
+    {
+        var catalog = CatalogWithProbe();
+        var (_, diags) = ParseAnalyze(catalog, """<Probe Blend="8.5" />""");
+        Assert.Empty(diags); // 精确串断言放在单元级（见 ConvertDecimalSuite）
+    }
+
+    [Fact]
+    public void CharLiteral_Converts()
+    {
+        var catalog = CatalogWithProbe();
+        var (doc, diags) = ParseAnalyze(catalog, """<Probe Letter="A" />""");
+        Assert.Empty(diags);
+        Assert.Equal("'A'", doc.Nodes.OfType<UiElement>().Single().Attributes[0].ConvertedLiteral);
+    }
+
+    [Fact]
+    public void EnumLiteral_ConvertsToQualifiedMember()
+    {
+        var catalog = CatalogWithProbe();
+        var (doc, diags) = ParseAnalyze(catalog, """<Probe Mode="Sunny" />""");
+        Assert.Empty(diags);
+        Assert.Equal("global::Probe.Weather.Sunny",
+            doc.Nodes.OfType<UiElement>().Single().Attributes[0].ConvertedLiteral);
+    }
+
+    [Fact]
+    public void EnumLiteral_UnknownMember_IsFormatErrorWithMembers()
+    {
+        var catalog = CatalogWithProbe();
+        var (_, diags) = ParseAnalyze(catalog, """<Probe Mode="sunny" />""");
+        var diag = Assert.Single(diags);
+        Assert.Equal(UiDiagnostics.LiteralFormat, diag.Code);
+        Assert.Contains("Probe.Weather", diag.Message);
+        Assert.Contains("Sunny", diag.Message);
+    }
+
+    [Fact]
+    public void TimeSpanLiteral_ConvertsToConstructorCall()
+    {
+        var catalog = CatalogWithProbe();
+        var (doc, diags) = ParseAnalyze(catalog, """<Probe Delay="1h" />""");
+        Assert.Empty(diags);
+        Assert.Equal("new global::System.TimeSpan(36000000000L)",
+            doc.Nodes.OfType<UiElement>().Single().Attributes[0].ConvertedLiteral);
+    }
+
+    [Fact]
+    public void TimeSpanLiteral_ClockForm_ConvertsToConstructorCall()
+    {
+        var catalog = CatalogWithProbe();
+        var (doc, diags) = ParseAnalyze(catalog, """<Probe Delay="1.02:03:04.5" />""");
+        Assert.Empty(diags);
+        Assert.Equal("new global::System.TimeSpan(937845000000L)",
+            doc.Nodes.OfType<UiElement>().Single().Attributes[0].ConvertedLiteral);
+    }
+
+    [Fact]
+    public void TimeSpanLiteral_MultiUnit_IsFormatError()
+    {
+        var catalog = CatalogWithProbe();
+        var (_, diags) = ParseAnalyze(catalog, """<Probe Delay="1h30m" />""");
+        var diag = Assert.Single(diags);
+        Assert.Equal(UiDiagnostics.LiteralFormat, diag.Code);
+        Assert.Contains("single", diag.Message.ToLowerInvariant())
+            ; // 消息给出单单位格式与替代建议
+    }
+
+    [Fact]
+    public void LiteralWithoutConverter_IsNoConverterDiagnostic()
+    {
+        var catalog = CatalogWithProbe();
+        var (_, diags) = ParseAnalyze(catalog, """<Probe Widget="1" />""");
+        var diag = Assert.Single(diags);
+        Assert.Equal(UiDiagnostics.NoLiteralConverter, diag.Code);
+        Assert.Contains("Probe.Widget", diag.Message);
+        Assert.Contains("{expression}", diag.Message);
+    }
+
+    /// <summary>EUI002 未知属性仍然先于一切（保留语法只在名字匹配时拦）。</summary>
+    [Fact]
+    public void DuplicatePlainAttribute_IsDuplicateAttribute()
+    {
+        var catalog = CatalogWithProbe();
+        var (_, diags) = ParseAnalyze(UiTestCatalogs.BuiltIn(), """<StackPanel Padding="1" Padding="2" />""");
+        var diag = Assert.Single(diags);
+        Assert.Equal(UiDiagnostics.DuplicateAttribute, diag.Code);
+        Assert.Contains("Padding", diag.Message);
+    }
+
+    [Fact]
+    public void DuplicateBindVsPlain_SameTarget_IsSameTargetDuplicate()
+    {
+        // S2 语义保持：名称相同但任一侧是绑定 → EUI033（目标级），不是 EUI025。
+        var (_, diags) = ParseAnalyze(UiTestCatalogs.BuiltIn(), """<CheckBox Checked={x} @bind-Checked={y}>c</CheckBox>""");
+        Assert.Contains(diags, d => d.Code == UiDiagnostics.SameTargetDuplicate);
+    }
+
+    [Fact]
+    public void ClassAttribute_IsReservedSyntax()
+    {
+        var (_, diags) = ParseAnalyze(UiTestCatalogs.BuiltIn(), """<StackPanel Class="elevated" />""");
+        var diag = Assert.Single(diags);
+        Assert.Equal(UiDiagnostics.ReservedSyntax, diag.Code);
+        Assert.Contains("G4", diag.Message);
+    }
+
+    [Fact]
+    public void StyleAttribute_IsReservedSyntax()
+    {
+        var (_, diags) = ParseAnalyze(UiTestCatalogs.BuiltIn(), """<StackPanel Style="flat" />""");
+        Assert.Contains(diags, d => d.Code == UiDiagnostics.ReservedSyntax);
+    }
+
+    [Fact]
+    public void AttachedPropertySyntax_IsReservedSyntax()
+    {
+        var (_, diags) = ParseAnalyze(UiTestCatalogs.BuiltIn(), """<StackPanel Grid.Row="1" />""");
+        var diag = Assert.Single(diags);
+        Assert.Equal(UiDiagnostics.ReservedSyntax, diag.Code);
+        Assert.Contains("attached", diag.Message);
+    }
+
+    [Theory]
+    [InlineData("Slot")]
+    [InlineData("ContentSlot")]
+    public void ReservedSlotTags_AreReservedSyntax(string tag)
+    {
+        var (_, diags) = ParseAnalyze(UiTestCatalogs.BuiltIn(), $"<{tag} Name=\"body\"><TextBlock FontSize=\"12\">x</TextBlock></{tag}>");
+        var diag = Assert.Single(diags);
+        Assert.Equal(UiDiagnostics.ReservedSyntax, diag.Code);
+        Assert.Contains("named slots", diag.Message);
+    }
+
+    [Fact]
+    public void SlotTagWithRealControl_KeepsTagResolution()
+    {
+        // 有同名控件时（用户自定义）不走保留诊断——探针里手动加一个真实 Slot 定义。
+        var built = UiTestCatalogs.BuiltIn();
+        var custom = new UiElementDef(
+            "Slot", "global::Probe.SlotHost", UiElementOrigin.Control,
+            UiContentModel.Children, "Children",
+            new Dictionary<string, UiPropDef>(StringComparer.Ordinal),
+            new Dictionary<string, UiEventDef>(StringComparer.Ordinal),
+            new Dictionary<string, UiParameterDef>(StringComparer.Ordinal),
+            new Dictionary<string, UiSlotDef>(StringComparer.Ordinal), []);
+        var catalog = new UiCatalog(
+            built.Elements.Append(custom).ToArray(), built.HiddenTags, built.Problems);
+        var (_, diags) = ParseAnalyze(catalog, """<Slot />""");
+        Assert.Empty(diags);
+    }
+
+    // ---- 直接单元级转换（不经过解析器） ----
+
+    [Fact]
+    public void ConvertDoubleSuite()
+    {
+        Assert.Equal("8d", ConvertOk(UiTypeShapeKind.Primitive, "double", "8"));
+        Assert.Equal("0.001d", ConvertOk(UiTypeShapeKind.Primitive, "double", "1e-3"));
+        Assert.False(ConvertShape(UiTypeShapeKind.Primitive, "double", "eight", out var err));
+        Assert.Contains("number", err);
+    }
+
+    [Fact]
+    public void ConvertFloatSuite()
+    {
+        Assert.Equal("8f", ConvertOk(UiTypeShapeKind.Primitive, "float", "8"));
+        Assert.Equal("1000f", ConvertOk(UiTypeShapeKind.Primitive, "float", "1e3"));
+        Assert.False(ConvertShape(UiTypeShapeKind.Primitive, "float", "1e400", out var err));
+        Assert.Contains("float", err);
+    }
+
+    [Fact]
+    public void ConvertDecimalSuite()
+    {
+        Assert.Equal("8.5m", ConvertOk(UiTypeShapeKind.Primitive, "decimal", "8.5"));
+        Assert.Equal("1000m", ConvertOk(UiTypeShapeKind.Primitive, "decimal", "1e3"));
+    }
+
+    [Fact]
+    public void ConvertIntegerSuites()
+    {
+        Assert.Equal("42L", ConvertOk(UiTypeShapeKind.Primitive, "long", "42"));
+        Assert.Equal("-7L", ConvertOk(UiTypeShapeKind.Primitive, "long", "-7"));
+        Assert.Equal("(short)32000", ConvertOk(UiTypeShapeKind.Primitive, "short", "32000"));
+        Assert.False(ConvertShape(UiTypeShapeKind.Primitive, "short", "70000", out var shortError));
+        Assert.Contains("[-32768 .. 32767]", shortError);
+        Assert.Equal("(byte)255", ConvertOk(UiTypeShapeKind.Primitive, "byte", "255"));
+        Assert.False(ConvertShape(UiTypeShapeKind.Primitive, "byte", "256", out _));
+        Assert.Equal("42", ConvertOk(UiTypeShapeKind.Primitive, "int", "42"));
+    }
+
+    [Fact]
+    public void ConvertCharSuite()
+    {
+        Assert.Equal("'A'", ConvertOk(UiTypeShapeKind.Primitive, "char", "A"));
+        Assert.Equal("'\\n'", ConvertOk(UiTypeShapeKind.Primitive, "char", "\\n"));
+        Assert.Equal("'\\t'", ConvertOk(UiTypeShapeKind.Primitive, "char", "\\t"));
+        Assert.Equal("'\\0'", ConvertOk(UiTypeShapeKind.Primitive, "char", "\\0"));
+        Assert.Equal("'\\''", ConvertOk(UiTypeShapeKind.Primitive, "char", "\\'"));
+        // \uXXXX 转义解析成真实字符；生成侧可打印字符（含非 ASCII）原样写入，控制字符才用 \uXXXX
+        Assert.Equal("'\u263A'", ConvertOk(UiTypeShapeKind.Primitive, "char", "\\u263A"));
+        // 字面量不 Trim：空格是合法字符
+        Assert.Equal("' '", ConvertOk(UiTypeShapeKind.Primitive, "char", " "));
+        Assert.False(ConvertShape(UiTypeShapeKind.Primitive, "char", "", out var emptyError));
+        Assert.Contains("single character", emptyError);
+    }
+
+    [Fact]
+    public void ConvertTimeSpanSuite()
+    {
+        Assert.Equal("new global::System.TimeSpan(2500000L)",
+            ConvertOk(UiTypeShapeKind.Other, "System.TimeSpan", "250ms"));
+        Assert.Equal("new global::System.TimeSpan(15000000L)",
+            ConvertOk(UiTypeShapeKind.Other, "System.TimeSpan", "1.5s"));
+        Assert.Equal("new global::System.TimeSpan(1200000000L)",
+            ConvertOk(UiTypeShapeKind.Other, "System.TimeSpan", "2m"));
+        Assert.Equal("new global::System.TimeSpan(864000000000L)",
+            ConvertOk(UiTypeShapeKind.Other, "System.TimeSpan", "1d"));
+        Assert.Equal("new global::System.TimeSpan(54000000000L)",
+            ConvertOk(UiTypeShapeKind.Other, "System.TimeSpan", "1:30"));
+        Assert.Equal("new global::System.TimeSpan(-2500000L)",
+            ConvertOk(UiTypeShapeKind.Other, "System.TimeSpan", "-250ms"));
+        Assert.False(ConvertShape(UiTypeShapeKind.Other, "System.TimeSpan", "1h30m", out var multi));
+        Assert.Contains("single unit", multi);
+        Assert.False(ConvertShape(UiTypeShapeKind.Other, "System.TimeSpan", "abc", out var bad));
+        Assert.NotNull(bad);
+    }
+
+    [Fact]
+    public void HasConverter_Discriminates()
+    {
+        var shape = new UiTypeShape(UiTypeShapeKind.Other, "Probe.Widget", []);
+        Assert.False(UiLiterals.HasConverter(shape));
+        Assert.True(UiLiterals.HasConverter(
+            new UiTypeShape(UiTypeShapeKind.Enum, "Probe.Weather", ["A"])));
+        Assert.False(UiLiterals.HasConverter(
+            new UiTypeShape(UiTypeShapeKind.Signal, "Probe.NotALiteral", [])));
+    }
+
+    private static string ConvertOk(UiTypeShapeKind kind, string key, string literal)
+    {
+        var shape = new UiTypeShape(kind, key, kind == UiTypeShapeKind.Enum ? ["Cloudy", "Sunny"] : []);
+        Assert.True(UiLiterals.TryConvert(shape, literal, out var converted, out var error),
+            $"{literal} should convert ({key}): {error}");
+        return converted!;
+    }
+
+    private static bool ConvertShape(UiTypeShapeKind kind, string key, string literal, out string? error)
+    {
+        var shape = new UiTypeShape(kind, key, kind == UiTypeShapeKind.Enum ? ["Cloudy", "Sunny"] : []);
+        var ok = UiLiterals.TryConvert(shape, literal, out _, out error);
+        return ok;
+    }
+}

@@ -341,7 +341,7 @@ string        ::= '"' raw-char* '"'
 
 | 写法 | 求值 | 反应式 | 订阅 | 约束/诊断 | 状态 |
 |---|---|---|---|---|---|
-| `P="literal"` | Build 一次 | 否 | 无 | 编译期转换（`EUI003`/`EUI023`） | ✅（4 类型）/ C3 扩展 |
+| `P="literal"` | Build 一次 | 否 | 无 | 编译期转换（`EUI003`/`EUI023`） | ✅（§3.4.2 全表，C3） |
 | `P={expr}` | Build + 依赖变化 | 全部依赖可观察时 | 每条依赖路径一个 watcher（15 §15.4.2） | 目标可写；不可观察 → `EUI036`/`EUI038` | S2（当前一次性，D23） |
 | `@bind-P={expr}` | Build + 双向 | 是 | 源 watcher + 目标事件/订阅 | 源可写可观察路径或 `Signal<T>`；目标可写 | S3（D24） |
 | `P:bind={expr}` | 同 `@bind-P` | 是 | 同 | 旧语法，`EUI043` Warning | ✅ → 弃用（S3） |
@@ -576,7 +576,7 @@ string        ::= '"' raw-char* '"'
 
 - 控件事件：属性名 `On{EventName}`，对应 `{Name}Event` 的 `public static readonly RoutedEvent` 字段（14.4.3）。
   - 只接受 `{expression}`；字面量或 `:bind`/`@bind-` → `EUI004`/`EUI040`。
-  - 处理器必须能转换为 `Action` 或 `Action<RoutedEventArgs>`；签名不匹配由 C# 报错（`EUI024` 为可静态判定项，C3）。
+  - 处理器必须能转换为 `Action` 或 `Action<RoutedEventArgs>`；签名不匹配由 C# 报错（`EUI024` 为可静态判定项，C5）。
   - 生成：`el.AddHandler(global::...Event, handlerExpr);`；事件按源码顺序在 Build 时订阅，元素挂载前完成。
 - 组件事件（C4）：组件当前没有路由事件；委托类型参数即事件，属性名就是参数名（如 `OnClose`），
   不做 `On*` 前缀推断；同样只接受 `{expression}`。
@@ -654,7 +654,8 @@ parent0.Children.Add(c0.Root);   // 最后挂到父级
 - 字面量在**编译期**按目标类型转换；生成代码直接写 C# 字面量，运行时不解析字符串、不反射（R2）。
 - 数字/布尔/枚举/TimeSpan 转换前 `Trim()`；`string` 保留原样（包括前后空格与换行）。
 - 使用 `InvariantCulture`；小数点固定 `.`，不使用千分位；`EUI003` 消息给出期望格式示例。
-- 无转换器的类型：字面量报 `EUI023`（C3 起）；当前 `UiLiterals.TryConvert` 对未知类型也走 `EUI003`（§3.5.3 D14）。
+- 无转换器的类型：字面量报 `EUI023`，提示用 `{expr}` 代替 —— ✅ C3：`UiLiterals.HasConverter(shape)`
+  区分"无转换器"（EUI023）与"有转换器但格式/范围/成员错"（EUI003），D14 关闭。
 
 ### 3.4.2 内置转换器
 
@@ -664,12 +665,12 @@ parent0.Children.Add(c0.Root);   // 最后挂到父级
 | `bool` | `true` / `false`（小写） | `true` / `false` | ✅ |
 | `double` | 十进制/科学计数，可选符号；`1`、`8.5`、`1e-3` | `R` 格式 + `d` 后缀（`8d`） | ✅ |
 | `int` | 十进制整数，可选符号；范围 `int` | 十进制字面量 | ✅ |
-| `float` | 同 `double` | `R` + `f` 后缀 | C3 |
-| `long` / `short` / `byte` | 十进制整数，范围检查 | `L` 后缀 / 显式窄化 | C3 |
-| `decimal` | 十进制数，范围检查 | `m` 后缀 | C3 |
-| `char` | 单字符或 `\n`/`\r`/`\t`/`\\`/`\"`/`\'`/`\0`/`\uXXXX` | C# 字符字面量 | C3 |
-| 枚举 | 成员名，大小写敏感；不接受逗号组合/Flags | `global::Ns.Enum.Member` | C3 |
-| `TimeSpan` | `250ms`、`1.5s`、`2m`、`1h`、`1d`，或 `[-][d.]hh:mm[:ss[.fffffff]]` | `TimeSpan.FromXxx(...)` / `TimeSpan.Parse(..., Invariant)` | C3 |
+| `float` | 同 `double` | `R` + `f` 后缀 | ✅ C3 |
+| `long` / `short` / `byte` | 十进制整数，范围检查 | `L` 后缀 / 显式窄化 | ✅ C3 |
+| `decimal` | 十进制数，范围检查 | `m` 后缀 | ✅ C3 |
+| `char` | 单字符或 `\n`/`\r`/`\t`/`\\`/`\"`/`\'`/`\0`/`\uXXXX` | C# 字符字面量 | ✅ C3 |
+| 枚举 | 成员名，大小写敏感；不接受逗号组合/Flags | `global::Ns.Enum.Member` | ✅ C3 |
+| `TimeSpan` | `250ms`、`1.5s`、`2m`、`1h`、`1d`，或 `[-][d.]hh:mm[:ss[.fffffff]]` | `new global::System.TimeSpan({ticks}L)`（编译期换算） | ✅ C3 |
 | `Color` / `Thickness` / `CornerRadius` | 类型引入时定义 | — | G4 |
 
 规则：
@@ -726,7 +727,7 @@ parent0.Children.Add(c0.Root);   // 最后挂到父级
 | 语法项 | 规范 | 状态 | 备注 |
 |---|---|---|---|
 | 元素/自闭合/闭合标签 | 3.2 | ✅ | 名称区分大小写 |
-| 属性字面量 | 3.1.5 / 3.4 | ✅ | 仅 4 内置类型；C3 扩展 |
+| 属性字面量 | 3.1.5 / 3.4 | ✅ | §3.4.2 全表内置类型（C3） |
 | 属性表达式 `P={expr}` | 3.1.6 / 3.3.3.1 | S2 | 当前一次性（D23）；S2 起单向反应式 |
 | `@bind-P` | 3.1.3 / 3.2.1 / 3.3.3.2 | S3 | 当前 `@` 在标记模式报 `EUI100`（D24） |
 | `:bind` | 3.3.3.3 | ✅ → 弃用 | S3 起 `EUI043`；item 不再一律禁止 |
@@ -773,11 +774,11 @@ parent0.Children.Add(c0.Root);   // 最后挂到父级
 | # | 规范 | 当前实现 | 影响 | 收敛 |
 |---|---|---|---|---|
 | D1 | `:value` 是弃用别名（≡ `P={expr}`），报 `EUI043` Warning | Parser 只识别 `:bind`，`P:value` 进入属性名 → `EUI002`（[Parser.cs:147](../src/EclipseUI.Compiler/Parser.cs#L147)） | 用户在正确语法上收到拼写错误 | S3 |
-| D2 | `Class`/`Style` 保留 `EUI031` | 目录无此属性 → `EUI002`（[Analyzer.cs:99](../src/EclipseUI.Compiler/Analyzer.cs#L99)） | 同上 | C3/C5 |
-| D3 | `<Slot>`/`<ContentSlot>` 保留 `EUI031`（G4 后插槽错误 `EUI022`） | 未知标签 → `EUI001` | 同上 | C6 |
+| D2 | ✅ C3：`Class`/`Style` 在使用点报 `EUI031`（G4 实现样式后语义不变） | 已修复（2026-11-03，[Analyzer.cs](../src/EclipseUI.Compiler/Analyzer.cs)） | ✅ C3 |
+| D3 | ✅ C3：`<Slot>`/`<ContentSlot>` 在使用点报 `EUI031`（仅当目录无同名真实控件；G4 实现后有插槽错误从 `EUI022` 报） | 已修复（2026-11-03） | ✅ C3 |
 | D4 | `Ref` G3，当前应报保留/`EUI029` | 未知属性 → `EUI002` | 同上 | C5 |
 | D5 | 泛型标签 G4，报 `EUI030` | `<DataGrid<Order>>` 在标记模式遇到 `<` → `EUI100` | 诊断不准确 | C6 |
-| D6 | 重复属性 `EUI025` | Analyzer 不查重，Emitter 顺序赋两次 | 后写覆盖，无提示 | C3/C5 |
+| D6 | ✅ C3：完全重复普值属性在属性级报 `EUI025`；同名且任一侧是绑定（`@bind-P`/`:bind`）仍走目标级 `EUI033`（与 S2 语义一致） | 已修复（2026-11-03，`Analyzer` 带 `attrSeen` 字典） | ✅ C3 |
 | D7 | 文本内容与显式目标属性互斥 `EUI033` | ✅ S2：Analyzer 检测文本 + 显式目标、同目标重复绑定并报 `EUI033`（[Analyzer.cs](../src/EclipseUI.Compiler/Analyzer.cs)） | 已消除静默双写 | ✅ S2 |
 | D8 | `Key` 只允许 `@foreach` item 根 | ✅ S2：`VisitBlock` 仅对 `@foreach` 的第一个元素根放行 `Key`，`@if` 报 `EUI010`（[Analyzer.cs](../src/EclipseUI.Compiler/Analyzer.cs)） | 误放行已修复 | ✅ S2 |
 | D9 | item 模板禁止组件级状态（`EUI014`）；item 自己的可观察属性与 item `@bind` 允许；`Key` 不得依赖可观察状态（`EUI039`） | 只检查根层元素属性/根层文本并豁免 `Key`（[TemplateGenerator.cs:196](../src/EclipseUI.Compiler.Generator/TemplateGenerator.cs#L196)）；嵌套元素、条件/嵌套块与 `Key` 未查 | 可能生成无订阅/陈旧更新 | S2/S3 |
@@ -785,12 +786,12 @@ parent0.Children.Add(c0.Root);   // 最后挂到父级
 | D11 | 表达式由 Roslyn tokenizer 捕获 | 手写大括号/字符串扫描（[Lexer.cs:228](../src/EclipseUI.Compiler/Lexer.cs#L228)） | verbatim/raw string、注释内大括号、格式说明符不支持 | C5 |
 | D12 | 未闭合注释报 `EUI100` | `SkipComment` 无 `-->` 时静默到 EOF（[Lexer.cs:187](../src/EclipseUI.Compiler/Lexer.cs#L187)） | 模板后半段"消失"无提示 | C3 |
 | D13 | 依赖分析按符号解析，可见成员范围由 C# 语义决定（含基类成员；`[UiState]` 基类的 `IUiObservable` 覆盖基类属性） | `GetMembers()` 不扫描基类，基类信号既不被发现也不报错（[TemplateGenerator.cs:81](../src/EclipseUI.Compiler.Generator/TemplateGenerator.cs#L81)） | 基类信号按普通成员生成，值陈旧且无订阅 | S2 |
-| D14 | 无转换器 → `EUI023` | 未知 `clrType` 走 `EUI003`（[Catalog.cs:115](../src/EclipseUI.Compiler/Catalog.cs#L115)） | 诊断码不精确 | C3 |
+| D14 | ✅ C3：无转换器报 `EUI023`（`HasConverter` 区分），格式/范围/成员错仍 `EUI003` | 已修复（2026-11-03，[Analyzer.cs](../src/EclipseUI.Compiler/Analyzer.cs)） | ✅ C3 |
 | D15 | 每个 `.ui` 独立增量、稳定输出名 | `Collect()` 全部文件 + `Compilation`（[TemplateGenerator.cs:29](../src/EclipseUI.Compiler.Generator/TemplateGenerator.cs#L29)） | 任一模板变化重跑全部；输出名随文件序号漂移 | S2（spec/02 §2.1/§8.2；§3.6.3 同） |
 | D16 | 块布局透明 | `ConditionalBlock`/`ForEachBlock` 继承 `StackPanelBase`（[Blocks.cs:29](../src/EclipseUI.Runtime/Blocks.cs#L29)）；`IsVisualTransparent` 只跳过自身绘制，不改变布局 | 额外容器参与测量/排布，影响间距与父容器子项数 | G3 |
 | D17 | 组件标签/参数 | ~~目录硬编码 5 个标签~~ 目录已改符号派生（C1/C2）；组件仍不可写，按 C4 推进 | 组件不可写 | C4 |
 | D18 | 块 Dispose 释放条目作用域 | ✅ S2：`ForEachBlock.Dispose`/条目移除逆序释放条目 `BlockScope`（[Blocks.cs](../src/EclipseUI.Runtime/Blocks.cs)） | 已修复（同 D51） | ✅ S2 |
-| D19 | 附加属性保留，报 `EUI031`（G4） | `Grid.Row` 作为未知属性报 `EUI002` | 保留了语法却收到拼写建议 | C6 |
+| D19 | ✅ C3：附加属性在使用点报 `EUI031`（直到 G4 实现真实附加属性） | 已修复（2026-11-03，`Analyzer` 拦截任意 `Owner.Prop` 形式属性名） | ✅ C3 |
 | D20 | `TextRuns` 走 `ITextContentHost.AddRun(string)` | ✅ S2：Emitter 生成 `((ITextContentHost)el).AddRun("...")`；接口与 `TextBlock` 实现已落地（[Emitter.cs](../src/EclipseUI.Compiler.Generator/Emitter.cs)） | 已修复（同 D59） | ✅ S2 |
 | D21 | 属性/事件/内容目标元数据缺失报 `EUI019`/`EUI020`/`EUI021` | Analyzer 不校验这些符号；Emitter 直接生成 `{Name}Property`/`{Name}Event`/`AddRun`，由 C# 报 CS0117 等 | 错误不在 `.ui` span 上 | C3 |
 | D22 | ✅ C2：生成代码类型全用 `global::` 限定、不依赖 using（R4/14.8.2）；`@foreach` 生成的未限定 `List<...>` 已改为全限定，去掉 `ImplicitUsings` 依赖 | 已修复（2026-11-02） | ✅ C2 |

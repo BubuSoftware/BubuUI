@@ -612,6 +612,7 @@ public static class UiCatalogFactory
                 case SpecialType.System_String: return "string";
                 case SpecialType.System_Object: return "object";
                 case SpecialType.System_Decimal: return "decimal";
+                case SpecialType.System_Int16: return "short";
                 default: break;
             }
             var display = Display(type);
@@ -634,6 +635,7 @@ public static class UiCatalogFactory
                 case "string":
                 case "object":
                 case "decimal":
+                case "short":
                     return true;
                 default:
                     return false;

@@ -95,6 +95,16 @@ public static class TemplateAnalyzer
         var resolution = catalog.Resolve(element.Tag);
         if (resolution.Kind != UiTagResolutionKind.Found)
         {
+            // EUI031：具名插槽消费侧语法保留到 G4（spec/01 §6.2）；出现同名真实控件时不走这里。
+            if (resolution.Kind == UiTagResolutionKind.NotFound && element.Tag is "Slot" or "ContentSlot")
+            {
+                diags.Add(UiDiagnostics.Error(UiDiagnostics.ReservedSyntax,
+                    $"'<{element.Tag}>' is reserved for named slots (G4) and has no effect yet", element.TagSpan));
+                element.ResolvedDef = null;
+                foreach (var child in element.Children)
+                    Visit(child, Ctx.Container, catalog, diags, allowKey: false);
+                return;
+            }
             diags.Add(UiDiagnostics.Error(UiDiagnostics.UnknownTag,
                 UnknownTagMessage(element.Tag, resolution, catalog), element.TagSpan));
             element.ResolvedDef = null;
@@ -106,9 +116,40 @@ public static class TemplateAnalyzer
         var def = resolution.Element!;
         element.ResolvedDef = def;
         var targetWrites = new Dictionary<string, bool>();
+        var attrSeen = new Dictionary<string, bool>(StringComparer.Ordinal);
 
         foreach (var attr in element.Attributes)
         {
+            // EUI025：同一标签重复属性（spec/01 §3.1）。完全重复（同为普值赋值，不含绑定）在此收敛；
+            // 名称相同但任一侧是 @bind-P/:bind 的重复仍走目标级 EUI033（S2 行为，spec/01 §3.3）。
+            if (attrSeen.TryGetValue(attr.Name, out var seenIsBind))
+            {
+                if (seenIsBind || attr.IsBind)
+                    diags.Add(UiDiagnostics.Error(UiDiagnostics.SameTargetDuplicate,
+                        $"target '{attr.Name}' of '{element.Tag}' is assigned more than once; keep a single value or binding",
+                        attr.NameSpan));
+                else
+                    diags.Add(UiDiagnostics.Error(UiDiagnostics.DuplicateAttribute,
+                        $"'{attr.Name}' is assigned more than once on '{element.Tag}'", attr.NameSpan));
+                continue;
+            }
+            attrSeen.Add(attr.Name, attr.IsBind);
+
+            // EUI031：保留语法——Class/Style（G4 样式）与附加属性（Owner.Prop 点号形式，G4）。
+            if (attr.Name is "Class" or "Style")
+            {
+                diags.Add(UiDiagnostics.Error(UiDiagnostics.ReservedSyntax,
+                    $"'{attr.Name}' is reserved for styling (G4) and has no effect yet", attr.NameSpan));
+                continue;
+            }
+            if (attr.Name.IndexOf('.') >= 0)
+            {
+                diags.Add(UiDiagnostics.Error(UiDiagnostics.ReservedSyntax,
+                    $"'{attr.Name}' looks like an attached property; attached properties are reserved for G4",
+                    attr.NameSpan));
+                continue;
+            }
+
             if (attr.IsLegacy)
                 diags.Add(UiDiagnostics.Warning(UiDiagnostics.LegacySyntax, LegacySyntaxMessage(attr), attr.NameSpan));
 
@@ -185,12 +226,22 @@ public static class TemplateAnalyzer
             }
             else if (!attr.IsBind && attr.Kind == AttrValueKind.Literal)
             {
-                var key = propDef!.TypeShape.CanonicalKey;
-                if (!UiLiterals.TryConvert(key, attr.Value, out var converted, out var error))
-                    diags.Add(UiDiagnostics.Error(UiDiagnostics.LiteralFormat,
-                        $"property '{attr.Name}' of '{element.Tag}' ({key}) {error}", attr.ValueSpan));
-                else
+                var shape = propDef!.TypeShape;
+                if (!UiLiterals.HasConverter(shape))
+                {
+                    diags.Add(UiDiagnostics.Error(UiDiagnostics.NoLiteralConverter,
+                        $"property '{attr.Name}' of '{element.Tag}' has no literal converter for '{shape.CanonicalKey}'; " +
+                        "write an {expression} instead", attr.ValueSpan));
+                }
+                else if (UiLiterals.TryConvert(shape, attr.Value, out var converted, out var error))
+                {
                     attr.ConvertedLiteral = converted;
+                }
+                else
+                {
+                    diags.Add(UiDiagnostics.Error(UiDiagnostics.LiteralFormat,
+                        $"property '{attr.Name}' of '{element.Tag}' {error}", attr.ValueSpan));
+                }
             }
         }
 

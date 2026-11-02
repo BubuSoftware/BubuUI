@@ -302,7 +302,7 @@ string        ::= '"' raw-char* '"'
 | 根层不允许文本或控制流块 | `EUI006` | ✅ |
 | 开始/结束标签同名且大小写一致 | `EUI100` | ✅ |
 | 属性必须有 `=` 和值 | `EUI100` | ✅ |
-| 同一元素重复属性 | `EUI025` | G3/C3（当前未检，design/03 D6） |
+| 同一元素重复属性 | `EUI025` | ✅ C3（纯普值同名重复；任一侧是绑定的同名重叠仍 `EUI033`，见 §3.3） |
 | `@if`/`@foreach` 只能出现在 `Children` 内容模型内 | `EUI006` | ✅ |
 | 块内容只允许元素与嵌套块，不允许裸文本 | `EUI006` | ✅ |
 | `Key` 只能出现在 `@foreach` item 模板的第一个元素根上 | `EUI010` | ✅ |
@@ -374,7 +374,7 @@ string        ::= '"' raw-char* '"'
 
 | 写法 | 求值 | 反应式 | 运行时机制 | 约束/诊断 | 状态 |
 |---|---|---|---|---|---|
-| `P="literal"` | Build 一次 | 否 | 编译期转换 + 属性赋值 | `EUI003`/`EUI023` | ✅（4 类型）/ C3 扩展 |
+| `P="literal"` | Build 一次 | 否 | 编译期转换 + 属性赋值 | `EUI003`/`EUI023` | ✅（§5.2 全表，C3） |
 | `P={expr}` | Build + 每次渲染 | 是（组件级） | 控件属性直接写（相等短路）；组件参数相等保护 + 子 `Invalidate()` | 目标可写；不做依赖分析 | S1/S4（当前一次性，D23） |
 | `@bind-P={expr}` | Build + 双向 | 是 | 控件 `UiBinding`；组件 `PChanged` + 参数推送 | 源可写左值；目标可写；组件需 `PChanged` | ✅ S3（控件）/ S4+C4（组件） |
 | `P:bind={expr}` | 同 `@bind-P` | 是 | 同 | 旧语法，`EUI043` Warning | ✅ S3 → 弃用 |
@@ -588,7 +588,7 @@ string        ::= '"' raw-char* '"'
   `public static readonly RoutedEvent` 字段（design/14 §14.4.3）。
   - 只接受 `{expression}`；字面量或 `:bind`/`@bind-` → `EUI004`/`EUI040`。
   - 处理器必须能转换为 `Action` 或 `Action<RoutedEventArgs>`；签名不匹配由 C# 报错
-    （`EUI024` 为可静态判定项，C3）。
+    （`EUI024` 为可静态判定项，C5——C3 只落 EUI023/EUI025/EUI031）。
   - **build-once**：Build 时 `el.AddHandler({Event}, 包装);`，不在渲染时重新注册。
   - 处理器表达式先转为委托局部 `h{N}`（类型为匹配到的 `Action`/`Action<RoutedEventArgs>`），
     包装在用户处理器**同步返回后**调用所属组件 `Invalidate()`：
@@ -659,15 +659,15 @@ new cmp0
 | 写法 | 语义 | 状态 | 现在的诊断 |
 |---|---|---|---|
 | `Key={expr}` | `@foreach` 条目身份 | ✅ | `EUI010`（位置/形式/空表达式） |
-| `Ref={ident}` | 元素/组件实例赋给 code-behind 字段 | G3 | `EUI029`（保留；当前 `EUI002`，D4） |
-| `Class="..."` | 样式类 | G4 | `EUI031`（当前 `EUI002`，D2） |
-| `Style="..."` | 内联样式 | G4 | `EUI031`（当前 `EUI002`，D2） |
+| `Ref={ident}` | 元素/组件实例赋给 code-behind 字段 | G3 | `EUI029`（保留；**当前 `EUI002`，C5，D4**） |
+| `Class="..."` | 样式类 | G4 | ✅ `EUI031`（C3，D2 关闭） |
+| `Style="..."` | 内联样式 | G4 | ✅ `EUI031`（C3，D2 关闭） |
 | `P:bind={expr}` | 旧双向绑定（≡ `@bind-P`） | ✅ → 弃用 | `EUI043` Warning（S3 起） |
 | `P:value={expr}` | 旧单向别名（≡ `P={expr}`） | ✅ → 弃用 | `EUI043` Warning（S3 起） |
-| `<Slot Name="...">` | 具名插槽（消费侧） | G4 | `EUI031`（当前 `EUI001`，D3） |
-| `<ContentSlot Name="..." />` | 插槽宿主（组件模板侧） | G4 | `EUI031`（当前 `EUI001`，D3） |
+| `<Slot Name="...">` | 具名插槽（消费侧） | G4 | ✅ `EUI031`（C3，D3 关闭） |
+| `<ContentSlot Name="..." />` | 插槽宿主（组件模板侧） | G4 | ✅ `EUI031`（C3，D3 关闭） |
 | `<DataGrid<Order>>` | 泛型标签 | G4 | `EUI030`（当前 `EUI100`，D5） |
-| `Grid.Row="1"` | 附加属性 | G4 | `EUI031`（当前 `EUI002`，D19） |
+| `Grid.Row="1"` | 附加属性 | G4 | ✅ `EUI031`（C3，D19 关闭） |
 
 保留语法的统一规则：
 
@@ -696,12 +696,12 @@ new cmp0
 | `bool` | `true` / `false`（小写） | `true` / `false` | ✅ |
 | `double` | 十进制/科学计数，可选符号；`1`、`8.5`、`1e-3` | `R` 格式 + `d` 后缀（`8d`） | ✅ |
 | `int` | 十进制整数，可选符号；范围 `int` | 十进制字面量 | ✅ |
-| `float` | 同 `double` | `R` + `f` 后缀 | C3 |
-| `long` / `short` / `byte` | 十进制整数，范围检查 | `L` 后缀 / 显式窄化 | C3 |
-| `decimal` | 十进制数，范围检查 | `m` 后缀 | C3 |
-| `char` | 单字符或 `\n`/`\r`/`\t`/`\\`/`\"`/`\'`/`\0`/`\uXXXX` | C# 字符字面量 | C3 |
-| 枚举 | 成员名，大小写敏感；不接受逗号组合/Flags | `global::Ns.Enum.Member` | C3 |
-| `TimeSpan` | `250ms`、`1.5s`、`2m`、`1h`、`1d`，或 `[-][d.]hh:mm[:ss[.fffffff]]` | `new global::System.TimeSpan({ticks}L)`（编译期换算） | C3 |
+| `float` | 同 `double` | `R` + `f` 后缀 | ✅ C3 |
+| `long` / `short` / `byte` | 十进制整数，范围检查 | `L` 后缀 / 显式窄化 | ✅ C3 |
+| `decimal` | 十进制数，范围检查 | `m` 后缀 | ✅ C3 |
+| `char` | 单字符或 `\n`/`\r`/`\t`/`\\`/`\"`/`\'`/`\0`/`\uXXXX` | C# 字符字面量 | ✅ C3 |
+| 枚举 | 成员名，大小写敏感；不接受逗号组合/Flags | `global::Ns.Enum.Member` | ✅ C3 |
+| `TimeSpan` | `250ms`、`1.5s`、`2m`、`1h`、`1d`，或 `[-][d.]hh:mm[:ss[.fffffff]]` | `new global::System.TimeSpan({ticks}L)`（编译期换算） | ✅ C3 |
 | `Color` / `Thickness` / `CornerRadius` | 类型引入时定义 | — | G4 |
 
 规则：
@@ -739,7 +739,7 @@ new cmp0
 |---|---|---|---|---|
 | `EUI001` | 未知标签 | 标签 | Error | ✅ |
 | `EUI002` | 未知属性/事件/参数；若同名 CLR 属性存在但未注册 `StyledProperty`，提示补注册 | 属性名 | Error | ✅ |
-| `EUI003` | 字面量格式错/范围错/枚举成员不存在 | 属性值 | Error | ✅（4 类型）/ C3 |
+| `EUI003` | 字面量格式错/范围错/枚举成员不存在 | 属性值 | Error | ✅（§5.2 全表，C3） |
 | `EUI004` | 事件缺 `{expression}` / 事件用 `:bind` 或 `@bind-` | 属性 | Error | ✅ |
 | `EUI005` | 缺少与 `.ui` 同名的 code-behind | 文件 | Error | ✅ |
 | `EUI006` | 内容模型不允许（文本/元素/控制流/根层文本或块） | 子内容/根 | Error | ✅ |
@@ -759,15 +759,15 @@ new cmp0
 | `EUI020` | 事件字段缺失或类型不是 `RoutedEvent` | 属性名 | Error | C3 |
 | `EUI021` | 内容目标缺失或类型不匹配 | 子内容 | Error | C3 |
 | `EUI022` | 插槽未知/重复/位置非法 | 标签/属性 | Error | G4/C6 |
-| `EUI023` | 属性类型没有字面量转换器 | 属性值 | Error | C3 |
-| `EUI024` | 事件处理器签名不匹配（可静态判定时） | 属性值 | Error | C3 |
-| `EUI025` | 同一标签重复属性 | 属性名 | Error | G3/C3 |
+| `EUI023` | 属性类型没有字面量转换器 | 属性值 | Error | ✅ C3 |
+| `EUI024` | 事件处理器签名不匹配（可静态判定时） | 属性值 | Error | C5（Roslyn 层；C3 未动） |
+| `EUI025` | 同一标签重复属性（任一侧是绑定的同名重叠 → `EUI033`） | 属性名 | Error | ✅ C3 |
 | `EUI026` | 控件/组件元数据声明非法（源项目） | 声明处 | Error/Warning | C3 |
 | `EUI027` | 组件必填参数缺失 | 标签 | Error | C4 |
 | `EUI028` | 组件参数/委托声明非法：非 public / 无 setter / `init` / C# `required` / 非法泛型实参 / 委托含 `ref`/`out`/`in` | 声明处/属性名 | Error | C4 |
 | `EUI029` | `Ref` 目标非法 | 属性值 | Error | C5/G3 |
 | `EUI030` | 泛型标签暂不支持 | 标签 | Error | C6/G4 |
-| `EUI031` | 语法已保留、尚未实现（`Class`/`Style`/`<Slot>`/`<ContentSlot>`/附加属性） | 标签/属性 | Error | C3/C5/G4 |
+| `EUI031` | 语法已保留、尚未实现（`Class`/`Style`/`<Slot>`/`<ContentSlot>`/附加属性） | 标签/属性 | Error | ✅ C3（`<Slot>`/`<ContentSlot>` 仅当目录无同名真实控件时拦截） |
 | `EUI032` | **停用**：原"非 Signal 组件参数"，后继 EUI044 亦停用 | — | — | — |
 | `EUI033` | 同一目标重复赋值（文本内容 + 显式目标属性；`P=` 与 `@bind`/`:bind`/`:value` 冲突） | 属性值/文本 | Error | ✅ S2 |
 | `EUI034` | **停用**：v3 非法 `[UiState]`/`[UiObservable]` 声明；状态生成器移除 | — | — | — |

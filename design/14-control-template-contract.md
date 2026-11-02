@@ -554,9 +554,12 @@ parentN.Children.Add(cmp0.Root);
 
 ### 14.7.3 字面量转换器
 
-- v1 已实现：`string`、`bool`、`double`、`int`（[Catalog.cs:80](../src/EclipseUI.Compiler/Catalog.cs#L80)）。
-- C3 扩展：`float`、`long`、`short`、`byte`、`decimal`、`char`、枚举（成员名，大小写敏感）、
-  `TimeSpan`（`250ms`/`1.5s`/`00:00:01`）。
+- v1 早期已实现：`string`、`bool`、`double`、`int`。
+- **C3 ✅（2026-11-03）扩展**：`float`（`R` 格式 + `f`，超 float 范围报 EUI003）、`long`（`L` 后缀）、
+  `short`/`byte`（显式窄化 cast，范围检查）、`decimal`（`m` 后缀）、`char`（单字符或
+  `\n`/`\r`/`\t`/`\\`/`\"`/`\'`/`\0`/`\uXXXX`，**不 Trim**）、枚举（成员名，大小写敏感）、
+  `TimeSpan`（单单位 `250ms`/`1.5s`/`2m`/`1h`/`1d` 或 `[-][d.]hh:mm[:ss[.fffffff]]`，
+  生成 `new global::System.TimeSpan({ticks}L)`；负值与 `\0` 转义已测）。测试 `C3LiteralAndDiagnosticsTests`。
 - `Color`/`Thickness`/`CornerRadius` 在 G4 引入类型时同步提供转换器（Color：`#RGB`/`#ARGB`/`#RRGGBB`/`#AARRGGBB`；Thickness：1/2/4 个数字）。
 - 枚举成员表由符号扫描写入 `UiTypeShape.EnumMembers`，分析器不引用 Roslyn 也能校验并给出候选。
 - 转换器查找键固定为 `UiTypeShape.CanonicalKey`（内置类型 = C# 关键字名，其余 = 命名空间限定全名），
@@ -654,7 +657,8 @@ parentN.Children.Add(cmp0.Root);
 
 ### 14.9.1 诊断表
 
-现有代码保持不变；EUI016 起的码表按 C3 实现，新增码从 EUI046 起（不重用停用编号）。表中列与控件契约相关的诊断；v4 的反应式诊断口径以
+现有代码保持不变；EUI016 起的码表分片实现（扫描侧元数据诊断 C1/C2；使用点 EUI023/EUI025/EUI031 C3；
+其余按 C4–C6），新增码从 EUI046 起（不重用停用编号）。表中列与控件契约相关的诊断；v4 的反应式诊断口径以
 [spec/03 §11.1](../spec/03-reactivity-and-binding.md) 与 [spec/01 §6.2](../spec/01-template-syntax.md) 为准。
 EUI005/007/008/009/011/012/013/015 分别是 code-behind、`@foreach` 类型推断与指令诊断，不受本文影响。
 v3 的 EUI014/EUI032/EUI034–EUI036/EUI038–EUI039/EUI041–EUI042/EUI044 已停用，编号不复用。
@@ -867,9 +871,9 @@ Build(Compilation c):                       // 纯函数：同样的 Compilation
 |---|---|---|---|
 | **C1** ✅ | 特性、目录模型、符号扫描器、一致性/快照测试；不改分析器与生成器行为 | 派生目录 **⊇** 手写目录，差集（属性 6→17）逐条评审并写进变更记录；`dotnet test` 全绿 | `Runtime/UiAttributes.cs`、`Compiler.Metadata/*`、`Catalog.cs` |
 | **C2** ✅（2026-11-02） | 生成器切到派生目录；内置控件加 `[UiContent]`；基础设施元素加 `[UiIgnore]`；**输入事件字段从 `InputEvents` 迁入 `Element`（19 处调用改名，删静态类）**；`ClipToBounds` 失效级别改 `Render`；删除手写目录 | Gallery/Counter 渲染与交互不变；`Padding` 等属性、8 个事件变为模板可用（更新文档）—— ✅ 全部落地（落地记录见 §14.12.2） | `Input.cs`、`Element.cs`、`InputRouter.cs`、`FocusManager.cs`、`Controls.cs`、`TemplateGenerator.cs`、`Panels.cs`、`TextBlock.cs`、`Blocks.cs` |
-| **C3** | 转换器扩展（enum/TimeSpan/char/Color 预留）；EUI016–EUI026 + EUI031 落地；属性暴露一致性测试 | 诊断表前半可用；无转换器类型正确报 EUI023 | `Catalog.cs`、`Analyzer.cs`、`Emitter.cs` |
+| **C3** ✅（2026-11-03） | 转换器扩展（float/decimal/long/short/byte/char/枚举/TimeSpan；Color 预留 G4）；使用点诊断 **EUI023**（无转换器）/ **EUI025**（纯普值重复属性）/ **EUI031**（Class/Style/点号附加属性/`<Slot>`/`<ContentSlot>`）落地；属性暴露一致性测试 | 诊断表前半可用；无转换器类型正确报 EUI023 —— ✅ 全部落地（落地记录见 §14.12.3） | `Catalog.cs`、`Analyzer.cs`、`Metadata/UiCatalogFactory.cs` |
 | **C4** | 组件标签：参数元数据（`[UiParameter(Required=true)]`、`{P}Changed`）、委托事件、默认内容、生命周期与作用域释放；生成器集成测试 | 第三方/自定义组件可写入 `.ui`；参数/内容生成与 spec/02 §4.12 一致 | `TemplateGenerator.cs`、`Emitter.cs`、`Component.cs` |
-| **C5** | `Ref`（G3）；保留语法诊断与剩余分析器收敛（EUI019/EUI020/EUI021/EUI025/EUI029/EUI031/EUI033） | G3 非反应式缺口收敛；诊断不再落"未知" | `Analyzer.cs`、`Emitter.cs` |
+| **C5** | `Ref`（G3）；保留语法诊断与剩余分析器收敛（**EUI019/EUI020/EUI021** 使用点与 **EUI029**；EUI025/EUI031 已由 C3 落地，EUI033 为 S2 既有） | G3 非反应式缺口收敛；诊断不再落"未知" | `Analyzer.cs`、`Emitter.cs` |
 | **C6** | 具名插槽 + `ContentSlot` 宿主；附加属性；泛型标签（G4） | 与 03 语法表对齐 | 编译器/运行时/样式 |
 
 状态/反应式不在 C1–C6 内重复排期：失效队列/`U{N}`/根级重算属
@@ -965,6 +969,22 @@ Roslyn 4.9.2 的公开 API 没有这个成员（公开的是 `IModuleSymbol.Refe
 
 **运行期不变量**复测通过：`StyledPropertyRegistry`/事件字段交叉一致、失效级别白名单
 （唯一例外仍是 `Element.IsHitTestVisible`）均随新表面复跑。
+
+### 14.12.3 C3 落地记录（2026-11-03）
+
+全部 C3 工作项完成，`dotnet test` 281 例全绿（Headless 127 / Compiler 93 / Rendering 61）：
+
+| 工作项 | 结果 |
+|---|---|
+| 转换器扩展 | `UiLiterals` 重写为按 `UiTypeShape` 判定：新增 `HasConverter()`（EUI023 判定）与 `TryConvert(shape,…)`；`Catalog.cs` 手写类型表从此不再参与分析（文件只剩常量与转换器）。`float` 越界检查、整数显式窄化、枚举 `global::Ns.Type.Member`（候选成员随目录 `EnumMembers` 给出）、TimeSpan 编译期换算 ticks 均落地 |
+| EUI023 | 与 EUI003 拆分：无转换器 → EUI023（提示 `{expression}`）；有转换器但格式/范围/成员错 → EUI003（design/03 D14 关闭）；`UiCatalogFactory.CanonicalKey` 补 `System_Int16 → "short"` |
+| EUI025 | 全重复普值属性在属性级收敛；**同名且任一侧是绑定（`@bind-P`/`:bind`）仍走目标级 EUI033**，与 S2 测试语义保持一致（spec/01 §3.1/§3.3）。design/03 D6 关闭 |
+| EUI031 | `Class`/`Style`、点号附加属性（任意 `Owner.Prop`）在使用点报 EUI031；`<Slot>`/`<ContentSlot>` **仅当目录无同名真实控件时**报 EUI031。design/03 D2/D3/D19 关闭 |
+| 测试 | `tests/EclipseUI.Headless.Tests/C3LiteralAndDiagnosticsTests.cs`：24 例（合成 Probe 标签测使用点诊断；`UiLiterals` 单元级直测，含负 TimeSpan、`\0`/`\uXXXX` 转义、char 不 Trim、范围拒绝） |
+
+**范围说明**：EUI016/EUI019/EUI020/EUI021/EUI026 的扫描侧元数据诊断已在 C1/C2 落地（`Problems`/`HiddenTags`），
+其**使用点**口径仍归 C5；`Ref`（EUI029）C3 未动（此前即 EUI002，语义待 C5 定）。
+`Color`/`Thickness`/`CornerRadius` 转换器随 G4 类型引入。
 
 ## 14.13 风险与开放问题
 

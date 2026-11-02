@@ -29,6 +29,12 @@
 > `TestData/BuiltInSurface.golden.txt`；`@foreach` 生成代码全 `global::` 限定（D22 修复）。
 > 落地记录 [14 §14.12.2](./design/14-control-template-contract.md)，台账 D22/D65/D69/D72 关闭。
 > 257 个测试全绿（Headless 103 / Compiler 93 / Rendering 61）。
+> **C3 转换器与使用点诊断切片已通过（2026-11-03）**：内置转换器补齐到 spec/01 §5.2 全表
+> （float/decimal/long/short/byte/char/枚举/TimeSpan，编译期换算、含量程/转义校验）；
+> 使用点诊断 `EUI023`（无字面量转换器，提示 `{expression}`）、`EUI025`（纯普值重复属性；
+> 同名含绑定仍走 `EUI033`）、`EUI031`（`Class`/`Style`/附加属性/`<Slot>`/`<ContentSlot>` 保留语法）落地。
+> 落地记录 [14 §14.12.3](./design/14-control-template-contract.md)，台账 D2/D3/D6/D14/D19 关闭。
+> 281 个测试全绿（Headless 127 / Compiler 93 / Rendering 61）。
 > 组件标签、组件参数与组件级 `@bind`（`PChanged`）仍按 C4 推进；样式主题、IDE 支持为后续里程碑。
 
 ## 核心理念
@@ -60,8 +66,9 @@ samples/CounterApp/              三个样例组件：Counter（计数器/条件
                                  生成的 C# 落盘在 Generated/ 供检视
 samples/GalleryApp/              G2 验收样例：Counter + TaskList 真窗口交互、--selfcheck、
                                  CPU/窗口截图与帧时间统计
-tests/EclipseUI.Headless.Tests/  103 个无头测试：属性引擎、布局（含 padding）、块协调、
-                                 输入/焦点路由、shaping、编译器、失效队列/所有权、端到端（含泄漏回归）
+tests/EclipseUI.Headless.Tests/  127 个无头测试：属性引擎、布局（含 padding）、块协调、
+                                 输入/焦点路由、shaping、编译器、字面量转换与使用点诊断（C3）、
+                                 失效队列/所有权、端到端（含泄漏回归）
 tests/EclipseUI.Compiler.Tests/  93 个测试：39 个生成器契约测试（确定性 hint、U/R 形态与 Render、
                                  块/绑定生成、@bind 源与目标诊断、集合与嵌套 item 类型推断、#line 映射）
                                  + 42 个目录扫描测试（发现规则、属性/事件/内容/参数派生、
@@ -188,10 +195,11 @@ public partial class Counter
 ## 下一步（按开发计划）
 
 G1 已出结论（Go），G2 前三切片已通过：`CounterApp` / `TaskList` 已在真实窗口可交互，
-damage v0 让空闲帧不再提交 GPU。G3 的 C1/C2 目录派生切片已通过（手写目录删除，
-模板表面 17 属性项 / 9 个事件名，落地记录见
-[14 §14.12.2](./design/14-control-template-contract.md)）。当前优先级是 **G2 剩余部分**：
-像素 golden、retained layer、目标机 60fps 复测；G3 并行推进 C3（转换器 + 使用点诊断）。
+damage v0 让空闲帧不再提交 GPU。G3 的 C1/C2 目录派生切片与 C3 转换器/使用点诊断切片已通过
+（手写目录删除，模板表面 17 属性项 / 9 个事件名；转换器补齐到 spec/01 §5.2 全表，
+`EUI023`/`EUI025`/`EUI031` 落地，落地记录见
+[14 §14.12.2/§14.12.3](./design/14-control-template-contract.md)）。当前优先级是 **G2 剩余部分**：
+像素 golden、retained layer、目标机 60fps 复测；G3 并行推进 C4（组件标签）。
 完整路线图见 [09 开发计划](./design/09-development-plan.md)，G1 数据见
 [render-gate-2026-11](./design/reports/render-gate-2026-11.md)，G2 进度见
 [11 G2 第一切片](./design/11-g2-surface-slice.md)、[12 G2 第二切片](./design/12-g2-interactive-slice.md)
@@ -199,6 +207,6 @@ damage v0 让空闲帧不再提交 GPU。G3 的 C1/C2 目录派生切片已通�
 
 1. **G2 剩余**：像素 golden + retained layer / 局部重绘 + 目标机 60fps。
 2. **G3 语义/编译器硬化**（与 G2 并行）：块布局透明化、语法级表达式重写、按文件增量与 `#line` 列映射、
-   转换器扩展与 EUI016–EUI026 使用点诊断（C3）、组件标签与组件级绑定（C4）。
+   组件标签与组件级绑定（C4）、`Ref` 与剩余使用点诊断收敛（C5）。
 3. **G4 样式/控件/虚拟化**：选择器编译、亮暗主题、基础控件集、`VirtualizingPanel`。
 4. **G5 IDE P0–P1**：TextMate grammar + LSP server（表达式投影进 Roslyn）+ VS Code/Rider 壳。
