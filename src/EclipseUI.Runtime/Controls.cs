@@ -2,6 +2,7 @@ using System;
 
 namespace EclipseUI.Elements;
 
+[UiContent(UiContentKind.Text, Target = nameof(Label))]
 public sealed class Button : Element
 {
     public static readonly RoutedEvent ClickEvent = new RoutedEvent("Click", RoutingStrategy.Bubble);
@@ -16,9 +17,9 @@ public sealed class Button : Element
 
     public Button()
     {
-        AddHandler(InputEvents.PointerPressedEvent, OnPointerPressed);
-        AddHandler(InputEvents.PointerReleasedEvent, OnPointerReleased);
-        AddHandler(InputEvents.KeyDownEvent, OnKeyDown);
+        AddHandler(Element.PointerPressedEvent, OnPointerPressed);
+        AddHandler(Element.PointerReleasedEvent, OnPointerReleased);
+        AddHandler(Element.KeyDownEvent, OnKeyDown);
     }
 
     public override bool IsFocusable => true;
@@ -64,8 +65,11 @@ public sealed class Button : Element
     protected internal override void ArrangeCore(Rect final) { }
 }
 
+[UiContent(UiContentKind.Text, Target = nameof(Label))]
 public sealed class CheckBox : Element
 {
+    public static readonly RoutedEvent CheckedChangedEvent = new RoutedEvent("CheckedChanged", RoutingStrategy.Bubble);
+
     public static readonly StyledProperty<bool> CheckedProperty =
         StyledProperty<bool>.Register<CheckBox>("Checked", false,
             new PropertyOptions { Invalidate = InvalidateKind.Render });
@@ -78,9 +82,9 @@ public sealed class CheckBox : Element
 
     public CheckBox()
     {
-        AddHandler(InputEvents.PointerPressedEvent, OnPointerPressed);
-        AddHandler(InputEvents.PointerReleasedEvent, OnPointerReleased);
-        AddHandler(InputEvents.KeyDownEvent, OnKeyDown);
+        AddHandler(Element.PointerPressedEvent, OnPointerPressed);
+        AddHandler(Element.PointerReleasedEvent, OnPointerReleased);
+        AddHandler(Element.KeyDownEvent, OnKeyDown);
     }
 
     public override bool IsFocusable => true;
@@ -100,7 +104,12 @@ public sealed class CheckBox : Element
         set => SetValue(LabelProperty, value);
     }
 
-    public void Toggle() => Checked = !Checked;
+    // 只在交互路径广播：绑定回推走 setter，若也广播会让模板的 OnCheckedChanged 被源写回再次触发。
+    public void Toggle()
+    {
+        Checked = !Checked;
+        RaiseEvent(new RoutedEventArgs(CheckedChangedEvent) { Source = this });
+    }
 
     private void OnPointerPressed()
     {

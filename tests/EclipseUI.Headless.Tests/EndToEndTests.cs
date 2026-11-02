@@ -31,7 +31,7 @@ public class CounterEndToEndTests
     {
         var (_, root, text, checkbox) = Mount();
 
-        checkbox.Toggle(); // 双向绑定 → showButton → @if 挂载按钮
+        checkbox.Toggle(); // UiBinding 回写 showButton 并失效 → @if 挂载按钮
         root.UpdateLayout();
         var button = root.Content.Descendants<Button>().Single();
 
@@ -46,6 +46,7 @@ public class CounterEndToEndTests
         var (_, root, text, checkbox) = Mount();
 
         checkbox.Toggle();
+        root.UpdateLayout();
         root.Content.Descendants<Button>().Single().Click();
         root.UpdateLayout();
 
@@ -74,34 +75,37 @@ public class CounterEndToEndTests
 public class PrefsEndToEndTests
 {
     [Fact]
-    public void ConditionalBind_DoesNotLeak_AndRestoresState()
+    public void ConditionalBind_RebuildsFromSourceState()
     {
-        // 修复回归：条件内容里的 :bind 曾被发成 Track（组件级），
-        // toggle 一次泄漏一个订阅；现在挂在内容订阅表上，卸载即释放。
         var component = new Prefs();
         var root = new HeadlessRoot(component);
         root.UpdateLayout();
 
-        Assert.Equal(0, component.extra.SubscriberCount);
+        Assert.Empty(root.Content.Descendants<CheckBox>());
 
-        component.showExtra.Value = true;
-        Assert.Equal(1, component.extra.SubscriberCount); // 双向绑定建立
-
+        component.showExtra = true;
+        component.Invalidate();
+        root.UpdateLayout();
         var checkbox = root.Content.Descendants<CheckBox>().Single();
-        checkbox.Toggle();
-        Assert.True(component.extra.Value); // 属性变更写回 signal
+        Assert.False(checkbox.Checked);
 
-        component.showExtra.Value = false;
-        Assert.Equal(0, component.extra.SubscriberCount); // 卸载释放（泄漏时为 1）
+        checkbox.Toggle(); // 目标变化 → UiBinding 回写源
+        Assert.True(component.extra);
 
-        component.showExtra.Value = true;
+        component.showExtra = false; // 卸载分支：绑定随作用域释放
+        component.Invalidate();
+        root.UpdateLayout();
+        Assert.Empty(root.Content.Descendants<CheckBox>());
+
+        component.showExtra = true; // 重建从字段恢复
+        component.Invalidate();
+        root.UpdateLayout();
         var rebuilt = root.Content.Descendants<CheckBox>().Single();
         Assert.NotSame(checkbox, rebuilt);
-        Assert.True(rebuilt.Checked);                     // 重建从 signal 恢复（改 UI 不丢状态）
-        Assert.Equal(1, component.extra.SubscriberCount); // 反复开关无累积
+        Assert.True(rebuilt.Checked);
 
-        component.showExtra.Value = false;
-        Assert.Equal(0, component.extra.SubscriberCount);
+        rebuilt.Toggle();
+        Assert.False(component.extra);
     }
 }
 
@@ -114,11 +118,12 @@ public class TaskListEndToEndTests
         var root = new HeadlessRoot(component);
         root.UpdateLayout();
 
-        component.tasks.Value = new List<TaskItem>
+        component.tasks = new List<TaskItem>
         {
             new TaskItem { Id = 1, Name = "alpha" },
             new TaskItem { Id = 2, Name = "beta" },
         };
+        component.Invalidate();
         root.UpdateLayout();
 
         var items = root.Content.Descendants<ListBoxItem>().ToList();
@@ -126,18 +131,39 @@ public class TaskListEndToEndTests
         var first = items[0];
         Assert.Equal("alpha", first.Descendants<TextBlock>().Single().FullText());
 
-        component.tasks.Value = new List<TaskItem>
-        {
-            new TaskItem { Id = 2, Name = "beta" },
-            new TaskItem { Id = 1, Name = "alpha2" },
-        };
+        var alpha = component.tasks[0];
+        var beta = component.tasks[1];
+        alpha.Name = "alpha2";
+        component.tasks = new List<TaskItem> { beta, alpha };
+        component.Invalidate();
         root.UpdateLayout();
 
         items = root.Content.Descendants<ListBoxItem>().ToList();
         Assert.Equal(2, items.Count);
-        Assert.Same(first, items[1]); // Key 对齐复用实例，O(变动数)
-        Assert.Equal("alpha2", items[1].Descendants<TextBlock>().Single().FullText()); // 定向更新重跑
+        Assert.Same(first, items[1]); // Key + item 身份相同：复用实例
+        Assert.Equal("alpha2", items[1].Descendants<TextBlock>().Single().FullText()); // 渲染动作重跑
         Assert.Equal("beta", items[0].Descendants<TextBlock>().Single().FullText());
+    }
+
+    [Fact]
+    public void SameKey_NewItemInstance_RebuildsEntry()
+    {
+        var component = new TaskList();
+        var root = new HeadlessRoot(component);
+        root.UpdateLayout();
+
+        component.tasks = new List<TaskItem> { new TaskItem { Id = 1, Name = "alpha" } };
+        component.Invalidate();
+        root.UpdateLayout();
+        var first = root.Content.Descendants<ListBoxItem>().Single();
+
+        component.tasks = new List<TaskItem> { new TaskItem { Id = 1, Name = "beta" } };
+        component.Invalidate();
+        root.UpdateLayout();
+
+        var rebuilt = root.Content.Descendants<ListBoxItem>().Single();
+        Assert.NotSame(first, rebuilt);
+        Assert.Equal("beta", rebuilt.Descendants<TextBlock>().Single().FullText());
     }
 
     [Fact]
@@ -147,9 +173,50 @@ public class TaskListEndToEndTests
         var root = new HeadlessRoot(component);
         root.UpdateLayout();
 
-        component.tasks.Value = new List<TaskItem>();
+        component.tasks = new List<TaskItem>();
+        component.Invalidate();
         root.UpdateLayout();
         Assert.Empty(root.Content.Descendants<ListBoxItem>());
         Assert.Equal("Tasks", root.Content.Descendants<TextBlock>().First().FullText());
+    }
+
+    [Fact]
+    public void ItemBinding_WritesBackToItem_RebuildsFromItem_AndIsReleasedWithTheEntry()
+    {
+        var component = new TaskList();
+        var root = new HeadlessRoot(component);
+        root.UpdateLayout();
+
+        var alpha = new TaskItem { Id = 1, Name = "alpha" };
+        var beta = new TaskItem { Id = 2, Name = "beta" };
+        component.tasks = new List<TaskItem> { alpha, beta };
+        component.Invalidate();
+        root.UpdateLayout();
+
+        var firstCheck = root.Content.Descendants<CheckBox>().First();
+        Assert.False(alpha.Done);
+
+        firstCheck.Toggle(); // 条目内 @bind-Checked：目标变化 → 回写 item 并失效组件
+        Assert.True(alpha.Done);
+        root.UpdateLayout();
+        Assert.True(root.Content.Descendants<CheckBox>().First().Checked); // 重渲染不丢回写
+
+        // 同 Key 换实例：条目重建，新绑定从 item 恢复
+        var replaced = new TaskItem { Id = 1, Name = "alpha", Done = true };
+        component.tasks = new List<TaskItem> { replaced, beta };
+        component.Invalidate();
+        root.UpdateLayout();
+        var rebuiltCheck = root.Content.Descendants<CheckBox>().First();
+        Assert.NotSame(firstCheck, rebuiltCheck);
+        Assert.True(rebuiltCheck.Checked);
+
+        // 条目移除：绑定随作用域释放，旧控件不再回写
+        component.tasks = new List<TaskItem> { beta };
+        component.Invalidate();
+        root.UpdateLayout();
+        Assert.Single(root.Content.Descendants<CheckBox>());
+
+        firstCheck.Toggle();
+        Assert.True(alpha.Done);
     }
 }

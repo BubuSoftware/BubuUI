@@ -5,75 +5,11 @@ using System.Text;
 
 namespace EclipseUI.Compiler;
 
-public enum UiContentModel
-{
-    /// <summary>文本子内容编译为多个 TextRun。</summary>
-    TextRuns,
-    /// <summary>文本子内容进入单一 Label 属性。</summary>
-    LabelText,
-    /// <summary>只接受元素子内容。</summary>
-    ElementChildrenOnly,
-}
-
-public sealed record UiPropDef(
-    string Name,
-    string ClrType,
-    bool IsEvent = false,
-    string? EventOwner = null,
-    string? EventName = null);
-
-public sealed record UiElementDef(
-    string Tag,
-    string ClrType,
-    UiContentModel Content,
-    IReadOnlyDictionary<string, UiPropDef> Props);
-
 /// <summary>
-/// 组件注册表（内置元素部分）。设计上从解决方案编译收集并供编译器与 LSP 共用；
-/// M3 先用内置目录，NuGet 包组件接入后自动扩展。
+/// 目录 POCO 与结构相等实现在 <c>UiCatalogModel.cs</c>（design/14 §14.5.1）；
+/// 目录值由 <c>EclipseUI.Compiler.Metadata.UiCatalogFactory</c> 从符号派生（§14.10.2），
+/// 本文件只保留与目录无关的字面量转换与建议算法。
 /// </summary>
-public sealed class UiCatalog
-{
-    private readonly Dictionary<string, UiElementDef> _elements;
-
-    public UiCatalog(IEnumerable<UiElementDef> elements)
-    {
-        _elements = new Dictionary<string, UiElementDef>(StringComparer.Ordinal);
-        foreach (var element in elements)
-            _elements[element.Tag] = element;
-    }
-
-    public bool TryGetElement(string tag, out UiElementDef def) => _elements.TryGetValue(tag, out def!);
-
-    public IEnumerable<string> ElementTags => _elements.Keys;
-
-    public static UiCatalog CreateDefault()
-    {
-        static UiElementDef Def(string tag, string clrType, UiContentModel content, params UiPropDef[] props)
-        {
-            var map = new Dictionary<string, UiPropDef>(StringComparer.Ordinal);
-            foreach (var prop in props)
-                map[prop.Name] = prop;
-            return new UiElementDef(tag, clrType, content, map);
-        }
-
-        return new UiCatalog(new[]
-        {
-            Def("TextBlock", "EclipseUI.Elements.TextBlock", UiContentModel.TextRuns,
-                new UiPropDef("FontSize", "double")),
-            Def("StackPanel", "EclipseUI.Elements.StackPanel", UiContentModel.ElementChildrenOnly,
-                new UiPropDef("Gap", "double")),
-            Def("Button", "EclipseUI.Elements.Button", UiContentModel.LabelText,
-                new UiPropDef("Label", "string"),
-                new UiPropDef("OnClick", "", IsEvent: true, EventOwner: "EclipseUI.Elements.Button", EventName: "Click")),
-            Def("CheckBox", "EclipseUI.Elements.CheckBox", UiContentModel.LabelText,
-                new UiPropDef("Label", "string"),
-                new UiPropDef("Checked", "bool")),
-            Def("ListBoxItem", "EclipseUI.Elements.ListBoxItem", UiContentModel.ElementChildrenOnly),
-        });
-    }
-}
-
 public static class UiLiterals
 {
     /// <summary>把 .ui 字面量按目标属性类型在编译期转换为 C# 表达式；失败给出期望格式。</summary>

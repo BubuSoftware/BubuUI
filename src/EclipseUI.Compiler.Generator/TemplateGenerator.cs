@@ -5,7 +5,6 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.RegularExpressions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -14,12 +13,13 @@ using MsTextSpan = Microsoft.CodeAnalysis.Text.TextSpan;
 using UiSpan = EclipseUI.Compiler.TextSpan;
 using CompilerSeverity = EclipseUI.Compiler.DiagnosticSeverity;
 using RoslynSeverity = Microsoft.CodeAnalysis.DiagnosticSeverity;
+using EclipseUI.Compiler.Metadata;
 
 namespace EclipseUI.Compiler.Generator;
 
 /// <summary>
 /// .ui → C# 增量源生成器：编译期类型检查（表达式原样进入生成代码，由 Roslyn 检查并经
-/// #line 映射回 .ui）、code-behind 信号发现、@foreach item 类型推断、定向更新代码发射。
+/// #line 映射回 .ui）、@foreach item 类型推断、@bind 源可写性校验、定向更新代码发射。
 /// </summary>
 [Generator(LanguageNames.CSharp)]
 public sealed class TemplateGenerator : IIncrementalGenerator
@@ -28,14 +28,20 @@ public sealed class TemplateGenerator : IIncrementalGenerator
     {
         var uiFiles = context.AdditionalTextsProvider
             .Where(static file => Path.GetExtension(file.Path) is ".ui");
-        var pipeline = uiFiles.Collect().Combine(context.CompilationProvider);
-        context.RegisterSourceOutput(pipeline, static (spc, data) => Execute(spc, data.Left, data.Right));
+
+        // 模板表面每轮从符号重建（design/14 §14.10.3：派生目录是唯一事实源，不允许手写缓存）。
+        // UiCatalog 逐字段实现结构相等，所以控件 API 没变时下游仍按值命中缓存、不重生成代码。
+        var catalogProvider = context.CompilationProvider
+            .Select(static (compilation, _) => UiCatalogFactory.Build(compilation));
+
+        var pipeline = uiFiles.Collect().Combine(catalogProvider).Combine(context.CompilationProvider);
+        context.RegisterSourceOutput(pipeline, static (spc, data) =>
+            Execute(spc, data.Left.Left, data.Left.Right, data.Right));
     }
 
-    private static void Execute(SourceProductionContext spc, ImmutableArray<AdditionalText> files, Compilation compilation)
+    private static void Execute(SourceProductionContext spc, ImmutableArray<AdditionalText> files,
+        UiCatalog catalog, Compilation compilation)
     {
-        var catalog = UiCatalog.CreateDefault();
-
         foreach (var file in files)
         {
             var sourceText = file.GetText();
@@ -71,54 +77,10 @@ public sealed class TemplateGenerator : IIncrementalGenerator
                         $"code-behind class '{className}' must be declared partial", UiSpan.Zero));
             }
 
-            // signals：code-behind 中 Signal<T> 类型的字段/属性
-            var signals = new Dictionary<string, ITypeSymbol>(StringComparer.Ordinal);
-            if (type is not null)
-            {
-                var signalGeneric = compilation.GetTypeByMetadataName("EclipseUI.Signal`1");
-                if (signalGeneric is not null)
-                {
-                    foreach (var member in type.GetMembers())
-                    {
-                        var memberType = member switch
-                        {
-                            IFieldSymbol field => field.Type,
-                            IPropertySymbol property => property.Type,
-                            _ => null,
-                        };
-                        if (memberType is INamedTypeSymbol named &&
-                            SymbolEqualityComparer.Default.Equals(named.OriginalDefinition, signalGeneric))
-                            signals[member.Name] = named.TypeArguments[0];
-                    }
-                }
-            }
-
-            // @foreach item 类型推断
-            var itemTypes = new Dictionary<UiForeach, string>();
-            foreach (var foreachNode in EnumerateNodes(doc.Nodes).OfType<UiForeach>())
-            {
-                var name = foreachNode.Collection.Trim();
-                if (signals.TryGetValue(name, out var collectionType))
-                {
-                    var itemType = ElementTypeOf(collectionType, compilation);
-                    if (itemType is null)
-                        diags.Add(UiDiagnostics.Error(UiDiagnostics.ForEachItemTypeUnknown,
-                            $"cannot infer the item type of '{foreachNode.Collection}'; use Signal<List<T>>, Signal<T[]> or Signal<IEnumerable<T>>",
-                            foreachNode.CollectionSpan));
-                    else
-                        itemTypes[foreachNode] = itemType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                }
-                else
-                {
-                    diags.Add(UiDiagnostics.Error(UiDiagnostics.ForEachItemTypeUnknown,
-                        $"cannot infer the item type of '{foreachNode.Collection}'; it must be a Signal<T> field or property in the code-behind",
-                        foreachNode.CollectionSpan));
-                }
-            }
-
-            // item 模板内的 signal 引用 / 双向绑定 → 暂不支持
-            foreach (var foreachNode in EnumerateNodes(doc.Nodes).OfType<UiForeach>())
-                CheckItemTemplate(foreachNode, signals, diags);
+            // 编译期语义探针：@foreach item 类型推断 + @bind 源可写性校验
+            var itemTypes = type is null
+                ? new Dictionary<UiForeach, string>()
+                : ProbeSemantics(doc, type, compilation, diags);
 
             bool hasErrors = false;
             foreach (var diag in diags)
@@ -130,7 +92,7 @@ public sealed class TemplateGenerator : IIncrementalGenerator
 
             var code = new Emitter(doc,
                 AccessibilityOf(type), NamespaceName(type), className,
-                itemTypes, signals.Keys.ToArray(), file.Path).Emit();
+                itemTypes, file.Path).Emit();
 
             spc.AddSource($"{className}.{StableHash(file.Path)}.g.cs", code);
         }
@@ -182,60 +144,231 @@ public sealed class TemplateGenerator : IIncrementalGenerator
         return null;
     }
 
-    private static IEnumerable<UiNode> EnumerateNodes(IEnumerable<UiNode> nodes)
+    /// <summary>
+    /// 逐块推断 item 类型，并校验每个 <c>@bind</c> 源：两者都把表达式放进合成 partial 方法体，
+    /// 借 code-behind 的符号上下文让 Roslyn 回答；外层 item 以局部变量注入，支持嵌套作用域。
+    /// </summary>
+    private static Dictionary<UiForeach, string> ProbeSemantics(
+        UiDocument doc, INamedTypeSymbol type, Compilation compilation, List<UiDiagnostic> diags)
     {
-        foreach (var node in nodes)
+        var itemTypes = new Dictionary<UiForeach, string>();
+        var probe = new TemplateProbe(compilation, type);
+        var env = new List<(ITypeSymbol Type, string Name)>();
+        Walk(doc.Nodes, env);
+        return itemTypes;
+
+        void Walk(IEnumerable<UiNode> nodes, List<(ITypeSymbol Type, string Name)> scope)
         {
-            yield return node;
-            switch (node)
+            foreach (var node in nodes)
             {
-                case UiElement element:
-                    foreach (var n in EnumerateNodes(element.Children)) yield return n;
-                    break;
-                case UiIf ifNode:
-                    foreach (var n in EnumerateNodes(ifNode.Children)) yield return n;
-                    break;
-                case UiForeach foreachNode:
-                    foreach (var n in EnumerateNodes(foreachNode.Children)) yield return n;
-                    break;
+                switch (node)
+                {
+                    case UiElement element:
+                        foreach (var attr in element.Attributes)
+                            ValidateBindSource(attr, probe, scope, diags);
+                        Walk(element.Children, scope);
+                        break;
+                    case UiIf ifNode:
+                        Walk(ifNode.Children, scope);
+                        break;
+                    case UiForeach foreachNode:
+                        var collectionType = probe.InferType(foreachNode.Collection, scope);
+                        var itemType = collectionType is null ? null : ElementTypeOf(collectionType, compilation);
+                        if (itemType is null)
+                        {
+                            diags.Add(UiDiagnostics.Error(UiDiagnostics.ForEachItemTypeUnknown,
+                                $"cannot infer the item type of '{foreachNode.Collection.Trim()}'; " +
+                                "the collection must be an IEnumerable<T> (array, List<T>, dictionary, LINQ result or custom implementation)",
+                                foreachNode.CollectionSpan));
+                            break;
+                        }
+
+                        itemTypes[foreachNode] = itemType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                        var inner = new List<(ITypeSymbol Type, string Name)>(scope)
+                        {
+                            (itemType, foreachNode.VarName.Length > 0 ? foreachNode.VarName : "item"),
+                        };
+                        Walk(foreachNode.Children, inner);
+                        break;
+                }
             }
         }
     }
 
-    private static void CheckItemTemplate(UiForeach foreachNode, Dictionary<string, ITypeSymbol> signals, List<UiDiagnostic> diags)
+    /// <summary>
+    /// <c>@bind-P={expr}</c> 的源必须是可写左值（spec/01 §4.5）：句法白名单先拒绝调用/索引器/
+    /// <c>?.</c>/<c>??</c>/转换/new/lambda，再用赋值探针取 C# 的可写性与类型结论。
+    /// 目标非法（EUI040）与非表达式值（EUI037）已由分析器报错，这里不重复报。
+    /// </summary>
+    private static void ValidateBindSource(UiAttribute attr, TemplateProbe probe,
+        IReadOnlyList<(ITypeSymbol Type, string Name)> env, List<UiDiagnostic> diags)
     {
-        foreach (var node in foreachNode.Children)
-        {
-            switch (node)
-            {
-                case UiElement element:
-                    foreach (var attr in element.Attributes)
-                    {
-                        if (attr.Name == "Key") continue;
-                        if (attr.IsBind)
-                            diags.Add(UiDiagnostics.Error(UiDiagnostics.SignalInItemTemplate,
-                                "two-way binding (:bind) inside an @foreach template is not supported yet", attr.ValueSpan));
-                        else if (attr.Kind == AttrValueKind.Expression && ReferencesSignal(attr.Value, signals))
-                            diags.Add(UiDiagnostics.Error(UiDiagnostics.SignalInItemTemplate,
-                                "signal references inside an @foreach template are not supported yet; restructure the binding", attr.ValueSpan));
-                    }
-                    break;
-                case UiText text:
-                    foreach (var segment in text.Segments)
-                        if (segment.Kind == TextSegmentKind.Expression && ReferencesSignal(segment.Text, signals))
-                            diags.Add(UiDiagnostics.Error(UiDiagnostics.SignalInItemTemplate,
-                                "signal references inside an @foreach template are not supported yet; restructure the binding", segment.Span));
-                    break;
-            }
-        }
+        if (!attr.IsBind || attr.PropDef is not { CanWrite: true }) return;
+        if (attr.Kind != AttrValueKind.Expression || string.IsNullOrWhiteSpace(attr.Value)) return;
+
+        var expression = attr.Value.Trim();
+        if (!probe.IsWritableSource(expression, attr.PropDef.ClrTypeDisplayName, env, out var reason))
+            diags.Add(UiDiagnostics.Error(UiDiagnostics.BindSourceInvalid,
+                $"@bind-{attr.Name} source '{expression}' is not writable: {reason}", attr.ValueSpan));
     }
 
-    private static bool ReferencesSignal(string expression, Dictionary<string, ITypeSymbol> signals)
+    private sealed class TemplateProbe
     {
-        foreach (var name in signals.Keys)
-            if (Regex.IsMatch(expression, $@"\b{Regex.Escape(name)}\b"))
-                return true;
-        return false;
+        private readonly Compilation _compilation;
+        private readonly INamedTypeSymbol _type;
+        private int _counter;
+
+        public TemplateProbe(Compilation compilation, INamedTypeSymbol type)
+        {
+            _compilation = compilation;
+            _type = type;
+        }
+
+        public ITypeSymbol? InferType(string expression, IReadOnlyList<(ITypeSymbol Type, string Name)> env)
+        {
+            var tree = ProbeTree("var __value = (" + expression + ");", env);
+            var augmented = _compilation.AddSyntaxTrees(tree);
+            var model = augmented.GetSemanticModel(tree);
+            var method = tree.GetRoot().DescendantNodes().OfType<MethodDeclarationSyntax>().LastOrDefault();
+            if (method is null) return null;
+            var declarator = method.DescendantNodes().OfType<VariableDeclaratorSyntax>()
+                .FirstOrDefault(v => v.Identifier.ValueText == "__value");
+            if (declarator is null) return null;
+            if (model.GetDeclaredSymbol(declarator) is not ILocalSymbol local) return null;
+            return local.Type.TypeKind == TypeKind.Error || local.Type is IDynamicTypeSymbol ? null : local.Type;
+        }
+
+        /// <summary>把 <c>{expr} = __bindValue</c> 交给 C# 判定：落在赋值语句内的错误即左值/类型问题。</summary>
+        public bool IsWritableSource(string expression, string targetClrType,
+            IReadOnlyList<(ITypeSymbol Type, string Name)> env, out string? reason)
+        {
+            if (!IsLvalueShape(SyntaxFactory.ParseExpression(expression), out var rootName))
+            {
+                reason = "it must be a writable field or property of the component or of the item " +
+                    "(not a method call, indexer, '?.', '??', cast, 'new' or lambda)";
+                return false;
+            }
+
+            // 值类型 item 是副本：写它的成员既不报错也传不回去，必须静态拒绝（spec/01 §4.5）。
+            if (rootName is not null)
+            {
+                foreach (var (envType, name) in env)
+                {
+                    if (name != rootName || !envType.IsValueType) continue;
+                    reason = $"the @foreach item '{name}' is a value type ({envType.Name}), " +
+                        $"so '{expression}' would write into a copy";
+                    return false;
+                }
+            }
+
+            var tree = ProbeTree($"{expression} = __bindValue;", env,
+                $"        {ClrTypeOf(targetClrType)} __bindValue = default!;");
+            var augmented = _compilation.AddSyntaxTrees(tree);
+            var model = augmented.GetSemanticModel(tree);
+            var assignment = tree.GetRoot().DescendantNodes().OfType<AssignmentExpressionSyntax>().FirstOrDefault();
+            if (assignment is null)
+            {
+                reason = "it is not an assignment target";
+                return false;
+            }
+
+            switch (model.GetSymbolInfo(assignment.Left).Symbol)
+            {
+                case IFieldSymbol { IsStatic: true }:
+                    reason = "a static field cannot be written back";
+                    return false;
+                case IFieldSymbol { IsConst: true }:
+                    reason = "a constant cannot be written back";
+                    return false;
+                case IPropertySymbol { IsStatic: true }:
+                    reason = "a static property cannot be written back";
+                    return false;
+            }
+
+            foreach (var diagnostic in model.GetDiagnostics())
+            {
+                if (diagnostic.Severity != Microsoft.CodeAnalysis.DiagnosticSeverity.Error) continue;
+                if (!assignment.Span.Contains(diagnostic.Location.SourceSpan)) continue;
+                reason = $"{diagnostic.GetMessage()} ({diagnostic.Id})";
+                return false;
+            }
+
+            reason = null;
+            return true;
+        }
+
+        /// <summary>句法白名单：标识符 / this / base，以及它们之间的简单成员访问链（可加括号）。</summary>
+        private static bool IsLvalueShape(ExpressionSyntax expression, out string? rootName)
+        {
+            rootName = null;
+            while (true)
+            {
+                if (expression is ParenthesizedExpressionSyntax paren)
+                {
+                    expression = paren.Expression;
+                    continue;
+                }
+                if (expression is IdentifierNameSyntax identifier)
+                {
+                    rootName = identifier.Identifier.ValueText;
+                    return true;
+                }
+                if (expression is ThisExpressionSyntax or BaseExpressionSyntax) return true;
+                if (expression is MemberAccessExpressionSyntax access &&
+                    access.IsKind(SyntaxKind.SimpleMemberAccessExpression))
+                {
+                    expression = access.Expression;
+                    continue;
+                }
+                return false;
+            }
+        }
+
+        /// <summary>目录里的 CLR 类型名 → 探针里可用的全限定类型。</summary>
+        private static string ClrTypeOf(string clrType) => clrType switch
+        {
+            "bool" => "global::System.Boolean",
+            "byte" => "global::System.Byte",
+            "char" => "global::System.Char",
+            "double" => "global::System.Double",
+            "float" => "global::System.Single",
+            "int" => "global::System.Int32",
+            "long" => "global::System.Int64",
+            "object" => "global::System.Object",
+            "string" => "global::System.String",
+            _ => clrType.StartsWith("global::", StringComparison.Ordinal) ? clrType : "global::" + clrType,
+        };
+
+        /// <summary>合成探针方法：与 code-behind 同命名空间的 partial 类，item 以局部变量注入。</summary>
+        private SyntaxTree ProbeTree(string statement, IReadOnlyList<(ITypeSymbol Type, string Name)> env,
+            string? preamble = null)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("#nullable enable");
+            if (!_type.ContainingNamespace.IsGlobalNamespace)
+            {
+                sb.Append("namespace ").Append(_type.ContainingNamespace.ToDisplayString()).AppendLine(";");
+                sb.AppendLine();
+            }
+            sb.Append(_type.DeclaredAccessibility == Accessibility.Public ? "public" : "internal")
+                .Append(" partial class ").Append(_type.Name).AppendLine();
+            sb.AppendLine("{");
+            sb.Append("    private void __EclipseUiProbe").Append(_counter++).AppendLine("()");
+            sb.AppendLine("    {");
+            foreach (var (envType, name) in env)
+                sb.Append("        ")
+                    .Append(envType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat))
+                    .Append(' ').Append(name).AppendLine(" = default!;");
+            if (preamble is not null) sb.AppendLine(preamble);
+            sb.Append("        ").Append(statement).AppendLine(";");
+            sb.AppendLine("    }");
+            sb.AppendLine("}");
+
+            // 探针树必须与编译单元共享解析选项，否则 AddSyntaxTrees 拒绝混合特征。
+            var parseOptions = _compilation.SyntaxTrees.FirstOrDefault()?.Options as CSharpParseOptions
+                ?? CSharpParseOptions.Default;
+            return CSharpSyntaxTree.ParseText(sb.ToString(), parseOptions);
+        }
     }
 
     private static void Report(SourceProductionContext spc, string path, SourceText text, UiDiagnostic diag)

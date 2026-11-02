@@ -25,20 +25,24 @@
 
 | 事实 | 证据 | 后果 |
 |---|---|---|
-| 目录手写、封闭 | `UiCatalog.CreateDefault()` 固定 5 个标签（[Catalog.cs:50](../src/EclipseUI.Compiler/Catalog.cs#L50)） | 新增控件必须改编译器；第三方无法进入模板 |
+| 目录手写、封闭 | v3 的 `UiCatalog.CreateDefault()` 固定 5 个标签（手写目录，C2 已删除） | 新增控件必须改编译器；第三方无法进入模板 |
 | 元数据双写 | 控件侧 `Button.LabelProperty`（[Controls.cs:9](../src/EclipseUI.Runtime/Controls.cs#L9)）与目录侧 `new UiPropDef("Label","string")` 各写一份 | 漂移时生成 C# 编译错误，而不是 `.ui` 诊断 |
 | 生成器隐式约定 | [Emitter.cs:144](../src/EclipseUI.Compiler.Generator/Emitter.cs#L144)：`new ClrType()`、属性名=CLR 属性名、`:bind` 需 `{Name}Property`、事件挂 `{Name}Event` | 契约只存在于代码行为里，控件作者无从遵循 |
 | 暴露面不全 | `Panel.Padding`/`ClipToBounds` 已注册（[Panels.cs:15](../src/EclipseUI.Runtime/Panels.cs#L15)），但目录的 StackPanel 只列了 `Gap` | `<StackPanel Padding="16">` 报 EUI002 |
 | 无法自定义 | 未知标签 EUI001；组件 `Component` 只能在 C# 里 `Mount()` | 无法用 `.ui` 组合自定义控件 |
-| 无契约测试 | `tests/` 无生成器集成测试；前端测试直接用 `CreateDefault()` | 目录与控件漂移无回归保护 |
+| 无契约测试 | v3 时 `tests/` 无生成器集成测试；前端测试直接用 `CreateDefault()`（现已有目录扫描/生成器契约/交叉一致性测试） | 目录与控件漂移无回归保护 |
 
-契约表面的实测对比（本文规则生效后 vs 现手写目录，用于 14.12 的行为变更记录）：
+契约表面的实测对比（本文规则生效后 vs v3 手写目录，用于 14.12 的行为变更记录）：
 
-| | 手写目录（现状） | 符号派生（本文） |
-|---|---|---|
-| 标签 | 5 | 5（另有 `ConditionalBlock`、`TextRun` 需 `[UiIgnore]`；`Element`/`Panel`/`StackPanelBase`/`Component` 落入 HiddenTags） |
-| 模板可见属性项 | 6 | 17（`Padding`、`ClipToBounds`、`IsHitTestVisible` 全面铺开） |
-| 模板可见事件 | 1（`OnClick`） | 8（含输入/焦点 7 个，前提是按 14.4.3 v2 把 `InputEvents` 迁入 `Element`） |
+| | 手写目录（v3 现状） | 符号派生（本文） | C1/C2 实测（2026-11-02） |
+|---|---|---|---|
+| 标签 | 5 | 5（另有 `ConditionalBlock`、`TextRun` 需 `[UiIgnore]`；`Element`/`Panel`/`StackPanelBase`/`Component` 落入 HiddenTags） | 5 + HiddenTags 4 ✅ §14.12.1 |
+| 模板可见属性项 | 6 | 17（`Padding`、`ClipToBounds`、`IsHitTestVisible` 全面铺开） | 17 ✅ 差集 12 项逐条评审 |
+| 模板可见事件 | 1（`OnClick`） | 8（含输入/焦点 7 个，前提是按 14.4.3 v2 把 `InputEvents` 迁入 `Element`） | C1 实测 1（`InputEvents` 静态宿主 → EUI026，D69）→ **C2 ✅ 9 个事件名 / 37 事件项**（5 标签 × 7 继承事件 + `OnClick` + `OnCheckedChanged`，见 §14.12.2） |
+
+「C1 实测」列扫的是已编译的 `EclipseUI.Runtime.dll`，见 `CatalogScannerTests`；标签/属性项在 C2 后数值不变，
+事件行随 `InputEvents` 迁入 `Element` 变宽。**C2（2026-11-02）起模板实际可见表面已等于本文规则**
+（D64/D69 关闭，手写目录删除），落地记录见 §14.12.2。
 
 本文把上述隐式约定升级为**可声明、可校验、可扩展、可被 LSP 复用**的正式契约。
 
@@ -156,15 +160,17 @@ R7–R9 的 v3 出处是 [15 §15.5.7](./15-state-and-reactivity.md#1557-新增�
 声明位置必须落在元素/组件类型上，派生类型才能继承；声明在 `public static class` 里的事件字段
 既不参与扫描，也在源项目声明处报 EUI026（消息给出迁移建议）。
 
-现有反例即框架自己：7 个输入/焦点事件声明在 `EclipseUI.InputEvents` 静态类上
-（[Input.cs:20-28](../src/EclipseUI.Runtime/Input.cs#L20)）。若沿用 v1 规则，C2 之后模板能写的事件只有
-`OnClick` 一个，而 C# 侧 `AddHandler(InputEvents.PointerPressedEvent, …)` 有 19 处调用
-（Controls.cs、FocusManager.cs、InputRouter.cs + 2 个测试文件）——直接违背 T6 能力对等。
-**处置：C2 把这 7 个字段迁入 `Element`，删除 `InputEvents` 类**（机械改名，无行为变化），
-模板事件表面由 1 个变为 8 个。控件作者同理：新增事件一律声明在自己的类型上，不要建静态宿主类。
+框架自己曾是反例：v3 把 7 个输入/焦点事件声明在 `EclipseUI.InputEvents` 静态类上
+（旧 `Input.cs:20-28`）。若沿用 v1 规则，换符号目录后模板能写的事件只剩
+`OnClick` 一个，而 C# 侧 `AddHandler(InputEvents.XEvent, …)` 有 19 处调用——直接违背 T6 能力对等。
+**处置已落地（C2，2026-11-02）**：7 个字段迁入 [Element.cs:118-124](../src/EclipseUI.Runtime/Element.cs#L118)
+（`PointerPressed/Released/Moved`、`KeyDown/Up`、`GotFocus/LostFocus`），`InputEvents` 类删除，
+模板事件表面由 1 个变为 8 个（加 `CheckBox.CheckedChanged` 后共 9 个事件名）。控件作者同理：
+新增事件一律声明在自己的类型上，不要建静态宿主类。
 
-同期控件补齐待办（C2 记录，不属于契约本身）：`CheckBox` 没有任何路由事件，
-`CheckedChanged` 缺失会让双向绑定的对端无法感知用户勾选，需在 C2 一并补上 `CheckedChangedEvent`。
+同期控件补齐（C2 已落地，不属于契约本身）：`CheckBox` 补上 `CheckedChangedEvent`
+（[Controls.cs](../src/EclipseUI.Runtime/Controls.cs)）。语义注意：事件只在交互路径广播，
+绑定回推走 setter 且不广播，避免模板的 `OnCheckedChanged` 被源写回再次触发。
 
 语义：
 
@@ -625,7 +631,7 @@ parentN.Children.Add(cmp0.Root);
 - 订阅作用域：根 `Track`、`@if` 内容/条件订阅表、`@foreach` 集合依赖/item scope；`@bind-P` 的 `UiBinding`
   登记在当前作用域，随作用域释放（R8）。组件实例也加入同一作用域。
 - 生成代码 MUST 使用 `global::` 全限定名，不依赖 using；MUST 不生成可变静态状态
-  （当前 `@foreach` 的 `List<>` 例外，03 D22）；MUST 通过公开 setter 写入（R3/R7）。
+  （`@foreach` 的 `List<>` 例外已在 C2 修复，03 D22）；MUST 通过公开 setter 写入（R3/R7）。
 
 ### 14.8.3 引擎对控件的保证
 
@@ -712,6 +718,12 @@ src/EclipseUI.Compiler.Metadata/   依赖 Microsoft.CodeAnalysis：符号扫描�
   └─ 源码链接进 EclipseUI.Compiler.Generator（同 Compiler 前端的做法）
   └─ G5 的 LSP 直接引用本项目
 ```
+
+✅ **C2 已落地**：`Metadata` 源码链接进生成器程序集（`Compile Include`，排除
+`EclipseUI.Compiler.Metadata/Polyfills.cs`——`EclipseUI.Compiler/Polyfills.cs` 已提供
+`internal IsExternalInit`）；`EclipseUI.Compiler.Metadata` 仍是独立项目（`ProjectReference` 指向
+`EclipseUI.Compiler`，只为共用 §14.9.1 诊断码常量，`PrivateAssets=all` 不外流）。LSP（G5）可直接引用本项目。
+并入动作与 §14.10.2 的伪码差异都记在 §14.12.1 / §14.12.2 / 台账 D65。
 
 ### 14.10.2 扫描算法
 
@@ -803,20 +815,31 @@ Build(Compilation c):                       // 纯函数：同样的 Compilation
 
 - 测试断言：从符号派生的内置目录中，每个属性都能在 `StyledPropertyRegistry` 找到
   （owner/name/type 匹配），每个事件字段存在且类型正确。
+  ✅ **C1 实测通过**（`CatalogScannerTests.EveryDerivedProperty_ExistsInTheRegistryWithMatchingOwner` /
+  `EveryDerivedEvent_FieldExistsWithRoutedEventType`：17 个属性项、1 个事件字段全部命中注册表/字段）。
 - **失效级别守卫（v2 新增）**：模板可见属性的 `Invalidate` 必须非 `None`，例外走显式白名单常量
   （当前白名单：`Element.IsHitTestVisible` —— 只影响命中测试，不影响重排重绘）。
   这条是 14.4.2「失效契约」唯一的可执行检查，因为编译期拿不到该值（D13）。
+  ✅ **C1 实测通过**：17 个属性项里 `Invalidate == None` 的只有 5 个 `*.IsHitTestVisible`（同一注册项在不同标签上重复出现），
+  白名单外例外 0 个——`ClipToBounds` 已按 §14.12 的待办把级别改到 `Render`（D67）。
 - **v4 无状态生成器**：模板状态是普通 CLR 成员，测试不再断言 `[UiState]` 订阅分支；
   改为断言生成代码只包含 spec/02 §2.3 白名单成员，且不含已停用/禁止 token（spec/02 §9 T15）。
-- 迁移完成后删除 `UiCatalog.CreateDefault()`。**测试目录不得再手写一份**（那会制造 T1 禁止的第二事实源）：
+- 迁移完成后删除 `UiCatalog.CreateDefault()`。✅ **C2 已删除**（`Catalog.cs` 只剩 `UiLiterals`/`Suggest`）。
+  **测试目录不得再手写一份**（那会制造 T1 禁止的第二事实源）：
   `UiTestCatalogs.BuiltIn()` 的做法是用真实扫描器扫已编译的 `EclipseUI.Runtime.dll`（测试项目 net10.0，可引用 Roslyn），
-  结果与仓库内的 golden 快照文件比对；纯结构测试用的固定目录从同一快照反序列化。
+  结果与仓库内的 golden 快照文件比对（`TestData/BuiltInSurface.golden.txt`，`ECLIPSEUI_UPDATE_SURFACE_GOLDEN=1`
+  重新生成——表面变宽必须走显式评审，见 diff 即知）。
+  ✅ **C2 修订**：golden 是**扫描结果的渲染快照**，不是第二事实源，也没有反序列化路径——
+  全扫实测仅 45 ms（14.10.3），纯结构测试各自现扫 `Compilation`，比从快照反序列化更少一道漂移源。→ D72 已收敛。
 - 内置控件表面快照（迁移后预期；`In` = 继承自 `Panel`/`Element`）：
   - `TextBlock`：`FontSize`、`Padding`(In)、`ClipToBounds`(In)、`IsHitTestVisible`(In)；内容 `TextRuns`。
   - `StackPanel`/`ListBoxItem`：`Gap`、`Padding`(In)、`ClipToBounds`(In)、`IsHitTestVisible`(In)；内容 `Children`。
   - `Button`：`Label`、`IsHitTestVisible`(In)、事件 `OnClick` + 8 个继承事件；内容 `Text`。
   - `CheckBox`：`Label`、`Checked`、`IsHitTestVisible`(In) + 继承事件；内容 `Text`。
   - 合计：5 标签 / 17 属性项 / 8 个事件（对照现状 5 / 6 / 1，见 14.1 与 14.12）。
+  ✅ **C1 实测**：5 标签 / **17 属性项** 与上面的逐项列表逐字吻合（`BuiltInSurface_MatchesGoldenSnapshot`）；
+  逐项实测表与差集评审见 §14.12.1。
+  ✅ **C2**：8 个事件全员可见（+`CheckBox.OnCheckedChanged`）；实测 9 个事件名 / 37 事件项，见 §14.12.2。
 
 ### 14.11.2 测试矩阵
 
@@ -842,8 +865,8 @@ Build(Compilation c):                       // 纯函数：同样的 Compilation
 
 | 阶段 | 内容 | 出口 | 主要文件 |
 |---|---|---|---|
-| **C1** | 特性、目录模型、符号扫描器、一致性/快照测试；不改分析器与生成器行为 | 派生目录 **⊇** 手写目录，差集（属性 6→17）逐条评审并写进变更记录；`dotnet test` 全绿 | `Runtime/UiAttributes.cs`、`Compiler.Metadata/*`、`Catalog.cs` |
-| **C2** | 生成器切到派生目录；内置控件加 `[UiContent]`；基础设施元素加 `[UiIgnore]`；**输入事件字段从 `InputEvents` 迁入 `Element`（19 处调用改名，删静态类）**；`ClipToBounds` 失效级别改 `Render`；删除手写目录 | Gallery/Counter 渲染与交互不变；`Padding` 等属性、8 个事件变为模板可用（更新文档） | `Input.cs`、`Element.cs`、`InputRouter.cs`、`FocusManager.cs`、`Controls.cs`、`TemplateGenerator.cs`、`Panels.cs`、`TextBlock.cs`、`Blocks.cs` |
+| **C1** ✅ | 特性、目录模型、符号扫描器、一致性/快照测试；不改分析器与生成器行为 | 派生目录 **⊇** 手写目录，差集（属性 6→17）逐条评审并写进变更记录；`dotnet test` 全绿 | `Runtime/UiAttributes.cs`、`Compiler.Metadata/*`、`Catalog.cs` |
+| **C2** ✅（2026-11-02） | 生成器切到派生目录；内置控件加 `[UiContent]`；基础设施元素加 `[UiIgnore]`；**输入事件字段从 `InputEvents` 迁入 `Element`（19 处调用改名，删静态类）**；`ClipToBounds` 失效级别改 `Render`；删除手写目录 | Gallery/Counter 渲染与交互不变；`Padding` 等属性、8 个事件变为模板可用（更新文档）—— ✅ 全部落地（落地记录见 §14.12.2） | `Input.cs`、`Element.cs`、`InputRouter.cs`、`FocusManager.cs`、`Controls.cs`、`TemplateGenerator.cs`、`Panels.cs`、`TextBlock.cs`、`Blocks.cs` |
 | **C3** | 转换器扩展（enum/TimeSpan/char/Color 预留）；EUI016–EUI026 + EUI031 落地；属性暴露一致性测试 | 诊断表前半可用；无转换器类型正确报 EUI023 | `Catalog.cs`、`Analyzer.cs`、`Emitter.cs` |
 | **C4** | 组件标签：参数元数据（`[UiParameter(Required=true)]`、`{P}Changed`）、委托事件、默认内容、生命周期与作用域释放；生成器集成测试 | 第三方/自定义组件可写入 `.ui`；参数/内容生成与 spec/02 §4.12 一致 | `TemplateGenerator.cs`、`Emitter.cs`、`Component.cs` |
 | **C5** | `Ref`（G3）；保留语法诊断与剩余分析器收敛（EUI019/EUI020/EUI021/EUI025/EUI029/EUI031/EUI033） | G3 非反应式缺口收敛；诊断不再落"未知" | `Analyzer.cs`、`Emitter.cs` |
@@ -856,21 +879,101 @@ C4 只负责组件标签与参数/内容元数据，C5 只保留 `Ref` 与语法
 
 第一批（C1–C2）不改**语法**，只把元数据来源换成符号；但模板**表面**一定变宽，差异必须写进变更记录：
 
-- 模板可用属性项 6 → 17：新增 `Padding`、`ClipToBounds`、`IsHitTestVisible`（以及未来所有 StyledProperty）。
-- 模板可用事件 1 → 8：`InputEvents` 迁入 `Element` 后，`OnPointerPressed/Released/Moved`、
+- ✅ C2 模板可用属性项 6 → 17：新增 `Padding`、`ClipToBounds`、`IsHitTestVisible`（以及未来所有 StyledProperty）。
+- ✅ C2 模板可用事件 1 → 8：`InputEvents` 迁入 `Element` 后，`OnPointerPressed/Released/Moved`、
   `OnKeyDown/Up`、`OnGotFocus/LostFocus` 在所有标签上可用（14.4.3 v2）。
-- 待补：`CheckBox` 无 `CheckedChanged` 事件，`@bind-Checked`/`Checked:bind` 的对端感知不到用户勾选，C2 一并补 `CheckedChangedEvent`。
-- 暴露前修正 `Panel.ClipToBoundsProperty` 的失效级别：`None` → `Render`（裁剪影响像素，运行期变更必须重绘）。
-- `TextRun`、`ConditionalBlock`、`ForEachBlock<>` 不作为标签；`InputEvents` 静态类删除（否则按新规则报 EUI026）。
-- 未知标签建议的候选集从 5 个扩展到全部可见控件/组件。
+- ✅ C2 补齐：`CheckBox` 补上 `CheckedChanged` 事件（`@bind-Checked`/`Checked:bind` 的对端可感知用户勾选）。
+- ✅ C1 暴露前修正 `Panel.ClipToBoundsProperty` 的失效级别：`None` → `Render`（裁剪影响像素，运行期变更必须重绘）。
+- ✅ C2 `TextRun`、`ConditionalBlock`、`ForEachBlock<>` 不作为标签；`InputEvents` 静态类删除（否则按新规则报 EUI026）。
+- ✅ C2 未知标签建议的候选集从 5 个扩展到全部可见控件/组件。
+
+### 14.12.1 C1 落地记录（2026-11-02）
+
+扫描真实 `EclipseUI.Runtime.dll` 得到的**派生目录实际表面**（`CatalogScannerTests.BuiltInSurface_MatchesGoldenSnapshot` 逐标签钉死，
+属性/事件名按 Ordinal 排序）：
+
+| 标签 | 内容模型:目标 | 属性项 | 事件项 |
+|---|---|---|---|
+| `Button` | `Text:Label` | `IsHitTestVisible`、`Label` | `OnClick` |
+| `CheckBox` | `Text:Label` | `Checked`、`IsHitTestVisible`、`Label` | — |
+| `ListBoxItem` | `Children:Children` | `ClipToBounds`、`Gap`、`IsHitTestVisible`、`Padding` | — |
+| `StackPanel` | `Children:Children` | `ClipToBounds`、`Gap`、`IsHitTestVisible`、`Padding` | — |
+| `TextBlock` | `TextRuns:—` | `ClipToBounds`、`FontSize`、`IsHitTestVisible`、`Padding` | — |
+| **合计** | 5 标签 | **17 属性项** | **1 事件项** |
+
+隐藏标签 4 个（`Component`/`Element`/`Panel`/`StackPanelBase`，均 EUI017「类型是抽象的」）；
+`TextRun`/`ConditionalBlock`/`ForEachBlock<T>` 走 `[UiIgnore]` 完全退出表面，不进 `HiddenTags`。
+静态宿主类按**类型**报一条 EUI026（不是每个元素一条）：实测内置目录只有 1 条，指向 `global::EclipseUI.InputEvents`
+（`StaticEventHost_IsReportedAsMetadataProblemNotATag`），其 7 个 `RoutedEvent` 字段全部不入事件表面 → D69。
+
+**差集（手写 6 → 派生 17）逐条评审**，全部是继承来的 `StyledProperty`，无一是新增控件 API，
+因此判定为「opt-out 暴露策略的必然结果」（14.13 第一条风险），接受：
+
+| # | 新增属性项 | 来源 |
+|---|---|---|
+| 1–5 | `Button.IsHitTestVisible`、`CheckBox.IsHitTestVisible`、`ListBoxItem.IsHitTestVisible`、`StackPanel.IsHitTestVisible`、`TextBlock.IsHitTestVisible` | `Element.IsHitTestVisibleProperty` |
+| 6–8 | `ListBoxItem.Padding`、`StackPanel.Padding`、`TextBlock.Padding` | `Panel.PaddingProperty` |
+| 9–11 | `ListBoxItem.ClipToBounds`、`StackPanel.ClipToBounds`、`TextBlock.ClipToBounds` | `Panel.ClipToBoundsProperty` |
+| 12 | `ListBoxItem.Gap` | `StackPanelBase.GapProperty`（手写目录只给 `StackPanel` 标了 `Gap`） |
+
+这 12 项在 C1 时**尚未对模板生效**：C1 不改分析器/生成器；生效点在 C2（D64）—— ✅ **C2 已生效**（§14.12.2）。
+事件表面当时同样是 1 项（D69），8 项随 `InputEvents` 迁入 `Element` —— ✅ **C2 已生效**。
+
+**提前到 C1 落地的三项**（原表把它们排在 C2），理由与代价逐条记：
+
+1. **`[UiContent]`/`[UiIgnore]` 等运行时标注**（原 C2）：派生目录要 ⊇ 手写目录，必须先看运行时怎么声明内容模型；
+   没有标注，`Button`/`TextBlock` 的内容就只能靠约定猜测，C1 出口无法验证。标注是纯元数据，不改任何生成行为。→ 台账 D63
+2. **`Panel.ClipToBounds` 失效级别 `None`→`Render`**（原 C2）：14.11.1 的失效级别守卫要求白名单只有
+   `Element.IsHitTestVisible` 一项；不改这一行就得在守卫里塞第二个例外，等于放宽契约。运行期无任何测试依赖旧级别。→ D67
+3. **`[UiIgnore]` + `[UiParameter]`/`[UiSlot]` 同时出现按 EUI028 报出**：14.6.1 只写「不得」，没给这条分配码，
+   暂用 EUI028；C4 若要细化请另起新码，不复用。→ 台账 D71
+
+**扫描器与 14.10.2 伪码的一处实现差异**：伪码写 `c.SourceModule.ReferencedAssemblySymbols`，
+Roslyn 4.9.2 的公开 API 没有这个成员（公开的是 `IModuleSymbol.ReferencedAssemblies : ImmutableArray<AssemblyIdentity>`，
+只有标识符没有符号）。实现改为遍历 `Compilation.References` → `GetAssemblyOrModuleSymbol` 取回 `IAssemblySymbol`，
+再按 `assembly.Identity.Name == "EclipseUI.Runtime"` 或任一 module 的 `ReferencedAssemblies` 命中该名字来过滤；
+语义等价（同样是「源程序集 + 直接引用运行时的程序集」）。
+
+**测试覆盖**（`tests/EclipseUI.Compiler.Tests/CatalogScannerTests.cs`，42 例，Theory 按数据行计数）：
+发现规则 12（含暴露判定 6 数据行）、属性暴露 5、内容模型 8（含内置标注 5 数据行）、
+组件参数/插槽与空编译 5、注册表/事件字段/失效级别交叉校验 3、派生 ⊇ 手写与差集枚举 3、
+标签解析与冲突 3（含真正跨两个已编译程序集的同标签 → `Ambiguous` + 候选名）、快照与确定性 2、
+`CanonicalKey` 与 `global::` 显示名不串键 1。
+
+### 14.12.2 C2 落地记录（2026-11-02）
+
+全部 C2 工作项完成，`dotnet test` 257 例全绿（Headless 103 / Compiler 93 / Rendering 61）：
+
+| 工作项 | 结果 |
+|---|---|
+| 生成器切到派生目录 | `TemplateGenerator` 的管道值是 `UiCatalogFactory.Build(compilation)`；分析器 `EUI040` 目标判定改读派生 `CanWrite`（spec/03 D62 关闭）。样例项目（Counter/Prefs/TaskList 组件经 `.ui`）与合成第三方程序集均由扫描器/生成器间接覆盖 |
+| 内置控件加 `[UiContent]` / 基础设施元素加 `[UiIgnore]` | C1 已随标注落地（§14.12.1） |
+| `InputEvents` 迁入 `Element` | 7 个 `RoutedEvent` 字段迁入 `Element`（[Element.cs:118-124](../src/EclipseUI.Runtime/Element.cs#L118)），静态类删除；19 处 `InputEvents.X` 调用点（Runtime + 测试）机械改名，路由行为测试全绿 |
+| `CheckBox.CheckedChangedEvent` | 已补（`Controls.cs`）；仅交互路径广播，绑定回推走 setter 不广播 |
+| 手写目录删除 | `Catalog.cs` 重写为只剩 `UiLiterals`/`Suggest`；`CreateDefault()` 全仓零引用 |
+| golden 快照落成文件 | `tests/EclipseUI.Compiler.Tests/TestData/BuiltInSurface.golden.txt`（`ECLIPSEUI_UPDATE_SURFACE_GOLDEN=1` 再生）+ 枚举快照测试钉 9 个事件名 / 37 事件项。D72 按修订语义收敛：快照是评审门，不是反序列化源 |
+| `Metadata` 源码链接进生成器 | 生成器程序集 `Compile Include` Compiler + Metadata（排除 Metadata 的 `Polyfills.cs`）；测试项目只引用生成器，避免重复类型身份。D65 关闭 |
+| `@foreach` 生成代码 `global::` 限定 | Emitter 不再生成未限定 `List<...>`，生成代码零 `ImplicitUsings` 依赖。D22 关闭 |
+
+**模板表面净值**：标签 5 不变；属性项 6 → 17（12 项继承属性生效）；事件 5 个标签合算 37 事件项、
+9 个不同事件名（7 继承输入/焦点 + `OnClick` + `OnCheckedChanged`）。
+样例（Counter/TaskList/S1Probe）语法零改动即通过——表面变宽是纯增量。
+
+**一处附带代码结构变化**（记为 C2 表面变更的一部分）：内置控件命名空间从 `EclipseUI` 迁到
+`EclipseUI.Elements`（`Panels.cs`/`TextBlock.cs`/`Controls.cs`），生成代码引用全部走 `global::` 限定，
+`.ui` 标签名不受影响；code-behind 若直接声明控件存量引用需带 using（样例已调整）。
+
+**运行期不变量**复测通过：`StyledPropertyRegistry`/事件字段交叉一致、失效级别白名单
+（唯一例外仍是 `Element.IsHitTestVisible`）均随新表面复跑。
 
 ## 14.13 风险与开放问题
+
 
 | 风险 | 影响 | 对策 |
 |---|---|---|
 | opt-out 暴露策略导致"新增 public StyledProperty 即扩大模板表面" | 控件 API 演进受模板兼容约束 | `[UiIgnore]` 显式隐藏；1.0 前评审一次属性表面；变更记录标注 |
 | 符号扫描性能（大项目/多引用） | 生成器变慢 | **实测不构成风险**：14 程序集 / 688 类型全扫 45.1 ms，过滤后 7 个（14.10.3）；缓存交给管道的值比较，生成器不持可变状态（D14） |
-| `InputEvents` 迁入 `Element`（C2） | 19 处手写 `AddHandler(InputEvents.X, …)` 改名 | 机械改名；`InputTests.cs`/`LayoutAndInputTests.cs` 已覆盖路由行为，改名后全绿即通过 |
+| `InputEvents` 迁入 `Element`（C2） | 19 处手写 `AddHandler(InputEvents.X, …)` 改名 | ✅ 已落地（2026-11-02）：机械改名；`InputTests.cs`/`LayoutAndInputTests.cs` 覆盖路由行为，改名后全绿 |
 | 组件参数无 diff | 用户误以为参数变化会重建组件 | 参数推送 + 子 `Invalidate()`（14.6.1）；子模板结构不重建；G4 评估参数 diff |
 | 组件 `required` 参数 | 与生成形态互斥（实测 CS9035） | 必填改用 `[UiParameter(Required = true)]`；`required`/`init` 报 EUI028（D12） |
 | 默认值/失效级别编译期不可知 | 悬停少两项、失效契约无法静态校验 | 划为运行期事实（D13）；由 14.11.1 运行期快照 + 白名单兜底 |
@@ -960,7 +1063,8 @@ C4 只负责组件标签与参数/内容元数据，C5 只保留 `Ref` 与语法
 
 同时 03 §3.5.3 增加 D18（`ForEachBlock.Dispose` 不释放条目作用域）、D19（附加属性报 EUI002）、D20（`TextRuns` 生成形态）与 D21（元数据缺失诊断），作为 G3/C2/C3 收敛项；
 03 为"同一目标重复赋值"分配 EUI033（14.9.1），由 C5 落地。
-附录 A 落地时补记 D22：`@foreach` 生成代码使用未限定的 `List<...>`，依赖项目 `ImplicitUsings`（C2 修复）。
+附录 A 补记 D22：`@foreach` 曾生成未限定的 `List<...>`、依赖项目 `ImplicitUsings`（C2 已修复；
+生成代码类型全部 `global::` 限定，测试断言零 `ImplicitUsings` 依赖）。
 
 ## 14.17 与 03 v3 / 15 对齐（v3）
 

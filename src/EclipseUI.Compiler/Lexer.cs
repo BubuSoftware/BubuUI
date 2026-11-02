@@ -162,6 +162,7 @@ public sealed class Lexer
             }
             if (c == '"') return ReadString(start);
             if (c == '{') return CaptureExpression();
+            if (c == '@') return ReadBindAttribute(start);
             if (IsIdentStart(c)) return ReadIdentifier(start);
 
             _i++;
@@ -222,6 +223,35 @@ public sealed class Lexer
             Text = _s.Substring(start, _i - start),
             Span = new TextSpan(start, _i - start),
         };
+    }
+
+    /// <summary>
+    /// 标记模式的 <c>@bind-P</c>：整体作为一个 Identifier 记号（spec/01 §2.3）。
+    /// 前缀大小写敏感；<c>@bind-</c> 后必须紧跟名字，否则是语法错误。
+    /// </summary>
+    private Token ReadBindAttribute(int start)
+    {
+        const string prefix = "@bind-";
+        if (start + prefix.Length > _s.Length ||
+            string.CompareOrdinal(_s, start, prefix, 0, prefix.Length) != 0)
+        {
+            _i = start + 1;
+            return new Token { Kind = TokenKind.Error, Text = "@", Span = new TextSpan(start, 1) };
+        }
+
+        _i = start + prefix.Length;
+        if (_i >= _s.Length || !IsIdentStart(_s[_i]))
+        {
+            return new Token
+            {
+                Kind = TokenKind.Error,
+                Text = prefix,
+                Aux = "'@bind-' must be followed immediately by a property name",
+                Span = new TextSpan(start, _i - start),
+            };
+        }
+
+        return ReadIdentifier(start);
     }
 
     /// <summary>捕获平衡大括号内的原始 C# 表达式（字符串字面量感知）。</summary>

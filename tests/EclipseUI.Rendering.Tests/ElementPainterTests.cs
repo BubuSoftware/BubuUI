@@ -261,12 +261,13 @@ public class ElementPainterTests
     [Fact]
     public void Build_BlockCoordinators_AreVisuallyTransparent()
     {
-        var flag = new Signal<bool>(true);
+        bool flag = true;
         var root = new StackPanel();
         var block = new ConditionalBlock();
-        block.SetCondition(() => flag.Value, flag);
-        block.SetContent(_ => new Element[] { Text("inside block", 16) });
+        block.SetCondition(() => flag);
+        block.SetContent(scope => scope.AddRoot(Text("inside block", 16)));
         root.Children.Add(block);
+        block.Refresh();
         Layout(root);
 
         var theme = new ElementTheme();

@@ -13,17 +13,32 @@ public enum AttrValueKind
     Expression,
 }
 
+/// <summary>属性的绑定形态：v4 的 <c>@bind-P</c> 与已弃用的 <c>:bind</c>/<c>:value</c> 修饰符。</summary>
+public enum UiBindForm
+{
+    None,
+    /// <summary><c>P:value={expr}</c> ≡ <c>P={expr}</c>（弃用，EUI043）。</summary>
+    LegacyValue,
+    /// <summary><c>@bind-P={expr}</c>。</summary>
+    TwoWay,
+    /// <summary><c>P:bind={expr}</c> ≡ <c>@bind-P={expr}</c>（弃用，EUI043）。</summary>
+    LegacyTwoWay,
+}
+
 public sealed class UiAttribute
 {
     public string Name { get; set; } = "";
     public TextSpan NameSpan { get; set; }
-    public bool IsBind { get; set; }
+    public UiBindForm BindForm { get; set; }
+    public bool IsBind => BindForm == UiBindForm.TwoWay || BindForm == UiBindForm.LegacyTwoWay;
+    public bool IsLegacy => BindForm == UiBindForm.LegacyValue || BindForm == UiBindForm.LegacyTwoWay;
     public AttrValueKind Kind { get; set; }
     public string Value { get; set; } = "";
     public TextSpan ValueSpan { get; set; }
 
-    // 由 Analyzer 填充
+    // 由 Analyzer 填充：属性与事件分开解析（design/14 §14.5.3），二者至多一个非空
     public UiPropDef? PropDef { get; set; }
+    public UiEventDef? EventDef { get; set; }
     public string? ConvertedLiteral { get; set; }
 }
 

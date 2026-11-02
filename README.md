@@ -15,9 +15,21 @@
 > 空闲 400 tick 仅首帧上屏，交互帧按脏区提交；跟踪开销 ≈ 0.1 µs/元素，见
 > [13 G2 第三切片](./design/13-g2-damage-v0.md)。
 > **S1 失效重算切片已通过**：普通 CLR 状态 + `Invalidate`/`Render`，根级属性/文本重算、
-> 控件事件自动失效；规范正本 [spec/01–03](./spec/README.md)（v4），142 个测试全绿
-> （Headless 77 / Compiler 4 / Rendering 61）。块与双向绑定仍是 v3 过渡路径（S2–S5）。
-> 样式主题、IDE 支持为后续里程碑。
+> 控件事件自动失效；规范正本 [spec/01–03](./spec/README.md)（v4）。
+> **S2 块 v4 切片已通过**：`@if`/`@foreach` 协调器 + `R{N}`、任意 `IEnumerable<T>` item 推断、
+> Keyed 复用、`UiBinding` 原语与 `EUI033`。
+> **S3 绑定切片已通过（控件侧）**：`@bind-P` 新语法 + 旧 `:bind`/`:value` 弃用告警、
+> item 绑定与条目释放、`EUI037`/`EUI040`/`EUI043`。
+> **C1 目录派生切片已通过**：运行时六个声明特性（`[UiTag]`/`[UiContent]`/`[UiIgnore]`/`[UiParameter]`/
+> `[UiSlot]` + `UiContentKind`）、`Compiler.Metadata` Roslyn 符号扫描器；派生目录 ⊇ 手写目录
+> （模板属性项 6→17，差集逐条评审见 [14 §14.12.1](./design/14-control-template-contract.md)）。
+> **C2 模板表面切片已通过（2026-11-02）**：分析器/生成器切到派生目录、手写目录删除（`CreateDefault()` 不存在）；
+> `InputEvents` 7 个事件迁入 `Element`（模板事件 1 → 9 个事件名，任何标签可写输入/焦点处理器）、
+> 补 `CheckBox.CheckedChanged`；`Metadata` 源码链接进生成器程序集；golden 快照落成
+> `TestData/BuiltInSurface.golden.txt`；`@foreach` 生成代码全 `global::` 限定（D22 修复）。
+> 落地记录 [14 §14.12.2](./design/14-control-template-contract.md)，台账 D22/D65/D69/D72 关闭。
+> 257 个测试全绿（Headless 103 / Compiler 93 / Rendering 61）。
+> 组件标签、组件参数与组件级 `@bind`（`PChanged`）仍按 C4 推进；样式主题、IDE 支持为后续里程碑。
 
 ## 核心理念
 
@@ -30,23 +42,30 @@
 ```
 design/                          设计文档（架构 8 篇 + 计划、切片报告、控件契约）
 src/
-  EclipseUI.Runtime/             运行时：失效队列与所有权（S1）、StyledProperty 属性引擎、
-                                 元素树、measure/arrange 布局、块协调器（v3 订阅，S2 迁移）、
-                                 路由事件、InputRouter 输入/焦点、Panel.Padding/ClipToBounds、无头宿主
+  EclipseUI.Runtime/             运行时：失效队列与所有权、StyledProperty 属性引擎、
+                                 元素树、measure/arrange 布局、块协调器（v4：`Refresh`/`BlockScope`）、
+                                 路由事件、InputRouter 输入/焦点、Panel.Padding/ClipToBounds、无头宿主、
+                                 控件契约声明特性（`UiAttributes.cs`：`[UiTag]`/`[UiContent]`/`[UiIgnore]`/
+                                 `[UiParameter]`/`[UiSlot]` + `UiContentKind`）
   EclipseUI.Text.Shaping/        HarfBuzz shaping（HarfBuzzSharp）：先 shaping 再测量，
                                  HarfBuzzTextPainter 让布局与绘制共用同一 shaping 缓存
-  EclipseUI.Compiler/            .ui 编译器前端：Lexer / Parser / AST / 内置目录 / 诊断（netstandard2.0）
+  EclipseUI.Compiler/            .ui 编译器前端：Lexer / Parser / AST / 字面量转换与建议 / 诊断（netstandard2.0）
+  EclipseUI.Compiler.Metadata/   控件契约目录（C1–C2）：声明式元数据模型 + Roslyn 符号扫描器，
+                                 从符号派生模板目录（标签/属性/事件/内容/参数/插槽），不执行程序集
+                                 （netstandard2.0；C2 起由分析器与生成器同源消费，源码内嵌进生成器）
   EclipseUI.Compiler.Generator/  Roslyn 增量源生成器：code-behind 发现、@foreach item 类型推断、
-                                 代码发射（#line 映射回 .ui，诊断与断点共用）
+                                 @bind 源可写性校验、代码发射（U/R 定向更新、#line 映射回 .ui）
 samples/CounterApp/              三个样例组件：Counter（计数器/条件/双向绑定）、
                                  TaskList（@foreach Key 对齐）、S1Probe（v4 失效切片）；
                                  生成的 C# 落盘在 Generated/ 供检视
 samples/GalleryApp/              G2 验收样例：Counter + TaskList 真窗口交互、--selfcheck、
                                  CPU/窗口截图与帧时间统计
-tests/EclipseUI.Headless.Tests/  77 个无头测试：属性引擎、布局（含 padding）、块协调、
+tests/EclipseUI.Headless.Tests/  103 个无头测试：属性引擎、布局（含 padding）、块协调、
                                  输入/焦点路由、shaping、编译器、失效队列/所有权、端到端（含泄漏回归）
-tests/EclipseUI.Compiler.Tests/  4 个生成器契约测试：确定性 hint、根级字段提升与 Render、
-                                 事件失效包装、#line 映射（Roslyn GeneratorDriver）
+tests/EclipseUI.Compiler.Tests/  93 个测试：39 个生成器契约测试（确定性 hint、U/R 形态与 Render、
+                                 块/绑定生成、@bind 源与目标诊断、集合与嵌套 item 类型推断、#line 映射）
+                                 + 42 个目录扫描测试（发现规则、属性/事件/内容/参数派生、
+                                 与 `StyledPropertyRegistry` 交叉一致、失效级别守卫、跨程序集标签冲突、表面快照与差集）
 tests/EclipseUI.Rendering.Tests/ 61 个渲染测试：图元/作用域/文本/功能矩阵/确定性/CPU-GPU 交叉一致、
                                  场景图绘制语义、damage 脏区检测
 src/EclipseUI.Rendering/         渲染契约：DisplayList、DrawCommand、Brush、Transform、PngEncoder、
@@ -74,7 +93,7 @@ dotnet run --project samples/RenderSpike -c Release -- bench
 dotnet run --project samples/WindowSpike -c Release -- --frames 300
 dotnet run --project samples/WindowSpike -c Release -- --selfcheck   # resize 冒烟
 
-# G2 验收：Counter + TaskList 真窗口交互（消息 → 输入路由 → 信号 → 重绘）
+# G2 验收：Counter + TaskList 真窗口交互（事件 → 输入路由 → 失效重算 → 重绘）
 dotnet run --project samples/GalleryApp -c Release
 dotnet run --project samples/GalleryApp -c Release -- --selfcheck --no-vsync   # 6 步自检 + damage 覆盖率
 dotnet run --project samples/GalleryApp -c Release -- --no-vsync --frames 400  # 空闲跳帧：rendered=1
@@ -87,40 +106,43 @@ dotnet run --project samples/GalleryApp -c Release -- --cpu --shot out/gallery-c
 ```xml
 <StackPanel Gap="8">
     <TextBlock FontSize="30">You pressed {count} times</TextBlock>
-    <CheckBox Checked:bind={showButton}>Button visible</CheckBox>
+    <CheckBox @bind-Checked={showButton}>Button visible</CheckBox>
     @if (showButton) {
-        <Button OnClick={() => count.value++}>+1</Button>
+        <Button OnClick={() => count++}>+1</Button>
     }
 </StackPanel>
 ```
 
-code-behind（同名 `.cs`，无继承样板）：
+code-behind（同名 `.cs`，普通 CLR 成员，无继承样板）：
 
 ```csharp
 public partial class Counter
 {
-    public readonly Signal<int> count = new(0);
-    public readonly Signal<bool> showButton = new(false);
+    public int count;
+    public bool showButton;
 }
 ```
 
 `.ui` 作为 AdditionalFile 进入编译，由增量源生成器生成 `Build()`：
-结构创建指令 + 每个绑定点的定向更新函数 + signal 订阅接线。
-表达式中裸信号引用自动补 `.Value`（`{count}` → `count.Value`）。
+结构创建指令 + 根级 `U{N}`/块内 `R{N}` 定向更新函数 + 块协调器接线。
+表达式就是 C# 表达式（不重写、不补 `.Value`）；控件事件处理器末尾自动 `Invalidate()`。
 
 ## 已实现的关键语义
 
 - **属性引擎**：`StyledProperty<T>`（默认值 / 继承 / 失效分级 Measure–Arrange–Render），
   setter 值短路无装箱；变更只标脏，布局在 `HeadlessRoot.UpdateLayout()` 帧内增量执行。
 - **文本一等公民**：`<TextBlock>You pressed {count} times</TextBlock>` 编译为多个
-  TextRun，各自独立定向更新。
-- **块协调器**：`@if` 挂载/卸载内容并随内容释放订阅（测试含泄漏探测；条件初始为真时
-  SetContent 晚到也会正确挂载）；`@foreach` 按 `Key={...}` 对齐新旧条目，复用实例并按新
-  item 重跑更新函数——O(变动数)，移除条目时连带释放其作用域内订阅（`BlockScope.Disposables`）。
-- **订阅放置随上下文**：生成器把双向绑定/嵌套块的订阅挂到正确的作用域——根级 `Track`、
-  条件内容挂内容订阅表（卸载即释放）、item 模板挂 scope 订阅表（条目移除即释放），
-  从机制上杜绝 toggle/增删条目时的订阅泄漏。
-- **双向绑定**：`Checked:bind={showButton}` 生成 `Bind.TwoWay`，值短路防回环。
+  TextRun（经 `ITextContentHost`），各自独立定向更新；静态段不建 run 变量。
+- **块协调器（v4）**：`@if` 的 setter 只保存条件与模板，`Refresh()` 首次挂载；条件翻转卸载并
+  逆序释放旧 `BlockScope`，条件不变只重跑渲染动作。`@foreach` 每次重新枚举任意
+  `IEnumerable<T>`（数组/`List<T>`/字典/LINQ），null 视为空；`Key` 相同 **且** item 身份相同
+  才复用，不同 item 重建；条目移除/块 `Dispose` 释放作用域资源，根序列不变时不改 `Children`。
+- **资源放置随上下文**：绑定与嵌套块登记到正确作用域——根级 `Track`、条件内容
+  `scope.AddDisposable`、item 模板条目作用域；从机制上杜绝 toggle/增删条目时的泄漏。
+- **双向绑定**：`@bind-Checked={showButton}` 生成 `UiBinding.TwoWay`；构造时源→目标，
+  目标变化回写源并 `Invalidate`，相等短路防回环；源必须是可写左值，非法源/非法目标分别报
+  `EUI037`/`EUI040`（编译期，含值类型 item 成员与属性返回的 struct 中间段）；旧语法
+  `:bind`/`:value` 仍可用但报 `EUI043` 弃用告警；组件级 `@bind` 待 C4。
 - **输入与焦点**：`InputRouter` 统一 hit test、按下捕获、指针移动/释放与键盘路由；
   无头宿主（`HeadlessRoot`）与 Win32 窗口宿主共用同一条路径。点击保持最深层命中、
   键盘焦点交给最近可聚焦祖先；`FocusManager` 负责 Tab 环形遍历与 Got/LostFocus，
@@ -132,8 +154,10 @@ public partial class Counter
   RTL 簇序、比例字宽、行盒高度均有真实字体（arial.ttf）测试；`HarfBuzzTextPainter`
   同时实现 `ITextPainter` 与 `ITextMeasurer`，布局与绘制共用同一个 shaping 缓存。
 - **诊断即生命线**：未知标签/属性给最近似名建议；字面量按目标类型编译期转换，
-  格式错=编译错误（EUI001–EUI015）；表达式经 `#line` 映射，Roslyn 报错直接落在 `.ui` 上。
-- **无头测试**：不开窗口断言元素树、布局结果、signal 行为、事件冒泡、命中与焦点（设计文档 07 的落地）。
+  格式错=编译错误（EUI001–EUI015），`@foreach` 集合不可枚举报 EUI007，同一目标重复写入报 EUI033，
+  绑定源/目标非法报 EUI037/EUI040，旧 `:bind`/`:value` 报 EUI043 弃用告警；
+  表达式经 `#line` 映射，Roslyn 报错直接落在 `.ui` 上。
+- **无头测试**：不开窗口断言元素树、布局结果、失效重算、块生命周期、事件冒泡、命中与焦点（设计文档 07 的落地）。
 - **GPU 上屏（G2）**：`DisplayList` → `VelloSurfaceBackend` → wgpu(Dx12) surface → 窗口像素；
   `WindowHost` 把 Measure/Arrange → `ElementPainter` → present 串成帧循环，
   纯 Win32 宿主（无 WinForms/WPF），`WM_SIZE`/`WM_DPICHANGED` 触发 `surface.Configure`。
@@ -146,7 +170,8 @@ public partial class Counter
 
 ## 当前边界（已知限制）
 
-- `@switch` 未支持；item 模板内引用 signal / 双向绑定未支持（EUI014）。
+- `@switch` 未支持；组件标签、组件参数与组件级 `@bind`（`{P}Changed` 父推送/子回调）未实现（C4，
+  台账 spec/02 D54/D56）。
 - 文本：无头测试默认用确定性 naive 测量；窗口样例接入 HarfBuzz。多行断行、bidi 混排、字体 fallback 未实现。
 - 输入：无头注入与 Win32 鼠标/键盘已共用 `InputRouter` 并路由进元素树；字符输入（`WM_CHAR`）、
   IME、Shift+Tab 未接（暂无文本编辑控件）。
@@ -163,14 +188,17 @@ public partial class Counter
 ## 下一步（按开发计划）
 
 G1 已出结论（Go），G2 前三切片已通过：`CounterApp` / `TaskList` 已在真实窗口可交互，
-damage v0 让空闲帧不再提交 GPU。当前优先级是 **G2 剩余部分**：像素 golden、retained layer、
-目标机 60fps 复测。
+damage v0 让空闲帧不再提交 GPU。G3 的 C1/C2 目录派生切片已通过（手写目录删除，
+模板表面 17 属性项 / 9 个事件名，落地记录见
+[14 §14.12.2](./design/14-control-template-contract.md)）。当前优先级是 **G2 剩余部分**：
+像素 golden、retained layer、目标机 60fps 复测；G3 并行推进 C3（转换器 + 使用点诊断）。
 完整路线图见 [09 开发计划](./design/09-development-plan.md)，G1 数据见
 [render-gate-2026-11](./design/reports/render-gate-2026-11.md)，G2 进度见
 [11 G2 第一切片](./design/11-g2-surface-slice.md)、[12 G2 第二切片](./design/12-g2-interactive-slice.md)
 与 [13 G2 第三切片](./design/13-g2-damage-v0.md)。
 
 1. **G2 剩余**：像素 golden + retained layer / 局部重绘 + 目标机 60fps。
-2. **G3 语义/编译器硬化**（与 G2 并行）：块布局透明化、单向绑定、列表作用域、语法级表达式重写、组件注册表。
+2. **G3 语义/编译器硬化**（与 G2 并行）：块布局透明化、语法级表达式重写、按文件增量与 `#line` 列映射、
+   转换器扩展与 EUI016–EUI026 使用点诊断（C3）、组件标签与组件级绑定（C4）。
 3. **G4 样式/控件/虚拟化**：选择器编译、亮暗主题、基础控件集、`VirtualizingPanel`。
 4. **G5 IDE P0–P1**：TextMate grammar + LSP server（表达式投影进 Roslyn）+ VS Code/Rider 壳。

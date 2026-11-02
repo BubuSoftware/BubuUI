@@ -112,6 +112,17 @@ public abstract class Element
     /// <summary>属性变更通知（值短路：相等不触发）。</summary>
     public event Action<Element, StyledProperty>? PropertyChanged;
 
+    // 输入与焦点路由事件声明在 Element 上（design/14 §14.4.3）：继承是路由事件的语义基础，
+    // 放在静态宿主类里不参与目录扫描，模板事件表面就只剩 Button.OnClick。
+
+    public static readonly RoutedEvent PointerPressedEvent = new RoutedEvent("PointerPressed", RoutingStrategy.Bubble);
+    public static readonly RoutedEvent PointerReleasedEvent = new RoutedEvent("PointerReleased", RoutingStrategy.Bubble);
+    public static readonly RoutedEvent PointerMovedEvent = new RoutedEvent("PointerMoved", RoutingStrategy.Bubble);
+    public static readonly RoutedEvent KeyDownEvent = new RoutedEvent("KeyDown", RoutingStrategy.Bubble);
+    public static readonly RoutedEvent KeyUpEvent = new RoutedEvent("KeyUp", RoutingStrategy.Bubble);
+    public static readonly RoutedEvent GotFocusEvent = new RoutedEvent("GotFocus", RoutingStrategy.Bubble);
+    public static readonly RoutedEvent LostFocusEvent = new RoutedEvent("LostFocus", RoutingStrategy.Bubble);
+
     public T GetValue<T>(StyledProperty<T> property)
     {
         if (_localValues is not null && _localValues.TryGetValue(property, out var boxed))

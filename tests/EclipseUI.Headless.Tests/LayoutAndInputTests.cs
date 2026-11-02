@@ -146,7 +146,7 @@ public class InputRouterTests
         root.UpdateLayout();
 
         Key? seen = null;
-        button.AddHandler(InputEvents.KeyDownEvent, args => seen = ((KeyEventArgs)args).Key);
+        button.AddHandler(Element.KeyDownEvent, args => seen = ((KeyEventArgs)args).Key);
 
         root.PointerPress(CenterInRoot(button));
         root.KeyPress(Key.Enter);
@@ -167,8 +167,8 @@ public class InputRouterTests
         root.UpdateLayout();
 
         bool routed = false;
-        first.AddHandler(InputEvents.KeyDownEvent, _ => routed = true);
-        second.AddHandler(InputEvents.KeyDownEvent, _ => routed = true);
+        first.AddHandler(Element.KeyDownEvent, _ => routed = true);
+        second.AddHandler(Element.KeyDownEvent, _ => routed = true);
 
         root.PointerPress(CenterInRoot(first));
         root.KeyPress(Key.Tab);

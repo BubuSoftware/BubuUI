@@ -39,7 +39,7 @@ public sealed class InputRouter
             Focus.Focus(focusable);
 
         if (Captured is null) return;
-        Captured.RaiseEvent(new PointerEventArgs(InputEvents.PointerPressedEvent, point) { Source = Captured });
+        Captured.RaiseEvent(new PointerEventArgs(Element.PointerPressedEvent, point) { Source = Captured });
     }
 
     /// <summary>指针释放：优先路由给捕获元素，随后解除捕获。</summary>
@@ -48,14 +48,14 @@ public sealed class InputRouter
         var target = Captured ?? _root.HitTest(point);
         Captured = null;
         if (target is null) return;
-        target.RaiseEvent(new PointerEventArgs(InputEvents.PointerReleasedEvent, point) { Source = target });
+        target.RaiseEvent(new PointerEventArgs(Element.PointerReleasedEvent, point) { Source = target });
     }
 
     public void PointerMove(Point point)
     {
         var target = Captured ?? _root.HitTest(point);
         if (target is null) return;
-        target.RaiseEvent(new PointerEventArgs(InputEvents.PointerMovedEvent, point) { Source = target });
+        target.RaiseEvent(new PointerEventArgs(Element.PointerMovedEvent, point) { Source = target });
     }
 
     /// <summary>按键。Tab 由焦点系统拦截做遍历；其余 KeyDown 从焦点元素（或根）路由。</summary>
@@ -68,6 +68,6 @@ public sealed class InputRouter
         }
 
         var target = Focus.Focused ?? _root;
-        target.RaiseEvent(new KeyEventArgs(InputEvents.KeyDownEvent, key) { Source = target });
+        target.RaiseEvent(new KeyEventArgs(Element.KeyDownEvent, key) { Source = target });
     }
 }

@@ -88,7 +88,7 @@ public sealed class Parser
                     break;
 
                 case TokenKind.Error:
-                    Diag(UiDiagnostics.Syntax, $"unexpected input: {_tok.Text}", _tok.Span);
+                    Diag(UiDiagnostics.Syntax, _tok.Aux ?? $"unexpected input: {_tok.Text}", _tok.Span);
                     Advance();
                     break;
 
@@ -144,10 +144,29 @@ public sealed class Parser
                 Advance();
                 var attr = new UiAttribute { NameSpan = nameTok.Span };
                 var raw = nameTok.Text;
-                if (raw.EndsWith(":bind", StringComparison.Ordinal))
+                if (raw.StartsWith("@bind-", StringComparison.Ordinal))
+                {
+                    var name = raw.Substring("@bind-".Length);
+                    int colon = name.IndexOf(':');
+                    if (colon >= 0)
+                    {
+                        Diag(UiDiagnostics.Syntax,
+                            $"'{raw}' is not an attribute name; '@bind-P' takes no legacy modifier, write @bind-{name.Substring(0, colon)}",
+                            nameTok.Span);
+                        name = name.Substring(0, colon);
+                    }
+                    attr.Name = name;
+                    attr.BindForm = UiBindForm.TwoWay;
+                }
+                else if (raw.EndsWith(":bind", StringComparison.Ordinal))
                 {
                     attr.Name = raw.Substring(0, raw.Length - 5);
-                    attr.IsBind = true;
+                    attr.BindForm = UiBindForm.LegacyTwoWay;
+                }
+                else if (raw.EndsWith(":value", StringComparison.Ordinal))
+                {
+                    attr.Name = raw.Substring(0, raw.Length - 6);
+                    attr.BindForm = UiBindForm.LegacyValue;
                 }
                 else
                 {
@@ -203,6 +222,13 @@ public sealed class Parser
                 else if (!string.Equals(_lastEndTag, element.Tag, StringComparison.Ordinal))
                     Diag(UiDiagnostics.Syntax, $"mismatched closing tag: expected </{element.Tag}>, got </{_lastEndTag}>", element.TagSpan);
                 return element;
+            }
+
+            if (_tok.Kind == TokenKind.Error)
+            {
+                Diag(UiDiagnostics.Syntax, _tok.Aux ?? $"unexpected input: {_tok.Text}", _tok.Span);
+                Advance();
+                continue;
             }
 
             Diag(UiDiagnostics.Syntax, $"unexpected token {_tok.Kind} in tag", _tok.Span);

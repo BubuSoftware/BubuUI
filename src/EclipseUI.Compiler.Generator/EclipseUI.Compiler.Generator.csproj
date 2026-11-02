@@ -17,6 +17,10 @@
   <ItemGroup>
     <Compile Include="..\EclipseUI.Compiler\**\*.cs" LinkBase="Compiler"
              Exclude="..\EclipseUI.Compiler\obj\**\*.cs;..\EclipseUI.Compiler\bin\**\*.cs" />
+    <!-- C2：符号扫描目录同样是生成器的一部分（模板表面只有派生目录这一事实源）。
+         Polyfills.cs 不并入：EclipseUI.Compiler/Polyfills.cs 已提供 internal IsExternalInit。 -->
+    <Compile Include="..\EclipseUI.Compiler.Metadata\**\*.cs" LinkBase="Metadata"
+             Exclude="..\EclipseUI.Compiler.Metadata\obj\**\*.cs;..\EclipseUI.Compiler.Metadata\bin\**\*.cs;..\EclipseUI.Compiler.Metadata\Polyfills.cs" />
   </ItemGroup>
 
 </Project>

@@ -784,9 +784,9 @@ new cmp
 | `EUI007` | `@foreach` 集合不是 `IEnumerable<T>`、`T` 无法推断、`IAsyncEnumerable`/`IEnumerator`/非泛型/`dynamic` | 集合表达式 | Error | S2 |
 | `EUI010` | `Key` 位置错（非条目第一个元素根）、字面量、空表达式 | 属性 | Error | S2 |
 | `EUI033` | 同一目标重复赋值（文本+显式目标；`P=`+`@bind`；`P=`+`:bind`/`:value`；`@bind`+其它写入） | 属性值/文本 | Error | S2/S3 |
-| `EUI037` | `@bind` 源非法（非可写左值/静态/const/readonly/init/方法/索引器/`?.`/struct 属性中间段/值类型 item 成员/类型不符） | 表达式 | Error | S3 |
-| `EUI040` | `@bind` 目标非法（控件不可写/无 `{Name}Property`；组件参数无 public setter/委托/内容/保留；组件缺少 `{P}Changed` 或类型不符）；组件内容体内出现 `@bind` | 属性名/内容 | Error | S3 |
-| `EUI043` | 旧语法 `:bind`/`:value` 弃用 | 属性名 | Warning | S3 |
+| `EUI037` | `@bind` 源非法（非可写左值/静态/const/readonly/init/方法/索引器/`?.`/struct 属性中间段/值类型 item 成员/类型不符） | 表达式 | Error | ✅ S3（控件与 item 源；自绑静态不可判定不报） |
+| `EUI040` | `@bind` 目标非法（控件不可写/无 `{Name}Property`；组件参数无 public setter/委托/内容/保留；组件缺少 `{P}Changed` 或类型不符）；组件内容体内出现 `@bind` | 属性名/内容 | Error | ✅ S3（控件：不可绑/事件/保留名；组件侧待 C4） |
+| `EUI043` | 旧语法 `:bind`/`:value` 弃用 | 属性名 | Warning | ✅ S3 |
 | `EUI045` | code-behind 与生成成员冲突（`Build`/`Render`/`U{N}`/`__` 字段/基类/隐藏 `Invalidate` 等） | code-behind 声明 | Error | C3 |
 | `EUI100` | 纯语法错误（标签不匹配、属性缺值、未闭合注释、非法 `@bind-` 形态） | 语法位置 | Error | ✅ |
 
@@ -867,8 +867,8 @@ O(根级动态绑定数 + 根级块数 + Σ 块刷新成本)
 | 阶段 | 内容 | 出口标准 |
 |---|---|---|
 | **S1** ✅ | `Component.Invalidate/ProcessInvalidations/Render/ShouldRender`；失效队列与合并；生成字段与 `U{N}`；根级 `P=`/文本重算；控件事件自动失效 | 根级动态属性/文本在失效后更新；同帧多次失效只渲染一次；Dispose 后 no-op |
-| **S2** | `ConditionalBlock`/`ForEachBlock` v4；`BlockScope.RenderActions`；`@if` 分支切换；`@foreach` 重新枚举、null=空、Keyed 复用；嵌套块；`EUI033`（文本 + 显式目标） | 分支切换释放旧作用域；同 Key 同 item 复用、不同 item 重建；列表类型不受限 |
-| **S3** | `UiBinding` v4；控件 `@bind`；组件 `PChanged`；item 绑定；`EUI033`（`P=` 与绑定冲突）/`EUI037`/`EUI040`/`EUI043` | 双向绑定源值胜出；目标变化回写+失效；无回环；组件参数向上同步 |
+| **S2** ✅ | `ConditionalBlock`/`ForEachBlock` v4；`BlockScope.RenderActions`；`@if` 分支切换；`@foreach` 重新枚举、null=空、Keyed 复用；嵌套块；`EUI033`（文本 + 显式目标） | 分支切换释放旧作用域；同 Key 同 item 复用、不同 item 重建；列表类型不受限 |
+| **S3** 🟡 | `UiBinding` v4；控件 `@bind`；item 绑定；`EUI033`（`P=` 与绑定冲突）/`EUI037`/`EUI040`/`EUI043` —— 控件侧 ✅（2026-11-02）；组件 `PChanged` 与组件 `@bind` 待 C4（spec/02 D54） | 双向绑定源值胜出；目标变化回写+失效；无回环；~~组件参数向上同步~~（待 C4） |
 | **S4** | 组件所有权/深度排序；参数推送与相等保护；异步/后台失效；`ShouldRender` 与异步失效的组合语义 | 父先于子渲染；后台失效合并；异步续体显式失效；无泄漏 |
 | **S5** | 基准/预算；AOT/裁剪；死循环上限；旧语法清理；诊断清理与最终审计 | 性能预算达标；零停用诊断；样例迁移完成 |
 
@@ -907,6 +907,31 @@ O(根级动态绑定数 + 根级块数 + Σ 块刷新成本)
 **S1 门禁（2026-10-30 通过）**：T1/T3 见 `tests/EclipseUI.Headless.Tests/S1AcceptanceTests.cs`，T2/T4 见
 `InvalidationTests.cs`，T13/T14 见 `tests/EclipseUI.Compiler.Tests/GeneratorContractTests.cs`；解决方案
 142 个测试全绿（Headless 77 / Compiler 4 / Rendering 61）。
+
+**S2 门禁（2026-10-30 通过）**：T5/T6/T7 见 `tests/EclipseUI.Headless.Tests/BlockTests.cs`
+（条件翻转/不翻转/空分支、数组/字典/LINQ/null、Keyed 复用/重建/重复 Key、条目释放）与
+`tests/EclipseUI.Compiler.Tests/GeneratorContractTests.cs`（`@if`/`@foreach` 生成形态、任意集合与
+嵌套 item 类型推断、`EUI007`）；T11 见 `InvalidationTests.cs`（重入同轮、超上限抛异常）；
+T15 见 `samples/CounterApp`、`samples/GalleryApp` 与 `EndToEndTests.cs`（编译 0 error；增删/勾选/条件冒烟）。
+164 个测试全绿（Headless 89 / Compiler 14 / Rendering 61）。
+
+**S3 门禁（控件侧，2026-11-02 通过）**：T8 见 `tests/EclipseUI.Headless.Tests/EndToEndTests.cs`
+（`TaskList` 条目内 `@bind-Checked={t.Done}`：回写 item、组件失效、同 Key 换实例后重建从源恢复、
+条目移除后绑定释放）与 `GeneratorContractTests.cs`（`UiBinding.TwoWay` 形态、`@bind-P` 与 `P:bind`
+生成文本逐字节相同、item 源与 `this.`/struct 字段中间段正例）；T16 的诊断用例覆盖 `EUI037`
+（16 例：调用/索引器/`?.`/`??`/转换/`as`/`new`/lambda/静态/const/readonly/init/类型不符/属性返回
+struct/值类型 item/名字不存在）、`EUI040`（事件与保留名目标）、`EUI043`（`:bind`/`:value` Warning）；
+T15 见样例迁移到 `@bind-` 后 `CounterApp`/`GalleryApp` 编译 0 error 0 warning。
+202 个测试全绿（Headless 102 / Compiler 39 / Rendering 61）。
+组件 `@bind`、`PChanged` 与 T9 属 C4 依赖项，未在本阶段收敛（spec/02 D54/D56）。
+
+**C1 目录派生（非 S 阶段，2026-11-02 通过）**：本阶段不改反应式与生成形态，只把控件元数据的来源换成符号。
+与反应式的交点是 **D62**：`EUI040` 的「目标可绑」判定此前只来自手写目录的 `UiPropDef.Bindable` 标注，
+现在派生目录对每个模板可见属性给出符号级 `CanWrite`（public 可写 + `{Name}Property`），
+`DerivedCanWrite_CoversTheHandBindableFlags` 证明派生 ⊇ 手写标注——分析器已改读它（✅ C2）。
+测试 `tests/EclipseUI.Compiler.Tests/CatalogScannerTests.cs` 42 例，当前 **257 个测试全绿
+（Headless 103 / Compiler 93 / Rendering 61）**；表面与差集记录见 design/14 §14.12.1（C1）与
+§14.12.2（C2：手写目录删除、事件表面 1 → 9 个事件名、golden 快照落成文件），新登记偏差 D63–D72（spec/02 §12）。
 
 ## 15. 迁移
 

@@ -41,6 +41,7 @@
 - 单一事实源是 C# 符号（`StyledProperty` / `RoutedEvent` / `[Ui*]` 特性），目录在编译期派生，
   运行时 `StyledPropertyRegistry` 只做镜像与校验；控件作者契约、生成代码与诊断规则见
   [14 控件与模板契约](./14-control-template-contract.md)。
-- 两条边界（14.4.3 / 14.13）：**事件字段必须声明在元素/组件类型上**，静态宿主类（现 `InputEvents`）不参与扫描，
-  在 C2 迁入 `Element`；**默认值与 `Invalidate` 级别是运行期事实**，来自 `Register(...)` 实参，编译期目录不携带，
+- 两条边界（14.4.3 / 14.13）：**事件字段必须声明在元素/组件类型上**，静态宿主类不参与扫描
+  （框架自己的 7 个输入/焦点事件已在 C2 从 `InputEvents` 迁入 `Element`，`InputEvents` 类已删除）；
+  **默认值与 `Invalidate` 级别是运行期事实**，来自 `Register(...)` 实参，编译期目录不携带，
   只能由运行期一致性测试校验。

@@ -75,8 +75,8 @@
 
 - 绘制完成即拥有精确 bounds，hit test 是树遍历。
 - 路由事件在元素树上 tunnel/bubble（见 04 运行时）。
-- 7 个输入/焦点事件（PointerPressed/Released/Moved、KeyDown/Up、GotFocus/LostFocus）当前声明在静态类
-  `InputEvents` 上（[Input.cs:20-28](../src/EclipseUI.Runtime/Input.cs#L20)）；按契约 v2（D11）在 C2 迁入 `Element`，
-  迁移后模板才能在任何标签上写 `OnPointerPressed={...}` 这类处理器（现手写目录只有 `OnClick`）。
+- 7 个输入/焦点事件（PointerPressed/Released/Moved、KeyDown/Up、GotFocus/LostFocus）已按契约 v2（D11）
+  在 C2（2026-11-02）从静态类 `InputEvents` 迁入 `Element`（[Element.cs:118-124](../src/EclipseUI.Runtime/Element.cs#L118)），
+  模板可在任何标签上写 `OnPointerPressed={...}` 这类处理器（连同 `OnClick`/`OnCheckedChanged` 共 9 个事件名）。
 - 焦点系统 + IME 是深水区：文本编辑器需要 selection / undo / IME 组合事件，
   设计上预留接口，排在里程碑 M4（IME 靠后）。

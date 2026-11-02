@@ -12,14 +12,18 @@
 
 - 设计文档 01–15（痛点、架构、模板引擎、运行时、布局/渲染/输入、IDE、工具链、里程碑、
   各 G 阶段切片记录、控件契约、状态与反应式）。
-- `.ui` 前端：Lexer / Parser / AST / 内置目录 / 诊断（EUI001–EUI015）。
+- `.ui` 前端：Lexer / Parser / AST / 字面量转换与建议 / 诊断（EUI001–EUI033 部分未实现；S3 新增
+  EUI037/EUI040/EUI043 已实现）。C2 起 `EclipseUI.Compiler.Metadata` 的目录构建产出
+  EUI017/018/019/021/026/028/030 的**元数据问题**（`UiMetadataProblem`，不是 `.ui` 上的诊断）；
+  使用点落地仍在 C3/C5。
 - Roslyn 增量源生成器：code-behind 发现、模板解析与动态点生成、`@foreach` item 类型推断、代码发射、`#line` 映射。
 - 运行时：`Signal<T>`（遗留原语，不参与模板反应式）、`StyledProperty<T>`、元素树、measure/arrange、路由事件、`@if`/`@foreach` 协调器、`Component`、无头宿主。
 - 输入/焦点：HitTest、指针冒泡、按下捕获、Tab 遍历、空格/回车激活；`InputRouter` 无头/窗口共用。
 - 文本：HarfBuzz shaping（真实字体测试），`HarfBuzzTextPainter` 让布局与绘制共用 shaping 缓存。
 - 渲染：`DisplayList` 契约、Vello CPU/GPU 后端、`ElementPainter` 场景图遍历、Win32 宿主 + wgpu 上屏、
   元素级 damage 与空闲跳帧。
-- 测试：124 个测试全绿（63 无头 + 61 渲染）。
+- 测试：257 个测试全绿（103 无头 + 93 编译器 + 61 渲染）；编译器测试用快照钉住 C2 变宽后的
+  模板表面（17 属性项 / 9 个事件名），样例 `.ui` 已用 `@bind-P` 新语法。
 
 **尚不具备**
 
@@ -167,7 +171,7 @@ Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-s
 - `CounterApp`、`TaskList` 在真实窗口可交互。—— ✅ GalleryApp 自检 6 步全过（[12](./12-g2-interactive-slice.md)）。
 - resize/DPI 变化不崩、不闪。—— ✅ 860×600 ↔ 1000×760 自检 + 第一切片 4 档尺寸冒烟。
 - 1280×800 简单场景稳定 60fps（目标机实测）。—— ⏳ 本机稳态帧成本 4.49 ms（p95 5.95），受 29 Hz 虚拟显示限制待目标机复测。
-- `dotnet test` 含渲染测试且跨机器稳定（容差/探针策略）。—— ✅ 124 个测试（63 无头 + 61 渲染），GPU 用例无设备自动跳过。
+- `dotnet test` 含渲染测试且跨机器稳定（容差/探针策略）。—— ✅ 257 个测试（103 无头 + 93 编译器 + 61 渲染），GPU 用例无设备自动跳过。
 
 **已知约束**（第一切片测得）：测试机显示器 29 Hz，`Fifo` 下 33.3ms/帧是正确行为；
 60fps 结论必须在目标机（真实显示器）上用 `--no-vsync` 的 `Immediate` 模式复测。
@@ -179,12 +183,21 @@ Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-s
 - 控制流块布局透明化（`@if`/`@foreach` 不再作为 StackPanel 参与布局）。
 - 状态与反应式 S1–S3（[spec/03](../spec/03-reactivity-and-binding.md)）：`Component.Invalidate`/`ProcessInvalidations`/`Render`、
   `U{N}`/`R{N}` 生成、根级 `P={expr}`/文本重算、块 v4（`BlockScope.RenderActions` 与显式 `Refresh`）、
-  `@bind-P` 双向与 `UiBinding`、组件 `{P}Changed`、item 身份重建与 `ForEachBlock.Dispose` 泄漏修复；
-  诊断 EUI007/EUI010/EUI033/EUI037/EUI040/EUI043。
+  `@bind-P` 双向与 `UiBinding`（控件侧 ✅ S3）、item 身份重建与 `ForEachBlock.Dispose` 泄漏修复；
+  诊断 EUI007/EUI010/EUI033/EUI037/EUI040/EUI043。组件 `@bind`/`{P}Changed` 依赖组件标签（C4），
+  记为未收敛 D54。
   S4（所有权/深度排序、参数推送与相等保护、异步/后台失效、`ShouldRender`）随 G4 推进，S5 收口归 G8。
 - 语法级表达式重写（Roslyn SyntaxRewriter，替代正则）。
 - 组件注册表：从 Compilation 收集元素/属性/事件/内容模型（契约、数据模型与阶段 C1–C6 见
   [14 控件与模板契约](./14-control-template-contract.md)）。
+  **进度（2026-11-02）：C1 ✅ / C2 ✅** —— `Runtime/UiAttributes.cs` 六个声明特性 + 内置控件标注、
+  `Compiler.Metadata` 目录模型与 Roslyn 符号扫描器、42 例一致性/快照测试全部落地；
+  派生目录 **⊇** 手写目录（属性项 6→17，差集 12 项逐条评审见 [14 §14.12.1](./14-control-template-contract.md)）。
+  **C2 切换完成**：分析器与生成器改读派生目录、手写目录删除；`InputEvents` 7 个事件迁入 `Element`
+  （模板事件表面 1 → 9 个事件名）并补 `CheckBox.CheckedChanged`；`@foreach` 生成代码全 `global::` 限定；
+  golden 快照落成文件。落地记录见 [14 §14.12.2](./14-control-template-contract.md)，台账 D22/D65/D69/D72 关闭。
+  提前落到 C1 的三项（标注、`ClipToBounds`→`Render`、`[UiIgnore]+[UiParameter]` 报 EUI028）与
+  扫描器对 §14.10.2 伪码的一处 API 偏离都记进台账（D63/D65/D67/D71/D72）。
 - 控件契约落地：目录从符号派生（C1–C2，含**输入事件字段从 `InputEvents` 迁入 `Element`**，
   模板事件表面 1 → 8、属性项 6 → 17）、转换器与 EUI016–EUI026 + EUI031 诊断（C3）、组件标签
   （参数/委托事件/`[UiParameter(Required=true)]`/`{P}Changed`，C4）、`Ref={field}` 与剩余语法收敛（C5）。
@@ -195,8 +208,11 @@ Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-s
 **出口标准**
 
 - 列表间距/条件布局有回归测试。
-- 组件注册表能发现样例项目与一个测试用第三方程序集。
-- 内置控件目录由符号派生（手写目录删除），目录与 `StyledPropertyRegistry` 的一致性测试通过。
+- 组件注册表能发现样例项目与一个测试用第三方程序集。—— ✅ C1/C2：扫描器能发现**合成**第三方程序集
+  （`SameTagInTwoReferencedAssemblies_IsAmbiguousWithCandidates` 真的 `Emit` 两个程序集再同时引用）；
+  C2 起生成器目录即派生目录，样例组件（Counter/Prefs/TaskList 经 `.ui`）与第三方程序集同链路覆盖。
+- 内置控件目录由符号派生（手写目录删除），目录与 `StyledPropertyRegistry` 的一致性测试通过。—— ✅ C2（2026-11-02）：
+  手写目录已删除（D64），符号派生与 `StyledPropertyRegistry`/事件字段一致性测试通过。
 - 控件/组件标签契约（[14](./14-control-template-contract.md)）C1–C5 落地：自定义控件与组件可写入 `.ui`，
   元数据错误在声明处或使用点报 EUI016–EUI031、EUI033/EUI037/EUI040/EUI043/EUI045（停用码零出现）。
 - 状态与反应式 S1–S3 出口按 [spec/03 §13.1](../spec/03-reactivity-and-binding.md#131-阶段定义) 执行：`dotnet test` 全绿、

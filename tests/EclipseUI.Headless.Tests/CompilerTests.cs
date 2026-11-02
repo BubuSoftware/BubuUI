@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using EclipseUI.Compiler;
+using EclipseUI.TestKit;
 using Xunit;
 
 namespace EclipseUI.Headless.Tests;
@@ -10,9 +11,9 @@ public class CompilerTests
     private const string CounterUi = """
         <StackPanel Gap="8">
             <TextBlock FontSize="30">You pressed {count} times</TextBlock>
-            <CheckBox Checked:bind={showButton}>Button visible</CheckBox>
+            <CheckBox @bind-Checked={showButton}>Button visible</CheckBox>
             @if (showButton) {
-                <Button OnClick={() => count.value++}>+1</Button>
+                <Button OnClick={() => count++}>+1</Button>
             }
         </StackPanel>
         """;
@@ -21,7 +22,7 @@ public class CompilerTests
     {
         var diags = new List<UiDiagnostic>();
         var doc = FrontEnd.Parse(text, "Test.ui", diags);
-        if (analyze) FrontEnd.Analyze(doc, UiCatalog.CreateDefault(), diags);
+        if (analyze) FrontEnd.Analyze(doc, UiTestCatalogs.BuiltIn(), diags);
         return (doc, diags);
     }
 
@@ -53,7 +54,7 @@ public class CompilerTests
         var ifBlock = Assert.IsType<UiIf>(root.Children[2]);
         Assert.Equal("showButton", ifBlock.Condition);
         var button = Assert.IsType<UiElement>(ifBlock.Children.Single(c => c is UiElement));
-        Assert.Equal("() => count.value++", button.Attributes.Single(a => a.Name == "OnClick").Value);
+        Assert.Equal("() => count++", button.Attributes.Single(a => a.Name == "OnClick").Value);
         Assert.Equal("+1", Assert.IsType<UiText>(button.Children[0]).Segments.Single().Text);
     }
 
@@ -103,6 +104,148 @@ public class CompilerTests
     {
         var (doc, diags) = Parse("""<StackPanel><TextBlock Key={x}>t</TextBlock></StackPanel>""", analyze: true);
         Assert.Contains(diags, d => d.Code == UiDiagnostics.KeyMisuse);
+    }
+
+    [Fact]
+    public void KeyInsideIf_IsRejected()
+    {
+        var (_, diags) = Parse(
+            """<StackPanel>@if (show) { <TextBlock Key={x}>a</TextBlock> }</StackPanel>""", analyze: true);
+        Assert.Contains(diags, d => d.Code == UiDiagnostics.KeyMisuse);
+    }
+
+    [Fact]
+    public void EmptyKey_IsRejected()
+    {
+        var (_, diags) = Parse(
+            """<StackPanel>@foreach (var t in ts) { <TextBlock Key={}>a</TextBlock> }</StackPanel>""", analyze: true);
+        Assert.Contains(diags, d => d.Code == UiDiagnostics.KeyMisuse);
+    }
+
+    [Fact]
+    public void TextContent_AndExplicitSameTarget_IsRejected()
+    {
+        var (_, diags) = Parse("""<Button Label="go">go</Button>""", analyze: true);
+        Assert.Contains(diags, d => d.Code == UiDiagnostics.SameTargetDuplicate);
+    }
+
+    [Fact]
+    public void PlainValue_AndBind_OnSameTarget_IsRejected()
+    {
+        var (_, diags) = Parse("""<CheckBox Checked={x} Checked:bind={x}>c</CheckBox>""", analyze: true);
+        Assert.Contains(diags, d => d.Code == UiDiagnostics.SameTargetDuplicate);
+    }
+
+    [Fact]
+    public void BindNewSyntax_AndSameTargetPlainValue_IsRejected()
+    {
+        var (doc, diags) = Parse("""<CheckBox Checked={x} @bind-Checked={y}>c</CheckBox>""", analyze: true);
+        var diag = Assert.Single(diags);
+        Assert.Equal(UiDiagnostics.SameTargetDuplicate, diag.Code);
+        Assert.True(doc.Nodes.OfType<UiElement>().Single().Attributes.Where(a => a.Name == "Checked").Last().IsBind);
+    }
+
+    [Fact]
+    public void BindNewSyntax_IsParsedAsBindingOnStrippedName()
+    {
+        var (doc, diags) = Parse("""<CheckBox @bind-Checked={showButton}>c</CheckBox>""", analyze: true);
+        Assert.Empty(diags);
+        var attr = doc.Nodes.OfType<UiElement>().Single().Attributes.Single();
+        Assert.Equal("Checked", attr.Name);
+        Assert.Equal(UiBindForm.TwoWay, attr.BindForm);
+        Assert.True(attr.IsBind);
+        Assert.Equal(AttrValueKind.Expression, attr.Kind);
+        Assert.Equal("showButton", attr.Value);
+    }
+
+    [Fact]
+    public void LegacyBind_IsEquivalentToNewSyntax_ButWarns()
+    {
+        var (doc, diags) = Parse("""<CheckBox Checked:bind={showButton}>c</CheckBox>""", analyze: true);
+        var attr = doc.Nodes.OfType<UiElement>().Single().Attributes.Single();
+        Assert.Equal("Checked", attr.Name);
+        Assert.True(attr.IsBind);
+        Assert.True(attr.IsLegacy);
+        var diag = Assert.Single(diags);
+        Assert.Equal(UiDiagnostics.LegacySyntax, diag.Code);
+        Assert.Equal(DiagnosticSeverity.Warning, diag.Severity);
+        Assert.Contains("@bind-Checked", diag.Message);
+    }
+
+    [Fact]
+    public void LegacyValue_IsAliasOfPlainAssignment_AndWarns()
+    {
+        var (doc, diags) = Parse("""<StackPanel Gap:value="8" />""", analyze: true);
+        var attr = doc.Nodes.OfType<UiElement>().Single().Attributes.Single();
+        Assert.Equal("Gap", attr.Name);
+        Assert.False(attr.IsBind);
+        Assert.Equal("8d", attr.ConvertedLiteral); // 与 Gap="8" 生成同样的赋值
+        var diag = Assert.Single(diags);
+        Assert.Equal(UiDiagnostics.LegacySyntax, diag.Code);
+        Assert.Contains("Gap=", diag.Message);
+    }
+
+    [Fact]
+    public void Bind_WithLiteralValue_IsRejected()
+    {
+        var (_, diags) = Parse("""<CheckBox @bind-Checked="true">c</CheckBox>""", analyze: true);
+        var diag = Assert.Single(diags);
+        Assert.Equal(UiDiagnostics.BindSourceInvalid, diag.Code);
+        Assert.Equal(DiagnosticSeverity.Error, diag.Severity);
+    }
+
+    [Fact]
+    public void Bind_OnEvent_IsRejected()
+    {
+        var (_, diags) = Parse("""<Button @bind-OnClick={() => x()}>go</Button>""", analyze: true);
+        var diag = Assert.Single(diags);
+        Assert.Equal(UiDiagnostics.BindTargetInvalid, diag.Code);
+        Assert.Contains("event", diag.Message);
+    }
+
+    [Fact]
+    public void Bind_OnReservedAttribute_IsRejected()
+    {
+        var (_, diags) = Parse("""<StackPanel><TextBlock @bind-Key={x}>t</TextBlock></StackPanel>""", analyze: true);
+        var diag = Assert.Single(diags);
+        Assert.Equal(UiDiagnostics.BindTargetInvalid, diag.Code);
+    }
+
+    [Fact]
+    public void Bind_OnUnknownProperty_IsUnknownProperty()
+    {
+        var (_, diags) = Parse("""<StackPanel @bind-Widths={x} />""", analyze: true);
+        var diag = Assert.Single(diags);
+        Assert.Equal(UiDiagnostics.UnknownProperty, diag.Code);
+    }
+
+    [Fact]
+    public void Bind_IsCaseSensitive()
+    {
+        var (_, diags) = Parse("""<CheckBox @bind-checked={x}>c</CheckBox>""", analyze: true);
+        Assert.Contains(diags, d => d.Code == UiDiagnostics.UnknownProperty);
+    }
+
+    [Fact]
+    public void Bind_WithBlankBeforeName_IsSyntaxError()
+    {
+        var (_, diags) = Parse("""<CheckBox @bind- Checked={x}>c</CheckBox>""", analyze: true);
+        Assert.Contains(diags, d => d.Code == UiDiagnostics.Syntax && d.Message.Contains("@bind-"));
+    }
+
+    [Fact]
+    public void Bind_WithLegacyModifier_IsSyntaxError()
+    {
+        var (_, diags) = Parse("""<CheckBox @bind-Checked:bind={x}>c</CheckBox>""", analyze: true);
+        Assert.Contains(diags, d => d.Code == UiDiagnostics.Syntax && d.Message.Contains("no legacy modifier"));
+    }
+
+    [Fact]
+    public void Bind_Attribute_ScansOnlyInMarkupMode()
+    {
+        // 文本模式里的 @bind 仍是未知指令，不是属性形态
+        var (_, diags) = Parse("""<TextBlock>@bind(Checked)</TextBlock>""", analyze: true);
+        Assert.Contains(diags, d => d.Code == UiDiagnostics.UnknownDirective);
     }
 
     [Fact]

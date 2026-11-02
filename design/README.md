@@ -17,7 +17,7 @@
 |---|------|------|
 | 1 | [Blazonia 痛点分析](./01-pain-points.md) | 现状架构概述与 8 条痛点（含代码位置证据） |
 | 2 | [总体架构](./02-architecture.md) | 分层架构、单向管线、与 Blazor 的根本分岔 |
-| 3 | [模板引擎（语言规范）](./03-template-engine.md) | 词法/句法/语义、字面量、诊断映射、编译管线与逃生舱；v3 历史，含实现偏差台账 D1–D41（§3.5.3）、v4 台账 D42–D61（§3.5.4）与附录 A |
+| 3 | [模板引擎（语言规范）](./03-template-engine.md) | 词法/句法/语义、字面量、诊断映射、编译管线与逃生舱；v3 历史，含实现偏差台账 D1–D41（§3.5.3）、v4 台账 D42–D72（§3.5.4）与附录 A |
 | 4 | [运行时与元素系统](./04-runtime-and-elements.md) | 组件实例模型、元素树、属性引擎、事件、组件注册表 |
 | 5 | [布局、渲染与输入](./05-layout-rendering-input.md) | measure/arrange、合成器、hit test / 焦点 / IME |
 | 6 | [IDE 支持](./06-ide-support.md) | VS Code + Rider 第一优先；LSP + Roslyn 投影 |
@@ -28,7 +28,7 @@
 | 11 | [G2 第一切片：窗口 + GPU Surface](./11-g2-surface-slice.md) | Win32 宿主、wgpu 上屏、sRGB/RenderFormat 坑、帧时间基线、resize 冒烟 |
 | 12 | [G2 第二切片：场景图 + 输入路由](./12-g2-interactive-slice.md) | 元素树→display list、无头/窗口共用输入路由、文本 shaping 接入、Gallery 自检 |
 | 13 | [G2 第三切片：damage v0](./13-g2-damage-v0.md) | RenderVersion 失效模型、脏矩形快照 diff、空闲跳帧、覆盖率与跟踪开销 |
-| 14 | [控件与模板契约（详细设计）](./14-control-template-contract.md) | 标签/属性/事件/内容模型声明规则、符号派生目录、字面量转换、组件参数与插槽、生成代码与诊断契约；v4 换轨（14.18）：参数为普通 CLR 属性 + `{P}Changed`，反应式/生成形态由 spec/02、spec/03 取代 |
+| 14 | [控件与模板契约（详细设计）](./14-control-template-contract.md) | 标签/属性/事件/内容模型声明规则、符号派生目录、字面量转换、组件参数与插槽、生成代码与诊断契约；v4 换轨（14.18）：参数为普通 CLR 属性 + `{P}Changed`，反应式/生成形态由 spec/02、spec/03 取代；**C1 已落地（2026-11-02）**，表面实测与差集评审见 §14.12.1 |
 | 15 | [状态与反应式契约（详细设计）](./15-state-and-reactivity.md) | **已停止（v3 历史）**：`[UiState]`/`UiObservable`/`UiComputed`、依赖分析、`UiWatch`/`Signal<T>` 订阅、EUI034–EUI044；v4 反应式见 [spec/03](../spec/03-reactivity-and-binding.md) |
 
 ## 报告

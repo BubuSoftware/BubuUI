@@ -8,34 +8,25 @@ using EclipseUI.Compiler;
 namespace EclipseUI.Compiler.Generator;
 
 /// <summary>
-/// 代码发射：把模板 AST 翻译成 RenderUnit 构建代码。
-/// 生成代码 = 结构创建指令 + 每个绑定点的定向更新函数 + signal 订阅接线；
+/// 代码发射：把模板 AST 翻译成组件构建代码。
+/// 生成代码 = 结构创建指令 + 根级 U{N}/块内 R{N} 定向更新 + 块协调器接线；
 /// 表达式行用 #line 指向 .ui 源位置（诊断与断点映射共用）。
 /// </summary>
 public sealed class Emitter
 {
-    private enum EmitMode { Root, ConditionalContent, ItemTemplate }
+    private enum EmitMode { Root, Block }
 
     private sealed class EmitContext
     {
         public EmitMode Mode { get; init; }
-        public string? SubsVar { get; init; }
-        public string? ItemVar { get; init; }
-        public string? ItemFqType { get; init; }
-        public string? ItemSubsVar { get; init; }
-        public List<string> Updaters { get; } = new();
+        public string? ScopeVar { get; init; }
 
-        public static EmitContext Root() => new EmitContext { Mode = EmitMode.Root };
-        public EmitContext ForContent(string subsVar)
-            => new EmitContext { Mode = EmitMode.ConditionalContent, SubsVar = subsVar };
-        public EmitContext ForItem(string itemVar, string fqType, string itemSubsVar)
-            => new EmitContext
-            {
-                Mode = EmitMode.ItemTemplate,
-                ItemVar = itemVar,
-                ItemFqType = fqType,
-                ItemSubsVar = itemSubsVar,
-            };
+        public bool IsRoot => Mode == EmitMode.Root;
+
+        public static EmitContext Root() => new() { Mode = EmitMode.Root };
+
+        public static EmitContext Block(string scopeVar)
+            => new() { Mode = EmitMode.Block, ScopeVar = scopeVar };
     }
 
     private sealed record FieldDecl(int N, string Prefix, string Type);
@@ -46,27 +37,25 @@ public sealed class Emitter
     private readonly string _namespace;
     private readonly string _className;
     private readonly Dictionary<UiForeach, string> _itemTypes;
-    private readonly string[] _signalNames;
     private readonly string _linePath;
     private readonly StringBuilder _sb = new();
     private readonly StringBuilder _body = new();
     private readonly List<FieldDecl> _fields = new();
     private readonly List<UMethod> _uMethods = new();
+    private readonly List<string> _renderCalls = new();
     private StringBuilder _out = null!;
     private int _indent;
     private int _varCounter;
     private int _fnCounter;
-    private int _foreachDepth;
 
     public Emitter(UiDocument doc, string accessibility, string namespaceName, string className,
-        Dictionary<UiForeach, string> itemTypes, string[] signalNames, string filePath)
+        Dictionary<UiForeach, string> itemTypes, string filePath)
     {
         _doc = doc;
         _accessibility = accessibility;
         _namespace = namespaceName;
         _className = className;
         _itemTypes = itemTypes;
-        _signalNames = signalNames;
         // #line 的文件名不是 C# 字符串字面量：反斜杠原样写入，否则映射路径会变成双反斜杠。
         _linePath = filePath.Replace("\"", "\\\"");
     }
@@ -76,7 +65,7 @@ public sealed class Emitter
         var root = (UiElement)_doc.Nodes.First(n => n is UiElement);
         _out = _body;
         _indent = 2;
-        var rootVar = EmitElement(root, parentVar: null, EmitContext.Root(), isForeachRoot: false);
+        var rootVar = EmitElement(root, parentVar: null, EmitContext.Root());
         Line($"return {rootVar};");
 
         _out = _sb;
@@ -101,23 +90,23 @@ public sealed class Emitter
         _sb.Append(_body);
         _sb.AppendLine("    }");
 
-        if (_uMethods.Count > 0)
+        if (_renderCalls.Count > 0)
         {
             _sb.AppendLine();
             _sb.AppendLine("    protected override void Render()");
             _sb.AppendLine("    {");
-            foreach (var method in _uMethods)
-                _sb.Append("        ").Append(method.Name).AppendLine("();");
+            foreach (var call in _renderCalls)
+                _sb.Append("        ").AppendLine(call);
             _sb.AppendLine("    }");
+        }
 
-            foreach (var method in _uMethods)
-            {
-                _sb.AppendLine();
-                _sb.Append("    private void ").Append(method.Name).AppendLine("()");
-                _sb.AppendLine("    {");
-                _sb.Append(method.Body);
-                _sb.AppendLine("    }");
-            }
+        foreach (var method in _uMethods)
+        {
+            _sb.AppendLine();
+            _sb.Append("    private void ").Append(method.Name).AppendLine("()");
+            _sb.AppendLine("    {");
+            _sb.Append(method.Body);
+            _sb.AppendLine("    }");
         }
 
         _sb.AppendLine("}");
@@ -144,19 +133,19 @@ public sealed class Emitter
     /// </summary>
     private static bool NeedsElementField(UiElement element, EmitContext ctx)
     {
-        if (ctx.Mode != EmitMode.Root) return false;
+        if (!ctx.IsRoot) return false;
         var dynamicAttr = element.Attributes.Any(attr =>
-            attr.PropDef is not null && !attr.PropDef.IsEvent && !attr.IsBind && attr.Name != "Key" &&
+            attr.PropDef is not null && !attr.IsBind && attr.Name != "Key" &&
             attr.Kind == AttrValueKind.Expression);
         if (dynamicAttr) return true;
-        return element.ResolvedDef!.Content == UiContentModel.LabelText &&
+        return element.ResolvedDef!.Content == UiContentModel.Text &&
                element.Children.OfType<UiText>().SelectMany(t => t.Segments)
                    .Any(s => s.Kind == TextSegmentKind.Expression);
     }
 
     private string DeclareElement(UiElement element, EmitContext ctx)
     {
-        var clrType = FQ(element.ResolvedDef!.ClrType);
+        var clrType = element.ResolvedDef!.ClrTypeDisplayName;
         var n = _varCounter++;
         if (NeedsElementField(element, ctx))
         {
@@ -186,6 +175,49 @@ public sealed class Emitter
         return name;
     }
 
+    /// <summary>组件级动态写入：U 方法 + Build 首次调用 + Render 登记。</summary>
+    private void RootUpdate(string target, string body, int uiLine)
+    {
+        var name = CreateU(target, body, uiLine);
+        Line($"{name}();");
+        _renderCalls.Add($"{name}();");
+    }
+
+    /// <summary>块内动态写入：R 局部函数 + 首次调用 + 作用域渲染动作。</summary>
+    private void BlockUpdate(string target, string body, int uiLine, EmitContext ctx)
+    {
+        var name = $"R{_fnCounter++}";
+        var sb = new StringBuilder();
+        var savedOut = _out;
+        var savedIndent = _indent;
+        _out = sb;
+        _indent = savedIndent + 1;
+        Mapped(uiLine, $"{target} = {body};");
+        _out = savedOut;
+        _indent = savedIndent;
+
+        Line($"void {name}()");
+        Line("{");
+        _out.Append(sb);
+        Line("}");
+        Line($"{name}();");
+        Line($"{ctx.ScopeVar}.AddRenderAction({name});");
+    }
+
+    /// <summary>块内无用户表达式的刷新动作（绑定 Refresh / 嵌套块 Refresh）。</summary>
+    private void BlockRefresh(string target, EmitContext ctx)
+    {
+        var name = $"R{_fnCounter++}";
+        Line($"void {name}()");
+        Line("{");
+        _indent++;
+        Line($"{target}.Refresh();");
+        _indent--;
+        Line("}");
+        Line($"{name}();");
+        Line($"{ctx.ScopeVar}.AddRenderAction({name});");
+    }
+
     /// <summary>目录尚无处理器委托类型元数据（C3）；按 lambda 形态选择 AddHandler 的两个重载。</summary>
     private static string EventHandlerType(string expression)
     {
@@ -198,66 +230,33 @@ public sealed class Emitter
 
     private int LineOf(TextSpan span) => _doc.Lines.LineOf(span.Start);
 
-    private static string FQ(string clrType) => "global::" + clrType;
-
-    /// <summary>
-    /// 订阅放置随上下文：根级挂组件生命周期；条件内容挂内容订阅表（卸载即释放）；
-    /// item 模板挂 scope 订阅表（条目移除即释放）。否则 Track 会把内容级订阅
-    /// 钉在组件上，造成 toggle/增删条目时的泄漏。
-    /// </summary>
-    private string TrackOrSubscribe(EmitContext ctx, string disposableExpr) => ctx.Mode switch
-    {
-        EmitMode.ConditionalContent => $"{ctx.SubsVar}.Add({disposableExpr})",
-        EmitMode.ItemTemplate => $"{ctx.ItemSubsVar}.Add({disposableExpr})",
-        _ => $"Track({disposableExpr})",
-    };
-
-    /// <summary>裸信号引用 → .Value（count → count.Value，count.value → count.Value）。</summary>
-    private string Rewrite(string expression)
-    {
-        foreach (var name in _signalNames)
-        {
-            expression = Regex.Replace(expression, $@"\b{Regex.Escape(name)}\s*\.\s*[Vv]alue\b", name + ".Value");
-            expression = Regex.Replace(expression, $@"\b{Regex.Escape(name)}\b(?!\s*\.\s*Value\b)", name + ".Value");
-        }
-        return expression;
-    }
-
-    private List<string> SignalsOf(string expression)
-    {
-        var found = new List<string>();
-        foreach (var name in _signalNames)
-            if (Regex.IsMatch(expression, $@"\b{Regex.Escape(name)}\b"))
-                found.Add(name);
-        return found;
-    }
-
-    private string EmitElement(UiElement element, string? parentVar, EmitContext ctx, bool isForeachRoot)
+    private string EmitElement(UiElement element, string? parentVar, EmitContext ctx)
     {
         var def = element.ResolvedDef!;
         var v = DeclareElement(element, ctx);
 
         foreach (var attr in element.Attributes)
         {
-            if (attr.PropDef is null) continue; // Key= 或已报错的属性
-            if (attr.Name == "Key" && isForeachRoot) continue;
-            var propDef = attr.PropDef;
+            if (attr.Name == "Key") continue;
             int line = LineOf(attr.ValueSpan.Length > 0 ? attr.ValueSpan : attr.NameSpan);
 
-            if (propDef.IsEvent)
+            if (attr.EventDef is { } evt)
             {
                 var handlerType = EventHandlerType(attr.Value);
                 var h = $"h{_varCounter++}";
-                Mapped(line, $"var {h} = ({handlerType})({Rewrite(attr.Value)});");
+                Mapped(line, $"var {h} = ({handlerType})({attr.Value.Trim()});");
                 var wrapper = handlerType == "global::System.Action"
                     ? $"() => {{ {h}(); Invalidate(); }}"
                     : $"e => {{ {h}(e); Invalidate(); }}";
-                Line($"{v}.AddHandler({FQ(propDef.EventOwner!)}.{propDef.EventName}Event, {wrapper});");
+                Line($"{v}.AddHandler({evt.DeclaringTypeName}.{evt.FieldName}, {wrapper});");
+            }
+            else if (attr.PropDef is null)
+            {
+                // 未解析属性：Analyzer 已报 EUI002
             }
             else if (attr.IsBind)
             {
-                var bindExpr = $"global::EclipseUI.Bind.TwoWay({v}, {FQ(def.ClrType)}.{attr.Name}Property, {attr.Value})";
-                Mapped(line, TrackOrSubscribe(ctx, bindExpr) + ";");
+                EmitBinding(attr, attr.PropDef, v, ctx);
             }
             else if (attr.Kind == AttrValueKind.Literal)
             {
@@ -274,10 +273,10 @@ public sealed class Emitter
             case UiContentModel.TextRuns:
                 EmitTextRuns(element, v, ctx);
                 break;
-            case UiContentModel.LabelText:
-                EmitLabel(element, v, ctx);
+            case UiContentModel.Text:
+                EmitLabel(element, v, def, ctx);
                 break;
-            default:
+            case UiContentModel.Children:
                 foreach (var child in element.Children)
                     EmitContainerChild(child, v, ctx);
                 break;
@@ -288,12 +287,39 @@ public sealed class Emitter
         return v;
     }
 
+    private void EmitBinding(UiAttribute attr, UiPropDef propDef, string elementVar, EmitContext ctx)
+    {
+        var expression = attr.Value.Trim();
+        var call =
+            $"global::EclipseUI.UiBinding.TwoWay({elementVar}, {propDef.DeclaringTypeName}.{propDef.PropertyFieldName}, " +
+            $"readTarget: () => {elementVar}.{attr.Name}, writeTarget: v => {elementVar}.{attr.Name} = v, " +
+            $"readSource: () => {expression}, writeSource: v => {expression} = v, " +
+            "invalidate: Invalidate)";
+        int line = LineOf(attr.ValueSpan);
+
+        if (ctx.IsRoot)
+        {
+            var n = _varCounter++;
+            var field = $"__bind{n}";
+            _fields.Add(new FieldDecl(n, "bind", "global::EclipseUI.UiBinding"));
+            Mapped(line, $"{field} = {call};");
+            Line($"Track({field});");
+            _renderCalls.Add($"{field}.Refresh();");
+            return;
+        }
+
+        var local = $"bind{_varCounter++}";
+        Mapped(line, $"var {local} = {call};");
+        Line($"{ctx.ScopeVar}.AddDisposable({local});");
+        BlockRefresh(local, ctx);
+    }
+
     private void EmitContainerChild(UiNode child, string parentVar, EmitContext ctx)
     {
         switch (child)
         {
             case UiElement element:
-                EmitElement(element, parentVar, ctx, isForeachRoot: false);
+                EmitElement(element, parentVar, ctx);
                 break;
             case UiIf ifNode:
                 EmitIf(ifNode, parentVar, ctx);
@@ -315,41 +341,42 @@ public sealed class Emitter
             {
                 if (segment.Kind == TextSegmentKind.Static)
                 {
-                    var run = NewVar("run");
-                    Line($"var {run} = new global::EclipseUI.Elements.TextRun({UiLiterals.EscapeString(segment.Text)});");
-                    Line($"{elementVar}.AddRun({run});");
+                    Mapped(LineOf(segment.Span),
+                        $"((global::EclipseUI.ITextContentHost){elementVar}).AddRun({UiLiterals.EscapeString(segment.Text)});");
+                    continue;
+                }
+
+                string run;
+                if (ctx.IsRoot)
+                {
+                    var n = _varCounter++;
+                    run = $"__run{n}";
+                    _fields.Add(new FieldDecl(n, "run", "global::EclipseUI.Elements.TextRun"));
+                    Line($"{run} = ((global::EclipseUI.ITextContentHost){elementVar}).AddRun(\"\");");
                 }
                 else
                 {
-                    string run;
-                    if (ctx.Mode == EmitMode.Root)
-                    {
-                        var n = _varCounter++;
-                        run = $"__run{n}";
-                        _fields.Add(new FieldDecl(n, "run", "global::EclipseUI.Elements.TextRun"));
-                        Line($"{run} = new global::EclipseUI.Elements.TextRun(\"\");");
-                    }
-                    else
-                    {
-                        run = NewVar("run");
-                        Line($"var {run} = new global::EclipseUI.Elements.TextRun(\"\");");
-                    }
-                    Line($"{elementVar}.AddRun({run});");
-                    EmitDynamicUpdate(segment.Text, segment.Span, ctx, $"{run}.Text", interpolate: true);
+                    run = NewVar("run");
+                    Line($"var {run} = ((global::EclipseUI.ITextContentHost){elementVar}).AddRun(\"\");");
                 }
+
+                EmitDynamicUpdate(segment.Text, segment.Span, ctx, $"{run}.Text", interpolate: true);
             }
         }
     }
 
-    private void EmitLabel(UiElement element, string elementVar, EmitContext ctx)
+    private void EmitLabel(UiElement element, string elementVar, UiElementDef def, EmitContext ctx)
     {
+        var target = def.ContentTarget;
+        if (target is null) return; // 目录缺文本目标（EUI021，C3）
+
         var segments = element.Children.OfType<UiText>().SelectMany(t => t.Segments).ToList();
         if (segments.Count == 0) return;
 
         if (segments.All(s => s.Kind == TextSegmentKind.Static))
         {
             var combined = string.Concat(segments.Select(s => s.Text));
-            Mapped(LineOf(segments[0].Span), $"{elementVar}.Label = {UiLiterals.EscapeString(combined)};");
+            Mapped(LineOf(segments[0].Span), $"{elementVar}.{target} = {UiLiterals.EscapeString(combined)};");
             return;
         }
 
@@ -359,150 +386,159 @@ public sealed class Emitter
             if (segment.Kind == TextSegmentKind.Static)
                 parts.Append(EscapeInterpolation(segment.Text));
             else
-                parts.Append('{').Append('(').Append(Rewrite(segment.Text)).Append(')').Append('}');
+                parts.Append('{').Append('(').Append(segment.Text.Trim()).Append(')').Append('}');
         }
         parts.Append('"');
+
         var body = parts.ToString();
         int textLine = LineOf(segments[0].Span);
-
-        if (ctx.Mode == EmitMode.Root)
-        {
-            var fn = CreateU($"{elementVar}.Label", body, textLine);
-            Line($"{fn}();");
-            return;
-        }
-
-        Mapped(textLine, $"{elementVar}.Label = {body};");
-        foreach (var segment in segments)
-            if (segment.Kind == TextSegmentKind.Expression)
-                EmitDynamicUpdate(segment.Text, segment.Span, ctx, $"{elementVar}.Label",
-                    interpolate: false, bodyOverride: body);
+        if (ctx.IsRoot)
+            RootUpdate($"{elementVar}.{target}", body, textLine);
+        else
+            BlockUpdate($"{elementVar}.{target}", body, textLine, ctx);
     }
 
     private void EmitDynamicUpdate(string expression, TextSpan span, EmitContext ctx,
-        string target, bool interpolate, string? bodyOverride = null)
+        string target, bool interpolate)
     {
-        string body = bodyOverride ?? (interpolate ? $"$\"{{({Rewrite(expression)})}}\"" : Rewrite(expression));
+        var body = interpolate ? $"$\"{{({expression.Trim()})}}\"" : expression.Trim();
         int line = LineOf(span);
 
-        if (ctx.Mode == EmitMode.Root)
-        {
-            Line($"{CreateU(target, body, line)}();");
-            return;
-        }
-
-        string fn = $"U{_fnCounter++}";
-        if (ctx.Mode == EmitMode.ConditionalContent)
-        {
-            Line($"void {fn}() {{ {target} = {body}; }}");
-            Mapped(line, $"{fn}();");
-            foreach (var name in SignalsOf(expression))
-                Line($"{ctx.SubsVar}.Add({name}.Subscribe({fn}));");
-        }
+        if (ctx.IsRoot)
+            RootUpdate(target, body, line);
         else
-        {
-            Line($"void {fn}({ctx.ItemFqType} {ctx.ItemVar}) {{ {target} = {body}; }}");
-            Mapped(line, $"{fn}({ctx.ItemVar});");
-            ctx.Updaters.Add($"o => {fn}(({ctx.ItemFqType})o!)");
-        }
+            BlockUpdate(target, body, line, ctx);
     }
 
     private string EmitIf(UiIf node, string? parentVar, EmitContext ctx)
     {
-        var v = NewVar("blk");
-        Line($"var {v} = new global::EclipseUI.ConditionalBlock();");
+        bool root = ctx.IsRoot;
+        string v;
+        if (root)
+        {
+            var n = _varCounter++;
+            v = $"__blk{n}";
+            _fields.Add(new FieldDecl(n, "blk", "global::EclipseUI.ConditionalBlock"));
+            Line($"{v} = new global::EclipseUI.ConditionalBlock();");
+        }
+        else
+        {
+            v = NewVar("blk");
+            Line($"var {v} = new global::EclipseUI.ConditionalBlock();");
+        }
+
         if (parentVar is not null)
             Line($"{parentVar}.Children.Add({v});");
 
-        var deps = SignalsOf(node.Condition);
-        string depsArgs = deps.Count > 0 ? ", " + string.Join(", ", deps) : "";
-        Mapped(LineOf(node.ConditionSpan), $"{v}.SetCondition(() => {Rewrite(node.Condition)}{depsArgs});");
+        Mapped(LineOf(node.ConditionSpan), $"{v}.SetCondition(() => {node.Condition.Trim()});");
 
-        string subsVar = $"subs{_varCounter++}";
-        Line($"{v}.SetContent({subsVar} =>");
-        Line("{");
-        _indent++;
-        var contentCtx = ctx.ForContent(subsVar);
-        var roots = new List<string>();
-        foreach (var child in node.Children)
+        if (node.Children.Count > 0)
         {
-            switch (child)
-            {
-                case UiElement element:
-                    roots.Add(EmitElement(element, parentVar: null, contentCtx, isForeachRoot: false));
-                    break;
-                case UiIf inner:
-                    roots.Add(EmitIf(inner, parentVar: null, contentCtx));
-                    break;
-                case UiForeach innerForeach:
-                    roots.Add(EmitForeach(innerForeach, parentVar: null, contentCtx));
-                    break;
-            }
+            var scopeVar = NewVar("scope");
+            var blockCtx = EmitContext.Block(scopeVar);
+            Line($"{v}.SetContent({scopeVar} =>");
+            Line("{");
+            _indent++;
+            var roots = EmitContentRoots(node.Children, blockCtx);
+            foreach (var contentRoot in roots)
+                Line($"{scopeVar}.AddRoot({contentRoot});");
+            _indent--;
+            Line("});");
         }
-        Line($"return new global::EclipseUI.Element[] {{ {string.Join(", ", roots)} }};");
-        _indent--;
-        Line("});");
-        Line(TrackOrSubscribe(ctx, v) + ";");
+
+        if (root)
+        {
+            Line($"Track({v});");
+            Line($"{v}.Refresh();");
+            _renderCalls.Add($"{v}.Refresh();");
+        }
+        else
+        {
+            Line($"{ctx.ScopeVar}.AddDisposable({v});");
+            BlockRefresh(v, ctx);
+        }
+
         return v;
     }
 
     private string EmitForeach(UiForeach node, string? parentVar, EmitContext ctx)
     {
         var fqItem = _itemTypes[node];
-        var v = NewVar("blk");
-        Line($"var {v} = new global::EclipseUI.ForEachBlock<{fqItem}>();");
+        bool root = ctx.IsRoot;
+        string v;
+        if (root)
+        {
+            var n = _varCounter++;
+            v = $"__blk{n}";
+            _fields.Add(new FieldDecl(n, "blk", $"global::EclipseUI.ForEachBlock<{fqItem}>"));
+            Line($"{v} = new global::EclipseUI.ForEachBlock<{fqItem}>();");
+        }
+        else
+        {
+            v = NewVar("blk");
+            Line($"var {v} = new global::EclipseUI.ForEachBlock<{fqItem}>();");
+        }
+
         if (parentVar is not null)
             Line($"{parentVar}.Children.Add({v});");
 
-        var deps = SignalsOf(node.Collection);
-        string depsArgs = deps.Count > 0 ? ", " + string.Join(", ", deps) : "";
-        Mapped(LineOf(node.CollectionSpan), $"{v}.SetItems(() => {Rewrite(node.Collection)}{depsArgs});");
+        Mapped(LineOf(node.CollectionSpan), $"{v}.SetItems(() => {node.Collection.Trim()});");
 
-        // 模板 lambda 参数直接用 .ui 里声明的循环变量名，表达式无需改名
-        string itemVar = node.VarName.Length > 0 ? node.VarName : $"item{_foreachDepth++}";
+        var itemVar = node.VarName.Length > 0 ? node.VarName : "item";
 
-        // Key 选择器：取模板根元素的 Key= 表达式（Analyzer 已保证位置合法）
-        var rootElement = node.Children.OfType<UiElement>().FirstOrDefault();
-        var keyAttr = rootElement?.Attributes.FirstOrDefault(a => a.Name == "Key");
-        if (keyAttr is null || string.IsNullOrWhiteSpace(keyAttr.Value))
-            Line($"{v}.SetKeySelector({itemVar} => (object?){itemVar});");
-        else
-            Mapped(LineOf(keyAttr.ValueSpan), $"{v}.SetKeySelector(({fqItem} {itemVar}) => {Rewrite(keyAttr.Value)});");
+        var firstElement = node.Children.OfType<UiElement>().FirstOrDefault();
+        var keyAttr = firstElement?.Attributes.FirstOrDefault(a => a.Name == "Key");
+        if (keyAttr is not null && !string.IsNullOrWhiteSpace(keyAttr.Value))
+        {
+            Mapped(LineOf(keyAttr.ValueSpan),
+                $"{v}.SetKeySelector(({fqItem} {itemVar}) => (object?)({keyAttr.Value.Trim()}));");
+        }
 
-        Line($"{v}.SetTemplate(({fqItem} {itemVar}) =>");
+        var scopeVar = NewVar("scope");
+        var blockCtx = EmitContext.Block(scopeVar);
+        Line($"{v}.SetTemplate(({fqItem} {itemVar}, global::EclipseUI.BlockScope {scopeVar}) =>");
         Line("{");
         _indent++;
-        var updVar = $"upd{_varCounter++}";
-        Line($"var {updVar} = new List<global::System.Action<object>>();");
-        var itemSubsVar = $"subs{_varCounter++}";
-        Line($"var {itemSubsVar} = new List<global::System.IDisposable>();");
-        var itemCtx = ctx.ForItem(itemVar, fqItem, itemSubsVar);
+        var roots = EmitContentRoots(node.Children, blockCtx);
+        foreach (var contentRoot in roots)
+            Line($"{scopeVar}.AddRoot({contentRoot});");
+        _indent--;
+        Line("});");
+
+        if (root)
+        {
+            Line($"Track({v});");
+            Line($"{v}.Refresh();");
+            _renderCalls.Add($"{v}.Refresh();");
+        }
+        else
+        {
+            Line($"{ctx.ScopeVar}.AddDisposable({v});");
+            BlockRefresh(v, ctx);
+        }
+
+        return v;
+    }
+
+    private List<string> EmitContentRoots(List<UiNode> children, EmitContext ctx)
+    {
         var roots = new List<string>();
-        bool firstElement = true;
-        foreach (var child in node.Children)
+        foreach (var child in children)
         {
             switch (child)
             {
                 case UiElement element:
-                    roots.Add(EmitElement(element, parentVar: null, itemCtx, isForeachRoot: firstElement));
-                    firstElement = false;
+                    roots.Add(EmitElement(element, parentVar: null, ctx));
                     break;
-                case UiIf inner:
-                    roots.Add(EmitIf(inner, parentVar: null, itemCtx));
+                case UiIf ifNode:
+                    roots.Add(EmitIf(ifNode, parentVar: null, ctx));
                     break;
-                case UiForeach innerForeach:
-                    roots.Add(EmitForeach(innerForeach, parentVar: null, itemCtx));
+                case UiForeach foreachNode:
+                    roots.Add(EmitForeach(foreachNode, parentVar: null, ctx));
                     break;
             }
         }
-        foreach (var updater in itemCtx.Updaters)
-            Line($"{updVar}.Add({updater});");
-        Line($"return new global::EclipseUI.BlockScope(new global::EclipseUI.Element[] {{ {string.Join(", ", roots)} }}, {updVar}.ToArray(), {itemSubsVar});");
-        _indent--;
-        Line("});");
-        Line(TrackOrSubscribe(ctx, v) + ";");
-        _foreachDepth--;
-        return v;
+        return roots;
     }
 
     private static string EscapeInterpolation(string s) =>

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 
 namespace EclipseUI.Elements;
 
+[UiContent(UiContentKind.Children)]
 public abstract class Panel : Element
 {
     private readonly ElementCollection _children;
@@ -16,9 +17,10 @@ public abstract class Panel : Element
         StyledProperty<double>.Register<Panel>("Padding", 0d,
             new PropertyOptions { Invalidate = InvalidateKind.Measure });
 
-    /// <summary>是否把子内容裁剪到本元素边界（绘制侧生效，默认关）。</summary>
+    /// <summary>是否把子内容裁剪到本元素边界（绘制侧生效，默认关）。裁剪影响像素，变更必须重绘。</summary>
     public static readonly StyledProperty<bool> ClipToBoundsProperty =
-        StyledProperty<bool>.Register<Panel>("ClipToBounds", false);
+        StyledProperty<bool>.Register<Panel>("ClipToBounds", false,
+            new PropertyOptions { Invalidate = InvalidateKind.Render });
 
     public double Padding
     {

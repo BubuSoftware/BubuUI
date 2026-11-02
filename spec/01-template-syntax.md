@@ -305,13 +305,13 @@ string        ::= '"' raw-char* '"'
 | 同一元素重复属性 | `EUI025` | G3/C3（当前未检，design/03 D6） |
 | `@if`/`@foreach` 只能出现在 `Children` 内容模型内 | `EUI006` | ✅ |
 | 块内容只允许元素与嵌套块，不允许裸文本 | `EUI006` | ✅ |
-| `Key` 只能出现在 `@foreach` item 模板的第一个元素根上 | `EUI010` | ✅（`@if` 误放行，D8） |
+| `Key` 只能出现在 `@foreach` item 模板的第一个元素根上 | `EUI010` | ✅ |
 | `@foreach` 必须写 `var 名字 in ...` | `EUI100` | ✅ |
-| `@bind-P` 的值不是 `{expr}` | `EUI037` | S3（当前 `@` 在标记模式报 `EUI100`，D24） |
-| `@bind-P` 目标非法（不可写/无属性字段/事件/保留/内容/组件缺 `PChanged`） | `EUI040` | S3 |
-| `@bind-P` 源非法（非可写左值/类型不符） | `EUI037` | S3 |
-| `@bind-P` 与同名属性/`:bind`/`:value` 重复 | `EUI033` | S3（当前未检） |
-| `Key={}` 空表达式 | `EUI010` | S2 |
+| `@bind-P` 的值不是 `{expr}` | `EUI037` | ✅ S3 |
+| `@bind-P` 目标非法（不可写/无属性字段/事件/保留/内容/组件缺 `PChanged`） | `EUI040` | ✅ S3（控件；组件待 C4） |
+| `@bind-P` 源非法（非可写左值/类型不符） | `EUI037` | ✅ S3 |
+| `@bind-P` 与同名属性/`:bind`/`:value` 重复 | `EUI033` | ✅ S2（完全重复属性仍 `EUI025`，C3） |
+| `Key={}` 空表达式 | `EUI010` | ✅ S2 |
 | 注释不写在标签内部 | `EUI100` | ✅ |
 
 ### 3.3 内容模型的句法后果
@@ -376,9 +376,9 @@ string        ::= '"' raw-char* '"'
 |---|---|---|---|---|---|
 | `P="literal"` | Build 一次 | 否 | 编译期转换 + 属性赋值 | `EUI003`/`EUI023` | ✅（4 类型）/ C3 扩展 |
 | `P={expr}` | Build + 每次渲染 | 是（组件级） | 控件属性直接写（相等短路）；组件参数相等保护 + 子 `Invalidate()` | 目标可写；不做依赖分析 | S1/S4（当前一次性，D23） |
-| `@bind-P={expr}` | Build + 双向 | 是 | 控件 `UiBinding`；组件 `PChanged` + 参数推送 | 源可写左值；目标可写；组件需 `PChanged` | S3（D24） |
-| `P:bind={expr}` | 同 `@bind-P` | 是 | 同 | 旧语法，`EUI043` Warning | ✅ → 弃用（S3） |
-| `P:value={expr}` | 同 `P={expr}` | 是 | 同 | 旧语法，`EUI043` Warning | 未实现 → 弃用（S3） |
+| `@bind-P={expr}` | Build + 双向 | 是 | 控件 `UiBinding`；组件 `PChanged` + 参数推送 | 源可写左值；目标可写；组件需 `PChanged` | ✅ S3（控件）/ S4+C4（组件） |
+| `P:bind={expr}` | 同 `@bind-P` | 是 | 同 | 旧语法，`EUI043` Warning | ✅ S3 → 弃用 |
+| `P:value={expr}` | 同 `P={expr}` | 是 | 同 | 旧语法，`EUI043` Warning | ✅ S3 → 弃用 |
 | `OnE={expr}` | Build 时 `AddHandler` | 否 | 处理器后自动 `Invalidate()` | `Action` / `Action<RoutedEventArgs>` | ✅（控件）/ C4 组件 |
 | `Key={expr}` | 每次枚举 | 身份 | Keyed 复用 | 第一个元素根；条目身份 | ✅（基础）/ S2（v4 复用） |
 | `Ref={ident}` | Build 时赋给字段 | 否 | 编译期字段赋值 | 简单标识符、字段可写 | G3 / 保留 `EUI029` |
@@ -506,7 +506,7 @@ string        ::= '"' raw-char* '"'
   （写 `.ToString("F2")`，§2.6）。
 - 文本里不能嵌套元素或块；`TextRuns` 也只接受文本段，需要多段不同样式等富文本能力时另设控件（G4）。
 - **同一目标重复赋值是错误**：`Text` 模型下显式 `Label="..."` 和文本内容同时存在，
-  或 `P={expr}` 与文本同时存在，规范要求 `EUI033`；当前实现静默双写（D7）。
+  或 `P={expr}` 与同一目标绑定同时存在，报 `EUI033`（文本 + 显式目标已实现，S2）。
 - `Children` 模型中的纯空白文本在规范化后消失，不报 `EUI006`；非空白裸文本报错，必须包元素。
 - 组件的默认内容参数（C4）按组件声明的 `[UiContent]` 模型处理；具名插槽 G4。
 
@@ -595,7 +595,8 @@ string        ::= '"' raw-char* '"'
     `var h0 = (Action)(() => AddTask()); el.AddHandler(Button.ClickEvent, () => { h0(); Invalidate(); });`。
   - 处理器抛异常时不执行自动 `Invalidate()`（异常向上传播）；组件保持当前 UI，直到下一次失效。
   - 事件字段必须声明在元素/组件类型上；静态宿主类不参与扫描（design/14 D11）。
-    C2 后控件事件表面为 8 个：`OnClick` + 7 个输入/焦点事件。
+    C1/C2 后控件事件表面共 9 个事件名：`OnClick`、`OnCheckedChanged` + 7 个输入/焦点事件
+    （`OnPointerPressed/Released/Moved`、`OnKeyDown/Up`、`OnGotFocus/LostFocus`，C2 起声明在 `Element` 上）。
 - **组件事件**（C4）：组件没有路由事件；委托类型参数即事件，属性名就是参数名
   （如 `OnClose`），不做 `On*` 前缀推断；同样只接受 `{expression}`。
   - build-once；处理器表达式先写入委托局部 `h{N}`，包装调用它后再 `Invalidate()` **父组件**（提供委托的一方）。
@@ -661,8 +662,8 @@ new cmp0
 | `Ref={ident}` | 元素/组件实例赋给 code-behind 字段 | G3 | `EUI029`（保留；当前 `EUI002`，D4） |
 | `Class="..."` | 样式类 | G4 | `EUI031`（当前 `EUI002`，D2） |
 | `Style="..."` | 内联样式 | G4 | `EUI031`（当前 `EUI002`，D2） |
-| `P:bind={expr}` | 旧双向绑定（≡ `@bind-P`） | ✅ → 弃用 | S3 起 `EUI043` Warning |
-| `P:value={expr}` | 旧单向别名（≡ `P={expr}`） | 未实现 → 弃用 | 当前 `EUI002`（D1）；S3 起 `EUI043` |
+| `P:bind={expr}` | 旧双向绑定（≡ `@bind-P`） | ✅ → 弃用 | `EUI043` Warning（S3 起） |
+| `P:value={expr}` | 旧单向别名（≡ `P={expr}`） | ✅ → 弃用 | `EUI043` Warning（S3 起） |
 | `<Slot Name="...">` | 具名插槽（消费侧） | G4 | `EUI031`（当前 `EUI001`，D3） |
 | `<ContentSlot Name="..." />` | 插槽宿主（组件模板侧） | G4 | `EUI031`（当前 `EUI001`，D3） |
 | `<DataGrid<Order>>` | 泛型标签 | G4 | `EUI030`（当前 `EUI100`，D5） |
@@ -742,10 +743,10 @@ new cmp0
 | `EUI004` | 事件缺 `{expression}` / 事件用 `:bind` 或 `@bind-` | 属性 | Error | ✅ |
 | `EUI005` | 缺少与 `.ui` 同名的 code-behind | 文件 | Error | ✅ |
 | `EUI006` | 内容模型不允许（文本/元素/控制流/根层文本或块） | 子内容/根 | Error | ✅ |
-| `EUI007` | `@foreach` 集合不是 `IEnumerable<T>`、`T` 无法推断、`IAsyncEnumerable`/`IEnumerator`/非泛型/`dynamic` | 集合表达式 | Error | S2 |
+| `EUI007` | `@foreach` 集合不是 `IEnumerable<T>`、`T` 无法推断、`IAsyncEnumerable`/`IEnumerator`/非泛型/`dynamic` | 集合表达式 | Error | ✅ S2 |
 | `EUI008` | `@switch` 保留 | 指令 | Error | ✅ |
 | `EUI009` | 未知指令 | 指令 | Error | ✅ |
-| `EUI010` | `Key` 位置错（非条目第一个元素根）、字面量、空表达式 | 属性 | Error | S2 |
+| `EUI010` | `Key` 位置错（非条目第一个元素根）、字面量、空表达式 | 属性 | Error | ✅ S2 |
 | `EUI011` | code-behind 非 `partial` | 类声明 | Error | ✅ |
 | `EUI012` | 根元素数量不为 1 | 文档 | Error | ✅ |
 | `EUI013` | 文件名不是合法 C# 标识符 | 文件 | Error | ✅ |
@@ -768,17 +769,17 @@ new cmp0
 | `EUI030` | 泛型标签暂不支持 | 标签 | Error | C6/G4 |
 | `EUI031` | 语法已保留、尚未实现（`Class`/`Style`/`<Slot>`/`<ContentSlot>`/附加属性） | 标签/属性 | Error | C3/C5/G4 |
 | `EUI032` | **停用**：原"非 Signal 组件参数"，后继 EUI044 亦停用 | — | — | — |
-| `EUI033` | 同一目标重复赋值（文本内容 + 显式目标属性；`P=` 与 `@bind`/`:bind`/`:value` 冲突） | 属性值/文本 | Error | S2/S3/C5 |
+| `EUI033` | 同一目标重复赋值（文本内容 + 显式目标属性；`P=` 与 `@bind`/`:bind`/`:value` 冲突） | 属性值/文本 | Error | ✅ S2 |
 | `EUI034` | **停用**：v3 非法 `[UiState]`/`[UiObservable]` 声明；状态生成器移除 | — | — | — |
 | `EUI035` | **停用**：v3 非法 `[UiComputed]`；`[UiComputed]` 移除 | — | — | — |
 | `EUI036` | **停用**：v3 "反应式位置读取不可观察成员 → 一次性"；v4 无依赖分析 | — | — | — |
-| `EUI037` | `@bind` 源非法（非可写左值/静态/const/readonly/init/方法/索引器/`?.`/struct 属性中间段/值类型 item 成员/类型不符/自绑） | 表达式 | Error | S3 |
+| `EUI037` | `@bind` 源非法（非可写左值/静态/const/readonly/init/方法/索引器/`?.`/struct 属性中间段/值类型 item 成员/类型不符/自绑） | 表达式 | Error | ✅ S3（控件源；自绑静态不可判定，按 §4.5 不报） |
 | `EUI038` | **停用**：v3 "不可分析结构 → 一次性"；v4 任意表达式合法 | — | — | — |
 | `EUI039` | **停用**：v3 `Key` 不得依赖可观察状态；v4 Key 可引用任意可读表达式 | — | — | — |
-| `EUI040` | `@bind` 目标非法（控件不可写/无 `{Name}Property`；组件参数无 public setter/委托/内容/保留；组件缺少 `{P}Changed` 或类型不符；组件内容体内出现 `@bind`） | 属性名/内容 | Error | S3 |
+| `EUI040` | `@bind` 目标非法（控件不可写/无 `{Name}Property`；组件参数无 public setter/委托/内容/保留；组件缺少 `{P}Changed` 或类型不符；组件内容体内出现 `@bind`） | 属性名/内容 | Error | ✅ S3（控件：不可绑属性/事件/保留名；组件侧待 C4） |
 | `EUI041` | **停用**：v3 集合未实现 INCC；v4 每次刷新重新枚举 | — | — | — |
 | `EUI042` | **停用**：v3 item `@bind` 禁止组件级源；v4 允许 | — | — | — |
-| `EUI043` | 旧语法 `:bind`/`:value` 弃用 | 属性名 | Warning | S3 |
+| `EUI043` | 旧语法 `:bind`/`:value` 弃用 | 属性名 | Warning | ✅ S3 |
 | `EUI044` | **停用**：v3 非可观察组件参数不刷新；v4 所有参数推送 + `Invalidate()` | — | — | — |
 | `EUI045` | code-behind 与生成代码冲突（声明 `Build()`/`Render()`、基类不是省略/原样 `Component`、与生成/基类成员同名造成隐藏/歧义，包括隐藏 `Invalidate`） | code-behind 声明 | Error | C3 |
 | `EUI100` | 纯语法错误（标签不匹配、属性缺值、未闭合注释、非法 `@bind-` 形态等） | 语法位置 | Error | ✅ |
@@ -814,10 +815,10 @@ new cmp0
 
 | 阶段 | 语法/语义内容 |
 |---|---|
-| ✅ 当前可用 | 元素/自闭合；属性字面量（string/bool/double/int）；属性表达式（一次性）；控件 `On*` 事件；`Text`/`TextRuns`/`Children` 文本与内容；`@if`/`@foreach` 基本结构；`Key`；注释；空白规范化；code-behind 诊断 |
-| **S1** | `Component.Invalidate/ProcessInvalidations/Render/ShouldRender`；失效队列与合并；生成字段与 `U{N}`；根级 `P=`/文本重算；控件事件自动失效 |
-| **S2** | 块 v4：`BlockScope.RenderActions`；`@if` 分支刷新；`@foreach` 任意 `IEnumerable<T>`、null=空、Keyed 复用；嵌套块；`EUI007`/`EUI010`/`EUI033`（文本 + 显式目标） |
-| **S3** | `UiBinding` v4；控件 `@bind`；组件 `PChanged`；item 绑定；`EUI033`（`P=` 与绑定冲突）/`EUI037`/`EUI040`/`EUI043` |
+| ✅ 当前可用 | 元素/自闭合；属性字面量（string/bool/double/int）；控件 `On*` 事件；`Text`/`TextRuns`/`Children` 文本与内容；`@if`/`@foreach` 与 `Key`；控件 `@bind-P`（含 item 源）与旧 `:bind`/`:value` 弃用告警；注释；空白规范化；code-behind 诊断 |
+| **S1** ✅ | `Component.Invalidate/ProcessInvalidations/Render/ShouldRender`；失效队列与合并；生成字段与 `U{N}`；根级 `P=`/文本重算；控件事件自动失效（2026-10-30 通过） |
+| **S2** ✅ | 块 v4：`BlockScope.RenderActions`；`@if` 分支刷新；`@foreach` 任意 `IEnumerable<T>`、null=空、Keyed 复用；嵌套块；`EUI007`/`EUI010`/`EUI033`（文本 + 显式目标）（2026-10-30 通过） |
+| **S3** 🟡 | `UiBinding` v4；控件 `@bind`；item 绑定；`EUI033`（`P=` 与绑定冲突）/`EUI037`/`EUI040`/`EUI043` —— 控件侧已落地（2026-11-02）；组件 `PChanged` 依赖 C4 组件标签，记 D54 |
 | **S4** | 组件所有权/深度排序；参数推送与相等保护；异步/后台失效；`ShouldRender` |
 | **S5** | 基准/预算；AOT/裁剪；死循环上限；旧语法清理；诊断清理与最终审计 |
 | **C1–C6** | 符号派生目录、控件事件迁移、字面量扩展、组件标签、`Ref`、插槽/附加属性/泛型标签 |

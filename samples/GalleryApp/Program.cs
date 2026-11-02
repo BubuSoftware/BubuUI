@@ -145,19 +145,19 @@ using (galleryRoot)
                 step = 1;
                 break;
             case 1 when e.Iteration >= 10:
-                Require("checkbox toggles showButton", counter.showButton.Value);
+                Require("checkbox toggles showButton", counter.showButton);
                 var plus = gallery.Descendants().OfType<Button>().FirstOrDefault(b => b.Label == "+1");
                 Require("conditional +1 button mounted", plus is not null);
                 if (plus is not null) window.PostPointerClick(ToDevice(plus, window.ScaleFactor));
                 step = 2;
                 break;
             case 2 when e.Iteration >= 15:
-                Require("+1 click increments count", counter.count.Value == 1);
+                Require("+1 click increments count", counter.count == 1);
                 window.PostPointerClick(ToDevice(addTaskButton, window.ScaleFactor));
                 step = 3;
                 break;
             case 3 when e.Iteration >= 20:
-                Require("add task appends item", taskList.tasks.Value.Count == 4);
+                Require("add task appends item", taskList.tasks.Count == 4);
                 window.SetClientSize(860, 600);
                 step = 4;
                 break;
@@ -175,7 +175,6 @@ using (galleryRoot)
 
     // 记录交互结果，退出时打印，便于脚本化验证。
     addTaskButton.AddHandler(Button.ClickEvent, () => clicks++);
-    counter.count.Subscribe(() => clicks++);
 
     var rendered = host.Run(frames);
 
@@ -190,8 +189,8 @@ using (galleryRoot)
                       $"frame={frameSummary} " +
                       $"logical={window.LogicalClientSize.Width:F0}x{window.LogicalClientSize.Height:F0} scale={window.ScaleFactor:F2}");
     Console.WriteLine($"damage: full={fullFrames} partial={partialFrames} coverage(avg/max)={coverageSummary}");
-    Console.WriteLine($"state: counter={counter.count.Value} showButton={counter.showButton.Value} " +
-                      $"tasks={taskList.tasks.Value.Count} buttonClicks={clicks}");
+    Console.WriteLine($"state: counter={counter.count} showButton={counter.showButton} " +
+                      $"tasks={taskList.tasks.Count} buttonClicks={clicks}");
 
     if (shotPath is not null && rendered > 0)
         SavePng(gallery, window.LogicalClientSize, window.ScaleFactor, host.Input.Focus.Focused, shotPath);
@@ -220,29 +219,30 @@ static (StackPanel Root, Counter Counter, TaskList Tasks, Button AddButton) Buil
 {
     var counter = new Counter();
     counter.Mount();
-    counter.showButton.Value = false;
     SetPadding(counter.Root, 16);
 
     var taskList = new TaskList();
     taskList.Mount();
     SetPadding(taskList.Root, 16);
-    taskList.tasks.Value = new List<TaskItem>
+    taskList.tasks = new List<TaskItem>
     {
         new TaskItem { Id = 1, Name = "Design review" },
         new TaskItem { Id = 2, Name = "Damage tracking v0" },
         new TaskItem { Id = 3, Name = "Golden image test" },
     };
+    taskList.Invalidate();
 
     var addTaskButton = new Button { Label = "+ Add task" };
     var nextId = 4;
     addTaskButton.AddHandler(Button.ClickEvent, () =>
     {
-        var tasks = new List<TaskItem>(taskList.tasks.Value)
+        var tasks = new List<TaskItem>(taskList.tasks)
         {
             new TaskItem { Id = nextId, Name = $"Task {nextId}" },
         };
         nextId++;
-        taskList.tasks.Value = tasks;
+        taskList.tasks = tasks;
+        taskList.Invalidate();
     });
 
     var root = new StackPanel { Gap = 14, Padding = 20 };
@@ -307,7 +307,7 @@ int RunCpu()
     var checkBox = gallery.Descendants().OfType<CheckBox>().First();
     Click(input, checkBox);
     galleryRoot.ProcessInvalidations();
-    Console.WriteLine($"cpu: checkbox -> showButton={counter.showButton.Value}");
+    Console.WriteLine($"cpu: checkbox -> showButton={counter.showButton}");
 
     gallery.Measure(size);
     gallery.Arrange(new Rect(Point.Zero, size));
@@ -315,7 +315,7 @@ int RunCpu()
     var button = gallery.Descendants().OfType<Button>().FirstOrDefault(b => b.Label == "+1");
     if (button is not null) Click(input, button);
     galleryRoot.ProcessInvalidations();
-    Console.WriteLine($"cpu: +1 -> count={counter.count.Value}");
+    Console.WriteLine($"cpu: +1 -> count={counter.count}");
 
     gallery.Measure(size);
     gallery.Arrange(new Rect(Point.Zero, size));

@@ -28,11 +28,11 @@ public sealed class FocusManager
         if (old is not null)
         {
             old.InvalidateRender();
-            old.RaiseEvent(new RoutedEventArgs(InputEvents.LostFocusEvent) { Source = old });
+            old.RaiseEvent(new RoutedEventArgs(Element.LostFocusEvent) { Source = old });
         }
         Focused = element;
         element.InvalidateRender();
-        element.RaiseEvent(new RoutedEventArgs(InputEvents.GotFocusEvent) { Source = element });
+        element.RaiseEvent(new RoutedEventArgs(Element.GotFocusEvent) { Source = element });
         return true;
     }
 
@@ -42,7 +42,7 @@ public sealed class FocusManager
         if (old is null) return;
         Focused = null;
         old.InvalidateRender();
-        old.RaiseEvent(new RoutedEventArgs(InputEvents.LostFocusEvent) { Source = old });
+        old.RaiseEvent(new RoutedEventArgs(Element.LostFocusEvent) { Source = old });
     }
 
     /// <summary>移到下一个可聚焦元素（环形）。Tab 键的默认实现。</summary>

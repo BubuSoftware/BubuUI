@@ -1,6 +1,6 @@
 # 02 · 生成代码契约
 
-> 状态：v2 定稿（2026-10-29），对应模板语义 **v4 失效重算**；S1 生成形态已落地（2026-10-30），其余见 §12。
+> 状态：v2 定稿（2026-10-29），对应模板语义 **v4 失效重算**；S1/S2 生成形态已落地（2026-10-30），其余见 §12。
 > 本文是 `.ui` 模板**生成代码**的规范正本：定义生成器必须遵守的不变量、文件级契约、
 > 命名与编号、每种构造的精确生成形态、语句顺序、首次求值与失效、确定性要求与契约测试。
 > 取代 spec/02 v1（依赖订阅模型）；v1 中 `UiWatch`/`Signal<T>`/`[UiState]` 相关的生成形态全部作废。
@@ -63,19 +63,19 @@
 |---|---|---|
 | 元素/自闭合标签 | §4.1 | ✅ |
 | 字面量属性 | §4.2 | ✅（4 类型）/ C3 扩展 |
-| `P={expr}` 单向（控件） | §4.3.1/§4.3.2 | S1 |
+| `P={expr}` 单向（控件） | §4.3.1/§4.3.2 | ✅ S1 |
 | `P={expr}` 单向（组件参数） | §4.3.3 | C4 / S4 |
-| `@bind-P={expr}`（控件） | §4.4.1/§4.4.2 | S3 |
-| `@bind-P={expr}`（组件） | §4.4.3 | S3 |
-| `P:bind` / `P:value` | §4.4.5/§4.5 | S3 → 弃用（`EUI043`） |
-| `OnE={expr}` 控件事件 | §4.6.1 | ✅ 结构 / S1 失效包装 |
+| `@bind-P={expr}`（控件） | §4.4.1/§4.4.2 | ✅ S3 |
+| `@bind-P={expr}`（组件） | §4.4.3 | C4（依赖组件标签与参数目录，D54） |
+| `P:bind` / `P:value` | §4.4.5/§4.5 | ✅ S3（生成同新形态 + `EUI043` Warning） |
+| `OnE={expr}` 控件事件 | §4.6.1 | ✅ S1 |
 | 组件委托参数事件 | §4.6.2 | C4 |
-| `Text` 模型文本 | §4.7 | S1 |
-| `TextRuns` 模型文本 | §4.8 | S1 / 接口 C2 |
-| `@if` | §4.9 | S2 |
-| `@foreach` | §4.10 | S2 |
+| `Text` 模型文本 | §4.7 | ✅ S1 |
+| `TextRuns` 模型文本 | §4.8 | ✅ S1 |
+| `@if` | §4.9 | ✅ S2 |
+| `@foreach` | §4.10 | ✅ S2 |
 | 组件标签 | §4.12 | C4 |
-| `Key` | §4.13 | S2 |
+| `Key` | §4.13 | ✅ S2 |
 | `Ref`/`Class`/`Style`/插槽/附加属性 | §4.14 | G3/G4（保留诊断） |
 
 ### 0.6 示例约定
@@ -1260,36 +1260,50 @@ public interface ITextContentHost
   `SetTemplate(Action<T, BlockScope>)` 取代。
 - 旧语法的生成文本与新语法相同，差异只在分析器 `EUI043`。
 
-## 12. 实现偏差台账 D42–D61
+## 12. 实现偏差台账 D42–D72
 
-**S1 已收敛（2026-10-30），下表中标 ✅ S1 的条目已关闭**；代码处于 v3 订阅与 v4 S1 并存的过渡态，
-其余偏差按 S2–S5/C3/C4 收敛。台账之外的差异视为实现缺陷。
+**S1 已收敛（2026-10-30）、S2 已收敛（2026-10-30）、S3 已收敛（2026-11-02，控件侧）、C1 已收敛（2026-11-02，目录派生）**，
+下表中标 ✅ S1/✅ S2/✅ S3/✅ C1 的条目已关闭；其余偏差按 S4–S5/C2/C3/C4 收敛。台账之外的差异视为实现缺陷。
+**C1/C2 改元数据来源，不改本文的生成形态**：生成器已改读派生目录（C2，2026-11-02），
+生成代码形态与本文规则一致；以下台账条目随之关闭——D62/D65/D69/D72 ✅ C2、
+D64/D68 ✅ C1。
 
 | # | 偏差 | 目标（本文） | 阶段 |
 |---|---|---|---|
-| D42 | 块模板内仍是内联 updater；无 `R{N}`（根级 `U{N}`/`Render()` 已 ✅） | §4.3.2/§4.9–§4.10 | S2 |
+| D42 | ✅ S2：块模板内动态写入生成 `void R{N}()` 局部函数 + `scope{N}.AddRenderAction(R{N})`；根级 `U{N}`/`Render()` ✅ S1 | §4.3.2/§4.9–§4.10 | ✅ S2 |
 | D43 | ✅ S1：`Invalidate`/`Render`/`ProcessInvalidations`/`ShouldRender` 已实现 | §7 | ✅ S1 |
 | D44 | ✅ S1：`Adopt`/`Track(Component)`/`TrackContent` 已实现 | §7/§5.3 | ✅ S1 |
 | D45 | ✅ S1：根级动态绑定提升 `__el{N}`/`__run{N}` 字段 | §4.1.1/§4.3.1 | ✅ S1 |
 | D46 | ✅ S1：失效队列、深度排序、迭代上限已实现 | spec/03 §2.4 | ✅ S1 |
-| D47 | `BlockScope` 为 `Roots`/`Updaters`/`Disposables` 构造模型，无 `AddRoot`/`AddRenderAction`/`AddDisposable` | §7 | S2 |
-| D48 | `ConditionalBlock.SetCondition(Func<bool>, params ISignal[])`；`SetContent(Func<List<IDisposable>, Element[]>)`；`Refresh` 私有；`SetContent` 自动构建 | §4.9/§7 | S2 |
-| D49 | `ForEachBlock.SetItems(Func<IEnumerable<T>>, params ISignal[])`；`SetTemplate(Func<T, BlockScope>)` 自动刷新；`Refresh` 私有 | §4.10/§7 | S2 |
-| D50 | 条目复用仅按 Key，`updater(item!)` 复用旧闭包 | spec/03 §7.3（Key + item 身份） | S2 |
-| D51 | 条目移除只释放 `Scope.Disposables`；`ForEachBlock.Dispose` 不释放现存条目作用域 | §5.4/spec/03 §2.8 | S2 |
+| D47 | ✅ S2：`BlockScope` 提供 `AddRoot`/`AddRenderAction`/`AddDisposable`，块创建并传入模板 | §7 | ✅ S2 |
+| D48 | ✅ S2：`ConditionalBlock.SetCondition(Func<bool>)`；`SetContent(Action<BlockScope>)`；公开 `Refresh`；setter 只保存 | §4.9/§7 | ✅ S2 |
+| D49 | ✅ S2：`ForEachBlock.SetItems(Func<IEnumerable<T>?>)`；`SetTemplate(Action<T, BlockScope>)`；公开 `Refresh`；setter 只保存 | §4.10/§7 | ✅ S2 |
+| D50 | ✅ S2：条目复用要求 Key 相同 **且** item 身份相同（值类型按相等） | spec/03 §7.3（Key + item 身份） | ✅ S2 |
+| D51 | ✅ S2：条目移除/块 `Dispose` 均逆序释放条目作用域资源 | §5.4/spec/03 §2.8 | ✅ S2 |
 | D52 | 组件参数推送无相等保护、无子 `Invalidate()` | §4.3.3 | S4 |
-| D53 | `UiBinding` 不存在；`Bind.TwoWay` 使用 `SetValue`/`GetValue`，无 `Refresh`/`invalidate` | §4.4/§7 | S3 |
-| D54 | `PChanged` 回调不存在；组件 `@bind` 未实现 | §4.4.3 | S3 |
+| D53 | ✅ S3：控件 `@bind-P` 按 §4.4.1/§4.4.2 生成 `UiBinding.TwoWay`（根级字段 + `Track`，块内局部 + `AddDisposable` + `R{N}` 刷新）；`readSource`/`writeSource` 表达式原样输出、不加括号；`P:bind`/`P:value` 兼容并报 EUI043 | §4.4/§7 | ✅ S3 |
+| D54 | `PChanged` 回调与组件 `@bind`（§4.4.3 父推送 + 子回调）未实现；组件目标、内容体内 `@bind` 禁用与自绑判定都依赖 C4 组件标签 | §4.4.3/§4.4.4 | C4 |
 | D55 | ✅ S1：事件生成 `h{N}` 委托局部 + 包装内 `Invalidate()` | §4.6 | ✅ S1 |
 | D56 | 组件内容 build-once 未实现；无 `TrackContent`；内容 `@bind` 未禁；单根/列表未区分 | §4.12.3 | C4 |
 | D57 | `EUI045` 未实现 | §10 | C3 |
 | D58 | ✅ S1：hint name 为 `{ClassName}.{stableHash}.g.cs`（SHA-256 前 16 hex） | §2.1 | ✅ S1 |
-| D59 | `ITextContentHost.AddRun(string)` 未实现；只有 `TextBlock.AddRun(TextRun)` | §4.8/§7 | C2 |
-| D60 | 块刷新总是 `Children.Clear()`，不区分序列是否变化 | spec/03 §7.3 | S2 |
-| D61 | 示例/文档仍使用 `Signal<T>`/`UiWatch`/订阅 | 本文/spec/03 | S5 |
+| D59 | ✅ S2：`ITextContentHost.AddRun(string)` 已实现；`TextBlock` 实现该接口，运行时不再需要手建 `TextRun` | §4.8/§7 | ✅ S2 |
+| D60 | ✅ S2：`ForEachBlock.UpdateChildren` 仅在根序列实际变化时改 `Children` | spec/03 §7.3 | ✅ S2 |
+| D61 | ✅ S2：样例与 README 已迁移到普通 CLR 状态；`Signal<T>` 仅留作运行时遗留原语与历史章节说明，不参与模板生成 | 本文/spec/03 | ✅ S2 |
+| D62 | ✅ C2：`EUI040` 的目标可绑性此前只来自手写目录 `UiPropDef.Bindable`；C1 派生目录已对每个模板可见属性给出符号级 `CanWrite`（public 可写 + `{Name}Property`）且证明派生 ⊇ 手写标注；C2 起分析器改读派生 `CanWrite` | spec/01 §4.2 | ✅ C2 |
+| D63 | ✅ C1：运行时声明特性落地 `Runtime/UiAttributes.cs`（`UiContentKind`/`[UiTag]`/`[UiContent]`/`[UiIgnore]`/`[UiParameter]`/`[UiSlot]`），内置控件加标注；标注纯元数据，不改生成形态 | design/14 §14.4.6/§14.4.4 | ✅ C1 |
+| D64 | ✅ C1+C2：`Compiler.Metadata` 目录模型 + Roslyn 符号扫描器（`UiCatalogFactory.Build`）落地，纯函数、不抛异常，问题进 `Problems`/`HiddenTags`；C2 删除手写目录，生成器读派生目录 | design/14 §14.5/§14.10.2/§14.12.2 | ✅ C2 |
+| D65 | ✅ C2：`EclipseUI.Compiler.Metadata` 源码链接进生成器程序集（排除 Metadata 的 `Polyfills.cs`），诊断码常量经单一定义流转；测试项目只引用生成器，避免重复类型身份 | design/14 §14.10.1/§14.12.2 | ✅ C2 |
+| D66 | ✅ C1：`UiContentKind` 与 `UiContentModel` 数值一一对应，有断言测试 | design/14 §14.4.4 | ✅ C1 |
+| D67 | ✅ C1：失效级别守卫白名单收敛为唯一例外 `Element.IsHitTestVisible`；`Panel.ClipToBounds` 失效级别 `None`→`Render` | design/14 §14.11.1 | ✅ C1 |
+| D68 | ✅ C1+C2：派生目录属性项 6→17，差集逐条钉进快照测试；C2 起模板实际变宽生效 | design/14 §14.12 | ✅ C2 |
+| D69 | ✅ C2：8 输入事件从静态宿主 `InputEvents` 迁入 `Element`（19 处调用改名，删静态类），`CheckBox` 补 `CheckedChanged`；事件表面 1 → 9 个事件名（37 事件项） | design/14 §14.4.3/§14.12.2 | ✅ C2 |
+| D70 | ✅ C1：`UiElementDef`/`UiCatalog` 手写结构相等（record 对字典成员按引用比较，会破坏 §14.10.3 管道值比较）；`CatalogValueEq` Ordinal 稳定排序 + unchecked 哈希（netstandard2.0 无 `System.HashCode`） | design/14 §14.10.3 | ✅ C1 |
+| D71 | `[UiIgnore]` 与 `[UiParameter]`/`[UiSlot]` 同时出现时 `[UiIgnore]` 生效并按 **EUI028** 记问题；design/14 §14.6.1 只写「不得」，没为这条分配诊断码，EUI028 原文只覆盖「参数声明非法」。C4 若要细化请另起新码，不复用 EUI028 | design/14 §14.6.1/§14.9.1 | C4 |
+| D72 | ✅ C2（语义修订）：golden 快照落成仓库内文件 `TestData/BuiltInSurface.golden.txt`（`ECLIPSEUI_UPDATE_SURFACE_GOLDEN=1` 再生）；原文「固定目录从快照反序列化」不采纳——快照改为扫描结果的**渲染评审门**（显式再生成 + diff 强制评审），纯结构测试各自现扫 `Compilation`（全扫实测 45 ms） | design/14 §14.11.1/§14.12.2 | ✅ C2 |
 
 - 每项收敛必须同时删除对应的 v3 路径；不得两套模型并存。
-- 新增偏差必须登记编号（从 D62 起）并注明目标阶段；不得只改代码不改台账。
+- 新增偏差必须登记编号（从 D73 起）并注明目标阶段；不得只改代码不改台账。
 - 台账编号与 design/03 §3.5.4 保持一致；两边冲突以本文为准并回写 design/03。
 
 ## 13. 变更规则

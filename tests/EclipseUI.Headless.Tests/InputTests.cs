@@ -99,6 +99,30 @@ public class PointerInputTests
     }
 
     [Fact]
+    public void CheckBoxChanged_FiresOnUserToggle_ButNotOnPropertyWrite()
+    {
+        var panel = new StackPanel();
+        var checkbox = new CheckBox { Label = "opt" };
+        panel.Children.Add(checkbox);
+        var root = new HeadlessRoot(panel);
+        root.UpdateLayout();
+
+        var raised = 0;
+        Element? source = null;
+        checkbox.AddHandler(CheckBox.CheckedChangedEvent, args => { raised++; source = args.Source; });
+
+        var center = Center(checkbox);
+        root.PointerPress(center);
+        root.PointerRelease(center);
+        Assert.Equal(1, raised);
+        Assert.Same(checkbox, source);
+
+        // 绑定推回源值的写入不广播，否则模板回调会被自己触发
+        checkbox.Checked = false;
+        Assert.Equal(1, raised);
+    }
+
+    [Fact]
     public void PointerEvent_BubblesToParent_WithRootPosition()
     {
         var panel = new StackPanel();
@@ -108,7 +132,7 @@ public class PointerInputTests
         root.UpdateLayout();
 
         Point? received = null;
-        panel.AddHandler(InputEvents.PointerPressedEvent,
+        panel.AddHandler(Element.PointerPressedEvent,
             args => received = ((PointerEventArgs)args).Position);
 
         var point = new Point(text.FinalRect.X + 2, text.FinalRect.Y + 2);
@@ -142,16 +166,17 @@ public class PointerInputTests
     [Fact]
     public void Release_AfterCapturedElementDetached_DoesNotCrashOrStrayClick()
     {
-        var flag = new Signal<bool>(false);
+        bool flag = false;
         var panel = new StackPanel();
         var block = new ConditionalBlock();
         panel.Children.Add(block);
-        block.SetCondition(() => flag.Value, flag);
-        block.SetContent(_ => new Element[] { new Button { Label = "gone" } });
+        block.SetCondition(() => flag);
+        block.SetContent(scope => scope.AddRoot(new Button { Label = "gone" }));
 
         var root = new HeadlessRoot(panel);
         root.UpdateLayout();
-        flag.Value = true;
+        flag = true;
+        block.Refresh();
         root.UpdateLayout();
 
         var button = (Button)block.Children.Single();
@@ -160,7 +185,8 @@ public class PointerInputTests
         int clicks = 0;
         panel.AddHandler(Button.ClickEvent, () => clicks++);
 
-        flag.Value = false; // 内容卸载，捕获元素脱离树
+        flag = false; // 内容卸载，捕获元素脱离树
+        block.Refresh();
         root.PointerRelease(Center(panel)); // 释放路由给已脱离元素：不抛异常、不冒泡到面板
         Assert.Equal(0, clicks);
     }
@@ -203,8 +229,8 @@ public class FocusTests
     {
         var s = Build();
         Element? got = null, lost = null;
-        s.Root.Content.AddHandler(InputEvents.GotFocusEvent, args => got = args.Source);
-        s.Root.Content.AddHandler(InputEvents.LostFocusEvent, args => lost = args.Source);
+        s.Root.Content.AddHandler(Element.GotFocusEvent, args => got = args.Source);
+        s.Root.Content.AddHandler(Element.LostFocusEvent, args => lost = args.Source);
 
         s.Root.Focus.Focus(s.B1);
         Assert.Same(s.B1, got);

@@ -9,13 +9,21 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" PrivateAssets="all" />
+    <!-- 前端结构测试的目录来自符号扫描（design/14 §14.11.1）：测试项目可以引用 Roslyn，
+         生产侧 EclipseUI.Compiler 保持零 Roslyn 依赖 -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.9.2" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\EclipseUI.Runtime\EclipseUI.Runtime.csproj" />
     <ProjectReference Include="..\..\src\EclipseUI.Compiler\EclipseUI.Compiler.csproj" />
+    <ProjectReference Include="..\..\src\EclipseUI.Compiler.Metadata\EclipseUI.Compiler.Metadata.csproj" />
     <ProjectReference Include="..\..\src\EclipseUI.Text.Shaping\EclipseUI.Text.Shaping.csproj" />
     <ProjectReference Include="..\..\samples\CounterApp\CounterApp.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Shared\UiTestCatalogs.cs" Link="UiTestCatalogs.cs" />
   </ItemGroup>
 
 </Project>

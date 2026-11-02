@@ -41,6 +41,7 @@ public sealed class NaiveTextMeasurer : ITextMeasurer
 }
 
 /// <summary>文本段：TextBlock 的子元素，一等参与布局与定向更新。</summary>
+[UiIgnore]
 public sealed class TextRun : Element
 {
     public static readonly StyledProperty<string> TextProperty =
@@ -66,7 +67,8 @@ public sealed class TextRun : Element
     protected internal override void ArrangeCore(Rect final) { }
 }
 
-public sealed class TextBlock : Panel
+[UiContent(UiContentKind.TextRuns)]
+public sealed class TextBlock : Panel, ITextContentHost
 {
     public static readonly StyledProperty<double> FontSizeProperty =
         StyledProperty<double>.Register<TextBlock>("FontSize", 14d,
@@ -86,6 +88,13 @@ public sealed class TextBlock : Panel
     {
         Children.Add(run);
         _runs.Add(run);
+    }
+
+    public TextRun AddRun(string text)
+    {
+        var run = new TextRun(text);
+        AddRun(run);
+        return run;
     }
 
     protected internal override Size MeasureCore(Size available)
