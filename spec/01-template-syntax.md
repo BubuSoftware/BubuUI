@@ -531,6 +531,9 @@ string        ::= '"' raw-char* '"'
 
 - 形式：`@foreach (var item in collection) { ... }`；**`var` 必写**，
   不支持 `T item in ...`、解构、`await foreach`。
+  三种违规（类型化条目 / 解构 / 缺 `in` 或缺集合）给出针对性 `EUI100` 消息。
+  头解析按**深度/字符串感知扫描**（tokenizer，2026-11-05）：集合内带引号的 `" in "`、
+  括号内的 `in`（方法实参修饰符）不再被认为分隔符（旧正则实现的两处已知误切分）。
 - `collection` 必须是 `IEnumerable<T>`（含 `T[]`、`List<T>`、`Dictionary<K,V>`、`HashSet<T>`、
   LINQ 结果、自定义实现、`ObservableCollection<T>`）；`T` 必须可推断。
 - 值为 `null` 视为空集合，不构造条目，不报错；`null` 字面量因无法推断 `T` 报 `EUI007`。
@@ -588,7 +591,8 @@ string        ::= '"' raw-char* '"'
   `public static readonly RoutedEvent` 字段（design/14 §14.4.3）。
   - 只接受 `{expression}`；字面量或 `:bind`/`@bind-` → `EUI004`/`EUI040`。
   - 处理器必须能转换为 `Action` 或 `Action<RoutedEventArgs>`；签名不匹配由 C# 报错
-    （`EUI024` 为可静态判定项，C5——C3 只落 EUI023/EUI025/EUI031）。
+    （`EUI024` 尚未实现；两个委托类型的选择已按表达式**语法形态**判定——tokenizer 切片
+    （2026-11-05）用 Roslyn 解析替代正则，签名匹配另片）。
   - **build-once**：Build 时 `el.AddHandler({Event}, 包装);`，不在渲染时重新注册。
   - 处理器表达式先转为委托局部 `h{N}`（类型为匹配到的 `Action`/`Action<RoutedEventArgs>`），
     包装在用户处理器**同步返回后**调用所属组件 `Invalidate()`：
@@ -760,7 +764,7 @@ new cmp0
 | `EUI021` | 内容目标缺失/类型不匹配：控件 `Text` 目标、组件 `[UiContent]` 参数类型非法、组件内容参数经 `P=` 赋值、单根内容参数接多根；**引用程序集控件的破损内容目标在使用点报**（内容被降级为 None 时接管 `EUI006` 的 children 诊断，design/14 §14.5.4） | 子内容 | Error | ✅ C3（控件）/ ✅ C4（组件）/ ✅ C5（使用点） |
 | `EUI022` | 插槽未知/重复/位置非法 | 标签/属性 | Error | G4/C6 |
 | `EUI023` | 属性类型没有字面量转换器 | 属性值 | Error | ✅ C3 |
-| `EUI024` | 事件处理器签名不匹配（可静态判定时） | 属性值 | Error | C5（Roslyn 层；C3 未动） |
+| `EUI024` | 事件处理器签名不匹配（可静态判定时） | 属性值 | Error | 后续切片（Roslyn 层；委托类型已按语法形态判定，tokenizer） |
 | `EUI025` | 同一标签重复属性（任一侧是绑定的同名重叠 → `EUI033`） | 属性名 | Error | ✅ C3 |
 | `EUI026` | 控件/组件元数据声明非法（源项目） | 声明处 | Error/Warning | C3 |
 | `EUI027` | 组件必填参数缺失 | 标签 | Error | ✅ C4 |

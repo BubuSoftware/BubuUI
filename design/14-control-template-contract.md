@@ -1014,7 +1014,7 @@ Roslyn 4.9.2 的公开 API 没有这个成员（公开的是 `IModuleSymbol.Refe
 | EUI021 使用点 | 内容被降级为 None 且 def 带 `ContentTargetInvalid` 问题（引用程序集）时，用点 children 接管既有 EUI006 指引 → **EUI021**；源项目控件保留 EUI006 指引不变 |
 | 测试 | `C5UseSiteTests`（Headless 15 例：Ref 合成标识符/字面量/成员访问/裸 token（EUI100×2+EUI029）/重复/`@bind-Ref`；引用程序集 EUI019/EUI020/EUI021 + 源项目对照（仍 EUI002/EUI006）+ 自闭合不触发）+ `GeneratorContractTests` 12 例（Ref 控件/组件生成形态、缺失/类型/readonly/静态探针、非标识符/字面量 EUI029、**真实 Emit 引用程序集**端到端 EUI019/EUI020/EUI021 与干净不触发）|
 
-**范围说明（C5 后仍开放）**：EUI026 声明处诊断仍**未消费**（目录 problem 只进 `HiddenTags`/`def.Problems`，源项目控件的声明错误靠使用点 EUI002 兜底；`catalog.Problems`/`StaticEventHost` 诊断至今没有编译期出口——留作后续切片或 D74 登记）；Roslyn tokenizer（EUI024/C6 相关词法）单独切片；EUI024 处理器签名匹配、G4 样式/插槽不变。
+**范围说明（C5 后仍开放）**：EUI026 声明处诊断仍**未消费**（目录 problem 只进 `HiddenTags`/`def.Problems`，源项目控件的声明错误靠使用点 EUI002 兜底；`catalog.Problems`/`StaticEventHost` 诊断至今没有编译期出口——留作后续切片或 D74 登记）；Roslyn tokenizer 已落地（2026-11-05：`@foreach` 头与事件委托形态判定从正则换成解析/深度感知扫描；EUI024 签名匹配另片）；EUI024 处理器签名匹配、G4 样式/插槽不变。
 
 ## 14.13 风险与开放问题
 

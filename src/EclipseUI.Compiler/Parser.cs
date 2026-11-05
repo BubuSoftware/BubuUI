@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Text.RegularExpressions;
 
 namespace EclipseUI.Compiler;
 
@@ -293,10 +292,14 @@ public sealed class Parser
 
     private void ParseForeachInto(List<UiNode> list, Token directive)
     {
-        var match = Regex.Match(directive.Aux ?? "", @"^\s*var\s+([A-Za-z_]\w*)\s+in\s+(.+?)\s*$", RegexOptions.Singleline);
-        if (!match.Success)
+        // Tokenizer 切片：以深度/字符串感知的扫描替代正则（spec/01 §4.11 冻结形态
+        // `var item in collection`）。集合里带引号的 " in "（旧正则会误切分）与括号内的
+        // `in`（如方法实参修饰符）不再撕裂集合；解构/类型化条目按冻结规则明确拒绝（EUI100）。
+        var text = directive.Aux ?? "";
+        var header = ScanForeachHeader(text);
+        if (!header.Ok)
         {
-            Diag(UiDiagnostics.Syntax, "@foreach requires (var item in collection) { ... }", directive.Span);
+            Diag(UiDiagnostics.Syntax, header.Reason, directive.Span);
             Advance();
             return;
         }
@@ -314,12 +317,117 @@ public sealed class Parser
         NormalizeChildren(children);
         list.Add(new UiForeach
         {
-            VarName = match.Groups[1].Value,
-            Collection = match.Groups[2].Value,
+            VarName = header.VarName,
+            Collection = header.Collection,
             CollectionSpan = directive.InnerSpan,
             Children = children,
             Span = directive.Span,
         });
+    }
+
+    private readonly struct ForeachHeader
+    {
+        public bool Ok { get; init; }
+        public string Reason { get; init; }
+        public string VarName { get; init; }
+        public string Collection { get; init; }
+    }
+
+    /// <summary>
+    /// 扫描 <c>var ident in collection</c>：首个词是 <c>var</c>、简单标识符、深度为 0 且不在
+    /// 字符串内的 <c>in</c> 分隔符、其后非空集合表达式。其余形态给出针对性原因（解构/类型化）。
+    /// </summary>
+    private static ForeachHeader ScanForeachHeader(string text)
+    {
+        const string generic = "@foreach requires (var item in collection) { ... }";
+
+        var i = 0;
+        while (i < text.Length && char.IsWhiteSpace(text[i])) i++;
+
+        if (i < text.Length && text[i] == '(')
+            return new ForeachHeader { Ok = false, Reason = "@foreach does not support deconstruction items; " + generic };
+
+        var wordStart = i;
+        while (i < text.Length && IsWordChar(text[i])) i++;
+        var first = text.Substring(wordStart, i - wordStart);
+
+        if (first != "var")
+            return new ForeachHeader
+            {
+                Ok = false,
+                Reason = first.Length == 0
+                    ? generic
+                    : $"'{first}' is a typed item; @foreach does not support typed items (use 'var'); {generic}",
+            };
+
+        while (i < text.Length && char.IsWhiteSpace(text[i])) i++;
+        if (i < text.Length && text[i] == '(')
+            return new ForeachHeader { Ok = false, Reason = "@foreach does not support deconstruction items; " + generic };
+
+        var nameStart = i;
+        while (i < text.Length && IsWordChar(text[i])) i++;
+        if (nameStart == i) return new ForeachHeader { Ok = false, Reason = generic };
+        var varName = text.Substring(nameStart, i - nameStart);
+
+        // 分隔符：深度 0、不在字符串内、有词边界的 `in`；其后非空文本即集合表达式。
+        var depth = 0;
+        while (i < text.Length)
+        {
+            switch (text[i])
+            {
+                case '"' or '\'':
+                    i = SkipQuoted(text, i);
+                    continue;
+                case '(' or '[' or '{':
+                    depth++;
+                    break;
+                case ')' or ']' or '}':
+                    if (depth > 0) { depth--; break; }
+                    return new ForeachHeader { Ok = false, Reason = generic }; // 集合在 'in' 前已完结
+            }
+            if (text[i] == 'i' && depth == 0 && IsInKeyword(text, i))
+            {
+                i += 2;
+                while (i < text.Length && char.IsWhiteSpace(text[i])) i++;
+                if (i >= text.Length)
+                    return new ForeachHeader { Ok = false, Reason = generic }; // 'in' 后无集合
+                return new ForeachHeader
+                {
+                    Ok = true,
+                    VarName = varName,
+                    Collection = text.Substring(i).Trim(),
+                };
+            }
+            i++;
+        }
+        return new ForeachHeader { Ok = false, Reason = generic };
+    }
+
+    private static bool PeekParen(string text, int i)
+    {
+        while (i < text.Length && char.IsWhiteSpace(text[i])) i++;
+        return i < text.Length && text[i] == '(';
+    }
+
+    private static bool IsWordChar(char c) => char.IsLetterOrDigit(c) || c == '_';
+
+    private static bool IsInKeyword(string text, int i) =>
+        i + 2 <= text.Length &&
+        text[i + 1] == 'n' &&
+        (i == 0 || char.IsWhiteSpace(text[i - 1])) &&
+        (i + 2 == text.Length || char.IsWhiteSpace(text[i + 2]));
+
+    private static int SkipQuoted(string text, int i)
+    {
+        var quote = text[i];
+        i++;
+        while (i < text.Length)
+        {
+            if (text[i] == '\\') { i += 2; continue; }
+            if (text[i] == quote) return i + 1;
+            i++;
+        }
+        return i;
     }
 
     /// <summary>去头尾空白、丢弃纯空白文本节点（与 XAML/JSX 直觉一致）。</summary>

@@ -657,7 +657,9 @@ el.AddHandler(global::EclipseUI.Elements.ListBox.SelectionChangedEvent,
 5. 处理器抛异常时包装不执行 `Invalidate()`（异常向上传播）；`async void` 处理器在 `await` 后的
    状态变化必须由用户显式 `Invalidate()`（spec/03 §9.3）。
 6. 字面量 / `:bind` / `@bind-` 作为事件值 → `EUI004`；不生成 `AddHandler`。
-7. 处理器签名无法静态判定时由 C# 报错；可判定的唯一匹配由分析器报 `EUI024`（C3）。
+7. 处理器签名无法静态判定时由 C# 报错；可判定的唯一匹配由分析器报 `EUI024`（**尚未实现**，后续切片；
+   两种目标类型的选择按表达式语法形态判定——tokenizer 用 Roslyn 解析（lambda 参数个数），
+   解析失败/非 lambda 形态回落 `Action`，由 C# 诊断兜底）。
 
 #### 4.6.2 组件事件（委托参数）
 

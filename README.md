@@ -48,7 +48,12 @@
 > 源项目控件仍落 `EUI002`/`EUI006`（声明处归 `EUI026`）。落地记录 [14 §14.12.5](./design/14-control-template-contract.md)，
 > 台账新增 D74（① 使用点 ✅ / ② `EUI026` 声明处出口开放）。
 > 347 个测试全绿（Headless 160 / Compiler 126 / Rendering 61）。
-> 具名插槽（C6）、Roslyn tokenizer、样式主题与 IDE 支持为后续工作。
+> **Tokenizer 切片已通过（2026-11-05）**：`.ui` 编译器内两处正则形态判定换 Roslyn 解析/深度感知扫描——
+> 控件事件的委托类型（`Action` vs `Action<RoutedEventArgs>`）按表达式语法形态判定（括号/引号内的
+> `=>`、嵌套 lambda、匿名方法不再误判），`@foreach` 头按 spec/01 §4.11 冻结形式扫描（集合内带引号的
+> `" in "`、括号内 `in` 修饰符不再撕裂表达式；类型化条目/解构给出针对性 `EUI100` 消息）。
+> 358 个测试全绿（Headless 167 / Compiler 130 / Rendering 61）。
+> 具名插槽（C6）、EUI024 签名匹配、样式主题与 IDE 支持为后续工作。
 
 ## 核心理念
 
@@ -217,16 +222,17 @@ damage v0 让空闲帧不再提交 GPU。G3 的 C1/C2 目录派生切片、C3 �
 **C4 组件标签切片与 C5 `Ref`/使用点诊断切片已全部通过**（手写目录删除，模板表面 17 属性项 /
 9 个事件名；转换器补齐到 spec/01 §5.2 全表；自定义组件可写入 `.ui`；`Ref={field}` 与
 EUI019–021/EUI029 使用点收敛，落地记录见
-[14 §14.12.2–§14.12.5](./design/14-control-template-contract.md)）。当前优先级是 **G2 剩余部分**：
-像素 golden、retained layer、目标机 60fps 复测；G3 并行推进 Roslyn tokenizer（单独立项）
-与 C6（具名插槽）。
+[14 §14.12.2–§14.12.5](./design/14-control-template-contract.md)）与 **tokenizer 切片**（事件委托形态与
+`@foreach` 头的正则判定换 Roslyn 解析/深度感知扫描）。当前优先级是 **G2 剩余部分**：
+像素 golden、retained layer、目标机 60fps 复测；G3 并行推进 C6（具名插槽）与
+EUI024 签名匹配。
 完整路线图见 [09 开发计划](./design/09-development-plan.md)，G1 数据见
 [render-gate-2026-11](./design/reports/render-gate-2026-11.md)，G2 进度见
 [11 G2 第一切片](./design/11-g2-surface-slice.md)、[12 G2 第二切片](./design/12-g2-interactive-slice.md)
 与 [13 G2 第三切片](./design/13-g2-damage-v0.md)。
 
 1. **G2 剩余**：像素 golden + retained layer / 局部重绘 + 目标机 60fps。
-2. **G3 语义/编译器硬化**（与 G2 并行）：块布局透明化、语法级表达式重写（Roslyn tokenizer）、按文件增量与 `#line` 列映射、
+2. **G3 语义/编译器硬化**（与 G2 并行）：块布局透明化、~~表达式形态判定的正则替代（tokenizer）~~ ✅ 已落地（2026-11-05）、按文件增量与 `#line` 列映射、
    ~~组件标签与组件级绑定（C4）~~ ✅ C4 已落地（2026-11-05）、~~`Ref` 与剩余使用点诊断收敛（C5）~~ ✅ C5 已落地（2026-11-05）。
 3. **G4 样式/控件/虚拟化**：选择器编译、亮暗主题、基础控件集、`VirtualizingPanel`。
 4. **G5 IDE P0–P1**：TextMate grammar + LSP server（表达式投影进 Roslyn）+ VS Code/Rider 壳。

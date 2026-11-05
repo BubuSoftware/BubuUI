@@ -2,8 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using System.Text.RegularExpressions;
 using EclipseUI.Compiler;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+using MsSyntaxKind = Microsoft.CodeAnalysis.CSharp.SyntaxKind;
 
 namespace EclipseUI.Compiler.Generator;
 
@@ -225,14 +227,29 @@ public sealed class Emitter
         Line($"{ctx.ScopeVar}.AddRenderAction({name});");
     }
 
-    /// <summary>目录尚无处理器委托类型元数据（C3）；按 lambda 形态选择 AddHandler 的两个重载。</summary>
+    /// <summary>
+    /// 目录尚无处理器委托类型元数据（EUI024 签名匹配另片）；按表达式**语法形态**选
+    /// AddHandler 的两个重载（spec/02 §4.6.1 规则 2 固定这两种目标类型）。Tokenizer 切片：
+    /// 用 Roslyn 解析替代正则——括号内/引号内的 "=&gt;"、嵌套 lambda、匿名方法不再是猜测。
+    /// 解析失败/非 lambda 形态回落 Action（由 C# 编译器经 #line 兜回 .ui 报错）。
+    /// </summary>
     private static string EventHandlerType(string expression)
     {
-        var match = Regex.Match(expression.Trim(), @"^(?:async\s+)?(?:\(([^)]*)\)|([A-Za-z_]\w*))\s*=>");
-        if (!match.Success) return "global::System.Action";
-        if (match.Groups[1].Success && match.Groups[1].Value.Trim().Length == 0)
-            return "global::System.Action";
-        return "global::System.Action<global::EclipseUI.RoutedEventArgs>";
+        const string action = "global::System.Action";
+        const string routeArgs = "global::System.Action<global::EclipseUI.RoutedEventArgs>";
+
+        var expr = SyntaxFactory.ParseExpression(expression.Trim());
+        var inner = expr;
+        while (inner is ParenthesizedExpressionSyntax parenthesized)
+            inner = parenthesized.Expression;
+
+        if (inner is SimpleLambdaExpressionSyntax)
+            return routeArgs; // x => ...（单参数）
+        if (inner is ParenthesizedLambdaExpressionSyntax lambda)
+            return lambda.ParameterList is { Parameters.Count: > 0 } ? routeArgs : action;
+        if (inner is AnonymousMethodExpressionSyntax anonymous)
+            return anonymous.ParameterList is { Parameters.Count: > 0 } ? routeArgs : action;
+        return action;
     }
 
     private int LineOf(TextSpan span) => _doc.Lines.LineOf(span.Start);

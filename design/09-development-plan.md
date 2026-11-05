@@ -188,6 +188,13 @@ Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-s
   记为未收敛 D54。
   S4（所有权/深度排序、参数推送与相等保护、异步/后台失效、`ShouldRender`）随 G4 推进，S5 收口归 G8。
 - 语法级表达式重写（Roslyn SyntaxRewriter，替代正则）。
+  —— ✅ **Tokenizer 切片（2026-11-05，G3 小片）**：v4 无表达式重写需求（D20 取消信号重写），
+  该项收敛为两处形态判定的正则替代。`Emitter.EventHandlerType` 换 `SyntaxFactory.ParseExpression`
+  （括号/引号内的 `=>`、嵌套 lambda、匿名方法、`new Action(...)` 顶层嵌套不再误判）；
+  `Parser.ParseForeachInto` 的正则换深度/字符串感知扫描（spec/01 §4.11 冻结形态）——
+  集合内带引号的 `" in "`、括号内 `in` 修饰符不再撕裂集合，类型化条目/解构给出针对性 EUI100 消息。
+  `UiCatalogFactory` 的特殊类型显示名规整正则保留（非表达式语义）。测试：Headless `TokenizerTests` 7 例 +
+  Generator 事件形态 4 例；**358 例全绿（167/130/61）**。
 - 组件注册表：从 Compilation 收集元素/属性/事件/内容模型（契约、数据模型与阶段 C1–C6 见
   [14 控件与模板契约](./14-control-template-contract.md)）。
   **进度（2026-11-03）：C1 ✅ / C2 ✅ / C3 ✅ / C4 ✅（2026-11-05）/ C5 ✅（2026-11-05）** —— `Runtime/UiAttributes.cs` 六个声明特性 + 内置控件标注、

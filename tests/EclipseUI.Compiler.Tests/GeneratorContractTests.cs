@@ -1171,4 +1171,58 @@ public class GeneratorContractTests
         Assert.NotEmpty(result.GeneratedSources);            // 无内容 → 不触发 EUI021
         Assert.DoesNotContain(result.Diagnostics, d => d.Id is "EUI019" or "EUI020" or "EUI021" or "EUI029");
     }
+
+    // ---- Tokenizer 切片：控件事件的处理器形态用 Roslyn 解析判定（替代正则，spec/02 §4.6.1 规则 2）----
+
+    private const string TokenizerCodeBehind = "public partial class Probe { private void Say() { } }";
+
+    /// <summary>括号 lambda 包 async/零参数：旧正则整串失败回落 Action；解析后仍正确判 Action。</summary>
+    [Fact]
+    public void Event_ParenthesizedAsyncLambda_NoParams_IsAction()
+    {
+        const string ui = "<StackPanel><Button OnClick={(async () => Say())} /></StackPanel>";
+
+        var code = Generated(Run("C:\\templates\\Probe.ui", ui, TokenizerCodeBehind));
+
+        Assert.Contains("(global::System.Action)", code);
+        Assert.DoesNotContain("RoutedEventArgs>", code);
+    }
+
+    /// <summary>括号内的带参 lambda `(e => ...)`：旧正则形态失败判成 Action（cast 编译错）；解析后正确判 RouteArgs。</summary>
+    [Fact]
+    public void Event_ParenthesizedLambda_SingleParam_IsRouteArgs()
+    {
+        const string ui = "<StackPanel><Button OnClick={(e => Say())} /></StackPanel>";
+
+        var code = Generated(Run("C:\\templates\\Probe.ui", ui, TokenizerCodeBehind));
+
+        Assert.Contains("(global::System.Action<global::EclipseUI.RoutedEventArgs>)", code);
+        Assert.Contains("AddHandler(global::EclipseUI.Elements.Button.ClickEvent, e => { h2(e); Invalidate(); });", code);
+    }
+
+    /// <summary>匿名方法：`delegate { }` → Action；`delegate (e) { }` → RouteArgs（旧正则整串失败）。</summary>
+    [Fact]
+    public void Event_AnonymousMethod_ParamsDecideHandlerType()
+    {
+        const string withoutParams = "<StackPanel><Button OnClick={delegate { Say(); }} /></StackPanel>";
+        var code = Generated(Run("C:\\templates\\Probe.ui", withoutParams, TokenizerCodeBehind));
+        Assert.Contains("(global::System.Action)", code);
+        Assert.DoesNotContain("RoutedEventArgs>", code);
+
+        const string withParams = "<StackPanel><Button OnClick={delegate (global::EclipseUI.RoutedEventArgs e) { Say(); }} /></StackPanel>";
+        var code2 = Generated(Run("C:\\templates\\Probe.ui", withParams, TokenizerCodeBehind));
+        Assert.Contains("(global::System.Action<global::EclipseUI.RoutedEventArgs>)", code2);
+    }
+
+    /// <summary>`new Action(...)` 顶层的嵌套 lambda 不是处理器形态本身：回落 Action（防未来误用 DescendantSearch）。</summary>
+    [Fact]
+    public void Event_NestedLambdaInsideObjectCreation_FallsBackToAction()
+    {
+        const string ui = "<StackPanel><Button OnClick={new global::System.Action(() => Say())} /></StackPanel>";
+
+        var code = Generated(Run("C:\\templates\\Probe.ui", ui, TokenizerCodeBehind));
+
+        Assert.Contains("(global::System.Action)", code);
+        Assert.DoesNotContain("RoutedEventArgs>", code);
+    }
 }
