@@ -308,7 +308,7 @@ string        ::= '"' raw-char* '"'
 | `Key` 只能出现在 `@foreach` item 模板的第一个元素根上 | `EUI010` | ✅ |
 | `@foreach` 必须写 `var 名字 in ...` | `EUI100` | ✅ |
 | `@bind-P` 的值不是 `{expr}` | `EUI037` | ✅ S3 |
-| `@bind-P` 目标非法（不可写/无属性字段/事件/保留/内容/组件缺 `PChanged`） | `EUI040` | ✅ S3（控件；组件待 C4） |
+| `@bind-P` 目标非法（不可写/无属性字段/事件/保留/内容/组件缺 `PChanged`） | `EUI040` | ✅ S3+C4（控件 ✅ S3；组件 ✅ C4） |
 | `@bind-P` 源非法（非可写左值/类型不符） | `EUI037` | ✅ S3 |
 | `@bind-P` 与同名属性/`:bind`/`:value` 重复 | `EUI033` | ✅ S2（完全重复属性仍 `EUI025`，C3） |
 | `Key={}` 空表达式 | `EUI010` | ✅ S2 |
@@ -375,7 +375,7 @@ string        ::= '"' raw-char* '"'
 | 写法 | 求值 | 反应式 | 运行时机制 | 约束/诊断 | 状态 |
 |---|---|---|---|---|---|
 | `P="literal"` | Build 一次 | 否 | 编译期转换 + 属性赋值 | `EUI003`/`EUI023` | ✅（§5.2 全表，C3） |
-| `P={expr}` | Build + 每次渲染 | 是（组件级） | 控件属性直接写（相等短路）；组件参数相等保护 + 子 `Invalidate()` | 目标可写；不做依赖分析 | S1/S4（当前一次性，D23） |
+| `P={expr}` | Build + 每次渲染 | 是（组件级） | 控件属性直接写（相等短路）；组件参数相等保护 + 子 `Invalidate()` | 目标可写；不做依赖分析 | S1/S4（当前一次性，D23）；组件推送形态 ✅ C4 |
 | `@bind-P={expr}` | Build + 双向 | 是 | 控件 `UiBinding`；组件 `PChanged` + 参数推送 | 源可写左值；目标可写；组件需 `PChanged` | ✅ S3（控件）/ S4+C4（组件） |
 | `P:bind={expr}` | 同 `@bind-P` | 是 | 同 | 旧语法，`EUI043` Warning | ✅ S3 → 弃用 |
 | `P:value={expr}` | 同 `P={expr}` | 是 | 同 | 旧语法，`EUI043` Warning | ✅ S3 → 弃用 |
@@ -639,7 +639,7 @@ new cmp0
 - 参数没有 diff：Build 只跑一次；参数推送只改属性并失效子组件，不重建组件模板。
 - 子组件内部修改参数不自动通知父；需要向上同步时使用 `PChanged`（§4.5）。
   父未使用 `@bind` 时，子对参数的修改只在子内部生效；下次父渲染会推送父源值覆盖。
-- 默认内容（C4）按 `[UiContent]` 参数处理；具名插槽 G4（`<Slot>`/`<ContentSlot>` 保留 `EUI031`，
+- 默认内容（C4 已落地，2026-11-05）按 `[UiContent]` 参数处理；具名插槽 G4（`<Slot>`/`<ContentSlot>` 保留 `EUI031`，
   G4 后插槽错误 `EUI022`）。内容/插槽 build-once，不可观察，不随父渲染重算。
 - 组件内容（`[UiContent]`）的额外规则（spec/02 §4.12.3）：
   - 内容参数类型只接受 `IReadOnlyList<Element>`（多根）或 `Element?`（单根）；其他类型 → `EUI021`；
@@ -757,14 +757,14 @@ new cmp0
 | `EUI018` | 缺少 public 无参构造 | 标签 | Error | C3 |
 | `EUI019` | 属性不可写 / `{Name}Property` 类型不符；仅对已进入目录的属性成立 | 属性名 | Error | C3/S2 |
 | `EUI020` | 事件字段缺失或类型不是 `RoutedEvent` | 属性名 | Error | C3 |
-| `EUI021` | 内容目标缺失或类型不匹配 | 子内容 | Error | C3 |
+| `EUI021` | 内容目标缺失/类型不匹配：控件 `Text` 目标、组件 `[UiContent]` 参数类型非法、组件内容参数经 `P=` 赋值、单根内容参数接多根 | 子内容 | Error | ✅ C3（控件）/ ✅ C4（组件） |
 | `EUI022` | 插槽未知/重复/位置非法 | 标签/属性 | Error | G4/C6 |
 | `EUI023` | 属性类型没有字面量转换器 | 属性值 | Error | ✅ C3 |
 | `EUI024` | 事件处理器签名不匹配（可静态判定时） | 属性值 | Error | C5（Roslyn 层；C3 未动） |
 | `EUI025` | 同一标签重复属性（任一侧是绑定的同名重叠 → `EUI033`） | 属性名 | Error | ✅ C3 |
 | `EUI026` | 控件/组件元数据声明非法（源项目） | 声明处 | Error/Warning | C3 |
-| `EUI027` | 组件必填参数缺失 | 标签 | Error | C4 |
-| `EUI028` | 组件参数/委托声明非法：非 public / 无 setter / `init` / C# `required` / 非法泛型实参 / 委托含 `ref`/`out`/`in` | 声明处/属性名 | Error | C4 |
+| `EUI027` | 组件必填参数缺失 | 标签 | Error | ✅ C4 |
+| `EUI028` | 组件参数/委托声明非法：非 public / 无 setter / `init` / C# `required` / 非法泛型实参 / 委托含 `ref`/`out`/`in` | 声明处/属性名 | Error | ✅ C4 |
 | `EUI029` | `Ref` 目标非法 | 属性值 | Error | C5/G3 |
 | `EUI030` | 泛型标签暂不支持 | 标签 | Error | C6/G4 |
 | `EUI031` | 语法已保留、尚未实现（`Class`/`Style`/`<Slot>`/`<ContentSlot>`/附加属性） | 标签/属性 | Error | ✅ C3（`<Slot>`/`<ContentSlot>` 仅当目录无同名真实控件时拦截） |
@@ -776,7 +776,7 @@ new cmp0
 | `EUI037` | `@bind` 源非法（非可写左值/静态/const/readonly/init/方法/索引器/`?.`/struct 属性中间段/值类型 item 成员/类型不符/自绑） | 表达式 | Error | ✅ S3（控件源；自绑静态不可判定，按 §4.5 不报） |
 | `EUI038` | **停用**：v3 "不可分析结构 → 一次性"；v4 任意表达式合法 | — | — | — |
 | `EUI039` | **停用**：v3 `Key` 不得依赖可观察状态；v4 Key 可引用任意可读表达式 | — | — | — |
-| `EUI040` | `@bind` 目标非法（控件不可写/无 `{Name}Property`；组件参数无 public setter/委托/内容/保留；组件缺少 `{P}Changed` 或类型不符；组件内容体内出现 `@bind`） | 属性名/内容 | Error | ✅ S3（控件：不可绑属性/事件/保留名；组件侧待 C4） |
+| `EUI040` | `@bind` 目标非法（控件不可写/无 `{Name}Property`；组件参数无 public setter/委托/内容/保留；组件缺少 `{P}Changed` 或类型不符；组件内容体内出现 `@bind`） | 属性名/内容 | Error | ✅ S3+C4（控件 ✅ S3；组件 ✅ C4；`{P}Changed` 类型匹配静态不可判，记 D73） |
 | `EUI041` | **停用**：v3 集合未实现 INCC；v4 每次刷新重新枚举 | — | — | — |
 | `EUI042` | **停用**：v3 item `@bind` 禁止组件级源；v4 允许 | — | — | — |
 | `EUI043` | 旧语法 `:bind`/`:value` 弃用 | 属性名 | Warning | ✅ S3 |
@@ -818,7 +818,7 @@ new cmp0
 | ✅ 当前可用 | 元素/自闭合；属性字面量（string/bool/double/int）；控件 `On*` 事件；`Text`/`TextRuns`/`Children` 文本与内容；`@if`/`@foreach` 与 `Key`；控件 `@bind-P`（含 item 源）与旧 `:bind`/`:value` 弃用告警；注释；空白规范化；code-behind 诊断 |
 | **S1** ✅ | `Component.Invalidate/ProcessInvalidations/Render/ShouldRender`；失效队列与合并；生成字段与 `U{N}`；根级 `P=`/文本重算；控件事件自动失效（2026-10-30 通过） |
 | **S2** ✅ | 块 v4：`BlockScope.RenderActions`；`@if` 分支刷新；`@foreach` 任意 `IEnumerable<T>`、null=空、Keyed 复用；嵌套块；`EUI007`/`EUI010`/`EUI033`（文本 + 显式目标）（2026-10-30 通过） |
-| **S3** 🟡 | `UiBinding` v4；控件 `@bind`；item 绑定；`EUI033`（`P=` 与绑定冲突）/`EUI037`/`EUI040`/`EUI043` —— 控件侧已落地（2026-11-02）；组件 `PChanged` 依赖 C4 组件标签，记 D54 |
+| **S3** 🟡 | `UiBinding` v4；控件 `@bind`；item 绑定；`EUI033`（`P=` 与绑定冲突）/`EUI037`/`EUI040`/`EUI043` —— 控件侧已落地（2026-11-02）；组件 `PChanged` 依赖 C4 组件标签，记 D54 —— 组件绑定目标/回调已随 C4 落地（2026-11-05） |
 | **S4** | 组件所有权/深度排序；参数推送与相等保护；异步/后台失效；`ShouldRender` |
 | **S5** | 基准/预算；AOT/裁剪；死循环上限；旧语法清理；诊断清理与最终审计 |
 | **C1–C6** | 符号派生目录、控件事件迁移、字面量扩展、组件标签、`Ref`、插槽/附加属性/泛型标签 |

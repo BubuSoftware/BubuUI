@@ -35,6 +35,30 @@ public static class UiCatalogFactory
 
     internal static readonly SymbolDisplayFormat Qualified = SymbolDisplayFormat.FullyQualifiedFormat;
 
+    /// <summary>
+    /// R4「全 global:: 限定」在原生类型上的补齐：FullyQualifiedFormat 把内置类型打印成关键字
+    /// （int/string?），生成代码与 spec/02 §4.3.3/§4.4.3 的冻结文本要求 global::System.Int32/
+    /// global::System.String?。只作用于参数/委托显示（组件推送与 Comparer 文本）；
+    /// fully-qualified 用户类型不含裸关键字记号，不受影响。
+    /// </summary>
+    private static readonly Dictionary<string, string> SpecialTypeNames = new()
+    {
+        ["bool"] = "global::System.Boolean", ["byte"] = "global::System.Byte",
+        ["char"] = "global::System.Char", ["decimal"] = "global::System.Decimal",
+        ["double"] = "global::System.Double", ["float"] = "global::System.Single",
+        ["int"] = "global::System.Int32", ["uint"] = "global::System.UInt32",
+        ["long"] = "global::System.Int64", ["ulong"] = "global::System.UInt64",
+        ["short"] = "global::System.Int16", ["ushort"] = "global::System.UInt16",
+        ["sbyte"] = "global::System.SByte", ["nint"] = "global::System.IntPtr",
+        ["nuint"] = "global::System.UIntPtr", ["object"] = "global::System.Object",
+        ["string"] = "global::System.String", ["void"] = "global::System.Void",
+    };
+
+    private static readonly System.Text.RegularExpressions.Regex SpecialTypeWord =
+        new(@"\b(bool|byte|sbyte|char|decimal|double|float|int|uint|long|ulong|short|ushort|nint|nuint|object|string|void)\b",
+            System.Text.RegularExpressions.RegexOptions.Compiled);
+
+
     /// <summary>保留属性名（design/01 §4.13）；控件暴露它们会与语法冲突 → 元数据问题。</summary>
     private static readonly string[] ReservedNames = { "Key", "Ref", "Class", "Style" };
 
@@ -53,6 +77,10 @@ public static class UiCatalogFactory
         private readonly INamedTypeSymbol? _styledPropertyGeneric;
         private readonly INamedTypeSymbol? _textContentHost;
         private readonly INamedTypeSymbol? _signalGeneric;
+        private readonly INamedTypeSymbol? _nullableGeneric;
+        private readonly INamedTypeSymbol? _elementReadOnlyList;
+        private readonly INamedTypeSymbol? _spanGeneric;
+        private readonly INamedTypeSymbol? _readOnlySpanGeneric;
 
         public Scanner(Compilation compilation)
         {
@@ -63,6 +91,10 @@ public static class UiCatalogFactory
             _styledPropertyGeneric = compilation.GetTypeByMetadataName(StyledPropertyGenericMetadataName);
             _textContentHost = compilation.GetTypeByMetadataName(TextContentHostMetadataName);
             _signalGeneric = compilation.GetTypeByMetadataName(SignalGenericMetadataName);
+            _nullableGeneric = compilation.GetTypeByMetadataName("System.Nullable`1");
+            _elementReadOnlyList = compilation.GetTypeByMetadataName("System.Collections.Generic.IReadOnlyList`1");
+            _spanGeneric = compilation.GetTypeByMetadataName("System.Span`1");
+            _readOnlySpanGeneric = compilation.GetTypeByMetadataName("System.ReadOnlySpan`1");
         }
 
         public UiCatalog Build()
@@ -237,11 +269,17 @@ public static class UiCatalogFactory
             var problems = new List<UiMetadataProblem>();
             var properties = CollectProperties(type, problems);
             var events = CollectEvents(type, problems);
-            var content = ResolveContent(type, problems);
+            var content = origin == UiElementOrigin.Component
+                ? RejectClassLevelContentOnComponent(type, problems)
+                : ResolveContent(type, problems);
             var parameters = new Dictionary<string, UiParameterDef>(StringComparer.Ordinal);
             var slots = new Dictionary<string, UiSlotDef>(StringComparer.Ordinal);
             if (origin == UiElementOrigin.Component)
                 CollectComponentMembers(type, parameters, slots, problems);
+
+            if (origin == UiElementOrigin.Component && parameters.Values.Count(p => p.IsContent) > 1)
+                problems.Add(Problem(UiDiagnostics.MetadataDeclarationInvalid, type, null,
+                    "a component declares more than one default content parameter ([UiContent] on a parameter); keep exactly one"));
 
             foreach (var name in properties.Keys)
             {
@@ -257,8 +295,8 @@ public static class UiCatalogFactory
                 TagOf(type),
                 Display(type),
                 origin,
-                content.Model,
-                content.Target,
+                content.Item1,
+                content.Item2,
                 Sorted(properties),
                 Sorted(events),
                 Sorted(parameters),
@@ -439,13 +477,14 @@ public static class UiCatalogFactory
                     if (member.IsStatic || member.IsIndexer) continue;
                     var parameter = FindAttribute(member, UiParameterAttributeName);
                     var slot = FindAttribute(member, UiSlotAttributeName);
-                    if (parameter is null && slot is null) continue;
+                    var contentMark = FindAttribute(member, UiContentAttributeName);
+                    if (parameter is null && slot is null && contentMark is null) continue;
                     // design/14 §14.6.1「参数属性不得是 [UiIgnore]」：忽略优先，成员退出表面并记问题
                     if (HasIgnore(member))
                     {
-                        if (parameter is not null || slot is not null)
+                        if (parameter is not null || slot is not null || contentMark is not null)
                             problems.Add(Problem(UiDiagnostics.ParameterDeclarationInvalid, current, member.Name,
-                                $"'{member.Name}' is both [UiIgnore] and a template parameter/slot; [UiIgnore] wins and the member leaves the surface"));
+                                $"'{member.Name}' is both [UiIgnore] and a template parameter/slot/content; [UiIgnore] wins and the member leaves the surface"));
                         continue;
                     }
 
@@ -461,12 +500,32 @@ public static class UiCatalogFactory
                                 $"parameter '{member.Name}' must be a public property with a public setter; use [UiParameter(Required = true)] instead of the C# required modifier"));
 
                         var required = parameter.NamedArguments.FirstOrDefault(a => a.Key == "Required").Value.Value as bool? ?? false;
+                        var arity = 0;
+                        if (member.Type.TypeKind == TypeKind.Delegate)
+                        {
+                            // EUI028：委托参数必须返回 void、无 ref/out/in（spec/02 §4.6.2 规则 6）。
+                            if (!ValidDelegateShape(member.Type, out arity, out var reason))
+                                problems.Add(Problem(UiDiagnostics.ParameterDeclarationInvalid, current, member.Name,
+                                    $"delegate parameter '{member.Name}' {reason}"));
+                        }
+                        else if (InvalidParameterType(member.Type))
+                        {
+                            // EUI028：ref struct / 指针 / Span<T> 不能做 EqualityComparer<T>（spec/02 §4.3.3 规则 7）。
+                            problems.Add(Problem(UiDiagnostics.ParameterDeclarationInvalid, current, member.Name,
+                                $"parameter '{member.Name}' has type {Display(member.Type)}; parameters cannot be ref structs, " +
+                                "pointers or Span<T> (generated code uses EqualityComparer<T>.Default)"));
+                        }
+
                         parameters[member.Name] = new UiParameterDef(
                             member.Name,
-                            Display(member.Type),
+                            DisplayQualified(member.Type),
+                            Shape(member.Type),
                             CanWrite: writable,
                             Required: required,
                             IsDelegate: member.Type.TypeKind == TypeKind.Delegate,
+                            DelegateArity: arity,
+                            IsContent: false,
+                            ContentIsMultiple: false,
                             ChangedCallbackName: null);
                     }
 
@@ -483,6 +542,25 @@ public static class UiCatalogFactory
                             slots[slotName!] = new UiSlotDef(slotName!, member.Name, Display(member.Type), UiSlotCardinality.Single);
                         }
                     }
+                    else if (contentMark is not null)
+                    {
+                        // 默认内容参数（design/14 §14.6.3 / spec/02 §4.12.3）：
+                        // IReadOnlyList<Element> → 多根；Element（含 ?）→ 单根；其余 → EUI021。
+                        if (IsElementListType(member.Type))
+                        {
+                            parameters[member.Name] = ContentParameter(member, multiple: true);
+                        }
+                        else if (IsElementType(member.Type))
+                        {
+                            parameters[member.Name] = ContentParameter(member, multiple: false);
+                        }
+                        else
+                        {
+                            problems.Add(Problem(UiDiagnostics.ContentTargetInvalid, current, member.Name,
+                                $"content parameter '{member.Name}' has type {Display(member.Type)}; " +
+                                "[UiContent] parameters must be Element? (single root) or IReadOnlyList<Element> (multiple roots)"));
+                        }
+                    }
                 }
             }
 
@@ -494,6 +572,87 @@ public static class UiCatalogFactory
                 if (parameters.TryGetValue(changedName, out var changed) && changed.IsDelegate)
                     parameters[name] = parameters[name] with { ChangedCallbackName = changedName };
             }
+        }
+
+        /// <summary>EUI028：委托参数必须返回 void、不含 ref/out/in（spec/02 §4.6.2 规则 6）。</summary>
+        private bool ValidDelegateShape(ITypeSymbol type, out int arity, out string? reason)
+        {
+            arity = 0;
+            reason = null;
+            foreach (var member in type.GetMembers("Invoke"))
+            {
+                if (member is not IMethodSymbol invoke) continue;
+                if (!invoke.ReturnsVoid)
+                {
+                    reason = $"must return void, not '{Display(invoke.ReturnType)}'";
+                    return false;
+                }
+                foreach (var p in invoke.Parameters)
+                {
+                    if (p.RefKind != RefKind.None)
+                    {
+                        reason = $"must not use {p.RefKind.ToString().ToLowerInvariant()} modifiers";
+                        return false;
+                    }
+                }
+                arity = invoke.Parameters.Length;
+                return true;
+            }
+            reason = "has no Invoke method";
+            return false;
+        }
+
+        private bool InvalidParameterType(ITypeSymbol type)
+        {
+            if (type.TypeKind == TypeKind.Pointer) return true;
+            if (type.IsRefLikeType) return true;
+            var key = type is INamedTypeSymbol named &&
+                SymbolEqualityComparer.Default.Equals(named.OriginalDefinition, _spanGeneric) ||
+                type is INamedTypeSymbol named2 &&
+                SymbolEqualityComparer.Default.Equals(named2.OriginalDefinition, _readOnlySpanGeneric);
+            return key;
+        }
+
+        private bool IsElementListType(ITypeSymbol type)
+        {
+            if (type is not INamedTypeSymbol named) return false;
+            var def = named.OriginalDefinition;
+            if (_elementReadOnlyList is null || !SymbolEqualityComparer.Default.Equals(def, _elementReadOnlyList))
+                return false;
+            return named.TypeArguments.Length == 1 &&
+                SymbolEqualityComparer.Default.Equals(named.TypeArguments[0], _element);
+        }
+
+        private bool IsElementType(ITypeSymbol type)
+        {
+            var unwrapped = type;
+            if (unwrapped is INamedTypeSymbol nullable &&
+                SymbolEqualityComparer.Default.Equals(nullable.OriginalDefinition, _nullableGeneric))
+                unwrapped = nullable.TypeArguments[0];
+            return SymbolEqualityComparer.Default.Equals(unwrapped, _element);
+        }
+
+        private UiParameterDef ContentParameter(IPropertySymbol member, bool multiple) => new(
+            member.Name, DisplayQualified(member.Type), Shape(member.Type),
+            CanWrite: member.DeclaredAccessibility == Accessibility.Public
+                && member.SetMethod?.DeclaredAccessibility == Accessibility.Public,
+            Required: false, IsDelegate: false, DelegateArity: 0,
+            IsContent: true, ContentIsMultiple: multiple, ChangedCallbackName: null);
+
+        /// <summary>组件类级 [UiContent] 非法：默认内容必须标在参数属性上（design/14 §14.6.3）。</summary>
+        private (UiContentModel, string?) RejectClassLevelContentOnComponent(INamedTypeSymbol type, List<UiMetadataProblem> problems)
+        {
+            for (var current = type; current is not null && current.SpecialType != SpecialType.System_Object; current = current.BaseType)
+            {
+                if (FindAttribute(current, UiContentAttributeName) is not null)
+                {
+                    problems.Add(Problem(UiDiagnostics.MetadataDeclarationInvalid, current, null,
+                        "[UiContent] on a component type is invalid; mark a [UiParameter] property with [UiContent] " +
+                        "(type Element? or IReadOnlyList<Element>) to accept default content"));
+                    return (UiContentModel.None, null);
+                }
+            }
+            return (UiContentModel.None, null);
         }
 
         // ---- 名字与查找 ----
@@ -645,6 +804,11 @@ public static class UiCatalogFactory
         // ---- 小工具 ----
 
         private static string Display(ISymbol symbol) => symbol.ToDisplayString(Qualified);
+
+    /// <summary>参数/委托文本的显示：特殊类型关键字按 R4 归一为 global::System.*（见上面的说明）。</summary>
+    private static string DisplayQualified(ISymbol symbol) =>
+        SpecialTypeWord.Replace(symbol.ToDisplayString(Qualified),
+            m => SpecialTypeNames[m.Value]);
 
         private static UiMetadataProblem Problem(string code, INamedTypeSymbol declaringType, string? memberName, string message)
             => new UiMetadataProblem(code, message, Display(declaringType), memberName);

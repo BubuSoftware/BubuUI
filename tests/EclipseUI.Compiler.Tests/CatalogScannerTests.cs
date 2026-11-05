@@ -639,4 +639,222 @@ public class CatalogScannerTests
         return path;
     }
 
+    // ---- C4：组件参数/内容/委托的目录派生（design/14 §14.5.2/§14.6、spec/02 §4.12）----
+
+    [Fact]
+    public void ComponentParameters_AreDerivedFromUiParameterAttributes()
+    {
+        var catalog = Scan("""
+            using System;
+            using EclipseUI;
+
+            public partial class Card : Component
+            {
+                [UiParameter(Required = true)] public int Count { get; set; }
+                [UiParameter] public string? Title { get; set; }
+                [UiParameter] public string? Hidden { private get; set; }
+            }
+            """);
+        var card = Assert.Single(catalog.Elements, e => e.Tag == "Card");
+        Assert.Equal(3, card.Parameters.Count);
+
+        Assert.True(card.Parameters["Count"].Required);
+        Assert.False(card.Parameters["Title"].Required);
+        Assert.False(card.Parameters["Hidden"].CanWrite);
+        Assert.Equal("global::System.Int32", card.Parameters["Count"].ClrTypeDisplayName);
+        Assert.False(card.Parameters["Title"].IsDelegate);
+    }
+
+    [Fact]
+    public void ComponentDelegateParameter_ShapesAreRecorded()
+    {
+        var catalog = Scan("""
+            using System;
+            using EclipseUI;
+
+            public partial class Card : Component
+            {
+                [UiParameter] public Action? Closed { get; set; }
+                [UiParameter] public Action<int>? Picked { get; set; }
+            }
+            """);
+        var card = Assert.Single(catalog.Elements, e => e.Tag == "Card");
+        Assert.True(card.Parameters["Closed"].IsDelegate);
+        Assert.Equal(0, card.Parameters["Closed"].DelegateArity);
+        Assert.True(card.Parameters["Picked"].IsDelegate);
+        Assert.Equal(1, card.Parameters["Picked"].DelegateArity);
+    }
+
+    [Fact]
+    public void ComponentConventionTwoway_LinksParameterWithChangedCallback()
+    {
+        var catalog = Scan("""
+            using System;
+            using EclipseUI;
+
+            public partial class Card : Component
+            {
+                [UiParameter] public string? Color { get; set; }
+                [UiParameter] public Action<string?>? ColorChanged { get; set; }
+            }
+            """);
+        var card = Assert.Single(catalog.Elements, e => e.Tag == "Card");
+        Assert.Equal("ColorChanged", card.Parameters["Color"].ChangedCallbackName);
+        Assert.Null(card.Parameters["ColorChanged"].ChangedCallbackName);
+    }
+
+    [Fact]
+    public void ComponentParameter_InvalidDelegateShape_IsEUI028()
+    {
+        var catalog = Scan("""
+            using System;
+            using EclipseUI;
+
+            public partial class Card : Component
+            {
+                [UiParameter] public Func<int>? Compute { get; set; }
+                [UiParameter] public ActionRef? Weird { get; set; }
+            }
+            public delegate void ActionRef(ref int value);
+            """);
+        var card = Assert.Single(catalog.Elements, e => e.Tag == "Card");
+        var problems = card.Problems.Where(p => p.Code == UiDiagnostics.ParameterDeclarationInvalid).ToList();
+        Assert.Equal(2, problems.Count);
+        Assert.Contains(problems, p => p.MemberName == "Compute" && p.Message.Contains("void"));
+        Assert.Contains(problems, p => p.MemberName == "Weird" && p.Message.Contains("ref"));
+    }
+
+    [Fact]
+    public void ComponentParameter_ForbiddenType_IsEUI028()
+    {
+        var catalog = Scan("""
+            using System;
+            using EclipseUI;
+
+            public partial class Card : Component
+            {
+                [UiParameter] public Span<int> Slice { get; set; }
+            }
+            """);
+        var card = Assert.Single(catalog.Elements, e => e.Tag == "Card");
+        var problem = Assert.Single(card.Problems, p => p.Code == UiDiagnostics.ParameterDeclarationInvalid);
+        Assert.Equal("Slice", problem.MemberName);
+        Assert.Contains("Span", problem.Message);
+    }
+
+    [Fact]
+    public void ComponentContentParameter_TypeAndCardinality()
+    {
+        var catalog = Scan("""
+            using System;
+            using System.Collections.Generic;
+            using EclipseUI;
+
+            public partial class Card : Component
+            {
+                [UiParameter]
+                [UiContent]
+                public Element? Body { get; set; }
+            }
+            public partial class List : Component
+            {
+                [UiParameter]
+                [UiContent]
+                public IReadOnlyList<Element> Items { get; set; }
+            }
+            """);
+        var card = Assert.Single(catalog.Elements, e => e.Tag == "Card");
+        Assert.True(card.Parameters["Body"].IsContent);
+        Assert.False(card.Parameters["Body"].ContentIsMultiple);
+        var list = Assert.Single(catalog.Elements, e => e.Tag == "List");
+        Assert.True(list.Parameters["Items"].IsContent);
+        Assert.True(list.Parameters["Items"].ContentIsMultiple);
+    }
+
+    [Fact]
+    public void ComponentContentParameter_WrongType_IsEUI021()
+    {
+        var catalog = Scan("""
+            using System;
+            using EclipseUI;
+
+            public partial class Card : Component
+            {
+                [UiParameter]
+                [UiContent]
+                public string? Body { get; set; }
+            }
+            """);
+        var card = Assert.Single(catalog.Elements, e => e.Tag == "Card");
+        var problem = Assert.Single(card.Problems, p => p.Code == UiDiagnostics.ContentTargetInvalid);
+        Assert.Equal("Body", problem.MemberName);
+    }
+
+    [Fact]
+    public void ComponentClassLevelUiContent_IsRejected()
+    {
+        var catalog = Scan("""
+            using System;
+            using System.Collections.Generic;
+            using EclipseUI;
+
+            [UiContent]
+            public partial class Card : Component
+            {
+                [UiParameter]
+                [UiContent]
+                public Element? Body { get; set; }
+            }
+            """);
+        var card = Assert.Single(catalog.Elements, e => e.Tag == "Card");
+        Assert.Contains(card.Problems, p => p.Code == UiDiagnostics.MetadataDeclarationInvalid &&
+            p.Message.Contains("[UiContent]"));
+    }
+
+    [Fact]
+    public void Component_MoreThanOneContentParameter_IsRejected()
+    {
+        var catalog = Scan("""
+            using System;
+            using System.Collections.Generic;
+            using EclipseUI;
+
+            public partial class Card : Component
+            {
+                [UiParameter]
+                [UiContent]
+                public Element? Body { get; set; }
+                [UiParameter]
+                [UiContent]
+                public IReadOnlyList<Element> Extra { get; set; }
+            }
+            """);
+        var card = Assert.Single(catalog.Elements, e => e.Tag == "Card");
+        Assert.Contains(card.Problems,
+            p => p.Code == UiDiagnostics.MetadataDeclarationInvalid && p.Message.Contains("more than one"));
+    }
+
+    [Fact]
+    public void ComponentInheritsParameters_AndChangedLinkFromBaseType()
+    {
+        var catalog = Scan("""
+            using System;
+            using EclipseUI;
+
+            public abstract class Base : Component
+            {
+                [UiParameter] public string? Name { get; set; }
+                [UiParameter] public Action<string?>? NameChanged { get; set; }
+            }
+            public partial class Card : Base
+            {
+                [UiParameter(Required = true)] public int Count { get; set; }
+            }
+            """);
+        var card = Assert.Single(catalog.Elements, e => e.Tag == "Card");
+        Assert.Equal(3, card.Parameters.Count);
+        Assert.True(card.Parameters["Count"].Required);
+        Assert.Equal("NameChanged", card.Parameters["Name"].ChangedCallbackName);
+    }
+
 }

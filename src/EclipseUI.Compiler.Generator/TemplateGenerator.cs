@@ -203,11 +203,15 @@ public sealed class TemplateGenerator : IIncrementalGenerator
     private static void ValidateBindSource(UiAttribute attr, TemplateProbe probe,
         IReadOnlyList<(ITypeSymbol Type, string Name)> env, List<UiDiagnostic> diags)
     {
-        if (!attr.IsBind || attr.PropDef is not { CanWrite: true }) return;
+        // 控件目标看 PropDef；组件目标看 ParamDef（spec/02 §4.4.3 回调由父推送实现，源校验同规则）。
+        string? clrType = null;
+        if (attr.PropDef is { CanWrite: true }) clrType = attr.PropDef.ClrTypeDisplayName;
+        else if (attr.ParamDef is { CanWrite: true, IsDelegate: false, IsContent: false } p) clrType = p.ClrTypeDisplayName;
+        if (!attr.IsBind || clrType is null) return;
         if (attr.Kind != AttrValueKind.Expression || string.IsNullOrWhiteSpace(attr.Value)) return;
 
         var expression = attr.Value.Trim();
-        if (!probe.IsWritableSource(expression, attr.PropDef.ClrTypeDisplayName, env, out var reason))
+        if (!probe.IsWritableSource(expression, clrType, env, out var reason))
             diags.Add(UiDiagnostics.Error(UiDiagnostics.BindSourceInvalid,
                 $"@bind-{attr.Name} source '{expression}' is not writable: {reason}", attr.ValueSpan));
     }

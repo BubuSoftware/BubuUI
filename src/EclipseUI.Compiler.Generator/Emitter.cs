@@ -14,19 +14,26 @@ namespace EclipseUI.Compiler.Generator;
 /// </summary>
 public sealed class Emitter
 {
-    private enum EmitMode { Root, Block }
+    private enum EmitMode { Root, Block, Content }
 
     private sealed class EmitContext
     {
         public EmitMode Mode { get; init; }
         public string? ScopeVar { get; init; }
 
+        /// <summary>内容模式下接收方组件（TrackContent 目标，spec/02 §4.12.3）。</summary>
+        public string? ContentReceiver { get; init; }
+
         public bool IsRoot => Mode == EmitMode.Root;
+        public bool IsContent => Mode == EmitMode.Content;
 
         public static EmitContext Root() => new() { Mode = EmitMode.Root };
 
         public static EmitContext Block(string scopeVar)
             => new() { Mode = EmitMode.Block, ScopeVar = scopeVar };
+
+        public static EmitContext Content(string receiver)
+            => new() { Mode = EmitMode.Content, ContentReceiver = receiver };
     }
 
     private sealed record FieldDecl(int N, string Prefix, string Type);
@@ -233,6 +240,8 @@ public sealed class Emitter
     private string EmitElement(UiElement element, string? parentVar, EmitContext ctx)
     {
         var def = element.ResolvedDef!;
+        if (def.Origin == UiElementOrigin.Component)
+            return EmitComponent(element, parentVar, ctx);
         var v = DeclareElement(element, ctx);
 
         foreach (var attr in element.Attributes)
@@ -287,8 +296,226 @@ public sealed class Emitter
         return v;
     }
 
+    /// <summary>
+    /// 组件标签（spec/02 §4.12）：顺序固定 new → 作用域登记 → 参数（源码顺序）→ 内容 → Mount() → 挂父级。
+    /// 参数形态：字面量 §4.2、动态推送 §4.3.3（U{N}/R{N} + EqualityComparer 保护）、
+    /// 委托事件 §4.6.2、@bind 回调+推送 §4.4.3、默认内容 §4.12.3。
+    /// </summary>
+    private string EmitComponent(UiElement element, string? parentVar, EmitContext ctx)
+    {
+        var def = element.ResolvedDef!;
+        var clrType = def.ClrTypeDisplayName;
+
+        // 字段提升：根级存在动态参数（推送 U 捕获组件变量）或 @bind 推送时需要字段；
+        // 委托参数/字面量是 build-once，局部即可；块/内容内一律局部（§4.4.3 规则 5）。
+        bool needsField = ctx.IsRoot && element.Attributes.Any(attr =>
+            attr.ParamDef is { IsDelegate: false, IsContent: false } && (attr.IsBind ||
+                (!attr.IsBind && attr.Kind == AttrValueKind.Expression)));
+        var n = _varCounter++;
+        string v;
+        if (needsField)
+        {
+            _fields.Add(new FieldDecl(n, "cmp", clrType));
+            v = $"__cmp{n}";
+            Line($"{v} = new {clrType}();");
+        }
+        else
+        {
+            v = $"cmp{n}";
+            Line($"var {v} = new {clrType}();");
+        }
+
+        // 作用域登记（§4.12.1 规则 2）：登记在参数/内容之前。
+        if (ctx.IsContent)
+            Line($"{ctx.ContentReceiver}.TrackContent({v});");
+        else if (ctx.IsRoot)
+            Line($"Track({v});");
+        else
+        {
+            Line($"Adopt({v});");
+            Line($"{ctx.ScopeVar}.AddDisposable({v});");
+        }
+
+        foreach (var attr in element.Attributes)
+        {
+            if (attr.Name == "Key") continue; // EUI010 已报
+            var p = attr.ParamDef;
+            if (p is null) continue;          // 未解析名 EUI002 / 保留语法已报
+            if (p.IsContent) continue;        // P= 写内容参数 EUI021 已报；内容由子节点提供
+            int line = LineOf(attr.ValueSpan.Length > 0 ? attr.ValueSpan : attr.NameSpan);
+
+            if (p.IsDelegate)
+            {
+                // 委托参数 = 事件（§4.6.2）：表达式 → h{N}，包装赋值 + Invalidate() 父组件。
+                if (attr.IsBind || attr.Kind != AttrValueKind.Expression) continue; // EUI004/EUI040 已报
+                var h = $"h{_varCounter++}";
+                Mapped(line, $"var {h} = ({p.ClrTypeDisplayName})({attr.Value.Trim()});");
+                var parms = string.Join(", ", Enumerable.Range(0, p.DelegateArity).Select(i => $"a{i}"));
+                var invoke = p.DelegateArity == 0 ? $"{h}()" : $"{h}({parms})";
+                var wrapper = p.DelegateArity == 0
+                    ? $"() => {{ {invoke}; Invalidate(); }}"
+                    : $"{parms} => {{ {invoke}; Invalidate(); }}";
+                Line($"{v}.{p.Name} = {wrapper};");
+            }
+            else if (attr.IsBind && p.ChangedCallbackName is not null)
+            {
+                // §4.4.3：先赋 {P}Changed 回调（build-once），再在源码位置推送 U{N}/R{N}。
+                var expression = attr.Value.Trim();
+                Mapped(line, $"{v}.{p.ChangedCallbackName} = v =>");
+                Line("{");
+                _indent++;
+                Line($"if (!global::System.Collections.Generic.EqualityComparer<{p.ClrTypeDisplayName}>.Default.Equals({expression}, v))");
+                Line("{");
+                _indent++;
+                Mapped(line, $"{expression} = v;");
+                Line("Invalidate();");
+                _indent--;
+                Line("}");
+                _indent--;
+                Line("};");
+                EmitParamPush(p, v, attr.Value, line, ctx);
+            }
+            else if (!attr.IsBind && attr.Kind == AttrValueKind.Literal)
+            {
+                if (attr.ConvertedLiteral is null) continue; // EUI003 已报
+                Mapped(line, $"{v}.{p.Name} = {attr.ConvertedLiteral};");
+            }
+            else if (attr.Kind == AttrValueKind.Expression)
+            {
+                if (ctx.IsContent)
+                {
+                    // 内容内 P={expr} 是 Build 快照（§4.12.3 规则 8）
+                    Mapped(line, $"{v}.{p.Name} = ({p.ClrTypeDisplayName})({attr.Value.Trim()});");
+                    continue;
+                }
+                EmitParamPush(p, v, attr.Value, line, ctx);
+            }
+            // @bind 无回调 / 字面量写委托参数 / :bind 等非法形态：Analyzer 已报，不生成
+        }
+
+        // 默认内容（§4.12.3）：build-once 静态展开到 List<Element>，再单根/多根赋参数。
+        var contentParam = def.Parameters.Values.FirstOrDefault(p => p.IsContent);
+        if (contentParam is not null)
+        {
+            var hasContent = element.Children.Any(c => c is UiElement or UiIf or UiForeach);
+            var ck = $"content{_varCounter++}";
+            Line($"var {ck} = new global::System.Collections.Generic.List<global::EclipseUI.Element>();");
+            if (hasContent)
+                EmitContentChildren(element.Children, ck, EmitContext.Content(v));
+            var single = $"{ck}.Count == 0 ? null : {ck}[0]";
+            Line($"{v}.{contentParam.Name} = {(contentParam.ContentIsMultiple ? ck : single)};");
+        }
+
+        Line($"{v}.Mount();");
+
+        if (parentVar is not null)
+            Line($"{parentVar}.Children.Add({v}.Root);");
+        return $"{v}.Root";
+    }
+
+    /// <summary>组件参数动态推送（§4.3.3）：相等保护下写参数并失效子组件；根级 U{N}、块级 R{N}。</summary>
+    private void EmitParamPush(UiParameterDef p, string target, string expression, int uiLine, EmitContext ctx)
+    {
+        var type = p.ClrTypeDisplayName;
+        if (ctx.IsRoot)
+        {
+            var name = $"U{_fnCounter++}";
+            var sb = new StringBuilder();
+            var savedOut = _out;
+            var savedIndent = _indent;
+            _out = sb;
+            _indent = 2;
+            Mapped(uiLine, $"var v = ({type})({expression.Trim()});");
+            Line($"if (!global::System.Collections.Generic.EqualityComparer<{type}>.Default.Equals({target}.{p.Name}, v))");
+            Line("{");
+            _indent++;
+            Mapped(uiLine, $"{target}.{p.Name} = v;");
+            Line($"{target}.Invalidate();");
+            _indent--;
+            Line("}");
+            _out = savedOut;
+            _indent = savedIndent;
+            _uMethods.Add(new UMethod(name, sb.ToString()));
+            Line($"{name}();");
+            _renderCalls.Add($"{name}();");
+            return;
+        }
+
+        var local = $"R{_fnCounter++}";
+        var sbLocal = new StringBuilder();
+        var savedOutLocal = _out;
+        var savedIndentLocal = _indent;
+        _out = sbLocal;
+        _indent = savedIndentLocal + 1;
+        Mapped(uiLine, $"var v = ({type})({expression.Trim()});");
+        Line($"if (!global::System.Collections.Generic.EqualityComparer<{type}>.Default.Equals({target}.{p.Name}, v))");
+        Line("{");
+        _indent++;
+        Mapped(uiLine, $"{target}.{p.Name} = v;");
+        Line($"{target}.Invalidate();");
+        _indent--;
+        Line("}");
+        _out = savedOutLocal;
+        _indent = savedIndentLocal;
+
+        Line($"void {local}()");
+        Line("{");
+        _out.Append(sbLocal);
+        Line("}");
+        Line($"{local}();");
+        Line($"{ctx.ScopeVar}.AddRenderAction({local});");
+    }
+
+    /// <summary>组件内容子节点（§4.12.3）：元素按普通构造，@if/@foreach 生成普通 C# 语句。</summary>
+    private void EmitContentChildren(List<UiNode> children, string contentVar, EmitContext ctx)
+    {
+        foreach (var child in children)
+        {
+            switch (child)
+            {
+                case UiElement el:
+                    var root = EmitElement(el, parentVar: null, ctx);
+                    Line($"{contentVar}.Add({root});");
+                    break;
+                case UiIf ifNode:
+                    EmitPlainIf(ifNode, contentVar, ctx);
+                    break;
+                case UiForeach foreachNode:
+                    EmitPlainForeach(foreachNode, contentVar, ctx);
+                    break;
+                case UiText:
+                    break; // Analyzer 已报 EUI006
+            }
+        }
+    }
+
+    /// <summary>内容内 @if：Build 时按当前值展开的普通 C# if（§4.12.3 规则 7）。</summary>
+    private void EmitPlainIf(UiIf node, string contentVar, EmitContext ctx)
+    {
+        Mapped(LineOf(node.ConditionSpan), $"if ({node.Condition.Trim()})");
+        Line("{");
+        _indent++;
+        EmitContentChildren(node.Children, contentVar, ctx);
+        _indent--;
+        Line("}");
+    }
+
+    /// <summary>内容内 @foreach：Build 时展开的普通 C# foreach（§4.12.3 规则 7）。</summary>
+    private void EmitPlainForeach(UiForeach node, string contentVar, EmitContext ctx)
+    {
+        var fqItem = _itemTypes[node];
+        var itemVar = node.VarName.Length > 0 ? node.VarName : "item";
+        Mapped(LineOf(node.CollectionSpan), $"foreach (var {itemVar} in {node.Collection.Trim()})");
+        Line("{");
+        _indent++;
+        EmitContentChildren(node.Children, contentVar, ctx);
+        _indent--;
+        Line("}");
+    }
+
     private void EmitBinding(UiAttribute attr, UiPropDef propDef, string elementVar, EmitContext ctx)
     {
+        if (ctx.IsContent) return; // Analyzer 已报 EUI040：内容内不生成绑定
         var expression = attr.Value.Trim();
         var call =
             $"global::EclipseUI.UiBinding.TwoWay({elementVar}, {propDef.DeclaringTypeName}.{propDef.PropertyFieldName}, " +
@@ -404,6 +631,12 @@ public sealed class Emitter
         var body = interpolate ? $"$\"{{({expression.Trim()})}}\"" : expression.Trim();
         int line = LineOf(span);
 
+        if (ctx.IsContent)
+        {
+            // 组件内容是 build-once 快照：直接赋值，不生成 U/R（spec/02 §4.12.3 规则 8）。
+            Mapped(line, $"{target} = {body};");
+            return;
+        }
         if (ctx.IsRoot)
             RootUpdate(target, body, line);
         else

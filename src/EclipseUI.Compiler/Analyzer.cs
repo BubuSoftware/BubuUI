@@ -7,7 +7,7 @@ namespace EclipseUI.Compiler;
 /// <summary>语义检查：标签/属性解析到目录、字面量编译期转换、内容模型与 Key/块位置约束。</summary>
 public static class TemplateAnalyzer
 {
-    private enum Ctx { Root, Container, TextRuns, Label, None }
+    private enum Ctx { Root, Container, TextRuns, Label, None, ContentSingle, ContentMulti }
 
     public static void Analyze(UiDocument doc, UiCatalog catalog, List<UiDiagnostic> diags)
     {
@@ -54,18 +54,20 @@ public static class TemplateAnalyzer
         if (exprSpan.Length == 0)
             diags.Add(UiDiagnostics.Error(UiDiagnostics.Syntax, "expression expected", exprSpan));
 
+        // 内容上下文保持 build-once 语义穿透嵌套块（@if/@foreach 内仍是内容快照）
+        var childCtx = ctx is Ctx.ContentSingle or Ctx.ContentMulti ? ctx : Ctx.Container;
         bool firstRoot = true;
         foreach (var child in children)
         {
             bool isKeyAllowed = allowKeyRoot && firstRoot && child is UiElement;
             firstRoot = false;
-            Visit(child, Ctx.Container, catalog, diags, isKeyAllowed);
+            Visit(child, childCtx, catalog, diags, isKeyAllowed);
         }
     }
 
     private static void VisitText(UiText text, Ctx ctx, List<UiDiagnostic> diags)
     {
-        if (ctx == Ctx.Container || ctx == Ctx.Root)
+        if (ctx is Ctx.Container or Ctx.Root or Ctx.ContentSingle or Ctx.ContentMulti)
             diags.Add(UiDiagnostics.Error(UiDiagnostics.TextNotAllowed,
                 "text content is not allowed here; wrap it in an element", text.Span));
     }
@@ -115,6 +117,7 @@ public static class TemplateAnalyzer
 
         var def = resolution.Element!;
         element.ResolvedDef = def;
+        var isComponent = def.Origin == UiElementOrigin.Component;
         var targetWrites = new Dictionary<string, bool>();
         var attrSeen = new Dictionary<string, bool>(StringComparer.Ordinal);
 
@@ -171,36 +174,70 @@ public static class TemplateAnalyzer
                 continue;
             }
 
-            // 控件按 §14.5.3 的顺序解析：保留属性 → 事件 → 属性。组件参数属 C4。
-            UiEventDef? eventDef = def.Events.TryGetValue(attr.Name, out var evt) ? evt : null;
+            // 解析按 §14.5.3 分支：控件 = 保留 → 事件 → 属性；组件 = 保留 → 参数
+            // （委托参数就是事件，不做 On* 推断；组件不解析 Events，design/14 §14.6.2）。
+            UiEventDef? eventDef = isComponent ? null : def.Events.TryGetValue(attr.Name, out var evt) ? evt : null;
+            UiParameterDef? paramDef = isComponent && def.Parameters.TryGetValue(attr.Name, out var prm) ? prm : null;
             UiPropDef? propDef = null;
-            if (eventDef is null) def.Properties.TryGetValue(attr.Name, out propDef);
+            if (eventDef is null && paramDef is null) def.Properties.TryGetValue(attr.Name, out propDef);
 
-            if (eventDef is null && propDef is null)
+            if (eventDef is null && propDef is null && paramDef is null)
             {
                 var hint = attr.Name.StartsWith("On", StringComparison.Ordinal)
                     ? Suggest.Nearest(attr.Name, def.Events.Keys) ?? Suggest.Nearest(attr.Name, def.Properties.Keys)
-                    : Suggest.Nearest(attr.Name, def.Properties.Keys) ?? Suggest.Nearest(attr.Name, def.Events.Keys);
-                var message = $"unknown property '{attr.Name}' on '{element.Tag}'" + (hint is null ? "" : $"; did you mean '{hint}'?");
+                          ?? Suggest.Nearest(attr.Name, def.Parameters.Keys)
+                    : Suggest.Nearest(attr.Name, def.Properties.Keys) ?? Suggest.Nearest(attr.Name, def.Events.Keys)
+                          ?? Suggest.Nearest(attr.Name, def.Parameters.Keys);
+                var message = (isComponent ? "unknown parameter" : "unknown property") +
+                    $" '{attr.Name}' on '{element.Tag}'" + (hint is null ? "" : $"; did you mean '{hint}'?");
                 diags.Add(UiDiagnostics.Error(UiDiagnostics.UnknownProperty, message, attr.NameSpan));
                 continue;
             }
 
             attr.PropDef = propDef;
             attr.EventDef = eventDef;
+            attr.ParamDef = paramDef;
 
-            if (attr.IsBind && (eventDef is not null || propDef is not { CanWrite: true }))
+            if (attr.IsBind && isComponent)
+            {
+                // 组件 @bind 目标（design/14 §14.6.1 / spec/02 §4.4.3）：[UiParameter] + public setter
+                // + {P}Changed 委托参数；内容/槽/委托/保留参数与无回调参数 → EUI040。
+                if (paramDef is null)
+                {
+                    diags.Add(UiDiagnostics.Error(UiDiagnostics.BindTargetInvalid,
+                        $"'{attr.Name}' of '{element.Tag}' is not a component parameter; @bind-{attr.Name} needs a [UiParameter] property",
+                        attr.NameSpan));
+                }
+                else if (!paramDef.CanWrite || paramDef.IsDelegate || paramDef.IsContent || paramDef.ChangedCallbackName is null)
+                {
+                    var why = paramDef.IsContent
+                        ? "; the content parameter is build-once and cannot be bound"
+                        : paramDef.IsDelegate
+                            ? "; delegate parameters are events, not two-way sources"
+                            : $"; the component must also declare '[UiParameter] public Action<{paramDef.ClrTypeDisplayName}>? {paramDef.Name}Changed'";
+                    diags.Add(UiDiagnostics.Error(UiDiagnostics.BindTargetInvalid,
+                        $"@bind-{attr.Name} on '{element.Tag}' needs a writable [UiParameter] and a '{paramDef.Name}Changed' delegate parameter{why}",
+                        attr.NameSpan));
+                }
+            }
+            else if (attr.IsBind && (eventDef is not null || propDef is not { CanWrite: true }))
             {
                 var reason = eventDef is not null ? "is an event" : "is not a bindable property";
                 diags.Add(UiDiagnostics.Error(UiDiagnostics.BindTargetInvalid,
                     $"'{attr.Name}' of '{element.Tag}' {reason}; @bind-{attr.Name} needs a public writable property registered as '{attr.Name}Property'",
                     attr.NameSpan));
             }
-            else if (attr.IsBind && (attr.Kind != AttrValueKind.Expression || string.IsNullOrWhiteSpace(attr.Value)))
+            if (attr.IsBind && (attr.Kind != AttrValueKind.Expression || string.IsNullOrWhiteSpace(attr.Value)))
             {
                 diags.Add(UiDiagnostics.Error(UiDiagnostics.BindSourceInvalid,
                     $"@bind-{attr.Name} needs a {{expression}} source; a literal has nowhere to write back",
                     attr.ValueSpan));
+            }
+            else if (attr.IsBind && ctx is Ctx.ContentSingle or Ctx.ContentMulti)
+            {
+                diags.Add(UiDiagnostics.Error(UiDiagnostics.BindTargetInvalid,
+                    "@bind is not allowed inside component content; content is built once with the parent's values (spec/01 §4.14)",
+                    attr.NameSpan));
             }
 
             if (eventDef is null)
@@ -224,13 +261,30 @@ public static class TemplateAnalyzer
                     diags.Add(UiDiagnostics.Error(UiDiagnostics.EventNeedsExpression,
                         $"event '{attr.Name}' requires an {{expression}} handler", attr.ValueSpan));
             }
+            else if (paramDef is not null && paramDef.IsContent && !attr.IsBind)
+            {
+                // 内容参数经 P= 赋值 → EUI021（spec/02 §4.12.3）；内容由子节点提供。
+                diags.Add(UiDiagnostics.Error(UiDiagnostics.ContentTargetInvalid,
+                    $"'{attr.Name}' of '{element.Tag}' is the default content parameter ({paramDef.ClrTypeDisplayName}); " +
+                    "provide child content instead of assigning it (P= targets regular parameters only)",
+                    attr.NameSpan));
+            }
+            else if (paramDef is not null && paramDef.IsDelegate && !attr.IsBind &&
+                     attr.Kind != AttrValueKind.Expression)
+            {
+                // 组件事件（委托参数）：字面量/绑定 → EUI004（spec/02 §4.6.2 规则 8）。
+                diags.Add(UiDiagnostics.Error(UiDiagnostics.EventNeedsExpression,
+                    $"parameter '{attr.Name}' of '{element.Tag}' is a delegate (component event) and requires an {{expression}} handler",
+                    attr.ValueSpan));
+            }
             else if (!attr.IsBind && attr.Kind == AttrValueKind.Literal)
             {
-                var shape = propDef!.TypeShape;
+                var shape = propDef?.TypeShape ?? paramDef!.TypeShape;
+                var source = propDef is not null ? "property" : "parameter";
                 if (!UiLiterals.HasConverter(shape))
                 {
                     diags.Add(UiDiagnostics.Error(UiDiagnostics.NoLiteralConverter,
-                        $"property '{attr.Name}' of '{element.Tag}' has no literal converter for '{shape.CanonicalKey}'; " +
+                        $"{source} '{attr.Name}' of '{element.Tag}' has no literal converter for '{shape.CanonicalKey}'; " +
                         "write an {expression} instead", attr.ValueSpan));
                 }
                 else if (UiLiterals.TryConvert(shape, attr.Value, out var converted, out var error))
@@ -240,8 +294,20 @@ public static class TemplateAnalyzer
                 else
                 {
                     diags.Add(UiDiagnostics.Error(UiDiagnostics.LiteralFormat,
-                        $"property '{attr.Name}' of '{element.Tag}' {error}", attr.ValueSpan));
+                        $"{source} '{attr.Name}' of '{element.Tag}' {error}", attr.ValueSpan));
                 }
+            }
+        }
+
+        // EUI027：必填参数缺失（design/14 §14.6.1；组件按源码目录 Required 标记）
+        if (isComponent)
+        {
+            foreach (var p in def.Parameters.Values)
+            {
+                if (p.Required && !attrSeen.ContainsKey(p.Name))
+                    diags.Add(UiDiagnostics.Error(UiDiagnostics.RequiredParameterMissing,
+                        $"required parameter '{p.Name}' of '{element.Tag}' is missing; pass it on the tag",
+                        element.TagSpan));
             }
         }
 
@@ -255,21 +321,45 @@ public static class TemplateAnalyzer
                     text.Span));
         }
 
-        var contentCtx = def.Content switch
+        // 内容上下文：控件按类级 [UiContent]（def.Content）；组件按 [UiContent] 参数
+        // （Element? → 单根；IReadOnlyList<Element> → 多根；无 → None，spec/01 §4.14）。
+        Ctx contentCtx;
+        if (isComponent)
         {
-            UiContentModel.TextRuns => Ctx.TextRuns,
-            UiContentModel.Text => Ctx.Label,
-            UiContentModel.Children => Ctx.Container,
-            _ => Ctx.None,
-        };
+            var contentParam = def.Parameters.Values.FirstOrDefault(p => p.IsContent);
+            contentCtx = contentParam is null
+                ? Ctx.None
+                : contentParam.ContentIsMultiple ? Ctx.ContentMulti : Ctx.ContentSingle;
+            if (contentCtx == Ctx.ContentSingle)
+            {
+                var rootCount = element.Children.Count(c => c is UiElement or UiIf or UiForeach);
+                if (rootCount > 1)
+                    diags.Add(UiDiagnostics.Error(UiDiagnostics.ContentTargetInvalid,
+                        $"'{element.Tag}' has a single-root content parameter ({contentParam!.ClrTypeDisplayName}); " +
+                        $"only one child element or block is allowed, found {rootCount}",
+                        element.Children.First(c => c is UiElement or UiIf or UiForeach).Span));
+            }
+        }
+        else
+        {
+            contentCtx = def.Content switch
+            {
+                UiContentModel.TextRuns => Ctx.TextRuns,
+                UiContentModel.Text => Ctx.Label,
+                UiContentModel.Children => Ctx.Container,
+                _ => Ctx.None,
+            };
+        }
 
         foreach (var child in element.Children)
         {
             if (contentCtx == Ctx.None)
             {
+                var guidance = isComponent
+                    ? $"mark an Element? or IReadOnlyList<Element> [UiParameter] property of {def.ClrTypeDisplayName} with [UiContent] to accept default content"
+                    : $"add [UiContent] on {def.ClrTypeDisplayName} to accept children";
                 diags.Add(UiDiagnostics.Error(UiDiagnostics.TextNotAllowed,
-                    $"'{element.Tag}' declares no content model; add [UiContent] on {def.ClrTypeDisplayName} to accept children",
-                    child.Span));
+                    $"'{element.Tag}' declares no content model for children; {guidance}", child.Span));
                 continue;
             }
             if ((contentCtx == Ctx.TextRuns || contentCtx == Ctx.Label) && child is UiElement)

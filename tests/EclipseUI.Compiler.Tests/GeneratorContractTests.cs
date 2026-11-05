@@ -739,4 +739,233 @@ public class GeneratorContractTests
         Assert.True(perRoundMs < 20,
             $"catalog rebuild averaged {perRoundMs:0.00} ms per round over {rounds} rounds for {baseline.Elements.Count} tags");
     }
+
+    // ---- C4：组件标签的生成形态（spec/02 §4.12、§4.3.3、§4.4.3、§4.6.2）----
+
+    private const string ComponentFixtures = """
+            using System;
+            using System.Collections.Generic;
+            using EclipseUI;
+
+            public partial class Probe : Component
+            {
+                public int gap = 4;
+                public string? color;
+                public void Store(int i) { }
+                public void Close() { }
+                [UiParameter(Required = true)] public int Count { get; set; }
+                [UiParameter] public string? Title { get; set; }
+                [UiParameter] public Action? Closed { get; set; }
+                [UiParameter] public Action<int>? Picked { get; set; }
+                [UiParameter] public string? Color { get; set; }
+                [UiParameter] public Action<string?>? ColorChanged { get; set; }
+                [UiParameter]
+                [UiContent]
+                public Element? Body { get; set; }
+            }
+            public partial class Group : Component
+            {
+                [UiParameter(Required = true)] public int Count { get; set; }
+                [UiParameter]
+                [UiContent]
+                public IReadOnlyList<Element> Items { get; set; }
+            }
+            """;
+
+    [Fact]
+    public void ComponentRoot_Lifecycle_UnderTheFrozenOrder()
+    {
+        const string ui = """
+            <Probe Count={gap} Title="Hi" Picked={i => Store(i)} @bind-Color={color}>
+                <StackPanel />
+            </Probe>
+            """;
+
+        var result = RunWithReferences("C:\\templates\\Probe.ui", ui, ComponentFixtures);
+        Assert.Empty(result.Diagnostics);
+        var code = Generated(result);
+
+        // 字段提升 + new → Track → 参数（源码顺序）→ 内容 → Mount → 根返回 .Root
+        Assert.Contains("private global::Probe __cmp0 = null!;", code);
+        Assert.Contains("__cmp0 = new global::Probe();", code);
+        Assert.Contains("Track(__cmp0);", code);
+        Assert.Contains("__cmp0.Title = \"Hi\";", code);
+        Assert.Contains("var h1 = (global::System.Action<global::System.Int32>)(i => Store(i));", code);
+        Assert.Contains("__cmp0.Picked = a0 => { h1(a0); Invalidate(); };", code);
+        Assert.Contains("var content2 = new global::System.Collections.Generic.List<global::EclipseUI.Element>();", code);
+        Assert.Contains("var el3 = new global::EclipseUI.Elements.StackPanel();", code);
+        Assert.Contains("content2.Add(el3);", code);
+        Assert.Contains("__cmp0.Body = content2.Count == 0 ? null : content2[0];", code);
+        Assert.Contains("__cmp0.Mount();", code);
+        Assert.Contains("return __cmp0.Root;", code);
+    }
+
+    [Fact]
+    public void ComponentRoot_DynamicParameterPush_UsesEqualityComparerGuard()
+    {
+        const string ui = "<Probe Count={gap} Title=\"Hi\" />";
+
+        var code = Generated(RunWithReferences("C:\\templates\\Probe.ui", ui, ComponentFixtures));
+
+        Assert.Contains("private void U0()", code);
+        Assert.Contains("var v = (global::System.Int32)(gap);", code);
+        Assert.Contains("if (!global::System.Collections.Generic.EqualityComparer<global::System.Int32>.Default.Equals(__cmp0.Count, v))", code);
+        Assert.Contains("__cmp0.Count = v;", code);
+        Assert.Contains("__cmp0.Invalidate();", code);
+        Assert.Contains("U0();", code); // 参数位置的首次调用 + Render 登记
+        Assert.Contains("protected override void Render()", code);
+    }
+
+    [Fact]
+    public void ComponentRoot_BindParameter_EmitsChangedCallbackThenPush()
+    {
+        const string ui = "<Probe Count={gap} @bind-Color={color} />";
+
+        var code = Generated(RunWithReferences("C:\\templates\\Probe.ui", ui, ComponentFixtures));
+
+        Assert.Contains("__cmp0.ColorChanged = v =>", code);
+        Assert.Contains("if (!global::System.Collections.Generic.EqualityComparer<global::System.String>.Default.Equals(color, v))", code);
+        Assert.Contains("color = v;", code);
+        Assert.Contains("Invalidate();", code);
+        Assert.Contains("U1();", code);
+        // 推送复用 §4.3.3 形态
+        Assert.Contains("var v = (global::System.String)(color);", code);
+        Assert.Contains("global::System.Collections.Generic.EqualityComparer<global::System.String>.Default.Equals(__cmp0.Color, v)", code);
+        Assert.Contains("__cmp0.Color = v;", code);
+    }
+
+    [Fact]
+    public void ComponentInBlockScope_AdoptsAndPushesWithLocalR()
+    {
+        const string ui = """
+            <StackPanel Gap="4">
+                @foreach (var t in items)
+                {
+                    <Probe Count={t.N} Title={t.Name} />
+                }
+            </StackPanel>
+            """;
+        const string codeBehind = """
+            using System;
+            using System.Collections.Generic;
+            using EclipseUI;
+
+            public partial class Probe : Component
+            {
+                public List<Item> items = new();
+                public void Store(int i) { }
+                [UiParameter(Required = true)] public int Count { get; set; }
+                [UiParameter] public string? Title { get; set; }
+            }
+            public class Item { public int N; public string? Name; }
+            """;
+
+        var result = RunWithReferences("C:\\templates\\Probe.ui", ui, codeBehind);
+        Assert.Empty(result.Diagnostics);
+        var code = Generated(result);
+
+        Assert.Contains("Adopt(cmp", code);
+        Assert.Contains(".AddDisposable(cmp", code);
+        Assert.Contains("var v = (global::System.Int32)(t.N);", code);
+        Assert.Contains("if (!global::System.Collections.Generic.EqualityComparer<global::System.Int32>.Default.Equals(cmp", code);
+        Assert.Contains(".Count = v;", code);
+        Assert.Contains(".AddRenderAction(R", code);
+        Assert.Contains(".AddRoot(cmp", code);
+    }
+
+    [Fact]
+    public void ComponentContent_TracksChildComponentsOnReceiver()
+    {
+        const string ui = """
+            <StackPanel>
+                <Group Count="1">
+                    <StackPanel />
+                    <Probe Count="2" />
+                </Group>
+            </StackPanel>
+            """;
+
+        var result = RunWithReferences("C:\\templates\\Probe.ui", ui, ComponentFixtures);
+        Assert.Empty(result.Diagnostics);
+        var code = Generated(result);
+
+        Assert.Contains(".TrackContent(cmp", code);
+        Assert.Contains(".Mount();", code);
+        Assert.Contains(".Add(cmp", code);
+        Assert.Contains(".Children.Add(cmp", code);
+    }
+
+    [Fact]
+    public void ComponentDelegateParameter_WrapsHandlerAndInvalidatesParent()
+    {
+        const string ui = "<Probe Count={gap} Closed={() => Close()} />";
+
+        var code = Generated(RunWithReferences("C:\\templates\\Probe.ui", ui, ComponentFixtures));
+
+        Assert.Contains("var h1 = (global::System.Action)(() => Close());", code);
+        Assert.Contains("__cmp0.Closed = () => { h1(); Invalidate(); };", code);
+    }
+
+    [Fact]
+    public void ComponentBindWithoutChanged_EUI040_BlocksGeneration()
+    {
+        var result = RunWithReferences("C:\\templates\\Probe.ui",
+            "<StackPanel><Probe Count={gap} @bind-Title={color} /></StackPanel>", ComponentFixtures);
+
+        Assert.Empty(result.GeneratedSources);
+        var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI040");
+        Assert.Contains("TitleChanged", diag.GetMessage());
+    }
+
+    [Fact]
+    public void ComponentRequiredParameterMissing_EUI027_BlocksGeneration()
+    {
+        var result = RunWithReferences("C:\\templates\\Probe.ui",
+            "<StackPanel><Probe Title=\"x\" /></StackPanel>", ComponentFixtures);
+
+        Assert.Empty(result.GeneratedSources);
+        var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI027");
+        Assert.Equal(Microsoft.CodeAnalysis.DiagnosticSeverity.Error, diag.Severity);
+    }
+
+    [Fact]
+    public void ComponentContentViaAttribute_EUI021_BlocksGeneration()
+    {
+        var result = RunWithReferences("C:\\templates\\Probe.ui",
+            "<StackPanel><Probe Count={gap} Body={color} /></StackPanel>", ComponentFixtures);
+
+        Assert.Empty(result.GeneratedSources);
+        Assert.Contains(result.Diagnostics, d => d.Id == "EUI021");
+    }
+
+    [Fact]
+    public void ComponentLiteralDelegateParameter_EUI004_BlocksGeneration()
+    {
+        var result = RunWithReferences("C:\\templates\\Probe.ui",
+            "<StackPanel><Probe Count={gap} Closed=\"Close\" /></StackPanel>", ComponentFixtures);
+
+        Assert.Empty(result.GeneratedSources);
+        Assert.Contains(result.Diagnostics, d => d.Id == "EUI004");
+    }
+
+    [Fact]
+    public void ComponentDynamicParameterContentContext_IsBuildOnceSnapshot()
+    {
+        const string ui = """
+            <StackPanel>
+                <Probe Count={gap}>
+                    <StackPanel Gap={color} />
+                </Probe>
+            </StackPanel>
+            """;
+
+        var result = RunWithReferences("C:\\templates\\Probe.ui", ui, ComponentFixtures);
+        Assert.Empty(result.Diagnostics);
+        var code = Generated(result);
+
+        // 内容内动态属性是快照赋值：不出现 U/R 方法
+        Assert.Contains(".Gap = color;", code);
+        Assert.DoesNotContain(".AddRenderAction(", code);
+        Assert.DoesNotContain(".Gap = $", code);
+    }
 }

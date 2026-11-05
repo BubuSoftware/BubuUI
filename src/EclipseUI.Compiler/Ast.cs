@@ -36,9 +36,11 @@ public sealed class UiAttribute
     public string Value { get; set; } = "";
     public TextSpan ValueSpan { get; set; }
 
-    // 由 Analyzer 填充：属性与事件分开解析（design/14 §14.5.3），二者至多一个非空
+    // 由 Analyzer 填充：控件属性/事件分开解析（design/14 §14.5.3）；
+    // 组件参数解析到 ParamDef（design/14 §14.6.1），与 PropDef/EventDef 至多一个非空。
     public UiPropDef? PropDef { get; set; }
     public UiEventDef? EventDef { get; set; }
+    public UiParameterDef? ParamDef { get; set; }
     public string? ConvertedLiteral { get; set; }
 }
 

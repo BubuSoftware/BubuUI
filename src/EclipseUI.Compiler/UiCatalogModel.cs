@@ -71,13 +71,20 @@ public sealed record UiEventDef(
     string ArgsTypeName);
 
 /// <param name="Required">来自 <c>[UiParameter(Required = true)]</c>，不是 C# <c>required</c> 修饰符。</param>
-/// <param name="ChangedCallbackName"><c>{P}Changed</c> 回调参数名；<c>@bind-P</c> 目标判定用，缺失为 null。</param>
+/// <param name="IsContent">来自 <c>[UiContent]</c> 标在参数属性上（design/14 §14.6.3）：默认内容参数。
+/// 类型只接受 <c>IReadOnlyList&lt;Element&gt;</c>（多根）或 <c>Element?</c>（单根），其余在扫描期进
+/// EUI021 问题。内容参数 build-once，不可作为 <c>@bind</c> 目标，也不可经 <c>P=</c> 赋值。</param>
+/// <param name="DelegateArity">委托参数的调用参数个数（0 = 非委托）。生成包装 lambda 用。</param>
 public sealed record UiParameterDef(
     string Name,
     string ClrTypeDisplayName,
+    UiTypeShape TypeShape,
     bool CanWrite,
     bool Required,
     bool IsDelegate,
+    int DelegateArity,
+    bool IsContent,
+    bool ContentIsMultiple,
     string? ChangedCallbackName);
 
 public sealed record UiSlotDef(

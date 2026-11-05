@@ -35,7 +35,13 @@
 > 同名含绑定仍走 `EUI033`）、`EUI031`（`Class`/`Style`/附加属性/`<Slot>`/`<ContentSlot>` 保留语法）落地。
 > 落地记录 [14 §14.12.3](./design/14-control-template-contract.md)，台账 D2/D3/D6/D14/D19 关闭。
 > 281 个测试全绿（Headless 127 / Compiler 93 / Rendering 61）。
-> 组件标签、组件参数与组件级 `@bind`（`PChanged`）仍按 C4 推进；样式主题、IDE 支持为后续里程碑。
+> **C4 组件标签切片已通过（2026-11-05）**：自定义组件可写入 `.ui`——`[UiParameter]` 参数表（含
+> `Required`/委托参数即事件/`{P}Changed` 约定链接）、`@bind-P` 组件双向、默认内容（`Element?` 单根 /
+> `IReadOnlyList<Element>` 多根）与冻结生命周期（登记 → 参数推送 → 内容 → `Mount()`）落地；
+> 诊断 EUI021/027/028/040 覆盖组件声明与使用点。落地记录 [14 §14.12.4](./design/14-control-template-contract.md)，
+> 台账 D17/D52/D54/D56 关闭（新增 D73 残余风险）。
+> 320 个测试全绿（Headless 145 / Compiler 114 / Rendering 61）。
+> 具名插槽（C6）、`Ref` 与剩余语法收敛（C5）、样式主题与 IDE 支持为后续工作。
 
 ## 核心理念
 
@@ -149,7 +155,8 @@ public partial class Counter
 - **双向绑定**：`@bind-Checked={showButton}` 生成 `UiBinding.TwoWay`；构造时源→目标，
   目标变化回写源并 `Invalidate`，相等短路防回环；源必须是可写左值，非法源/非法目标分别报
   `EUI037`/`EUI040`（编译期，含值类型 item 成员与属性返回的 struct 中间段）；旧语法
-  `:bind`/`:value` 仍可用但报 `EUI043` 弃用告警；组件级 `@bind` 待 C4。
+  `:bind`/`:value` 仍可用但报 `EUI043` 弃用告警；组件级 `@bind-P` 已随 C4 落地
+  （`{P}Changed` 回调 + 父推送 `U{N}`/`R{N}`）。
 - **输入与焦点**：`InputRouter` 统一 hit test、按下捕获、指针移动/释放与键盘路由；
   无头宿主（`HeadlessRoot`）与 Win32 窗口宿主共用同一条路径。点击保持最深层命中、
   键盘焦点交给最近可聚焦祖先；`FocusManager` 负责 Tab 环形遍历与 Got/LostFocus，
@@ -177,8 +184,9 @@ public partial class Counter
 
 ## 当前边界（已知限制）
 
-- `@switch` 未支持；组件标签、组件参数与组件级 `@bind`（`{P}Changed` 父推送/子回调）未实现（C4，
-  台账 spec/02 D54/D56）。
+- ~~`@switch` 未支持；组件标签、组件参数与组件级 `@bind`（`{P}Changed` 父推送/子回调）未实现~~
+  **组件标签已随 C4 落地（2026-11-05）**：参数（含 `Required`/委托事件/默认内容）与组件 `@bind` 可用；
+  具名插槽（`<Slot>`/`<ContentSlot>`）留 C6；`@switch` 仍未支持。
 - 文本：无头测试默认用确定性 naive 测量；窗口样例接入 HarfBuzz。多行断行、bidi 混排、字体 fallback 未实现。
 - 输入：无头注入与 Win32 鼠标/键盘已共用 `InputRouter` 并路由进元素树；字符输入（`WM_CHAR`）、
   IME、Shift+Tab 未接（暂无文本编辑控件）。
@@ -195,11 +203,12 @@ public partial class Counter
 ## 下一步（按开发计划）
 
 G1 已出结论（Go），G2 前三切片已通过：`CounterApp` / `TaskList` 已在真实窗口可交互，
-damage v0 让空闲帧不再提交 GPU。G3 的 C1/C2 目录派生切片与 C3 转换器/使用点诊断切片已通过
-（手写目录删除，模板表面 17 属性项 / 9 个事件名；转换器补齐到 spec/01 §5.2 全表，
-`EUI023`/`EUI025`/`EUI031` 落地，落地记录见
-[14 §14.12.2/§14.12.3](./design/14-control-template-contract.md)）。当前优先级是 **G2 剩余部分**：
-像素 golden、retained layer、目标机 60fps 复测；G3 并行推进 C4（组件标签）。
+damage v0 让空闲帧不再提交 GPU。G3 的 C1/C2 目录派生切片、C3 转换器/使用点诊断切片与
+**C4 组件标签切片已全部通过**（手写目录删除，模板表面 17 属性项 / 9 个事件名；转换器补齐到
+spec/01 §5.2 全表；自定义组件可写入 `.ui`，落地记录见
+[14 §14.12.2–§14.12.4](./design/14-control-template-contract.md)）。当前优先级是 **G2 剩余部分**：
+像素 golden、retained layer、目标机 60fps 复测；G3 并行推进 C5（`Ref`/EUI029、EUI019–021
+使用点、Roslyn tokenizer）与 C6（具名插槽）。
 完整路线图见 [09 开发计划](./design/09-development-plan.md)，G1 数据见
 [render-gate-2026-11](./design/reports/render-gate-2026-11.md)，G2 进度见
 [11 G2 第一切片](./design/11-g2-surface-slice.md)、[12 G2 第二切片](./design/12-g2-interactive-slice.md)
@@ -207,6 +216,6 @@ damage v0 让空闲帧不再提交 GPU。G3 的 C1/C2 目录派生切片与 C3 �
 
 1. **G2 剩余**：像素 golden + retained layer / 局部重绘 + 目标机 60fps。
 2. **G3 语义/编译器硬化**（与 G2 并行）：块布局透明化、语法级表达式重写、按文件增量与 `#line` 列映射、
-   组件标签与组件级绑定（C4）、`Ref` 与剩余使用点诊断收敛（C5）。
+   ~~组件标签与组件级绑定（C4）~~ ✅ C4 已落地（2026-11-05）、`Ref` 与剩余使用点诊断收敛（C5）。
 3. **G4 样式/控件/虚拟化**：选择器编译、亮暗主题、基础控件集、`VirtualizingPanel`。
 4. **G5 IDE P0–P1**：TextMate grammar + LSP server（表达式投影进 Roslyn）+ VS Code/Rider 壳。

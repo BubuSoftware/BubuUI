@@ -481,7 +481,7 @@ public sealed class UiCatalog
 - 具名插槽（G4）：`[UiSlot("Header")]` 标在属性上；消费侧 `<Slot Name="Header">...</Slot>`；
   组件模板侧用 `<ContentSlot Name="Header" />`（新增宿主元素）放置。
 - 插槽/内容在 `Mount()` 前赋值；父级状态变化不重建内容（与 14.6.6 一致）。
-- v1（C4）只实现参数与默认内容；具名插槽实现排 C6。
+- v1（C4 ✅ 2026-11-05）已实现参数与默认内容；具名插槽实现排 C6。
 
 ### 14.6.4 生命周期
 
@@ -872,7 +872,7 @@ Build(Compilation c):                       // 纯函数：同样的 Compilation
 | **C1** ✅ | 特性、目录模型、符号扫描器、一致性/快照测试；不改分析器与生成器行为 | 派生目录 **⊇** 手写目录，差集（属性 6→17）逐条评审并写进变更记录；`dotnet test` 全绿 | `Runtime/UiAttributes.cs`、`Compiler.Metadata/*`、`Catalog.cs` |
 | **C2** ✅（2026-11-02） | 生成器切到派生目录；内置控件加 `[UiContent]`；基础设施元素加 `[UiIgnore]`；**输入事件字段从 `InputEvents` 迁入 `Element`（19 处调用改名，删静态类）**；`ClipToBounds` 失效级别改 `Render`；删除手写目录 | Gallery/Counter 渲染与交互不变；`Padding` 等属性、8 个事件变为模板可用（更新文档）—— ✅ 全部落地（落地记录见 §14.12.2） | `Input.cs`、`Element.cs`、`InputRouter.cs`、`FocusManager.cs`、`Controls.cs`、`TemplateGenerator.cs`、`Panels.cs`、`TextBlock.cs`、`Blocks.cs` |
 | **C3** ✅（2026-11-03） | 转换器扩展（float/decimal/long/short/byte/char/枚举/TimeSpan；Color 预留 G4）；使用点诊断 **EUI023**（无转换器）/ **EUI025**（纯普值重复属性）/ **EUI031**（Class/Style/点号附加属性/`<Slot>`/`<ContentSlot>`）落地；属性暴露一致性测试 | 诊断表前半可用；无转换器类型正确报 EUI023 —— ✅ 全部落地（落地记录见 §14.12.3） | `Catalog.cs`、`Analyzer.cs`、`Metadata/UiCatalogFactory.cs` |
-| **C4** | 组件标签：参数元数据（`[UiParameter(Required=true)]`、`{P}Changed`）、委托事件、默认内容、生命周期与作用域释放；生成器集成测试 | 第三方/自定义组件可写入 `.ui`；参数/内容生成与 spec/02 §4.12 一致 | `TemplateGenerator.cs`、`Emitter.cs`、`Component.cs` |
+| **C4** ✅（2026-11-05） | 组件标签：参数元数据（`[UiParameter(Required=true)]`、`{P}Changed`）、委托事件、默认内容、生命周期与作用域释放；生成器集成测试 | 第三方/自定义组件可写入 `.ui`；参数/内容生成与 spec/02 §4.12 一致 —— ✅ 全部落地（落地记录见 §14.12.4） | `TemplateGenerator.cs`、`Emitter.cs`、`Component.cs`、`Metadata/UiCatalogFactory.cs`、`Analyzer.cs` |
 | **C5** | `Ref`（G3）；保留语法诊断与剩余分析器收敛（**EUI019/EUI020/EUI021** 使用点与 **EUI029**；EUI025/EUI031 已由 C3 落地，EUI033 为 S2 既有） | G3 非反应式缺口收敛；诊断不再落"未知" | `Analyzer.cs`、`Emitter.cs` |
 | **C6** | 具名插槽 + `ContentSlot` 宿主；附加属性；泛型标签（G4） | 与 03 语法表对齐 | 编译器/运行时/样式 |
 
@@ -985,6 +985,21 @@ Roslyn 4.9.2 的公开 API 没有这个成员（公开的是 `IModuleSymbol.Refe
 **范围说明**：EUI016/EUI019/EUI020/EUI021/EUI026 的扫描侧元数据诊断已在 C1/C2 落地（`Problems`/`HiddenTags`），
 其**使用点**口径仍归 C5；`Ref`（EUI029）C3 未动（此前即 EUI002，语义待 C5 定）。
 `Color`/`Thickness`/`CornerRadius` 转换器随 G4 类型引入。
+
+### 14.12.4 C4 落地记录（2026-11-05）
+
+全部 C4 工作项完成，`dotnet test` 320 例全绿（Headless 145 / Compiler 114 / Rendering 61）：
+
+| 工作项 | 结果 |
+|---|---|
+| 参数目录 | `UiParameterDef` 扩展 `TypeShape`/`DelegateArity`/`IsContent`/`ContentIsMultiple`；扫描器 `CollectComponentMembers` 重写：委托形状校验（非 void 返回/`ref`/`out`/`in` → EUI028）、非法泛型实参（`ref struct`/指针/`Span<T>` → EUI028）、`[UiContent]` 参数识别（`Element?` 单根 / `IReadOnlyList<Element>` 多根，其余 → EUI021）、类级 `[UiContent]` 拒绝、多内容参数拒绝；`{P}Changed` 约定链接（继承含在内）。参数显示名按 R4 归一为 `global::System.*`（special-type 关键字补齐） |
+| 语义分析 | `Analyzer.VisitElement` 按 `Origin` 分支：组件 = 保留属性 → 参数表（委托参数即事件，不做 `On*` 推断，EUI002 消息为 "unknown parameter"）→ 未知；`@bind-P` 组件目标（EUI040，含内容参数/委托参数/无 `{P}Changed` 三种原因提示）；内容体内 `@bind` → EUI040；内容参数经 `P=` 赋值 → EUI021；委托参数字面量 → EUI004；必填缺失 → EUI027；内容上下文 `ContentSingle`/`ContentMulti` 穿透嵌套块（内容内 `@if`/`@foreach`/动态属性保持 build-once 语义），单根静态多根 → EUI021；`Key` 在内容内 → EUI010（既有 allowKey 机制直接覆盖） |
+| 生成形态 | `Emitter.EmitComponent` 按 spec/02 §4.12 冻结顺序：new → 作用域登记（根 `Track` / 块 `Adopt + AddDisposable` / 内容 `receiver.TrackContent`）→ 参数（源码顺序；字面量 §4.2、动态推送 §4.3.3 `U{N}`/`R{N}` + `EqualityComparer` 保护、委托事件 §4.6.2 `h{N}` + `a0..aN` 包装、`@bind` §4.4.3 回调 + 推送）→ 默认内容 §4.12.3（`List<Element>` 累加、单根 `content{N}.Count == 0 ? null : content{N}[0]`）→ `Mount()` → `parent.Children.Add(cmpN.Root)` / 根返回 `cmpN.Root`。块内 `scopeN.AddRoot(cmpN.Root)`，内容内 `contentN.Add(cmpN.Root)`。根级动态参数/绑定参数 → `__cmp{N}` 字段提升（`U{N}` 可捕获）；内容内动态属性为 Build 快照（不生成 `U`/`R`），内容内 `@if`/`@foreach` 生成普通 C# 语句（`EmitPlainIf`/`EmitPlainForeach`） |
+| 生成器校验 | `ValidateBindSource` 扩展到组件目标（`@bind-P` 源可写性按参数类型判定，spec/02 §4.4.3 规则 8 无 EUI042） |
+| 测试 | `C4ComponentTests`（Headless 18 例：参数解析/EUI002 参数建议/EUI004/EUI027/EUI040 三形态/EUI021 双场景/EUI010 内容/EUI033 重叠；合成 `ProbeCard`/`ProbeList` 目录）+ `CatalogScannerTests` 9 例（EUI028 形状/类型/内容参数/类级 `[UiContent]`/多内容参数/继承/约定链接）+ `GeneratorContractTests` 11 例（生命周期顺序/字段提升/U 推送形态/回调形态/块级 Adopt+R/TrackContent/字面量化/EUI027/EUI040/EUI021/EUI004 阻断生成/内容快照无 U/R） |
+
+**范围说明**：具名插槽（`[UiSlot]` 消费）留 C6/G4；`Ref`（EUI029）留 C5；`{P}Changed` 类型与参数严格匹配静态不可判，
+由 C# 编译错误兜底（spec/02 §12 D73）；组件参数推送不会重建子组件模板（无参数 diff，spec/03 §10.2）。
 
 ## 14.13 风险与开放问题
 
