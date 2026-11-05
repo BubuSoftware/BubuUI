@@ -249,6 +249,13 @@ public sealed class Emitter
             if (attr.Name == "Key") continue;
             int line = LineOf(attr.ValueSpan.Length > 0 ? attr.ValueSpan : attr.NameSpan);
 
+            // C5：Ref（spec/02 §4.14）——Build 时把元素实例赋给 code-behind 字段（源码顺序位置）。
+            if (attr.RefTarget is { } refField)
+            {
+                Mapped(line, $"{refField} = {v};");
+                continue;
+            }
+
             if (attr.EventDef is { } evt)
             {
                 var handlerType = EventHandlerType(attr.Value);
@@ -339,6 +346,13 @@ public sealed class Emitter
         foreach (var attr in element.Attributes)
         {
             if (attr.Name == "Key") continue; // EUI010 已报
+            // C5：Ref（spec/02 §4.14）——组件按实例赋给 code-behind 字段（design/14 §14.6.4）。
+            if (attr.RefTarget is { } refField)
+            {
+                Mapped(LineOf(attr.ValueSpan.Length > 0 ? attr.ValueSpan : attr.NameSpan),
+                    $"{refField} = {v};");
+                continue;
+            }
             var p = attr.ParamDef;
             if (p is null) continue;          // 未解析名 EUI002 / 保留语法已报
             if (p.IsContent) continue;        // P= 写内容参数 EUI021 已报；内容由子节点提供

@@ -121,7 +121,8 @@ public sealed record UiElementDef(
     IReadOnlyDictionary<string, UiEventDef> Events,
     IReadOnlyDictionary<string, UiParameterDef> Parameters,
     IReadOnlyDictionary<string, UiSlotDef> Slots,
-    IReadOnlyList<UiMetadataProblem> Problems)
+    IReadOnlyList<UiMetadataProblem> Problems,
+    bool IsFromReferencedAssembly = false)
 {
     public bool Equals(UiElementDef? other)
     {
@@ -132,6 +133,7 @@ public sealed record UiElementDef(
             && Origin == other.Origin
             && Content == other.Content
             && ContentTarget == other.ContentTarget
+            && IsFromReferencedAssembly == other.IsFromReferencedAssembly
             && CatalogValueEq.Map(Properties, other.Properties)
             && CatalogValueEq.Map(Events, other.Events)
             && CatalogValueEq.Map(Parameters, other.Parameters)
@@ -147,6 +149,7 @@ public sealed record UiElementDef(
         hash = CatalogValueEq.Add(hash, (int)Origin);
         hash = CatalogValueEq.Add(hash, (int)Content);
         hash = CatalogValueEq.Add(hash, ContentTarget);
+        hash = CatalogValueEq.Add(hash, IsFromReferencedAssembly);
         hash = CatalogValueEq.AddMap(hash, Properties);
         hash = CatalogValueEq.AddMap(hash, Events);
         hash = CatalogValueEq.AddMap(hash, Parameters);

@@ -165,7 +165,10 @@ public sealed class TemplateGenerator : IIncrementalGenerator
                 {
                     case UiElement element:
                         foreach (var attr in element.Attributes)
+                        {
                             ValidateBindSource(attr, probe, scope, diags);
+                            ValidateRefTarget(element, attr, probe, scope, diags);
+                        }
                         Walk(element.Children, scope);
                         break;
                     case UiIf ifNode:
@@ -214,6 +217,20 @@ public sealed class TemplateGenerator : IIncrementalGenerator
         if (!probe.IsWritableSource(expression, clrType, env, out var reason))
             diags.Add(UiDiagnostics.Error(UiDiagnostics.BindSourceInvalid,
                 $"@bind-{attr.Name} source '{expression}' is not writable: {reason}", attr.ValueSpan));
+    }
+
+    /// <summary>
+    /// <c>Ref={field}</c> 的语义级校验（spec/01 §4.3：简单标识符、字段可写）：
+    /// 字段缺失（CS0103）、类型不兼容（CS0029）、只读/静态/标注 const 的一律拒绝。
+    /// 语法级（非简单标识符）已由分析器报 EUI029，这里不重复。
+    /// </summary>
+    private static void ValidateRefTarget(UiElement element, UiAttribute attr, TemplateProbe probe,
+        IReadOnlyList<(ITypeSymbol Type, string Name)> env, List<UiDiagnostic> diags)
+    {
+        if (attr.Name != "Ref" || attr.RefTarget is null || element.ResolvedDef is null) return;
+        if (!probe.IsRefTarget(attr.RefTarget, element.ResolvedDef.ClrTypeDisplayName, env, out var reason))
+            diags.Add(UiDiagnostics.Error(UiDiagnostics.RefTargetInvalid,
+                $"Ref target '{attr.RefTarget}' is invalid: {reason}", attr.ValueSpan));
     }
 
     private sealed class TemplateProbe
@@ -294,6 +311,76 @@ public sealed class TemplateGenerator : IIncrementalGenerator
                 if (diagnostic.Severity != Microsoft.CodeAnalysis.DiagnosticSeverity.Error) continue;
                 if (!assignment.Span.Contains(diagnostic.Location.SourceSpan)) continue;
                 reason = $"{diagnostic.GetMessage()} ({diagnostic.Id})";
+                return false;
+            }
+
+            reason = null;
+            return true;
+        }
+
+        /// <summary>
+        /// <c>Ref={field}</c> 用赋值探针取 C# 结论：把 <c>{target} = __refValue</c>（__refValue 为
+        /// 元素/组件实例类型）放进合成方法体。缺失（CS0103）/类型不符（CS0029）/只读（CS0191）由
+        /// 赋值语句内的 CS 错误回答（与 <see cref="IsWritableSource"/> 同法）；编译干净后再要求
+        /// 目标是 code-behind 的非静态实例字段（static/const/readonly 兜底，防语义合法但形态非法）。
+        /// </summary>
+        public bool IsRefTarget(string target, string valueClrType,
+            IReadOnlyList<(ITypeSymbol Type, string Name)> env, out string? reason)
+        {
+            if (!IsLvalueShape(SyntaxFactory.ParseExpression(target), out _))
+            {
+                reason = "it must be a simple identifier";
+                return false;
+            }
+
+            // Ref 目标不允许落在 @foreach item 名上：真实生成代码里 item 是迭代变量，不可赋值。
+            foreach (var (_, name) in env)
+            {
+                if (name != target) continue;
+                reason = $"'{target}' is the @foreach item; the Ref target must be an instance field " +
+                    "declared on the code-behind";
+                return false;
+            }
+
+            var tree = ProbeTree($"{target} = __refValue;", env,
+                $"        {ClrTypeOf(valueClrType)} __refValue = default!;");
+            var augmented = _compilation.AddSyntaxTrees(tree);
+            var model = augmented.GetSemanticModel(tree);
+            var assignment = tree.GetRoot().DescendantNodes().OfType<AssignmentExpressionSyntax>().FirstOrDefault();
+            if (assignment is null)
+            {
+                reason = "it is not an assignment target";
+                return false;
+            }
+
+            // C# 诊断优先：缺失/类型不符/readonly 在 bound 阶段就把左值标记为失败，Symbol 会变 null，
+            // 所以必须先问诊断再问符号（readonly 实测 CS0191 + null symbol）。
+            foreach (var diagnostic in model.GetDiagnostics())
+            {
+                if (diagnostic.Severity != Microsoft.CodeAnalysis.DiagnosticSeverity.Error) continue;
+                if (!assignment.Span.Contains(diagnostic.Location.SourceSpan)) continue;
+                reason = $"{diagnostic.GetMessage()} ({diagnostic.Id})";
+                return false;
+            }
+
+            if (model.GetSymbolInfo(assignment.Left).Symbol is not IFieldSymbol field)
+            {
+                reason = "the Ref target must be an instance field of the code-behind class";
+                return false;
+            }
+            if (field.IsStatic)
+            {
+                reason = $"'{field.Name}' is a static field and cannot hold a template instance";
+                return false;
+            }
+            if (field.IsConst)
+            {
+                reason = $"'{field.Name}' is a constant";
+                return false;
+            }
+            if (field.IsReadOnly)
+            {
+                reason = $"'{field.Name}' is readonly and can only be assigned in a constructor";
                 return false;
             }
 

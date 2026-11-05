@@ -590,7 +590,7 @@ parentN.Children.Add(cmp0.Root);
 | 属性 | 语义 | 状态 |
 |---|---|---|
 | `Key={expr}` | `@foreach` 模板根的身份；Key + item 身份决定复用；可引用任意可读表达式 | 基础已实现 / S2（v4 复用） |
-| `Ref={field}` | 实例赋给 code-behind 字段；仅简单标识符 | G3 |
+| `Ref={field}` | 实例赋给 code-behind 字段；仅简单标识符 | ✅ C5 |
 | `Class="..."` | 样式类 | G4 |
 | `Style="..."` | 内联样式 | G4 |
 
@@ -675,9 +675,9 @@ v3 的 EUI014/EUI032/EUI034–EUI036/EUI038–EUI039/EUI041–EUI042/EUI044 已�
 | EUI016 | 标签冲突（≥2 类型） | 标签 | Error |
 | EUI017 | 标签类型不可暴露（public 但抽象/嵌套） | 标签 | Error |
 | EUI018 | 缺少 public 无参构造 | 标签 | Error |
-| EUI019 | 属性不可写 / `{Name}Property` 类型不符（**仅对已进入目录的属性成立**：源项目里缺 `{Name}Property` 的属性根本不进目录，用户撞到的是 EUI002；EUI019 只在引用程序集带问题时目录里才触发，见 14.5.4） | 属性名 | Error |
-| EUI020 | 事件字段缺失或类型不是 `RoutedEvent` | 属性名 | Error |
-| EUI021 | 内容目标缺失或类型不匹配 | 子内容 | Error |
+| EUI019 | 属性不可写 / `{Name}Property` 类型不符（**仅对已进入目录的属性成立**：源项目里缺 `{Name}Property` 的属性根本不进目录，用户撞到的是 EUI002；EUI019 只在引用程序集带问题时目录里才触发，见 14.5.4。✅ C5 使用点：`def.Problems` 在用点暴露，消息带完整类型名；`UiElementDef.IsFromReferencedAssembly` 区分来源） | 属性名 | Error |
+| EUI020 | 事件字段缺失或类型不是 `RoutedEvent`（✅ C5 使用点：`On{x}` ↔ `{x}Event` 字段名匹配，仅引用程序集） | 属性名 | Error |
+| EUI021 | 内容目标缺失或类型不匹配（✅ C5 使用点：引用程序集控件内容被降级为 None 时，在使用点接管 children 诊断） | 子内容 | Error |
 | EUI022 | 插槽未知/重复/位置非法（G4） | 标签/属性 | Error |
 | EUI023 | 属性类型没有字面量转换器 | 属性值 | Error |
 | EUI024 | 事件处理器签名不匹配（可静态判定时） | 属性值 | Error |
@@ -685,7 +685,7 @@ v3 的 EUI014/EUI032/EUI034–EUI036/EUI038–EUI039/EUI041–EUI042/EUI044 已�
 | EUI026 | 控件元数据声明非法（源项目） | 声明处 | Error/Warning |
 | EUI027 | 组件必填参数缺失 | 标签 | Error |
 | EUI028 | 组件参数/委托声明非法：非 public / 无 setter / `init` / 使用 C# `required`（应改 `[UiParameter(Required = true)]`）/ 非法泛型实参 / 委托含 `ref`/`out`/`in` | 声明处/属性名 | Error |
-| EUI029 | `Ref` 目标非法（G3） | 属性值 | Error |
+| EUI029 | `Ref` 目标非法（✅ C5：语法级=非简单标识符，分析器报；语义级=字段缺失/只读/静态/类型不符，生成器探针报并引用 C# 诊断；生成形态 spec/01 §4.3 / spec/02 §4.14） | 属性值 | Error |
 | EUI030 | 泛型标签暂不支持 | 标签 | Error |
 | EUI031 | 语法已保留、尚未实现（`Class`/`Style`/`<Slot>`/`<ContentSlot>`/附加属性） | 标签/属性 | Error |
 | EUI032 | **停用**：原"非 `Signal<T>` 组件参数一次性赋值"；后继 EUI044 亦停用 | — | — |
@@ -873,7 +873,7 @@ Build(Compilation c):                       // 纯函数：同样的 Compilation
 | **C2** ✅（2026-11-02） | 生成器切到派生目录；内置控件加 `[UiContent]`；基础设施元素加 `[UiIgnore]`；**输入事件字段从 `InputEvents` 迁入 `Element`（19 处调用改名，删静态类）**；`ClipToBounds` 失效级别改 `Render`；删除手写目录 | Gallery/Counter 渲染与交互不变；`Padding` 等属性、8 个事件变为模板可用（更新文档）—— ✅ 全部落地（落地记录见 §14.12.2） | `Input.cs`、`Element.cs`、`InputRouter.cs`、`FocusManager.cs`、`Controls.cs`、`TemplateGenerator.cs`、`Panels.cs`、`TextBlock.cs`、`Blocks.cs` |
 | **C3** ✅（2026-11-03） | 转换器扩展（float/decimal/long/short/byte/char/枚举/TimeSpan；Color 预留 G4）；使用点诊断 **EUI023**（无转换器）/ **EUI025**（纯普值重复属性）/ **EUI031**（Class/Style/点号附加属性/`<Slot>`/`<ContentSlot>`）落地；属性暴露一致性测试 | 诊断表前半可用；无转换器类型正确报 EUI023 —— ✅ 全部落地（落地记录见 §14.12.3） | `Catalog.cs`、`Analyzer.cs`、`Metadata/UiCatalogFactory.cs` |
 | **C4** ✅（2026-11-05） | 组件标签：参数元数据（`[UiParameter(Required=true)]`、`{P}Changed`）、委托事件、默认内容、生命周期与作用域释放；生成器集成测试 | 第三方/自定义组件可写入 `.ui`；参数/内容生成与 spec/02 §4.12 一致 —— ✅ 全部落地（落地记录见 §14.12.4） | `TemplateGenerator.cs`、`Emitter.cs`、`Component.cs`、`Metadata/UiCatalogFactory.cs`、`Analyzer.cs` |
-| **C5** | `Ref`（G3）；保留语法诊断与剩余分析器收敛（**EUI019/EUI020/EUI021** 使用点与 **EUI029**；EUI025/EUI031 已由 C3 落地，EUI033 为 S2 既有） | G3 非反应式缺口收敛；诊断不再落"未知" | `Analyzer.cs`、`Emitter.cs` |
+| **C5** ✅ | `Ref`（G3）；保留语法诊断与剩余分析器收敛（**EUI019/EUI020/EUI021** 使用点与 **EUI029**；EUI025/EUI031 已由 C3 落地，EUI033 为 S2 既有） | G3 非反应式缺口收敛；诊断不再落"未知" | `Analyzer.cs`、`Emitter.cs` |
 | **C6** | 具名插槽 + `ContentSlot` 宿主；附加属性；泛型标签（G4） | 与 03 语法表对齐 | 编译器/运行时/样式 |
 
 状态/反应式不在 C1–C6 内重复排期：失效队列/`U{N}`/根级重算属
@@ -983,7 +983,7 @@ Roslyn 4.9.2 的公开 API 没有这个成员（公开的是 `IModuleSymbol.Refe
 | 测试 | `tests/EclipseUI.Headless.Tests/C3LiteralAndDiagnosticsTests.cs`：24 例（合成 Probe 标签测使用点诊断；`UiLiterals` 单元级直测，含负 TimeSpan、`\0`/`\uXXXX` 转义、char 不 Trim、范围拒绝） |
 
 **范围说明**：EUI016/EUI019/EUI020/EUI021/EUI026 的扫描侧元数据诊断已在 C1/C2 落地（`Problems`/`HiddenTags`），
-其**使用点**口径仍归 C5；`Ref`（EUI029）C3 未动（此前即 EUI002，语义待 C5 定）。
+其**使用点**口径已在 C5 落地（§14.12.5）；`Ref`（EUI029）也在 C5 落地（此前即 EUI002）。
 `Color`/`Thickness`/`CornerRadius` 转换器随 G4 类型引入。
 
 ### 14.12.4 C4 落地记录（2026-11-05）
@@ -998,8 +998,23 @@ Roslyn 4.9.2 的公开 API 没有这个成员（公开的是 `IModuleSymbol.Refe
 | 生成器校验 | `ValidateBindSource` 扩展到组件目标（`@bind-P` 源可写性按参数类型判定，spec/02 §4.4.3 规则 8 无 EUI042） |
 | 测试 | `C4ComponentTests`（Headless 18 例：参数解析/EUI002 参数建议/EUI004/EUI027/EUI040 三形态/EUI021 双场景/EUI010 内容/EUI033 重叠；合成 `ProbeCard`/`ProbeList` 目录）+ `CatalogScannerTests` 9 例（EUI028 形状/类型/内容参数/类级 `[UiContent]`/多内容参数/继承/约定链接）+ `GeneratorContractTests` 11 例（生命周期顺序/字段提升/U 推送形态/回调形态/块级 Adopt+R/TrackContent/字面量化/EUI027/EUI040/EUI021/EUI004 阻断生成/内容快照无 U/R） |
 
-**范围说明**：具名插槽（`[UiSlot]` 消费）留 C6/G4；`Ref`（EUI029）留 C5；`{P}Changed` 类型与参数严格匹配静态不可判，
+**范围说明**：具名插槽（`[UiSlot]` 消费）留 C6/G4（✅ C5 已由 §14.12.5 落地 Ref 与使用点诊断）；`{P}Changed` 类型与参数严格匹配静态不可判，
 由 C# 编译错误兜底（spec/02 §12 D73）；组件参数推送不会重建子组件模板（无参数 diff，spec/03 §10.2）。
+
+### 14.12.5 C5 落地记录（2026-11-05）
+
+全部 C5 工作项完成，`dotnet test` 347 例全绿（Headless 160 / Compiler 126 / Rendering 61）：
+
+| 工作项 | 结果 |
+|---|---|
+| Ref 解析 | 分析器在保留属性分支新增 `Ref`（spec/01 §4.3/§4.15）：值必须是 `{expr}` 形态的简单标识符（`IsValidIdentifier`），非法 → **EUI029**（语法级，ValueSpan）；合法 → `attr.RefTarget` 进入生成。`@bind-Ref`/`Ref:bind` 仍走既有保留名 `EUI040`，重复 `Ref` 走 EUI025 |
+| Ref 生成 | `Emitter` 按源码顺序在属性循环内发 `{field} = elN;`（控件 = 元素实例）/ `{field} = cmpN;`（组件 = 组件实例，design/14 §14.6.4），`#line` 映射属性值位置；**不进 `Render()`、不参与字段提升**；块内条目重建随构造赋值 → 字段始终指向最新实例。生成形态冻结于 spec/02 §4.14 |
+| Ref 语义探针 | `TemplateProbe.IsRefTarget`：把 `{target} = __refValue`（`__refValue` 为元素/组件类型）放进合成方法体。**C# 诊断优先于符号**——缺失 CS0103 / 类型不符 CS0029 / 只读 CS0191（readonly 实测 bound 失败把 Symbol 变 null，必须先问诊断）/ const / static 由赋值 span 内错误回答；干净后要求 `IFieldSymbol` 非静态实例字段；目标命中 `@foreach` item 名直接拒绝 |
+| EUI019/020 使用点 | `UiElementDef` 新增 `IsFromReferencedAssembly`（扫描器按 `compilation.Assembly` vs 引用程序集标记，进值相等/哈希——增量缓存按值比对不受影响）。分析器未知属性分支先查 `def.Problems`：`PropertyNotBindable` 按属性名精确匹配 → **EUI019**；`On{x}` 按 `{x}Event` 字段名匹配 `EventFieldMissing` → **EUI020**；消息带完整类型名（`ClrTypeDisplayName`）+ "declared in a referenced assembly"。源项目控件的同类问题仍落 EUI002（声明处归 EUI026），满足 14.9.1 v2 口径 |
+| EUI021 使用点 | 内容被降级为 None 且 def 带 `ContentTargetInvalid` 问题（引用程序集）时，用点 children 接管既有 EUI006 指引 → **EUI021**；源项目控件保留 EUI006 指引不变 |
+| 测试 | `C5UseSiteTests`（Headless 15 例：Ref 合成标识符/字面量/成员访问/裸 token（EUI100×2+EUI029）/重复/`@bind-Ref`；引用程序集 EUI019/EUI020/EUI021 + 源项目对照（仍 EUI002/EUI006）+ 自闭合不触发）+ `GeneratorContractTests` 12 例（Ref 控件/组件生成形态、缺失/类型/readonly/静态探针、非标识符/字面量 EUI029、**真实 Emit 引用程序集**端到端 EUI019/EUI020/EUI021 与干净不触发）|
+
+**范围说明（C5 后仍开放）**：EUI026 声明处诊断仍**未消费**（目录 problem 只进 `HiddenTags`/`def.Problems`，源项目控件的声明错误靠使用点 EUI002 兜底；`catalog.Problems`/`StaticEventHost` 诊断至今没有编译期出口——留作后续切片或 D74 登记）；Roslyn tokenizer（EUI024/C6 相关词法）单独切片；EUI024 处理器签名匹配、G4 样式/插槽不变。
 
 ## 14.13 风险与开放问题
 

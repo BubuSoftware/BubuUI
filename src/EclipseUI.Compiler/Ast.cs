@@ -42,6 +42,9 @@ public sealed class UiAttribute
     public UiEventDef? EventDef { get; set; }
     public UiParameterDef? ParamDef { get; set; }
     public string? ConvertedLiteral { get; set; }
+
+    /// <summary>Ref 的目标字段名（仅 <c>Ref={ident}</c> 且 ident 是简单标识符时设置；Analyzer 填充，C5）。</summary>
+    public string? RefTarget { get; set; }
 }
 
 public sealed class UiElement : UiNode

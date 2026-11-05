@@ -75,6 +75,33 @@ public static class TemplateAnalyzer
     private static bool IsReservedName(string name) =>
         name is "Key" or "Ref" or "Class" or "Style";
 
+    /// <summary><c>Ref={ident}</c> 的值必须是简单 C# 标识符（spec/01 §4.3 表）。</summary>
+    private static bool IsValidIdentifier(string? name)
+    {
+        if (name is not { Length: > 0 }) return false;
+        if (!char.IsLetter(name[0]) && name[0] != '_') return false;
+        foreach (var c in name)
+            if (!char.IsLetterOrDigit(c) && c != '_') return false;
+        return true;
+    }
+
+    /// <summary>
+    /// 用点上的属性/事件名 ↔ 扫描侧元数据问题（def.Problems，design/14 §14.5.4）。
+    /// 属性按名字精确匹配（EUI019）；<c>On{x}</c> 用点按 <c>xEvent</c> 字段名匹配（EUI020）。
+    /// </summary>
+    private static UiMetadataProblem? UnusableMemberProblem(UiElementDef def, UiAttribute attr)
+    {
+        if (attr.Name.Length > 2 && attr.Name.StartsWith("On", StringComparison.Ordinal))
+        {
+            var fieldName = attr.Name.Substring(2) + "Event";
+            var eventProblem = def.Problems.FirstOrDefault(p =>
+                p.Code == UiDiagnostics.EventFieldMissing && p.MemberName == fieldName);
+            if (eventProblem is not null) return eventProblem;
+        }
+        return def.Problems.FirstOrDefault(p =>
+            p.Code == UiDiagnostics.PropertyNotBindable && p.MemberName == attr.Name);
+    }
+
     private static string LegacySyntaxMessage(UiAttribute attr) =>
         attr.BindForm == UiBindForm.LegacyTwoWay
             ? $"'{attr.Name}:bind' is deprecated; write @bind-{attr.Name}={{expression}}"
@@ -174,6 +201,21 @@ public static class TemplateAnalyzer
                 continue;
             }
 
+            // C5：Ref（spec/01 §4.3/§4.15）。值必须是简单标识符（code-behind 实例字段），
+            // Build 时把元素/组件实例赋给它；非法 → EUI029。字段存在性/可写性/类型兼容由
+            // 生成器探针校验（EUI029 语义级），分析器（无 Compilation语境）只报语法级。
+            if (attr.Name == "Ref")
+            {
+                var target = attr.Kind == AttrValueKind.Expression ? attr.Value.Trim() : null;
+                if (IsValidIdentifier(target))
+                    attr.RefTarget = target;
+                else
+                    diags.Add(UiDiagnostics.Error(UiDiagnostics.RefTargetInvalid,
+                        "Ref= requires a simple identifier naming a code-behind instance field, e.g. Ref={saveButton}",
+                        attr.ValueSpan));
+                continue;
+            }
+
             // 解析按 §14.5.3 分支：控件 = 保留 → 事件 → 属性；组件 = 保留 → 参数
             // （委托参数就是事件，不做 On* 推断；组件不解析 Events，design/14 §14.6.2）。
             UiEventDef? eventDef = isComponent ? null : def.Events.TryGetValue(attr.Name, out var evt) ? evt : null;
@@ -183,6 +225,20 @@ public static class TemplateAnalyzer
 
             if (eventDef is null && propDef is null && paramDef is null)
             {
+                // C5：EUI019/EUI020 使用点（design/14 §14.5.4）。引用程序集控件无法定位声明，只能把
+                // 扫描侧元数据问题（def.Problems）在使用点暴露（消息带完整类型名）。源项目控件的
+                // 属性根本不进目录且用户撞的是 EUI002（声明处归 EUI026），所以不在这里触发。
+                var metadata = def.IsFromReferencedAssembly ? UnusableMemberProblem(def, attr) : null;
+                if (metadata is not null)
+                {
+                    var kind = metadata.Code == UiDiagnostics.EventFieldMissing ? "event" : "property";
+                    diags.Add(UiDiagnostics.Error(metadata.Code,
+                        $"{kind} '{attr.Name}' on '{element.Tag}' is not usable: {def.ClrTypeDisplayName} " +
+                        $"is declared in a referenced assembly and {metadata.Message}",
+                        attr.NameSpan));
+                    continue;
+                }
+
                 var hint = attr.Name.StartsWith("On", StringComparison.Ordinal)
                     ? Suggest.Nearest(attr.Name, def.Events.Keys) ?? Suggest.Nearest(attr.Name, def.Properties.Keys)
                           ?? Suggest.Nearest(attr.Name, def.Parameters.Keys)
@@ -355,6 +411,20 @@ public static class TemplateAnalyzer
         {
             if (contentCtx == Ctx.None)
             {
+                // C5：EUI021 使用点（design/14 §14.5.4）——引用程序集控件的 [UiContent] 目标非法时
+                // 内容被降级为 None，只在用点暴露；源项目控件保留 EUI006 指引（声明处归 EUI026）。
+                var contentProblem = def.IsFromReferencedAssembly
+                    ? def.Problems.FirstOrDefault(p => p.Code == UiDiagnostics.ContentTargetInvalid)
+                    : null;
+                if (contentProblem is not null)
+                {
+                    diags.Add(UiDiagnostics.Error(UiDiagnostics.ContentTargetInvalid,
+                        $"'{element.Tag}' does not accept children: {def.ClrTypeDisplayName} " +
+                        $"is declared in a referenced assembly and {contentProblem.Message}",
+                        child.Span));
+                    continue;
+                }
+
                 var guidance = isComponent
                     ? $"mark an Element? or IReadOnlyList<Element> [UiParameter] property of {def.ClrTypeDisplayName} with [UiContent] to accept default content"
                     : $"add [UiContent] on {def.ClrTypeDisplayName} to accept children";

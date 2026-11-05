@@ -33,17 +33,21 @@ public class GeneratorContractTests
     /// C2 起生成器的模板表面从编译符号派生（design/14 §14.10.2）：探针编译必须引用运行时，
     /// 否则目录为空、每个标签都是 EUI001，生成器不出代码。
     /// </summary>
-    private static GeneratorRunResult Run(string uiPath, string ui, string? codeBehind = null)
-        => RunWithReferences(uiPath, ui, codeBehind ??
-            "public partial class Probe { public int gap = 4; public string message = \"start\"; }");
+    private static GeneratorRunResult Run(string uiPath, string ui, string? codeBehind = null,
+        string? referencedLibrary = null)
+        => RunWithReferences(uiPath, ui,
+            codeBehind ?? "public partial class Probe { public int gap = 4; public string message = \"start\"; }",
+            referencedLibrary);
 
-    private static CSharpCompilation CreateCompilation(string codeBehind)
+    private static CSharpCompilation CreateCompilation(string codeBehind, string? referencedLibrary = null)
     {
         var references = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!)
             .Split(System.IO.Path.PathSeparator)
             .Select(path => (MetadataReference)MetadataReference.CreateFromFile(path))
             .ToList();
         references.Add(MetadataReference.CreateFromFile(typeof(Component).Assembly.Location));
+        if (referencedLibrary is not null)
+            references.Add(MetadataReference.CreateFromFile(referencedLibrary));
         return CSharpCompilation.Create(
             "TemplateProbe",
             new[] { CSharpSyntaxTree.ParseText(codeBehind) },
@@ -51,12 +55,13 @@ public class GeneratorContractTests
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
     }
 
-    private static GeneratorRunResult RunWithReferences(string uiPath, string ui, string codeBehind)
+    private static GeneratorRunResult RunWithReferences(string uiPath, string ui, string codeBehind,
+        string? referencedLibrary = null)
     {
         var driver = CSharpGeneratorDriver.Create(
             new[] { new TemplateGenerator().AsSourceGenerator() },
             new AdditionalText[] { new UiAdditionalText(uiPath, ui) });
-        var compilation = CreateCompilation(codeBehind);
+        var compilation = CreateCompilation(codeBehind, referencedLibrary);
         return driver.RunGenerators(compilation).GetRunResult().Results.Single();
     }
 
@@ -967,5 +972,203 @@ public class GeneratorContractTests
         Assert.Contains(".Gap = color;", code);
         Assert.DoesNotContain(".AddRenderAction(", code);
         Assert.DoesNotContain(".Gap = $", code);
+    }
+
+    // ---- C5：Ref 生成形态与语义级 EUI029（spec/01 §4.3；spec/02 §4.14）----
+
+    /// <summary>把第三方"带问题控件"库真正编译成独立程序集再被消费端引用（design/14 §14.5.4）。</summary>
+    private static string EmitLibrary(string name, string source)
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, $"{name}_{Guid.NewGuid():N}.dll");
+        var emit = CreateCompilation(source).Emit(path);
+        Assert.True(emit.Success, string.Join("; ", emit.Diagnostics
+            .Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error).Select(d => d.ToString())));
+        return path;
+    }
+
+    [Fact]
+    public void Ref_OnElement_AssignsCodeBehindFieldAtBuildTime()
+    {
+        const string ui = "<StackPanel Ref={savePanel} />";
+        var result = Run("C:\\templates\\Probe.ui", ui,
+            "public partial class Probe { public global::EclipseUI.Elements.StackPanel savePanel = null!; }");
+
+        Assert.Empty(result.Diagnostics);
+        var code = Generated(result);
+        Assert.Contains("var el0 = new global::EclipseUI.Elements.StackPanel();", code);
+        Assert.Contains("savePanel = el0;", code);          // Build 语句，无 U/R（§4.3 不重算）
+        Assert.DoesNotContain("__el", code);                // 无动态属性 → 不提升字段
+    }
+
+    [Fact]
+    public void Ref_OnComponent_AssignsComponentInstance()
+    {
+        const string ui = "<ProbeCard Count=\"1\" Ref={card} />";
+        const string codeBehind = """
+            using EclipseUI;
+            public partial class Probe { public ProbeCard card = null!; }
+            public class ProbeCard : Component
+            {
+                [UiParameter] public int Count { get; set; }
+            }
+            """;
+
+        var result = RunWithReferences("C:\\templates\\Probe.ui", ui, codeBehind);
+        Assert.Empty(result.Diagnostics);
+        var code = Generated(result);
+        Assert.Contains("var cmp0 = new global::ProbeCard();", code);
+        Assert.Contains("card = cmp0;", code);              //design/14 §14.6.4：组件按实例赋字段
+        Assert.Contains("return cmp0.Root;", code);
+    }
+
+    [Fact]
+    public void Ref_MissingField_EUI029_BlocksGeneration()
+    {
+        var result = Run("C:\\templates\\Probe.ui", "<StackPanel Ref={nowhere} />");
+
+        Assert.Empty(result.GeneratedSources);
+        var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI029");
+        Assert.Contains("nowhere", diag.GetMessage());
+        Assert.Contains("CS0103", diag.GetMessage());
+    }
+
+    [Fact]
+    public void Ref_TypeMismatch_EUI029_BlocksGeneration()
+    {
+        var result = Run("C:\\templates\\Probe.ui", "<StackPanel Ref={size} />",
+            "public partial class Probe { public int size = 4; }");
+
+        Assert.Empty(result.GeneratedSources);
+        var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI029");
+        Assert.Contains("EclipseUI.Elements.StackPanel", diag.GetMessage());
+    }
+
+    [Fact]
+    public void Ref_ReadonlyField_EUI029_BlocksGeneration()
+    {
+        var result = Run("C:\\templates\\Probe.ui", "<StackPanel Ref={locked} />",
+            "public partial class Probe { public readonly global::EclipseUI.Elements.StackPanel locked = null!; }");
+
+        Assert.Empty(result.GeneratedSources);
+        var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI029");
+        Assert.Contains("CS0191", diag.GetMessage());
+    }
+
+    [Fact]
+    public void Ref_StaticField_EUI029_BlocksGeneration()
+    {
+        var result = Run("C:\\templates\\Probe.ui", "<StackPanel Ref={shared} />",
+            "public partial class Probe { public static global::EclipseUI.Elements.StackPanel shared = null!; }");
+
+        Assert.Empty(result.GeneratedSources);
+        var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI029");
+        Assert.Contains("static", diag.GetMessage());
+    }    [Fact]
+    public void Ref_NonIdentifier_EUI029_AnalyzerLevel()
+    {
+        var result = Run("C:\\templates\\Probe.ui", "<StackPanel Ref={handler.Do} />");
+
+        Assert.Empty(result.GeneratedSources);
+        var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI029");
+        Assert.Contains("simple identifier", diag.GetMessage());
+    }
+
+    [Fact]
+    public void Ref_QuotedLiteral_EUI029_AnalyzerLevel()
+    {
+        var result = Run("C:\\templates\\Probe.ui", "<StackPanel Ref=\"savePanel\" />");
+
+        Assert.Empty(result.GeneratedSources);
+        var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI029");
+        Assert.Contains("simple identifier", diag.GetMessage());
+    }
+
+    // ---- C5：EUI019/EUI020/EUI021 使用点——引用程序集真正 Emit 后被消费（design/14 §14.5.4）----
+
+    [Fact]
+    public void ReferencedAssembly_BrokenProperty_IsEUI019AtUseSite()
+    {
+        var lib = EmitLibrary("ProbeBrokenProp", """
+            using EclipseUI;
+            namespace ProbeLib;
+            public class BrokenBox : global::EclipseUI.Elements.StackPanel
+            {
+                public double Size { get => 0; set { } }
+                public static readonly StyledProperty<int> SizeProperty = StyledProperty<int>.Register<BrokenBox>("Size", 0);
+            }
+            """);
+
+        var result = Run("C:\\templates\\Probe.ui", "<BrokenBox Size=\"4\" />",
+            referencedLibrary: lib);
+
+        Assert.Empty(result.GeneratedSources);
+        var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI019");
+        Assert.Contains("global::ProbeLib.BrokenBox", diag.GetMessage());
+        Assert.Contains("referenced assembly", diag.GetMessage());
+    }
+
+    [Fact]
+    public void ReferencedAssembly_BrokenEventField_IsEUI020AtUseSite()
+    {
+        var lib = EmitLibrary("ProbeBrokenEvent", """
+            using EclipseUI;
+            namespace ProbeLib;
+            public class FaultyBox : global::EclipseUI.Elements.StackPanel
+            {
+                public static readonly StyledProperty<int> ClickEvent = StyledProperty<int>.Register<FaultyBox>("Click", 0);
+            }
+            """);
+
+        var result = Run("C:\\templates\\Probe.ui", "<FaultyBox OnClick={Handle} />",
+            referencedLibrary: lib);
+
+        Assert.Empty(result.GeneratedSources);
+        var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI020");
+        Assert.Contains("global::ProbeLib.FaultyBox", diag.GetMessage());
+        Assert.Contains("ClickEvent", diag.GetMessage());
+    }
+
+    [Fact]
+    public void ReferencedAssembly_BrokenContentParameter_IsEUI021AtUseSite()
+    {
+        var lib = EmitLibrary("ProbeBrokenContent", """
+            using EclipseUI;
+            namespace ProbeLib;
+            public class BrokenCard : Component
+            {
+                [UiContent] public string Body { get; set; } = "";
+                protected override global::EclipseUI.Element Build() => throw new global::System.NotImplementedException();
+            }
+            """);
+
+        var result = Run("C:\\templates\\Probe.ui",
+            "<StackPanel><BrokenCard><StackPanel /></BrokenCard></StackPanel>",
+            referencedLibrary: lib);
+
+        Assert.Empty(result.GeneratedSources);
+        var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI021");
+        Assert.Contains("global::ProbeLib.BrokenCard", diag.GetMessage());
+        Assert.Contains("referenced assembly", diag.GetMessage());
+    }
+
+    [Fact]
+    public void ReferencedAssembly_BrokenCard_SelfClosingIsEmitted()
+    {
+        var lib = EmitLibrary("ProbeBrokenContentClean", """
+            using EclipseUI;
+            namespace ProbeLib;
+            public class BrokenCard : Component
+            {
+                [UiContent] public string Body { get; set; } = "";
+                protected override global::EclipseUI.Element Build() => throw new global::System.NotImplementedException();
+            }
+            """);
+
+        var result = Run("C:\\templates\\Probe.ui",
+            "<StackPanel><BrokenCard /></StackPanel>",
+            referencedLibrary: lib);
+
+        Assert.NotEmpty(result.GeneratedSources);            // 无内容 → 不触发 EUI021
+        Assert.DoesNotContain(result.Diagnostics, d => d.Id is "EUI019" or "EUI020" or "EUI021" or "EUI029");
     }
 }

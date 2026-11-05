@@ -41,7 +41,14 @@
 > 诊断 EUI021/027/028/040 覆盖组件声明与使用点。落地记录 [14 §14.12.4](./design/14-control-template-contract.md)，
 > 台账 D17/D52/D54/D56 关闭（新增 D73 残余风险）。
 > 320 个测试全绿（Headless 145 / Compiler 114 / Rendering 61）。
-> 具名插槽（C6）、`Ref` 与剩余语法收敛（C5）、样式主题与 IDE 支持为后续工作。
+> **C5 Ref 与使用点诊断切片已通过（2026-11-05）**：`Ref={field}` 落地——元素/组件实例在 Build 时
+> 赋给 code-behind 字段（不进 `Render()`、不重算），诊断分层：非简单标识符由分析器报 `EUI029`（语法级），
+> 字段缺失/类型不符/只读/静态由生成器探针报 `EUI029`（语义级，引用 C# 诊断 CS0103/CS0029/CS0191）；
+> `EUI019`/`EUI020`/`EUI021` **使用点**口径落地——引用程序集控件的元数据问题在使用点暴露（消息带完整类型名），
+> 源项目控件仍落 `EUI002`/`EUI006`（声明处归 `EUI026`）。落地记录 [14 §14.12.5](./design/14-control-template-contract.md)，
+> 台账新增 D74（① 使用点 ✅ / ② `EUI026` 声明处出口开放）。
+> 347 个测试全绿（Headless 160 / Compiler 126 / Rendering 61）。
+> 具名插槽（C6）、Roslyn tokenizer、样式主题与 IDE 支持为后续工作。
 
 ## 核心理念
 
@@ -186,6 +193,9 @@ public partial class Counter
 
 - ~~`@switch` 未支持；组件标签、组件参数与组件级 `@bind`（`{P}Changed` 父推送/子回调）未实现~~
   **组件标签已随 C4 落地（2026-11-05）**：参数（含 `Required`/委托事件/默认内容）与组件 `@bind` 可用；
+  **`Ref={field}` 已随 C5 落地（2026-11-05）**：元素/组件实例赋给 code-behind 字段，
+  `EUI029` 分层（分析器语法级 + 生成器探针语义级）；`EUI019`/`EUI020`/`EUI021` 使用点诊断
+  仅对引用程序集控件生效（源项目控件落 `EUI002`/`EUI006`，声明处 `EUI026` 暂无编译期出口，D74② 开放）；
   具名插槽（`<Slot>`/`<ContentSlot>`）留 C6；`@switch` 仍未支持。
 - 文本：无头测试默认用确定性 naive 测量；窗口样例接入 HarfBuzz。多行断行、bidi 混排、字体 fallback 未实现。
 - 输入：无头注入与 Win32 鼠标/键盘已共用 `InputRouter` 并路由进元素树；字符输入（`WM_CHAR`）、
@@ -203,19 +213,20 @@ public partial class Counter
 ## 下一步（按开发计划）
 
 G1 已出结论（Go），G2 前三切片已通过：`CounterApp` / `TaskList` 已在真实窗口可交互，
-damage v0 让空闲帧不再提交 GPU。G3 的 C1/C2 目录派生切片、C3 转换器/使用点诊断切片与
-**C4 组件标签切片已全部通过**（手写目录删除，模板表面 17 属性项 / 9 个事件名；转换器补齐到
-spec/01 §5.2 全表；自定义组件可写入 `.ui`，落地记录见
-[14 §14.12.2–§14.12.4](./design/14-control-template-contract.md)）。当前优先级是 **G2 剩余部分**：
-像素 golden、retained layer、目标机 60fps 复测；G3 并行推进 C5（`Ref`/EUI029、EUI019–021
-使用点、Roslyn tokenizer）与 C6（具名插槽）。
+damage v0 让空闲帧不再提交 GPU。G3 的 C1/C2 目录派生切片、C3 转换器/使用点诊断切片、
+**C4 组件标签切片与 C5 `Ref`/使用点诊断切片已全部通过**（手写目录删除，模板表面 17 属性项 /
+9 个事件名；转换器补齐到 spec/01 §5.2 全表；自定义组件可写入 `.ui`；`Ref={field}` 与
+EUI019–021/EUI029 使用点收敛，落地记录见
+[14 §14.12.2–§14.12.5](./design/14-control-template-contract.md)）。当前优先级是 **G2 剩余部分**：
+像素 golden、retained layer、目标机 60fps 复测；G3 并行推进 Roslyn tokenizer（单独立项）
+与 C6（具名插槽）。
 完整路线图见 [09 开发计划](./design/09-development-plan.md)，G1 数据见
 [render-gate-2026-11](./design/reports/render-gate-2026-11.md)，G2 进度见
 [11 G2 第一切片](./design/11-g2-surface-slice.md)、[12 G2 第二切片](./design/12-g2-interactive-slice.md)
 与 [13 G2 第三切片](./design/13-g2-damage-v0.md)。
 
 1. **G2 剩余**：像素 golden + retained layer / 局部重绘 + 目标机 60fps。
-2. **G3 语义/编译器硬化**（与 G2 并行）：块布局透明化、语法级表达式重写、按文件增量与 `#line` 列映射、
-   ~~组件标签与组件级绑定（C4）~~ ✅ C4 已落地（2026-11-05）、`Ref` 与剩余使用点诊断收敛（C5）。
+2. **G3 语义/编译器硬化**（与 G2 并行）：块布局透明化、语法级表达式重写（Roslyn tokenizer）、按文件增量与 `#line` 列映射、
+   ~~组件标签与组件级绑定（C4）~~ ✅ C4 已落地（2026-11-05）、~~`Ref` 与剩余使用点诊断收敛（C5）~~ ✅ C5 已落地（2026-11-05）。
 3. **G4 样式/控件/虚拟化**：选择器编译、亮暗主题、基础控件集、`VirtualizingPanel`。
 4. **G5 IDE P0–P1**：TextMate grammar + LSP server（表达式投影进 Roslyn）+ VS Code/Rider 壳。

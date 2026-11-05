@@ -109,6 +109,10 @@ public static class UiCatalogFactory
 
             foreach (var assembly in CandidateAssemblies())
             {
+                // C5：来源标记——EUI019/020/021 使用点口径只对引用程序集成立（design/14 §14.5.4）；
+                // 源项目控件的声明错误归 EUI026，用点仍落 EUI002（design/14 §14.9.1 v2 口径）。
+                var fromReferencedAssembly =
+                    !SymbolEqualityComparer.Default.Equals(assembly, _compilation.Assembly);
                 foreach (var type in WalkTypes(assembly.GlobalNamespace))
                 {
                     if (IsStaticEventHost(type))
@@ -131,7 +135,7 @@ public static class UiCatalogFactory
                         continue;
                     }
 
-                    exposed.Add(Describe(type, origin.Value));
+                    exposed.Add(Describe(type, origin.Value, fromReferencedAssembly));
                 }
             }
 
@@ -264,7 +268,7 @@ public static class UiCatalogFactory
 
         // ---- 成员描述 ----
 
-        private UiElementDef Describe(INamedTypeSymbol type, UiElementOrigin origin)
+        private UiElementDef Describe(INamedTypeSymbol type, UiElementOrigin origin, bool fromReferencedAssembly)
         {
             var problems = new List<UiMetadataProblem>();
             var properties = CollectProperties(type, problems);
@@ -301,7 +305,8 @@ public static class UiCatalogFactory
                 Sorted(events),
                 Sorted(parameters),
                 Sorted(slots),
-                problems);
+                problems,
+                fromReferencedAssembly);
         }
 
         private Dictionary<string, UiPropDef> CollectProperties(INamedTypeSymbol type, List<UiMetadataProblem> problems)

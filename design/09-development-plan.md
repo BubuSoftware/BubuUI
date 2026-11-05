@@ -190,7 +190,7 @@ Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-s
 - 语法级表达式重写（Roslyn SyntaxRewriter，替代正则）。
 - 组件注册表：从 Compilation 收集元素/属性/事件/内容模型（契约、数据模型与阶段 C1–C6 见
   [14 控件与模板契约](./14-control-template-contract.md)）。
-  **进度（2026-11-03）：C1 ✅ / C2 ✅ / C3 ✅ / C4 ✅（2026-11-05）** —— `Runtime/UiAttributes.cs` 六个声明特性 + 内置控件标注、
+  **进度（2026-11-03）：C1 ✅ / C2 ✅ / C3 ✅ / C4 ✅（2026-11-05）/ C5 ✅（2026-11-05）** —— `Runtime/UiAttributes.cs` 六个声明特性 + 内置控件标注、
   `Compiler.Metadata` 目录模型与 Roslyn 符号扫描器、42 例一致性/快照测试全部落地；
   派生目录 **⊇** 手写目录（属性项 6→17，差集 12 项逐条评审见 [14 §14.12.1](./14-control-template-contract.md)）。
   **C2 切换完成**：分析器与生成器改读派生目录、手写目录删除；`InputEvents` 7 个事件迁入 `Element`
@@ -211,6 +211,12 @@ Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-s
   （new → 作用域登记 → 参数推送 U/R → 默认内容 → `Mount()` → 挂父级），委托事件/组件 `@bind`/默认内容
   全形态可用；台账 D17/D52/D54/D56 关闭，新增 D73（残余风险）；
   落地记录见 [14 §14.12.4](./14-control-template-contract.md)。
+  **C5 完成（2026-11-05）**：`Ref={field}`（EUI029）落地——语法级（非简单标识符，分析器）+
+  语义级（字段缺失/类型不符/只读/静态/const，生成器探针由 C# 诊断回答），生成形态冻结于
+  spec/02 §4.14（Build 一次赋值、不进 `Render()`）；EUI019/EUI020/EUI021 **使用点**口径落地——
+  引用程序集控件的元数据问题经 `def.Problems` 在用点暴露（消息带完整类型名），源项目控件
+  仍落 EUI002/EUI006（声明处归 EUI026）；台账新增 D74（① 使用点 ✅ / ② EUI026 声明处出口开放）；
+  落地记录见 [14 §14.12.5](./14-control-template-contract.md)。
 - 按文件增量生成；`#line` 列映射；诊断覆盖 EUI005/008/009/011/012/013/015。
 - 属性存储去装箱、失效队列分配预算、benchmark 基线。
 

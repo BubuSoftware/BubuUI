@@ -381,7 +381,7 @@ string        ::= '"' raw-char* '"'
 | `P:value={expr}` | 同 `P={expr}` | 是 | 同 | 旧语法，`EUI043` Warning | ✅ S3 → 弃用 |
 | `OnE={expr}` | Build 时 `AddHandler` | 否 | 处理器后自动 `Invalidate()` | `Action` / `Action<RoutedEventArgs>` | ✅（控件）/ C4 组件 |
 | `Key={expr}` | 每次枚举 | 身份 | Keyed 复用 | 第一个元素根；条目身份 | ✅（基础）/ S2（v4 复用） |
-| `Ref={ident}` | Build 时赋给字段 | 否 | 编译期字段赋值 | 简单标识符、字段可写 | G3 / 保留 `EUI029` |
+| `Ref={ident}` | Build 时赋给字段 | 否 | 编译期字段赋值 | 简单标识符、字段可写（生成器探针校验） | ✅ C5（非标识符/语义非法 `EUI029`） |
 | `Class`/`Style` | — | — | — | — | G4 / 保留 `EUI031` |
 
 ### 4.4 单向赋值 `P={expr}`
@@ -659,7 +659,7 @@ new cmp0
 | 写法 | 语义 | 状态 | 现在的诊断 |
 |---|---|---|---|
 | `Key={expr}` | `@foreach` 条目身份 | ✅ | `EUI010`（位置/形式/空表达式） |
-| `Ref={ident}` | 元素/组件实例赋给 code-behind 字段 | G3 | `EUI029`（保留；**当前 `EUI002`，C5，D4**） |
+| `Ref={ident}` | 元素/组件实例赋给 code-behind 字段 | ✅ C5（生成形态 spec/02 §4.14） | `EUI029`（非简单标识符=语法级；字段缺失/不可写/类型不符=生成器探针语义级） |
 | `Class="..."` | 样式类 | G4 | ✅ `EUI031`（C3，D2 关闭） |
 | `Style="..."` | 内联样式 | G4 | ✅ `EUI031`（C3，D2 关闭） |
 | `P:bind={expr}` | 旧双向绑定（≡ `@bind-P`） | ✅ → 弃用 | `EUI043` Warning（S3 起） |
@@ -755,9 +755,9 @@ new cmp0
 | `EUI016` | 标签冲突（≥2 类型） | 标签 | Error | C3 |
 | `EUI017` | 标签类型不可暴露（public 但抽象/嵌套） | 标签 | Error | C3 |
 | `EUI018` | 缺少 public 无参构造 | 标签 | Error | C3 |
-| `EUI019` | 属性不可写 / `{Name}Property` 类型不符；仅对已进入目录的属性成立 | 属性名 | Error | C3/S2 |
-| `EUI020` | 事件字段缺失或类型不是 `RoutedEvent` | 属性名 | Error | C3 |
-| `EUI021` | 内容目标缺失/类型不匹配：控件 `Text` 目标、组件 `[UiContent]` 参数类型非法、组件内容参数经 `P=` 赋值、单根内容参数接多根 | 子内容 | Error | ✅ C3（控件）/ ✅ C4（组件） |
+| `EUI019` | 属性不可写 / `{Name}Property` 类型不符——**仅触发于引用程序集控件的使用点**（元数据问题经 `def.Problems` 暴露，消息带完整类型名；design/14 §14.5.4）；源项目控件的同类问题用点落 `EUI002`，声明处归 `EUI026` | 属性名 | Error | ✅ C5（使用点） |
+| `EUI020` | 事件字段缺失或类型不是 `RoutedEvent`——使用点口径同 `EUI019`（`On{x}` ↔ `{x}Event` 字段匹配，仅引用程序集） | 属性名 | Error | ✅ C5（使用点） |
+| `EUI021` | 内容目标缺失/类型不匹配：控件 `Text` 目标、组件 `[UiContent]` 参数类型非法、组件内容参数经 `P=` 赋值、单根内容参数接多根；**引用程序集控件的破损内容目标在使用点报**（内容被降级为 None 时接管 `EUI006` 的 children 诊断，design/14 §14.5.4） | 子内容 | Error | ✅ C3（控件）/ ✅ C4（组件）/ ✅ C5（使用点） |
 | `EUI022` | 插槽未知/重复/位置非法 | 标签/属性 | Error | G4/C6 |
 | `EUI023` | 属性类型没有字面量转换器 | 属性值 | Error | ✅ C3 |
 | `EUI024` | 事件处理器签名不匹配（可静态判定时） | 属性值 | Error | C5（Roslyn 层；C3 未动） |
@@ -765,7 +765,7 @@ new cmp0
 | `EUI026` | 控件/组件元数据声明非法（源项目） | 声明处 | Error/Warning | C3 |
 | `EUI027` | 组件必填参数缺失 | 标签 | Error | ✅ C4 |
 | `EUI028` | 组件参数/委托声明非法：非 public / 无 setter / `init` / C# `required` / 非法泛型实参 / 委托含 `ref`/`out`/`in` | 声明处/属性名 | Error | ✅ C4 |
-| `EUI029` | `Ref` 目标非法 | 属性值 | Error | C5/G3 |
+| `EUI029` | `Ref` 目标非法：非简单标识符（分析器，语法级）/ 字段缺失、只读、静态、类型不符（生成器探针，语义级；引用 C# 诊断） | 属性值 | Error | ✅ C5 |
 | `EUI030` | 泛型标签暂不支持 | 标签 | Error | C6/G4 |
 | `EUI031` | 语法已保留、尚未实现（`Class`/`Style`/`<Slot>`/`<ContentSlot>`/附加属性） | 标签/属性 | Error | ✅ C3（`<Slot>`/`<ContentSlot>` 仅当目录无同名真实控件时拦截） |
 | `EUI032` | **停用**：原"非 Signal 组件参数"，后继 EUI044 亦停用 | — | — | — |
@@ -949,7 +949,7 @@ public partial class TodoList : Component
 | `P:value={expr}` | 旧单向（弃用） |
 | `OnE={expr}` | 控件事件（build-once，自动失效） |
 | `Key={expr}` | `@foreach` 条目身份 |
-| `Ref={ident}` | 元素/组件引用（G3） |
+| `Ref={ident}` | 元素/组件引用（✅ C5） |
 | `Class` / `Style` | 样式（G4） |
 
 ### B.2 内容模型
