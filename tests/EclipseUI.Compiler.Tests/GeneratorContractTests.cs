@@ -71,6 +71,14 @@ public class GeneratorContractTests
         return result.GeneratedSources.Single().SourceText.ToString();
     }
 
+    /// <summary>
+    /// G3 列映射后 #line 携带源 span：旧语法别名与规范语法的 value span 起点本就不同，
+    /// 因此「生成文本相同」的等价口径改为剥离 #line 指令后比较（spec/02 §4.12.3 规则 8 之后）。
+    /// </summary>
+    private static string WithoutLineDirectives(string code) =>
+        string.Join("\n", code.Replace("\r\n", "\n").Split('\n')
+            .Where(line => !line.StartsWith("#line", StringComparison.Ordinal)));
+
     [Fact]
     public void Generation_IsDeterministic_WithStableHint()
     {
@@ -106,8 +114,8 @@ public class GeneratorContractTests
         Assert.Contains("protected override void Render()", code);
         Assert.Contains("private void U0()", code);
         Assert.Contains("private void U1()", code);
-        Assert.Contains("#line 1 \"C:\\templates\\Probe.ui\"", code);
-        Assert.Contains("#line 2 \"C:\\templates\\Probe.ui\"", code);
+        Assert.Matches(@"#line \(1, \d+\) - \(\d+, \d+\) ""C:\\templates\\Probe\.ui""", code);
+        Assert.Matches(@"#line \(2, \d+\) - \(\d+, \d+\) ""C:\\templates\\Probe\.ui""", code);
         Assert.Contains("__el0.Gap = gap;", code);
         Assert.Contains("__run2.Text = $\"{(message)}\";", code);
     }
@@ -532,7 +540,8 @@ public class GeneratorContractTests
         var modern = RunWithReferences("C:\\templates\\Probe.ui",
             "<StackPanel><CheckBox @bind-Checked={flag}>x</CheckBox></StackPanel>", BindFixtures);
 
-        Assert.Equal(Generated(legacy), Generated(modern));
+        Assert.Equal(WithoutLineDirectives(Generated(legacy)), WithoutLineDirectives(Generated(modern)));
+        Assert.Matches(@"#line \(\d+, \d+\) - \(\d+, \d+\)", Generated(modern));
         Assert.Empty(modern.Diagnostics);
     }
 
@@ -560,7 +569,8 @@ public class GeneratorContractTests
 
         var plain = RunWithReferences("C:\\templates\\Probe.ui", "<StackPanel Gap=\"8\" />", BindFixtures);
         Assert.Empty(plain.Diagnostics);
-        Assert.Equal(Generated(result), Generated(plain)); // 旧别名与新形态生成文本相同
+        // 旧别名与新形态生成文本相同（#line 携带源 span，别名更短故指令不同，剥离后比对）。
+        Assert.Equal(WithoutLineDirectives(Generated(result)), WithoutLineDirectives(Generated(plain)));
     }
 
     [Fact]
@@ -693,10 +703,9 @@ public class GeneratorContractTests
     /// <summary>
     /// §14.10.3 的增量结构实测：管道根把编译与附加文本分成两步，目录只挂在 Compilation 之后，
     /// 所以只改 .ui 时扫描输入不变、代码仍随模板更新。
-    /// 偏差（台账）：Roslyn 4.9.2 公开的 <c>IncrementalGeneratorRunStep</c> 只有
-    /// Name/Inputs/Outputs/ElapsedTime，跟踪结果里没有 step reason，
-    /// 因此 <c>IncrementalStepRunReason.Cached/Unchanged</c> 的直接断言在公开 API 下写不出来；
-    /// 这里的替代证据是「管道分步 + 目录按值相等 + 每轮扫描耗时」。
+    /// G3 更正：Roslyn 4.9.2 的 <c>TrackedSteps[].Outputs</c> 元素是
+    /// <c>(object Value, IncrementalStepRunReason Reason)</c> 二元组——reason 公开可断言；
+    /// 旧注释「公开 API 没有 step reason」系误读（只看了 step 的属性表，没看 Outputs 元素类型）。
     /// </summary>
     [Fact]
     public void Incremental_TemplateOnlyChange_KeepsCatalogInput_AndUpdatesSource()
@@ -722,6 +731,73 @@ public class GeneratorContractTests
         Assert.Contains("Compilation", second.TrackedSteps.Keys);
         Assert.Contains("AdditionalTexts", second.TrackedSteps.Keys);
         Assert.Contains("SourceOutput", second.TrackedSteps.Keys);
+        var reason = second.TrackedSteps["SourceOutput"].SelectMany(step => step.Outputs).Select(o => o.Reason).Single();
+        Assert.True(reason is IncrementalStepRunReason.Modified or IncrementalStepRunReason.New, $"reason={reason}");
+    }
+
+    /// <summary>
+    /// design/14 §14.10.3/§14.11.2 验收：无关源码改动后目录重建，但每个生成文件的
+    /// SourceOutput step reason 为 Cached/Unchanged（逐文件管道，G3 落地）。
+    /// </summary>
+    [Fact]
+    public void Incremental_UnrelatedSourceChange_KeepsPerFileOutputsCached()
+    {
+        var uiA = new UiAdditionalText(Path.Combine(AppContext.BaseDirectory, "A.ui"), "<StackPanel Gap=\"4\" />");
+        var uiB = new UiAdditionalText(Path.Combine(AppContext.BaseDirectory, "B.ui"), "<StackPanel Gap=\"7\" />");
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(
+            new[] { new TemplateGenerator().AsSourceGenerator() },
+            new AdditionalText[] { uiA, uiB },
+            driverOptions: new GeneratorDriverOptions(default, trackIncrementalGeneratorSteps: true));
+        var compilation = CreateCompilation(
+            "public partial class A { public int a = 1; } public partial class B { public int b = 2; }");
+
+        driver = driver.RunGenerators(compilation);
+        var first = driver.GetRunResult().Results.Single();
+        var unrelated = compilation.AddSyntaxTrees(
+            CSharpSyntaxTree.ParseText("public static class Unrelated { public int X => 42; }"));
+        var second = driver.RunGenerators(unrelated).GetRunResult().Results.Single();
+
+        Assert.Empty(first.Diagnostics);
+        Assert.Empty(second.Diagnostics);
+        Assert.Equal(2, second.GeneratedSources.Length);
+        Assert.Equal(
+            first.GeneratedSources.OrderBy(s => s.HintName).Select(s => s.SourceText.ToString()),
+            second.GeneratedSources.OrderBy(s => s.HintName).Select(s => s.SourceText.ToString()));
+        var reasons = second.TrackedSteps["SourceOutput"].SelectMany(step => step.Outputs).Select(o => o.Reason).ToList();
+        Assert.Equal(2, reasons.Count);
+        Assert.All(reasons, r => Assert.True(
+            r is IncrementalStepRunReason.Cached or IncrementalStepRunReason.Unchanged, $"reason={r}"));
+    }
+
+    /// <summary>逐文件增量：只改一个 .ui 时，另一个文件的 SourceOutput 仍 Cached/Unchanged。</summary>
+    [Fact]
+    public void Incremental_SingleUiChange_RerunsOnlyThatFile()
+    {
+        var pathA = Path.Combine(AppContext.BaseDirectory, "A.ui");
+        var pathB = Path.Combine(AppContext.BaseDirectory, "B.ui");
+        var uiA = new UiAdditionalText(pathA, "<StackPanel Gap=\"4\" />");
+        var uiB = new UiAdditionalText(pathB, "<StackPanel Gap=\"7\" />");
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(
+            new[] { new TemplateGenerator().AsSourceGenerator() },
+            new AdditionalText[] { uiA, uiB },
+            driverOptions: new GeneratorDriverOptions(default, trackIncrementalGeneratorSteps: true));
+        var compilation = CreateCompilation(
+            "public partial class A { public int a = 1; } public partial class B { public int b = 2; }");
+
+        driver = driver.RunGenerators(compilation);
+        var first = driver.GetRunResult().Results.Single();
+        driver = driver.ReplaceAdditionalText(uiA, new UiAdditionalText(pathA, "<StackPanel Gap=\"9\" />"));
+        var second = driver.RunGenerators(compilation).GetRunResult().Results.Single();
+
+        Assert.Empty(second.Diagnostics);
+        var reasons = second.TrackedSteps["SourceOutput"].SelectMany(step => step.Outputs).Select(o => o.Reason).ToList();
+        Assert.Equal(2, reasons.Count);
+        Assert.Single(reasons, r => r is IncrementalStepRunReason.Cached or IncrementalStepRunReason.Unchanged);
+        Assert.Single(reasons, r => r is IncrementalStepRunReason.Modified or IncrementalStepRunReason.New);
+        Assert.Equal(
+            first.GeneratedSources.Single(s => s.HintName.StartsWith("B.", StringComparison.Ordinal)).SourceText.ToString(),
+            second.GeneratedSources.Single(s => s.HintName.StartsWith("B.", StringComparison.Ordinal)).SourceText.ToString());
+        Assert.Contains(".Gap = 9d;", second.GeneratedSources.Single(s => s.HintName.StartsWith("A.", StringComparison.Ordinal)).SourceText.ToString());
     }
 
     /// <summary>

@@ -28,7 +28,7 @@
   `<Slot>` + `<ContentSlot>`（见 [14 §14.12](./14-control-template-contract.md)）。
 - 反应式 S1–S3 ✅：`Invalidate`/`Render`/`U{N}`/`R{N}`、块 `Refresh` 与 Key 复用、`UiBinding` 双向
   （控件侧与组件侧），旧语法 `:bind`/`:value` 报 EUI043 Warning。
-- 测试：409 个测试全绿（190 无头 + 158 编译器 + 61 渲染）；编译器测试用快照钉住 C2 变宽后的
+- 测试：433 个测试全绿（207 无头 + 165 编译器 + 61 渲染）；编译器测试用快照钉住 C2 变宽后的
   模板表面（17 属性项 / 9 个事件名），样例 `.ui` 已用 `@bind-P` 新语法。
 
 **尚不具备**
@@ -50,7 +50,7 @@
 
 | 视角 | 完成度 | 说明 |
 |---|---:|---|
-| 托管核心（编译器前端 + 生成器 + 运行时 + 无头测试） | **80–85%** | 主链路与组件契约已通（S1–S3、C1–C6，409 例全绿）；剩 S4/S5、块布局透明化、按文件增量、诊断出口（D74 ②）、`#line` 列映射、属性存储去装箱、性能基准。 |
+| 托管核心（编译器前端 + 生成器 + 运行时 + 无头测试） | **80–85%** | 主链路与组件契约已通（S1–S3、C1–C6、块布局透明、按文件增量、`#line` 列映射，433 例全绿）；剩 S4/S5、诊断出口（D57/D74 ②）、属性存储去装箱、性能基准。 |
 | 0.1 alpha（可交付的 2D 桌面框架） | **55–60%** | 渲染与 Win32 宿主已打通到窗口像素，元素树→display list→上屏、输入路由与 damage v0 可用（G1 门「有条件 Go」，GPU 200 元素 @1280×800 实测 6.36 ms/帧）；仍缺样式/主题、TextBox/ListBox/Grid/ScrollViewer 控件集、layer/合成器。 |
 | 完整设计愿景（含 IDE、3D、多平台、DevTools、1.0 硬化） | **12–17%** | IDE、3D、平台扩展、无障碍与稳定性尚未开始；编译器线的完成度是本次上调的唯一来源。 |
 
@@ -59,9 +59,9 @@
 | 领域 | 状态 | 到 0.1 还差什么 |
 |---|---|---|
 | 模板前端 | 🟢 可用 MVP | `@switch`、附加属性、泛型标签、trivia/pretty-printer、表达式全量 Roslyn 语义分析 |
-| 源生成器 | 🟢 可用 MVP | 按文件增量、`#line` 列映射、组件作者面样例 |
+| 源生成器 | 🟢 可用 MVP | 诊断出口、组件作者面样例（按文件增量 ✅ 2026-11-08、`#line` 列映射 ✅ 2026-11-08/D79） |
 | 运行时/属性 | 🟢 可用基础 | 属性存储去装箱、生命周期 Unmount、样式优先级、性能基准 |
-| 布局 | 🟡 部分 | Grid/Wrap/Scroll、块布局透明化（`ConditionalBlock`/`ForEachBlock` 仍是 `StackPanelBase`）、约束与裁剪、虚拟化 |
+| 布局 | 🟡 部分 | Grid/Wrap/Scroll、约束与裁剪、虚拟化（块布局透明化 ✅ 2026-11-05，D77） |
 | 文本 | 🟡 单行 shaping 已接入 | 断行、bidi、fallback、emoji、glyph 缓存、display list 集成 |
 | 输入/焦点 | 🟡 元素路由已通 | 字符输入/IME、滚轮/触摸、Shift+Tab、无障碍 |
 | 渲染/合成器 | 🟡 scene graph + 上屏 + damage v0 | retained layer/合成器、局部重绘、帧预算 |
@@ -189,6 +189,27 @@ Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-s
 **范围**
 
 - 控制流块布局透明化（`@if`/`@foreach` 不再作为 StackPanel 参与布局）。
+  —— ✅ **块布局透明切片（2026-11-05，G3 小片）**：新增 `Element.IsLayoutTransparent`（块协调器覆盖为 true），
+  `StackPanelBase` 对透明节点取零内边距 + **最近非透明布局祖先**的 `Gap`，零尺寸透明块退出父容器的间距计数
+  但仍 arrange 到零矩形（避免 `FinalRect` 过期被命中/脏区读到）。实现保留块为被父容器定位的节点，
+  不把条目摊平进父容器子序列——摊平会让块 `FinalRect` 与子元素坐标系脱钩，绘制偏移/`PointFromRoot`/命中/脏区
+  四条路径都要改；保留节点则一行不动且排布等价（口径与理由登记 **D77**，规范正本 spec/01 §4.10/§4.11）。
+  实测：条目间距 19.6 → 27.6（根 `Gap=8`，原先块内 `Gap=0` 把间距吃掉），空块两侧 35.6 → 27.6（原先双份 Gap）。
+  测试：`BlockLayoutTests` 10 例（含嵌套块、空块、块自身 `Gap`/`Padding` 惰性、`ListBoxItem` 祖先胜出、
+  命中测试穿块坐标链、条件翻转重算）+ `TaskListEndToEndTests` 2 例（真实样例 `Gap="4"`）；
+  **421 例全绿（158/202/61）**，golden 模板表面不变（新属性无 `{Name}Property` 字段，不进目录）。
+  D16 关闭。G4 的 Grid/WrapPanel 需各自的透明排布口径，届时另记。
+  样例目视验收：GalleryApp `--cpu` 与窗口 `--selfcheck` 双路径均见 TaskList 条目按根 `Gap="4"` 落位
+  （条目顶 y≈351/416/481/546，pitch 65 = 条目高 61 + 4），窗口自检 PASS（`tasks=4`）。
+  顺带修样例排序缺陷：`BuildGallery` 原先 Mount 后才填 `tasks` 并 `Invalidate()`，该失效入队到 taskList
+  自己的根队列、被 `GalleryRoot` 接管后永远排不到（HEAD 基线截图同样是空 Tasks 卡，**非本切片回归**）；
+  改为 Mount 前填数据（spec/03 §2.3「首次 `Build()` 会读取当前状态」），初始即渲染 3 条目。
+  接管时已入队失效的迁移口径原为 spec/03 §2.7 空白，随下方 D78 切片补写并收敛。
+- 所有权接管的失效迁移。
+  —— ✅ **D78 切片（2026-11-07，G3 小片）**：`Adopt` 按入队顺序 drain 子组件原根队列并重入新根
+  （按待渲染标记合并），接管前的 `Invalidate()` 不再静默丢弃；`Depth` 改所有权链实时计算——接管改变链长后
+  不残留旧深度，否则 §2.4「同深度按入队顺序」可能把孙排在父前。契约补写 spec/03 §2.4/§2.7；
+  `ComponentOwnershipTests` 5 例（接管前失效、孙随子迁移、父先于子、幂等不重复、与新根失效合并）。
 - 状态与反应式 S1–S3（[spec/03](../spec/03-reactivity-and-binding.md)）：`Component.Invalidate`/`ProcessInvalidations`/`Render`、
   `U{N}`/`R{N}` 生成、根级 `P={expr}`/文本重算、块 v4（`BlockScope.RenderActions` 与显式 `Refresh`）、
   `@bind-P` 双向与 `UiBinding`（控件侧 ✅ S3、组件侧 ✅ 随 C4）、item 身份重建与 `ForEachBlock.Dispose` 泄漏修复；
@@ -240,14 +261,37 @@ Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-s
   GeneratorContract C6 13 + CatalogScanner C6 15），**409 例全绿（158/190/61）**；
   台账新增 D75（解析两级口径）/D76（基链同名成员胜出规则）；
   落地记录见 [14 §14.12.6](./14-control-template-contract.md)。附加属性与泛型标签实拆留 G4。
-- 按文件增量生成；`#line` 列映射；诊断出口补全 EUI016/017/018/024/026/028/030（D74 ②、D57）。
+- 按文件增量生成（✅ 2026-11-08）；`#line` 列映射（✅ 2026-11-08，D79）；诊断出口补全
+  EUI016/017/018/024/026/028/030（D74 ②、D57，仍开放）。
+  —— ✅ **按文件增量切片（2026-11-08，G3 小片）**：管道根拆为 `AdditionalTexts → UiFileInput` 与
+  `Compilation → UiCatalog` 两条，逐文件 `Combine` + `Select` 出值相等 `UiFileFacts`（code-behind 表面 + 探针事实）
+  后逐文件 `RegisterSourceOutput`；目录/facts 每轮重建但下游按值命中缓存，单个 `.ui` 变化只重跑该文件。
+  验收直接断言 `IncrementalStepRunReason`（更正旧注释「公开 API 没有 step reason」的误读：
+  `TrackedSteps[...].Outputs` 是 `(object Value, IncrementalStepRunReason Reason)` 元组）：
+  无关源码改动两文件均 `Cached`/`Unchanged`、单改 A.ui 则 A `Modified` B 缓存。
+  口径与落地记录见 [14 §14.10.3](./14-control-template-contract.md)。
+  —— ✅ **`#line` 列映射切片（2026-11-08，G3 小片，D79）**：`Emitter.Mapped` 由行型
+  `#line N "path"` 换成增强型 span 指令 `#line (sl, sc) - (el, ec) "path"`，35 个调用点
+  由行号改传 `TextSpan`；`MappedToken` 从生成文本自动定位用户表达式的列偏移，`sc` 按
+  「生成缩进 + token 偏移」左移并钳制 ≥ 1（生成前缀长于源列时列退化为生成列、行号仍精确）。
+  实测 Roslyn 4.9.2：列平移只作用于紧接的一行、end 元组不参与单行诊断换算、start 必须
+  严格早于 end（否则 `CS8939` 让整段映射失效、错误落回 `.g.cs`）——发射器对空 span/钳制后
+  补 1 列宽度。`LineSpanMappingTests` 5 例固化这三条语义，并守住生成代码零 CS8939、
+  靠右表达式的列精确；`GeneratorContractTests` 3 处断言同步。
+  契约补写 spec/02 §2.4 规则 9/10；`#line` 携带源 span 后，旧/新语法别名的生成文本等价
+  口径改为「剥离 `#line` 后比对」（spec/02 §11）。**433 例全绿（207/165/61）**。
+  顺带修掉一处既有 flaky：`TextMeasurer.Current` 是进程级全局，`ShapingTests` 临时替换成
+  HarfBuzz 测量器时与布局测试类并行会污染 naive 高度断言，改为程序集级禁用测试并行。
   —— EUI005/008/009/011/012/013/015 **已实现**（`TemplateGenerator` 的 code-behind 发现与 `Parser` 的指令判定），
   本项原文把它们列为待办是 stale，2026-11-05 按代码核对后更正。
 - 属性存储去装箱、失效队列分配预算、benchmark 基线。
 
 **出口标准**
 
-- 列表间距/条件布局有回归测试。
+- 列表间距/条件布局有回归测试。—— ✅ 2026-11-05：`BlockLayoutTests`（10 例）+
+  `TaskListEndToEndTests.ItemSpacing_EqualsRootGap`/`EmptyList_ConsumesNoGapSlot`（真实样例，根 `Gap="4"`）。
+- `#line` 能把 C# 类型错误落回 `.ui` 的行与列，且不产生非法 span 指令。—— ✅ 2026-11-08（D79）：
+  `LineSpanMappingTests` 5 例（Roslyn 语义 3 例 + 生成指令合法性/零 CS8939 + 靠右表达式列精确）。
 - 组件注册表能发现样例项目与一个测试用第三方程序集。—— ✅ C1/C2：扫描器能发现**合成**第三方程序集
   （`SameTagInTwoReferencedAssemblies_IsAmbiguousWithCandidates` 真的 `Emit` 两个程序集再同时引用）；
   C2 起生成器目录即派生目录，样例组件（Counter/Prefs/TaskList 经 `.ui`）与第三方程序集同链路覆盖。
@@ -548,14 +592,16 @@ public interface IRenderBackend : IDisposable
 
 ## 9.8 并行修复清单（G1–G3 期间）
 
-| 任务 | 工期 | 验收 |
-|---|---:|---|
-| 控制流块布局透明化 | 2–3d | `TaskList` item 间距 = 根 `Gap`；`@if` 多根元素按父容器布局 |
-| `ForEachBlock.Dispose` 释放 item 作用域 | 0.5d | 组件 Dispose 后条目作用域资源全部释放（无泄漏） |
-| S1–S2 失效重算：`Invalidate`/`Render`/`U{N}` + 块 v4 | 2–3d | 失效后属性/文本重算；块 `Refresh()` 正确重建；`@bind-P`（S3）行为不变 |
-| 语法级表达式重写 | 3–5d | 字符串字面量/同名局部变量不被误改；回归测试 |
-| 组件注册表（Roslyn 符号收集） | 1–2w | 样例项目 + 测试第三方程序集可被发现 |
-| CI + LICENSE + 打包骨架 | 1–2d | Windows/Linux 矩阵跑 `dotnet test`；NuGet 可本地打包 |
+| 任务 | 工期 | 验收 | 状态 |
+|---|---:|---|---|
+| 控制流块布局透明化 | 2–3d | `TaskList` item 间距 = 根 `Gap`；`@if` 多根元素按父容器布局 | ✅ 2026-11-05（D16 关闭/D77，`BlockLayoutTests` 10 例 + `TaskListEndToEndTests` 2 例 + GalleryApp 双路径目视） |
+| `Adopt` 迁移已入队失效（spec/03 §2.7 未定义） | 0.5d | 接管前 `Invalidate()` 的组件在新根队列中仍被渲染；回归测试 | ✅ 2026-11-07（D78，`ComponentOwnershipTests` 5 例；spec/03 §2.4/§2.7 契约补写） |
+| `#line` 列映射（G3） | 0.5d | span 型指令合法（无 CS8939）；类型错误落回 `.ui` 行/列；旧/新语法等价口径同步 | ✅ 2026-11-08（D79，`LineSpanMappingTests` 5 例；spec/02 §2.4/§11 契约补写） |
+| `ForEachBlock.Dispose` 释放 item 作用域 | 0.5d | 组件 Dispose 后条目作用域资源全部释放（无泄漏） | ✅ S2（D51） |
+| S1–S2 失效重算：`Invalidate`/`Render`/`U{N}` + 块 v4 | 2–3d | 失效后属性/文本重算；块 `Refresh()` 正确重建；`@bind-P`（S3）行为不变 | ✅ S1/S2（2026-10-30） |
+| 语法级表达式重写 | 3–5d | 字符串字面量/同名局部变量不被误改；回归测试 | ✅ 收敛为 tokenizer 切片（2026-11-05，v4 无重写需求，D20） |
+| 组件注册表（Roslyn 符号收集） | 1–2w | 样例项目 + 测试第三方程序集可被发现 | ✅ C1–C6（2026-11-05） |
+| CI + LICENSE + 打包骨架 | 1–2d | Windows/Linux 矩阵跑 `dotnet test`；NuGet 可本地打包 | 🔴 未开始 |
 
 ## 9.9 资源与节奏
 

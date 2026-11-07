@@ -6,3 +6,4 @@ Generated/
 *.suo
 TestResults/
 out/
+.workbuddy/

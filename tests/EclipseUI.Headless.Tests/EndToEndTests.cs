@@ -180,6 +180,49 @@ public class TaskListEndToEndTests
         Assert.Equal("Tasks", root.Content.Descendants<TextBlock>().First().FullText());
     }
 
+    /// <summary>design/09 G3 出口标准：TaskList 条目间距 = 根 Gap（TaskList.ui 的 Gap="4"）。</summary>
+    [Fact]
+    public void ItemSpacing_EqualsRootGap()
+    {
+        var component = new TaskList();
+        var root = new HeadlessRoot(component);
+        component.tasks = new List<TaskItem>
+        {
+            new TaskItem { Id = 1, Name = "alpha" },
+            new TaskItem { Id = 2, Name = "beta" },
+            new TaskItem { Id = 3, Name = "gamma" },
+        };
+        component.Invalidate();
+        root.UpdateLayout();
+
+        var panel = Assert.IsType<StackPanel>(root.Content);
+        Assert.Equal(4, panel.Gap, 5);
+        var items = root.Content.Descendants<ListBoxItem>().ToList();
+        Assert.Equal(3, items.Count);
+        Assert.Equal(items[0].DesiredSize.Height + 4, items[1].FinalRect.Y - items[0].FinalRect.Y, 5);
+        Assert.Equal(items[1].DesiredSize.Height + 4, items[2].FinalRect.Y - items[1].FinalRect.Y, 5);
+
+        // 整根高等于把条目摊进父容器的结果：标题 + 三条目 + 3 个 Gap。
+        var header = panel.Children.OfType<TextBlock>().Single();
+        Assert.Equal(header.DesiredSize.Height + items.Sum(i => i.DesiredSize.Height) + 3 * 4,
+            panel.DesiredSize.Height, 5);
+    }
+
+    /// <summary>空列表的 @foreach 块不占间距槽：根高只剩标题。</summary>
+    [Fact]
+    public void EmptyList_ConsumesNoGapSlot()
+    {
+        var component = new TaskList();
+        var root = new HeadlessRoot(component);
+        component.tasks = new List<TaskItem>();
+        component.Invalidate();
+        root.UpdateLayout();
+
+        var panel = Assert.IsType<StackPanel>(root.Content);
+        var header = panel.Children.OfType<TextBlock>().Single();
+        Assert.Equal(header.DesiredSize.Height, panel.DesiredSize.Height, 5);
+    }
+
     [Fact]
     public void ItemBinding_WritesBackToItem_RebuildsFromItem_AndIsReleasedWithTheEntry()
     {

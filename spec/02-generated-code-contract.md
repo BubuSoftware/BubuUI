@@ -197,14 +197,14 @@ namespace {Namespace};
 每个**包含用户表达式或字面量**的生成语句必须映射回 `.ui` 源位置：
 
 ```csharp
-#line 12 "C:\Workspace\EclipseUI\samples\TodoList.ui"
+#line (12, 9) - (12, 24) "C:\Workspace\EclipseUI\samples\TodoList.ui"
         el0.Label = $"共 {(Tasks.Count)} 项";
 #line hidden
 ```
 
 规则：
 
-1. `#line` 行号是 `.ui` 的 1 基行号；文件名是 Roslyn `AdditionalText.Path` 原样写入——
+1. `#line` 的行/列都是 `.ui` 的 1 基坐标；文件名是 Roslyn `AdditionalText.Path` 原样写入——
    `#line` 的文件名不按 C# 字符串字面量处理转义，反斜杠保持单个，写成 `\\` 会让映射路径变成双反斜杠；
    不规范化、不转相对路径。
 2. `#line` 与 `#line hidden` 都从第 0 列开始，不跟随当前缩进。
@@ -225,7 +225,23 @@ namespace {Namespace};
 6. `SetContent`/`SetTemplate` 的调用行不映射（lambda 是生成脚手架）；lambda 体内的用户语句按规则 3/4 映射。
 7. 每个映射语句后**必须**紧跟 `#line hidden`；不允许连续多个映射语句共用一个 `#line`。
 8. 生成器不得重复报告 C# 类型错误；类型错误由 C# 编译器经 `#line` 落到 `.ui`。
-9. 列映射/精确 span 映射排 G3；v1 只保证行号。
+9. **列映射（G3 已收敛，2026-11-08，台账 D79）**：指令统一用增强型 span 形态
+   `#line (sl, sc) - (el, ec) "path"`，不再发射 `#line N "path"`：
+   - `(sl, sc)` 由用户表达式/字面量在 `.ui` 里的 span 起点换算（跳过前导空白），
+     `(el, ec)` 取该 span 的终点；不含 `{…}` / 引号定界符（`Lexer.InnerSpan` 口径）。
+   - `sc` 按生成行前缀左移：`sc = max(1, 源列 − (生成缩进列数 + 用户 token 在生成行内的偏移))`，
+     让表达式首字符尽量落回 `.ui` 的起始列。生成前缀长于源列时钳制为 1，此时列退化为生成列、
+     **行号仍精确**（与 v1 行为一致）；表达式靠右时列精确（契约测试
+     `TypeError_MapsBackToExactColumn_WhenExpressionStartsFarRight`）。
+   - 列平移只作用于 `#line` 之后紧接的一行；多行映射语句的后续行行号递增、列按生成列。
+   - `end` 元组不参与单行诊断位置换算，但必须**严格晚于 start**（`el > sl`，或
+     `el == sl && ec > sc`）；否则 Roslyn 报 `CS8939` 并让整段映射失效，错误落回 `.g.cs`。
+     空 span 或列钳制后由发射器补 1 列宽度（`Emitter.Mapped`）。
+   - `#line` 现携带源 span，因此旧语法别名（`:bind` / `:value`）与规范语法的 `#line` 指令
+     不再字节相同；「生成文本相同」的等价口径改为**剥离 `#line` 行后**比较（§4.12.3 规则 8 之后）。
+10. 规则 9 的语义按 Roslyn 4.9.2 实测固化在 `LineSpanMappingTests`；Roslyn 升级时该测试先行。
+    本章后续「生成文本」示例沿用 `#line N "path"` 简写（只用于说明 C# 语句结构），
+    实际发射一律按规则 9 的 span 形态，示例中的行号不表示真实 span 坐标。
 
 ### 2.5 生成文本禁止项
 
@@ -1314,7 +1330,7 @@ public interface ITextContentHost
 | T11 | 事件 | `h{N}` 初始化 + 包装 `Invalidate`；无订阅/`Track` |
 | T12 | 组件内容 | `List<Element>`/`content[0]`；`TrackContent`；`@bind` → `EUI040`；无 `U` |
 | T13 | 确定性 | 同一输入两次生成字节相同；hint 稳定；编号不漂移 |
-| T14 | `#line` | 每个用户语句有 `#line`/`#line hidden`；行号正确；不映射脚手架 |
+| T14 | `#line` | 每个用户语句有 span 型 `#line`/`#line hidden`；行号正确、start 严格早于 end（零 CS8939）、靠右表达式列精确；不映射脚手架 |
 | T15 | 禁止项 | 生成文本不含 §2.5 的禁止 token（`SetValue`/`GetValue`/`using`/`static`/`try`/...） |
 | T16 | 失败回退 | 非法输入不抛异常；输出最小 `Build`；诊断由分析器给出 |
 | T17 | 可空/编译 | `Nullable=enable` 下无新增警告；`warnings-as-errors` 项目可编译 |
@@ -1351,12 +1367,15 @@ public interface ITextContentHost
 - v1 的 `SetContent(Func<List<IDisposable>, Element[]>)` 被
   `SetContent(Action<BlockScope>)` 取代；`SetTemplate(Func<T, BlockScope>)` 被
   `SetTemplate(Action<T, BlockScope>)` 取代。
-- 旧语法的生成文本与新语法相同，差异只在分析器 `EUI043`。
+- 旧语法的生成文本与新语法相同，差异只在分析器 `EUI043`；G3 列映射（§2.4 规则 9）后
+  该等价口径改为「剥离 `#line` 指令后字节相同」，因为指令携带各自源 span。
 
-## 12. 实现偏差台账 D42–D76
+## 12. 实现偏差台账 D42–D79
 
-**S1 已收敛（2026-10-30）、S2 已收敛（2026-10-30）、S3 已收敛（2026-11-02，控件侧）、C1 已收敛（2026-11-02，目录派生）、C3 已收敛（2026-11-03，字面量转换器/使用点诊断/保留语法）、C4 已收敛（2026-11-05，组件标签）、C5 已收敛（2026-11-05，Ref/使用点诊断）、C6 已收敛（2026-11-05，具名插槽 §4.12.5）**，
-下表中标 ✅ S1/✅ S2/✅ S3/✅ C1/✅ C4/✅ C5/✅ C6 的条目已关闭；其余偏差按 S4/C3 余项/G 阶段收敛。台账之外的差异视为实现缺陷。
+**S1 已收敛（2026-10-30）、S2 已收敛（2026-10-30）、S3 已收敛（控件侧 2026-11-02、组件侧随 C4 2026-11-05）、C1 已收敛（2026-11-02，目录派生）、C3 已收敛（2026-11-03，字面量转换器/使用点诊断/保留语法）、C4 已收敛（2026-11-05，组件标签）、C5 已收敛（2026-11-05，Ref/使用点诊断）、C6 已收敛（2026-11-05，具名插槽 §4.12.5）、G3 块布局透明已收敛（2026-11-05，D77）、G3 失效迁移已收敛（2026-11-07，D78）、G3 按文件增量已收敛（2026-11-08）、G3 `#line` 列映射已收敛（2026-11-08，D79）**，
+下表中标 ✅ S1/✅ S2/✅ S3/✅ C1/✅ C4/✅ C5/✅ C6/✅ G3 的条目已关闭；其余偏差按 S4/G3 余项（诊断出口 D57/D74 ②）/G4 收敛。台账之外的差异视为实现缺陷。
+D77 是运行时排布口径，**不改本文的生成形态**（块仍按 §4.9–§4.10 生成），规范条文在 spec/01 §4.10/§4.11。
+D79 改的是 `#line` 指令形态（§2.4），不改 C# 语句本身的生成规则。
 **C1/C2 改元数据来源，不改本文的生成形态**：生成器已改读派生目录（C2，2026-11-02），
 生成代码形态与本文规则一致；以下台账条目随之关闭——D62/D65/D69/D72 ✅ C2、
 D64/D68 ✅ C1。
@@ -1398,9 +1417,12 @@ D64/D68 ✅ C1。
 | D74 | ✅ C5（部分收敛 + 残余登记）：① 使用点 EUI019/EUI020/EUI021 落地——`UiElementDef.IsFromReferencedAssembly`（新记录字段，进值相等/哈希）区分来源，只有引用程序集控件的 `def.Problems` 在用点暴露，源项目控件仍落 EUI002（design/14 §14.9.1 v2 口径）；② **EUI026 声明处诊断仍无编译期出口**：扫描侧 problem 只进 `HiddenTags`/`def.Problems`/`catalog.Problems`，源项目控件的声明错误靠使用点 EUI002 兜底、引用程序集靠 D74 ① 暴露——声明处报错（属性/特性 span）需要生成器把源声明定位到语法，留后续切片 | design/14 §14.5.4/§14.9.1/§14.12.5 | ✅ C5 ① / G3 ②（原「开放」，2026-11-05 排入 G3 诊断出口补全） |
 | D75 | ✅ C6（解析口径两级）：自身插槽的解析——分析器按「目录显示名与 `.ui` 文件名短名匹配」投影自身 def（静态前端无符号信息）；生成器则用 code-behind **符号**直接沿基类链读 `[UiSlot]` 传给分析器/发射器作权威（code-behind 类在源码里不派生 `Component`——基类由生成注入，目录里不会有它的 def）。两级在正常房间结构下指向同一组插槽；目录匹配失败而符号可用时生成侧仍有效。与既有 `FindCodeBehind` 的近似-符号双口径同型 | §4.12.5 | ✅ C6 |
 | D76 | ✅ C6（契约补写）：基链同名**成员**的胜出规则原文未定。Roslyn 的 `GetAttributes()` 不把特性带进 override（与反射的 `Inherited=true` 语义不同），因此「按名字一律去重」会让 `public override Element? Header`（不写特性）把基类 `[UiSlot("Header")]`/`[UiParameter]` 静默丢掉；「不去重」又会把同一个 override 报成重复插槽（EUI028）。实现定为：**派生侧显式写了模板特性或 `[UiIgnore]` 才算覆盖**，否则基类声明继续生效；`[UiIgnore]` 在 override 上是基类同名声明的显式退出。已回写 design/14 §14.10.2（参数/插槽条目）与 spec/01 §4.15 | design/14 §14.10.2/§14.6.1 | ✅ C6 |
+| D77 | ✅ G3（契约补写 + 实现口径）：块布局透明的机制原文只写「不引入额外间距/尺寸约束」，design/09 的切片描述是「不再作为 StackPanel 参与布局」。实现选择**保留块为被父容器定位的 `StackPanelBase` 节点**，只把它的布局内边距取 0、间距取最近非透明布局祖先的 `Gap`，并让零尺寸透明块整体退出父容器的间距计数——而不是把条目摊平进父容器的子序列。理由：摊平会让块的 `FinalRect` 与子元素坐标系脱钩，`ElementPainter` 的偏移累加、`Element.PointFromRoot`/`HitTest`、`DamageTracker` 都得跟着改；保留节点则这四条路径一行不动，排布结果与摊平等价（`BlockLayoutTests` 10 例 + `TaskListEndToEndTests` 2 例钉住，含命中测试穿块回归）。同时补写三条原文未定的规则：① 块自身 `Gap`/`Padding` 属性值不参与布局；② 空块（含只含空块的嵌套块）不占间距槽；③ 空块仍 arrange 到零矩形，避免 `FinalRect` 残留上一轮位置而被命中/脏区读到。新增 `Element.IsLayoutTransparent`（无 `{Name}Property` 字段，不进模板表面，golden 快照不变）。G4 的 Grid/WrapPanel 需要各自的透明排布口径，届时另记 | spec/01 §4.10/§4.11、design/03 D16 | ✅ G3 |
+| D78 | ✅ G3（契约补写 + 实现）：`Adopt` 接管不迁移子组件原根队列里已入队的失效——所有权变更后该队列不再被排空，接管前的 `Invalidate()` 被静默丢弃（GalleryApp 空 Tasks 卡根因）；且 `Depth` 在接管时缓存，链长变化后残留旧深度，§2.4「同深度按入队顺序」可能把孙排在父前。实现：`Adopt` 按入队顺序 drain 子队列并重入新根（按待渲染标记合并）；`Depth` 改所有权链实时计算。契约补写 spec/03 §2.4/§2.7；`ComponentOwnershipTests` 5 例钉住（含接管前失效、孙随子迁移、父先于子、幂等不重复、合并） | spec/03 §2.4/§2.7 | ✅ G3 |
+| D79 | ✅ G3（契约补写 + 实现）：原文 §2.4 规则 9 只承诺行号、把列映射排到 G3。实测 Roslyn 4.9.2 增强型 `#line (sl, sc) - (el, ec)`：列平移 `sc−1` 只作用于紧接的一行，后续行行号递增、列按生成列；`end` 元组不参与单行诊断换算，但 start 必须严格早于 end，否则报 `CS8939` 且整段映射失效、错误落回 `.g.cs`。实现：`Emitter.Mapped` 统一发射 span 型指令，`sc` 按「生成缩进 + 用户 token 在生成行内的偏移」左移并钳制 ≥ 1（生成前缀长于源列时退化为行映射，行号仍精确），空 span/钳制后给 end 补 1 列宽度；`MappedToken` 从生成文本自动定位用户表达式偏移，35 个调用点全部由行号改为 `TextSpan`。同步补写 §2.4 规则 9/10 与 §11 等价口径（旧/新语法别名的生成文本改为剥离 `#line` 后比对）。`LineSpanMappingTests` 5 例（Roslyn 语义固化 3 例 + 生成指令合法且无 CS8939 + 靠右表达式列精确），`GeneratorContractTests` 3 处断言同步 | §2.4、§11 | ✅ G3 |
 
 - 每项收敛必须同时删除对应的 v3 路径；不得两套模型并存。
-- 新增偏差必须登记编号（从 D77 起）并注明目标阶段；不得只改代码不改台账。
+- 新增偏差必须登记编号（从 D80 起）并注明目标阶段；不得只改代码不改台账。
 - 台账编号与 design/03 §3.5.4 保持一致；两边冲突以本文为准并回写 design/03。
 
 ## 13. 变更规则

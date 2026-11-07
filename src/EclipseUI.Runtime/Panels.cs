@@ -52,35 +52,69 @@ public abstract class StackPanelBase : Panel
 
     protected internal override Size MeasureCore(Size available)
     {
-        var padding = Padding;
+        var padding = LayoutPadding;
+        var gap = LayoutGap;
         var inner = Math.Max(0, available.Width - padding * 2);
 
         double width = 0, height = 0;
+        int count = 0;
         foreach (var child in Children)
         {
             child.Measure(new Size(inner, double.PositiveInfinity));
+            if (IsSkipped(child)) continue;
             width = Math.Max(width, child.DesiredSize.Width);
             height += child.DesiredSize.Height;
+            count++;
         }
-        height += Math.Max(0, Children.Count - 1) * Gap;
+        height += Math.Max(0, count - 1) * gap;
         return new Size(width + padding * 2, height + padding * 2);
     }
 
     // 约定：子元素的 FinalRect 位于父元素的局部坐标系（ arrange 传局部 rect）
     protected internal override void ArrangeCore(Rect final)
     {
-        var padding = Padding;
+        var padding = LayoutPadding;
+        var gap = LayoutGap;
         var innerWidth = Math.Max(0, final.Width - padding * 2);
         double y = padding;
         bool first = true;
         foreach (var child in Children)
         {
-            if (!first) y += Gap;
+            if (IsSkipped(child))
+            {
+                // 不占间距槽，但仍要 arrange：否则 FinalRect 残留上一轮有内容时的位置，
+                // 命中测试与脏区会读到过期矩形。
+                child.Arrange(new Rect(padding, y, 0, 0));
+                continue;
+            }
+            if (!first) y += gap;
             first = false;
             child.Arrange(new Rect(padding, y, innerWidth, child.DesiredSize.Height));
             y += child.DesiredSize.Height;
         }
     }
+
+    // 布局透明节点（块协调器）不引入自己的内边距/间距：条目按最近布局祖先的 Gap 排布，
+    // 等价于把条目摊进父容器（spec/01 §4.10/§4.11，D77）。
+    private double LayoutPadding => IsLayoutTransparent ? 0 : Padding;
+
+    private double LayoutGap
+    {
+        get
+        {
+            if (!IsLayoutTransparent) return Gap;
+            for (var node = Parent; node is not null; node = node.Parent)
+            {
+                if (node.IsLayoutTransparent) continue;
+                return node is StackPanelBase panel ? panel.Gap : 0;
+            }
+            return 0;
+        }
+    }
+
+    /// <summary>空的透明块整体退出布局：不贡献尺寸，也不消耗父容器的间距槽（嵌套空块同样递归为零）。</summary>
+    private static bool IsSkipped(Element child) =>
+        child.IsLayoutTransparent && child.DesiredSize.Width == 0 && child.DesiredSize.Height == 0;
 }
 
 public class StackPanel : StackPanelBase { }

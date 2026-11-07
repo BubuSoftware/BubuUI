@@ -6,6 +6,11 @@ using EclipseUI.Text;
 using EclipseUI.Text.Shaping;
 using Xunit;
 
+// TextMeasurer.Current 是进程级全局（TextBlock/Controls 共用）。ShapingTests 会临时替换成
+// HarfBuzz 测量器；xunit 默认按测试类并行，其它布局测试类可能落在替换窗口内，读到真实字体
+// 度量而偶发失败（BlockLayoutTests/LayoutTests 的 naive 高度断言）。故程序集级禁用并行。
+[assembly: CollectionBehavior(DisableTestParallelization = true)]
+
 namespace EclipseUI.Headless.Tests;
 
 /// <summary>

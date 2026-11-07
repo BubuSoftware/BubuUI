@@ -5,7 +5,7 @@
 > 模板状态是普通 CLR 成员，无 `[UiState]`/`Signal<T>`/依赖分析。
 > 规范正本：[spec/01](../spec/01-template-syntax.md) 语法、[spec/02](../spec/02-generated-code-contract.md) 生成形态、
 > [spec/03](../spec/03-reactivity-and-binding.md) 反应式。本文 §3.1–§3.6（§3.5.4 除外）、附录 A 为 v3 历史；
-> §3.5.3 的 D1–D41 是 v3 代码差距台账，v4 新增差距见 [§3.5.4](#354-v4-实现偏差台账d42d76)。与 spec 冲突时以 spec 为准。
+> §3.5.3 的 D1–D41 是 v3 代码差距台账，v4 新增差距见 [§3.5.4](#354-v4-实现偏差台账d42d79)。与 spec 冲突时以 spec 为准。
 >
 > 状态：v3 定稿（2026-10-29；v4 换轨后转为历史记录）。
 > 本文定义 `.ui` 语言的**词法、句法、语义、字面量与编译管线**，是模板作者、分析器与生成器共同遵守的语法规范。
@@ -18,7 +18,7 @@
 > 本文 §3.1–§3.6（§3.5.4 除外）转为历史/架构说明；与 `spec/` 冲突时以 `spec/` 为准。
 >
 > **偏差规则**：规范与当前代码的差异只允许出现在 [§3.5.3](#353-当前实现偏差s1s5-收敛清单)（v3 台账）与
-> [§3.5.4](#354-v4-实现偏差台账d42d76)（v4 台账）；两表之外一律以 `spec/` 为准，代码按表中映射的阶段收敛。
+> [§3.5.4](#354-v4-实现偏差台账d42d79)（v4 台账）；两表之外一律以 `spec/` 为准，代码按表中映射的阶段收敛。
 > 不允许"文档写一套、代码静默另一套"。
 >
 > **规范迁移（2026-10-29）**：词法/句法/语义/诊断触发点的规范正本已迁至 [spec/01](../spec/01-template-syntax.md)，
@@ -506,8 +506,9 @@ string        ::= '"' raw-char* '"'
 - 条件依赖不可观察/不可分析 → 静态条件 + `EUI036`/`EUI038`；不生成订阅，不切分支。
 - 在 item 模板内：条件可依赖 item 的可观察属性；条目重建时内容重建；同 Key 同 item 引用时属性变化通过 item 订阅更新。
   **不再需要把数据版本并入 Key**。
-- 当前布局：`ConditionalBlock` 继承 `StackPanelBase`，仍参与布局（作为一层容器）；
-  G3 改为布局透明（不引入额外间距/尺寸约束），见 [§3.5.3](#353-当前实现偏差s1s5-收敛清单) D16。
+- 布局：✅ G3 已收敛为**布局透明**（D16 关闭，实现口径见 D77）。块仍是元素树节点，
+  但不引入自己的间距/内边距，内容按最近布局祖先的 `Gap` 落位，空块不占间距槽。
+  规范正本见 [spec/01 §4.10](../spec/01-template-syntax.md) 末条与 §4.11。
 
 #### 3.3.6.2 `@foreach`
 
@@ -788,8 +789,8 @@ parent0.Children.Add(c0.Root);   // 最后挂到父级
 | D13 | 依赖分析按符号解析，可见成员范围由 C# 语义决定（含基类成员；`[UiState]` 基类的 `IUiObservable` 覆盖基类属性） | `GetMembers()` 不扫描基类，基类信号既不被发现也不报错（[TemplateGenerator.cs:81](../src/EclipseUI.Compiler.Generator/TemplateGenerator.cs#L81)） | 基类信号按普通成员生成，值陈旧且无订阅 | S2 |
 | D14 | ✅ C3：无转换器报 `EUI023`（`HasConverter` 区分），格式/范围/成员错仍 `EUI003` | 已修复（2026-11-03，[Analyzer.cs](../src/EclipseUI.Compiler/Analyzer.cs)） | ✅ C3 |
 | D15 | 每个 `.ui` 独立增量、稳定输出名 | `Collect()` 全部文件 + `Compilation`（[TemplateGenerator.cs:29](../src/EclipseUI.Compiler.Generator/TemplateGenerator.cs#L29)） | 任一模板变化重跑全部；输出名随文件序号漂移 | S2（spec/02 §2.1/§8.2；§3.6.3 同） |
-| D16 | 块布局透明 | `ConditionalBlock`/`ForEachBlock` 继承 `StackPanelBase`（[Blocks.cs:29](../src/EclipseUI.Runtime/Blocks.cs#L29)）；`IsVisualTransparent` 只跳过自身绘制，不改变布局 | 额外容器参与测量/排布，影响间距与父容器子项数 | G3 |
-| D17 | ✅ C4：组件标签/参数落地——`[UiParameter]`/`[UiContent]`/委托参数进目录（符号派生），`.ui` 组件标签按 spec/02 §4.12 生成（参数推送/委托事件/默认内容/生命周期）；具名插槽仍排 C6（`[UiSlot]` 消费侧/宿主侧） | 组件不可写 | ✅ C4（2026-11-05，[design/14 §14.12.4](../design/14-control-template-contract.md)） |
+| D16 | ✅ G3：块布局透明落地——新增 `Element.IsLayoutTransparent`，`StackPanelBase` 对透明节点取零内边距 + 最近布局祖先的 `Gap`，空块不占间距槽（实现口径 D77） | 已修复（2026-11-05，[Panels.cs](../src/EclipseUI.Runtime/Panels.cs)、[Blocks.cs](../src/EclipseUI.Runtime/Blocks.cs)）；`IsVisualTransparent` 仍只管绘制 | 实测：条目间距 19.6 → 27.6（根 `Gap=8`），空块两侧 35.6 → 27.6 | ✅ G3（D77） |
+| D17 | ✅ C4：组件标签/参数落地——`[UiParameter]`/`[UiContent]`/委托参数进目录（符号派生），`.ui` 组件标签按 spec/02 §4.12 生成（参数推送/委托事件/默认内容/生命周期）；具名插槽由 C6 收敛（D75/D76） | 组件不可写 | ✅ C4（2026-11-05，[design/14 §14.12.4](../design/14-control-template-contract.md)） |
 | D18 | 块 Dispose 释放条目作用域 | ✅ S2：`ForEachBlock.Dispose`/条目移除逆序释放条目 `BlockScope`（[Blocks.cs](../src/EclipseUI.Runtime/Blocks.cs)） | 已修复（同 D51） | ✅ S2 |
 | D19 | ✅ C3：附加属性在使用点报 `EUI031`（直到 G4 实现真实附加属性） | 已修复（2026-11-03，`Analyzer` 拦截任意 `Owner.Prop` 形式属性名） | ✅ C3 |
 | D20 | `TextRuns` 走 `ITextContentHost.AddRun(string)` | ✅ S2：Emitter 生成 `((ITextContentHost)el).AddRun("...")`；接口与 `TextBlock` 实现已落地（[Emitter.cs](../src/EclipseUI.Compiler.Generator/Emitter.cs)） | 已修复（同 D59） | ✅ S2 |
@@ -823,11 +824,11 @@ parent0.Children.Add(c0.Root);   // 最后挂到父级
 D 表只记录"规范已定、代码未对齐"的差异，收敛阶段见末列；落地这些差异不改变本文的冻结语义。
 D37–D41 描述的生成文本偏差已随 v4 S2 收敛，形态以 spec/02 为准。
 
-### 3.5.4 v4 实现偏差台账（D42–D76）
+### 3.5.4 v4 实现偏差台账（D42–D79）
 
-v4 换轨后，**S1 已收敛（2026-10-30）、S2 已收敛（2026-10-30）、S3 已收敛（2026-11-02，控件侧）、C1 已收敛（2026-11-02，目录派生）、C3 已收敛（2026-11-03，字面量转换器/使用点诊断/保留语法）、C4 已收敛（2026-11-05，组件标签）、C5 已收敛（2026-11-05，Ref/使用点诊断）、C6 已收敛（2026-11-05，具名插槽）**；
+v4 换轨后，**S1 已收敛（2026-10-30）、S2 已收敛（2026-10-30）、S3 已收敛（控件侧 2026-11-02、组件侧随 C4 2026-11-05）、C1 已收敛（2026-11-02，目录派生）、C3 已收敛（2026-11-03，字面量转换器/使用点诊断/保留语法）、C4 已收敛（2026-11-05，组件标签）、C5 已收敛（2026-11-05，Ref/使用点诊断）、C6 已收敛（2026-11-05，具名插槽）、G3 块布局透明已收敛（2026-11-05，D77；§3.5.3 的 D16 随之关闭）、G3 失效迁移已收敛（2026-11-07，D78）、G3 按文件增量已收敛（2026-11-08）、G3 `#line` 列映射已收敛（2026-11-08，D79）**；
 其余偏差按 [spec/03 §13](../spec/03-reactivity-and-binding.md#13-阶段-s1s5) 的 S4
-与 C3 余项/G 阶段收敛。本表与 [spec/02 §12](../spec/02-generated-code-contract.md#12-实现偏差台账-d42d76) 是同一张台账，
+与 G3 余项（诊断出口 D57/D74 ②）/G4 收敛。本表与 [spec/02 §12](../spec/02-generated-code-contract.md#12-实现偏差台账-d42d79) 是同一张台账，
 任一侧更新必须同步另一侧；台账之外的差异视为实现缺陷。
 
 | # | 偏差 | 目标（spec） | 阶段 |
@@ -868,9 +869,12 @@ v4 换轨后，**S1 已收敛（2026-10-30）、S2 已收敛（2026-10-30）、S
 
 | D75 | ✅ C6（解析口径两级）：自身插槽的解析——分析器按「目录显示名与 `.ui` 文件名短名匹配」投影自身 def（静态前端无符号信息）；生成器用 code-behind **符号**沿基类链读 `[UiSlot]` 传给分析器/发射器作权威（code-behind 类在源码里不派生 `Component`，目录不会有它的 def）。两级在正常房间结构下指向同一组插槽；目录匹配失败而符号可用时生成侧仍有效 | design/14 §14.12.6、spec/02 §4.12.5 | ✅ C6 |
 | D76 | ✅ C6（契约补写）：基链同名**成员**的胜出规则原文未定。Roslyn 的 `GetAttributes()` 不把特性带进 override，一律按名字去重会让 `public override Element? Header`（不写特性）静默丢掉基类的 `[UiSlot]`/`[UiParameter]`，不去重又把同一 override 误报成重复插槽（EUI028）。实现定为：派生侧显式写了模板特性或 `[UiIgnore]` 才算覆盖，否则基类声明继续生效；已回写 design/14 §14.10.2 与 spec/01 §4.15 | design/14 §14.10.2/§14.6.1 | ✅ C6 |
+| D77 | ✅ G3（契约补写 + 实现口径）：块布局透明落地为「保留块节点 + 采用祖先排布参数」，不是把条目摊平进父容器子序列——摊平会让块 `FinalRect` 与子元素坐标系脱钩，绘制偏移/`PointFromRoot`/命中/脏区四条路径都要改；保留节点则一行不动且排布等价。新增 `Element.IsLayoutTransparent`，`StackPanelBase` 对透明节点取零内边距 + 最近非透明布局祖先的 `Gap`，零尺寸透明块退出间距计数但仍 arrange 到零矩形。补写三条原文未定规则：块自身 `Gap`/`Padding` 不参与布局、空块（含嵌套空块）不占间距槽、空块 `FinalRect` 必须刷新。实测条目间距 19.6 → 27.6（根 `Gap=8`）、空块两侧 35.6 → 27.6；`BlockLayoutTests` 10 例 + `TaskListEndToEndTests` 2 例，421 例全绿。D16 关闭；G4 的 Grid/WrapPanel 另定透明口径 | spec/01 §4.10/§4.11、spec/02 §12 D77、本文 D16 | ✅ G3 |
+| D78 | ✅ G3（契约补写 + 实现）：`Adopt` 接管不迁移子组件原根队列里已入队的失效（所有权变更后该队列不再被排空，接管前 `Invalidate()` 静默丢弃；GalleryApp 空 Tasks 卡根因）；`Depth` 接管时缓存、链长变化后残留旧深度，可能把孙排在父前。实现：`Adopt` 按入队顺序 drain 子队列重入新根（按待渲染标记合并），`Depth` 改所有权链实时计算。契约补写 spec/03 §2.4/§2.7；`ComponentOwnershipTests` 5 例 | spec/03 §2.4/§2.7、spec/02 §12 D78 | ✅ G3 |
+| D79 | ✅ G3（契约补写 + 实现）：`#line` 由行型 `#line N "path"` 换成 span 型 `#line (sl, sc) - (el, ec) "path"`。实测 Roslyn 4.9.2：列平移 `sc−1` 只作用于紧接的一行、end 不参与单行诊断换算、start 必须严格早于 end（否则 `CS8939` 让整段映射失效）。`Emitter.Mapped` 按「生成缩进 + 用户 token 偏移」左移 `sc` 并钳制 ≥ 1（前缀过长时列退化为生成列、行号仍精确），空 span/钳制后给 end 补 1 列；`MappedToken` 自动定位表达式偏移，35 个调用点由行号改传 `TextSpan`。补写 spec/02 §2.4 规则 9/10 与 §11 等价口径（旧/新语法别名改为剥离 `#line` 后比对）。`LineSpanMappingTests` 5 例 + `GeneratorContractTests` 3 处断言同步 | spec/02 §2.4/§12 D79 | ✅ G3 |
 
 - 每项收敛必须同时删除对应的 v3 路径；不得两套模型并存。
-- 新增偏差必须登记编号（从 D77 起）并注明目标阶段；不得只改代码不改台账。
+- 新增偏差必须登记编号（从 D80 起）并注明目标阶段；不得只改代码不改台账。
 - §3.5.3 是 v3 台账：以 `[UiState]`/`Signal<T>`/`UiWatch`/依赖分析/可观察路径为目标的条目（D9/D10/D13/D23–D29/D31–D36/D39）
   随 v4 换轨作废，不再按原阶段实现；其中代码差距已在 v4 语义下重新登记并按阶段收敛
   （D23→D42/D45、D24→D53/D54、D26→D50 ✅ S2、D18/D27→D51 ✅ S2、D32→D53、D36→spec/03 §11 诊断表；D33/D35 无替代项）。
@@ -933,8 +937,9 @@ v4 换轨后，**S1 已收敛（2026-10-30）、S2 已收敛（2026-10-30）、S
 - 块与绑定的订阅作用域按 §3.3.4 选择 `Track` / `subs.Add` / `itemSubs.Add`；表中以根上下文示意。
 - 生成代码只用公开运行时 API（R4），不写反射/字符串查找；类型全用 `global::` 限定（D22 已在 C2 修复）。
 - 变量/函数编号按遍历顺序固定，同一输入生成相同文本（R6/14.8.4）。
-- 表达式行带 `#line <ui行> "<path>"`，随后 `#line hidden`（[Emitter.cs:100](../src/EclipseUI.Compiler.Generator/Emitter.cs#L100)）。
-- 当前 `#line` 只有行号；列映射/span 映射表排 G3（09）。
+- 表达式行带 `#line`，随后 `#line hidden`（[Emitter.cs](../src/EclipseUI.Compiler.Generator/Emitter.cs)）。
+- ✅ G3（D79，2026-11-08）：指令已由行型换成 span 型 `#line (sl, sc) - (el, ec) "<path>"`，
+  口径见 spec/02 §2.4 规则 9/10；本节其余生成形态仍是 v3 历史记录。
 
 ### 3.6.3 增量、确定性与工具链
 

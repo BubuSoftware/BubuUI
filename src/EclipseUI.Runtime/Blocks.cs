@@ -66,6 +66,9 @@ public sealed class ConditionalBlock : StackPanelBase, IDisposable
     /// <inheritdoc />
     public override bool IsVisualTransparent => true;
 
+    /// <inheritdoc />
+    public override bool IsLayoutTransparent => true;
+
     private Func<bool>? _condition;
     private Action<BlockScope>? _contentBuilder;
     private BlockScope? _scope;
@@ -147,6 +150,9 @@ public sealed class ForEachBlock<T> : StackPanelBase, IDisposable
 {
     /// <inheritdoc />
     public override bool IsVisualTransparent => true;
+
+    /// <inheritdoc />
+    public override bool IsLayoutTransparent => true;
 
     private sealed class Entry
     {

@@ -222,15 +222,16 @@ static (StackPanel Root, Counter Counter, TaskList Tasks, Button AddButton) Buil
     SetPadding(counter.Root, 16);
 
     var taskList = new TaskList();
-    taskList.Mount();
-    SetPadding(taskList.Root, 16);
+    // 先填数据再 Mount：Build 末尾的 Refresh 会读当前 tasks（spec/03 §2.3），省一次渲染；
+    // 接管前入队的失效如今会由 Adopt 迁移（D78），此处写 Invalidate 也正确。
     taskList.tasks = new List<TaskItem>
     {
         new TaskItem { Id = 1, Name = "Design review" },
         new TaskItem { Id = 2, Name = "Damage tracking v0" },
         new TaskItem { Id = 3, Name = "Golden image test" },
     };
-    taskList.Invalidate();
+    taskList.Mount();
+    SetPadding(taskList.Root, 16);
 
     var addTaskButton = new Button { Label = "+ Add task" };
     var nextId = 4;

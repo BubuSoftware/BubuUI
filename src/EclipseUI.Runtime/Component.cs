@@ -24,7 +24,16 @@ public abstract class Component : IDisposable
 
     public bool IsMounted => _isMounted;
 
-    internal int Depth { get; private set; }
+    internal int Depth
+    {
+        get
+        {
+            var depth = 0;
+            for (var node = _owner; node is not null; node = node._owner)
+                depth++;
+            return depth;
+        }
+    }
 
     public void Mount()
     {
@@ -120,7 +129,25 @@ public abstract class Component : IDisposable
                 throw new InvalidOperationException("Component ownership cycle detected.");
 
         child._owner = this;
-        child.Depth = Depth + 1;
+        MigratePending(child);
+    }
+
+    // 接管前入队的失效躺在子组件自己的根队列里，所有权变更后该队列不会再被排空；
+    // 按入队顺序重入新根，与新队列里已有失效按待渲染标记合并。
+    private void MigratePending(Component child)
+    {
+        List<PendingRender> drained;
+        lock (child._invalidationLock)
+        {
+            if (child._pendingRenders.Count == 0)
+                return;
+            drained = new List<PendingRender>(child._pendingRenders);
+            child._pendingRenders.Clear();
+            child._pendingSet.Clear();
+        }
+        var root = RootComponent;
+        foreach (var pending in drained)
+            root.EnqueueInvalidation(pending.Component);
     }
 
     /// <summary>接管子组件所有权并随本组件释放（生成的 Build 内调用）。</summary>

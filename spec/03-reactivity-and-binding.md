@@ -219,7 +219,7 @@ public bool ProcessInvalidations()
 - 无头宿主在每次 `UpdateLayout()` 前调用；窗口宿主在帧循环的 `Measure` 前调用。
 - 根组件持有失效队列；所有子组件的 `Invalidate()` 通过所有权链（§2.7）进入同一队列。
 - 处理顺序：
-  1. 按组件深度**升序**（根先于子），同深度按入队顺序；
+  1. 按组件深度**升序**（根先于子；深度 = 所有权链长度，实时计算，§2.7），同深度按入队顺序；
   2. 出队时若组件已释放/未挂载则跳过；
   3. 调用 `ShouldRender()`（默认 true）；false 则消费本次失效但不执行 `Render()`；
   4. 清除待渲染标记后执行 `Render()`；`Render()` 期间的新失效重新入队，在同一轮 `ProcessInvalidations()` 中继续处理。
@@ -255,6 +255,9 @@ public void Adopt(Component child)
 ```
 
 - 每个组件最多有一个所有者；`Adopt` 幂等（同一所有者重复调用无副作用），不同所有者 → `InvalidOperationException`。
+- `Adopt` 接管时**迁移**子组件原根队列中已入队的待渲染失效：按入队顺序取出并重入新根队列，
+  与新队列中已有失效按待渲染标记合并；接管前入队的失效不得被静默丢弃（D78）。
+- 深度不缓存：排序时按所有权链实时计算，接管改变链长后不残留旧深度（保证 §2.4 的父先于子）。
 - `Track(Component)` 等价于 `Adopt(child)` + 登记释放（spec/02 §5.3）。
 - 组件内容中的子组件用 `receiver.TrackContent(child)`：所有者是**接收方**，随接收方释放，而不是随模板父组件释放。
 - 块/条目作用域内的子组件不加入 `Track`（否则随整组件释放，而不是随条目释放），
@@ -880,7 +883,8 @@ O(根级动态绑定数 + 根级块数 + Σ 块刷新成本)
 - C1–C6（符号目录、控件事件、字面量、组件标签、`Ref`、具名插槽）按 design/14 §14.12，
   与 S1–S5 并行；S2/S3 依赖 C4 的组件标签与 `PChanged` 元数据。
   C6 实拆只做具名插槽，附加属性与泛型标签留 G4（design/14 §14.12.6 范围说明）。
-- G3（块布局透明、`Ref`、增量、列映射）与 G4（样式/主题/附加属性/泛型标签）不改变本文语义。
+- G3（块布局透明 ✅ 2026-11-05/D77、失效迁移 ✅ 2026-11-07/D78、`Ref` ✅ C5、逐文件增量 ✅ 2026-11-08、`#line` 列映射 ✅ 2026-11-08/D79、诊断出口）与 G4（样式/主题/附加属性/泛型标签）不改变本文语义。
+  块布局透明只改排布参数，不改块的生命周期、`Refresh` 语义与作用域资源释放。
 - 阶段标记按"规范已定、代码未实现"使用；未实现项必须出现在 spec/02 §12 与 design/03 §3.5.4。
 
 ## 14. 契约测试矩阵
@@ -937,7 +941,7 @@ T15 见样例迁移到 `@bind-` 后 `CounterApp`/`GalleryApp` 编译 0 error 0 w
 再在源码位置推送，回写前同样做相等守卫以免回环）。诊断侧 `C4ComponentTests`
 覆盖 `BindWithoutChangedCallback_IsEUI040`/`BindOnDelegateParameter_IsEUI040`/`BindInsideContent_IsEUI040`/
 `DuplicateBoundComponentParameter_IsEUI033`，生成侧 `GeneratorContractTests.ComponentBindWithoutChanged_EUI040_BlocksGeneration`。
-D54/D56 关闭。S3 至此整体 ✅；当前 **409 个测试全绿（Headless 190 / Compiler 158 / Rendering 61）**。
+D54/D56 关闭。S3 至此整体 ✅；该切片收敛时 **409 个测试全绿（Headless 190 / Compiler 158 / Rendering 61）**。
 
 **C1 目录派生（非 S 阶段，2026-11-02 通过）**：本阶段不改反应式与生成形态，只把控件元数据的来源换成符号。
 与反应式的交点是 **D62**：`EUI040` 的「目标可绑」判定此前只来自手写目录的 `UiPropDef.Bindable` 标注，

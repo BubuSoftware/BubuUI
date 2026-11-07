@@ -178,10 +178,17 @@ public abstract class Element
     }
 
     /// <summary>
-    /// 绘制透明：节点仍参与布局（G3 才做真正的布局透明），但不产生自己的背景/边框。
-    /// 块协调器（<c>@if</c> / <c>@foreach</c>）覆盖为 true，避免把模板块画成卡片。
+    /// 绘制透明：不产生自己的背景/边框。块协调器（<c>@if</c> / <c>@foreach</c>）覆盖为 true，
+    /// 避免把模板块画成卡片。与 <see cref="IsLayoutTransparent"/> 相互独立。
     /// </summary>
     public virtual bool IsVisualTransparent => false;
+
+    /// <summary>
+    /// 布局透明：节点仍留在元素树里（坐标链、命中测试、脏区都不变），但不引入自己的内边距与间距，
+    /// 子元素按最近布局祖先的排布参数落位，空内容不占间距槽。块协调器覆盖为 true
+    /// （spec/01 §4.10/§4.11，台账 D77）。
+    /// </summary>
+    public virtual bool IsLayoutTransparent => false;
 
     /// <summary>沿祖先链标脏（脏标记传播：祖先的 measure 依赖子树的 desired）。</summary>
     public void InvalidateMeasure()

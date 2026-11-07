@@ -45,7 +45,7 @@ public sealed class Emitter
     private readonly string _accessibility;
     private readonly string _namespace;
     private readonly string _className;
-    private readonly Dictionary<UiForeach, string> _itemTypes;
+    private readonly IReadOnlyDictionary<int, string> _itemTypes;
     /// <summary>自身 code-behind 组件的插槽（spec/02 §4.12.5）——TemplateGenerator 按
     /// code-behind 符号精确匹配传入；分析器的短名近似只用于诊断，发射以此为准。</summary>
     private readonly IReadOnlyDictionary<string, UiSlotDef> _ownSlots;
@@ -61,7 +61,7 @@ public sealed class Emitter
     private int _fnCounter;
 
     public Emitter(UiDocument doc, string accessibility, string namespaceName, string className,
-        Dictionary<UiForeach, string> itemTypes, string filePath,
+        IReadOnlyDictionary<int, string> itemTypes, string filePath,
         IReadOnlyDictionary<string, UiSlotDef>? ownSlots = null)
     {
         _doc = doc;
@@ -134,12 +134,38 @@ public sealed class Emitter
         _out.Append(' ', _indent * 4).AppendLine(text);
     }
 
-    /// <summary>表达式行映射到 .ui 源行；随后 hidden，使未映射行指回生成文件。</summary>
-    private void Mapped(int uiLine, string text)
+    /// <summary>
+    /// 用户语句映射到 .ui span（G3 列映射，spec/02 §2.4）：发射 span 型指令
+    /// <c>#line (sl, sc) - (el, ec) "path"</c>。实测语义（Roslyn 4.9.2）：下一个生成行行对齐到 sl、
+    /// 列平移 sc−1（生成列 c → sc−1+c），长度随生成文本；后续行行号递增、列自然；end 元组不参与
+    /// 单行映射但 start &gt; end 会报 CS8939，故 sc 只向左对齐（sc ≤ span 起始列 ≤ ec）。
+    /// <paramref name="userOffset"/> 是用户表达式在 <paramref name="text"/> 内的偏移：
+    /// 令表达式起点精确落回 span 起始列；生成前缀更长时钳制 sc=1（行仍精确，列尽力）。
+    /// 随后 hidden，使未映射行指回生成文件。
+    /// </summary>
+    private void Mapped(TextSpan span, string text, int userOffset = 0)
     {
-        _out.Append("#line ").Append(uiLine).Append(" \"").Append(_linePath).Append('"').AppendLine();
+        var start = span.Start;
+        var end = Math.Max(start, span.End);
+        while (start < end && start < _doc.Text.Length && char.IsWhiteSpace(_doc.Text[start])) start++;
+        var sl = _doc.Lines.LineOf(start);
+        var sc = _doc.Lines.ColumnOf(start);
+        var el = _doc.Lines.LineOf(end);
+        var ec = _doc.Lines.ColumnOf(end);
+        sc = Math.Max(1, sc - (_indent * 4 + Math.Max(0, userOffset)));
+        // Roslyn 对 start >= end 报 CS8939；空 span 或列钳制后给 end 留一列宽度。
+        if (el == sl && ec <= sc) ec = sc + 1;
+        _out.Append("#line (").Append(sl).Append(", ").Append(sc).Append(") - (")
+            .Append(el).Append(", ").Append(ec).Append(") \"").Append(_linePath).Append('"').AppendLine();
         Line(text);
         _out.AppendLine("#line hidden");
+    }
+
+    /// <summary>从生成文本里定位用户 token 的列偏移，省去每个调用点手算前缀长度。</summary>
+    private void MappedToken(TextSpan span, string text, string userToken)
+    {
+        var offset = userToken.Length == 0 ? -1 : text.IndexOf(userToken, StringComparison.Ordinal);
+        Mapped(span, text, offset > 0 ? offset : 0);
     }
 
     /// <summary>
@@ -174,7 +200,7 @@ public sealed class Emitter
         return local;
     }
 
-    private string CreateU(string target, string body, int uiLine)
+    private string CreateU(string target, string body, TextSpan span, int bodyOffset)
     {
         var name = $"U{_fnCounter++}";
         var sb = new StringBuilder();
@@ -182,7 +208,7 @@ public sealed class Emitter
         var savedIndent = _indent;
         _out = sb;
         _indent = 2;
-        Mapped(uiLine, $"{target} = {body};");
+        Mapped(span, $"{target} = {body};", target.Length + 3 + bodyOffset);
         _out = savedOut;
         _indent = savedIndent;
         _uMethods.Add(new UMethod(name, sb.ToString()));
@@ -190,15 +216,15 @@ public sealed class Emitter
     }
 
     /// <summary>组件级动态写入：U 方法 + Build 首次调用 + Render 登记。</summary>
-    private void RootUpdate(string target, string body, int uiLine)
+    private void RootUpdate(string target, string body, TextSpan span, int bodyOffset)
     {
-        var name = CreateU(target, body, uiLine);
+        var name = CreateU(target, body, span, bodyOffset);
         Line($"{name}();");
         _renderCalls.Add($"{name}();");
     }
 
     /// <summary>块内动态写入：R 局部函数 + 首次调用 + 作用域渲染动作。</summary>
-    private void BlockUpdate(string target, string body, int uiLine, EmitContext ctx)
+    private void BlockUpdate(string target, string body, TextSpan span, int bodyOffset, EmitContext ctx)
     {
         var name = $"R{_fnCounter++}";
         var sb = new StringBuilder();
@@ -206,7 +232,7 @@ public sealed class Emitter
         var savedIndent = _indent;
         _out = sb;
         _indent = savedIndent + 1;
-        Mapped(uiLine, $"{target} = {body};");
+        Mapped(span, $"{target} = {body};", target.Length + 3 + bodyOffset);
         _out = savedOut;
         _indent = savedIndent;
 
@@ -257,7 +283,8 @@ public sealed class Emitter
         return action;
     }
 
-    private int LineOf(TextSpan span) => _doc.Lines.LineOf(span.Start);
+    private static TextSpan AttrSpan(UiAttribute attr) =>
+        attr.ValueSpan.Length > 0 ? attr.ValueSpan : attr.NameSpan;
 
     private string EmitElement(UiElement element, string? parentVar, EmitContext ctx)
     {
@@ -269,12 +296,12 @@ public sealed class Emitter
         foreach (var attr in element.Attributes)
         {
             if (attr.Name == "Key") continue;
-            int line = LineOf(attr.ValueSpan.Length > 0 ? attr.ValueSpan : attr.NameSpan);
+            var span = AttrSpan(attr);
 
             // C5：Ref（spec/02 §4.14）——Build 时把元素实例赋给 code-behind 字段（源码顺序位置）。
             if (attr.RefTarget is { } refField)
             {
-                Mapped(line, $"{refField} = {v};");
+                MappedToken(span, $"{refField} = {v};", refField);
                 continue;
             }
 
@@ -282,7 +309,7 @@ public sealed class Emitter
             {
                 var handlerType = EventHandlerType(attr.Value);
                 var h = $"h{_varCounter++}";
-                Mapped(line, $"var {h} = ({handlerType})({attr.Value.Trim()});");
+                MappedToken(span, $"var {h} = ({handlerType})({attr.Value.Trim()});", attr.Value.Trim());
                 var wrapper = handlerType == "global::System.Action"
                     ? $"() => {{ {h}(); Invalidate(); }}"
                     : $"e => {{ {h}(e); Invalidate(); }}";
@@ -298,7 +325,7 @@ public sealed class Emitter
             }
             else if (attr.Kind == AttrValueKind.Literal)
             {
-                Mapped(line, $"{v}.{attr.Name} = {attr.ConvertedLiteral};");
+                MappedToken(span, $"{v}.{attr.Name} = {attr.ConvertedLiteral};", attr.ConvertedLiteral ?? "");
             }
             else
             {
@@ -368,24 +395,23 @@ public sealed class Emitter
         foreach (var attr in element.Attributes)
         {
             if (attr.Name == "Key") continue; // EUI010 已报
+            var span = AttrSpan(attr);
             // C5：Ref（spec/02 §4.14）——组件按实例赋给 code-behind 字段（design/14 §14.6.4）。
             if (attr.RefTarget is { } refField)
             {
-                Mapped(LineOf(attr.ValueSpan.Length > 0 ? attr.ValueSpan : attr.NameSpan),
-                    $"{refField} = {v};");
+                MappedToken(span, $"{refField} = {v};", refField);
                 continue;
             }
             var p = attr.ParamDef;
             if (p is null) continue;          // 未解析名 EUI002 / 保留语法已报
             if (p.IsContent) continue;        // P= 写内容参数 EUI021 已报；内容由子节点提供
-            int line = LineOf(attr.ValueSpan.Length > 0 ? attr.ValueSpan : attr.NameSpan);
 
             if (p.IsDelegate)
             {
                 // 委托参数 = 事件（§4.6.2）：表达式 → h{N}，包装赋值 + Invalidate() 父组件。
                 if (attr.IsBind || attr.Kind != AttrValueKind.Expression) continue; // EUI004/EUI040 已报
                 var h = $"h{_varCounter++}";
-                Mapped(line, $"var {h} = ({p.ClrTypeDisplayName})({attr.Value.Trim()});");
+                MappedToken(span, $"var {h} = ({p.ClrTypeDisplayName})({attr.Value.Trim()});", attr.Value.Trim());
                 var parms = string.Join(", ", Enumerable.Range(0, p.DelegateArity).Select(i => $"a{i}"));
                 var invoke = p.DelegateArity == 0 ? $"{h}()" : $"{h}({parms})";
                 var wrapper = p.DelegateArity == 0
@@ -397,34 +423,35 @@ public sealed class Emitter
             {
                 // §4.4.3：先赋 {P}Changed 回调（build-once），再在源码位置推送 U{N}/R{N}。
                 var expression = attr.Value.Trim();
-                Mapped(line, $"{v}.{p.ChangedCallbackName} = v =>");
+                Mapped(span, $"{v}.{p.ChangedCallbackName} = v =>");
                 Line("{");
                 _indent++;
                 Line($"if (!global::System.Collections.Generic.EqualityComparer<{p.ClrTypeDisplayName}>.Default.Equals({expression}, v))");
                 Line("{");
                 _indent++;
-                Mapped(line, $"{expression} = v;");
+                MappedToken(span, $"{expression} = v;", expression);
                 Line("Invalidate();");
                 _indent--;
                 Line("}");
                 _indent--;
                 Line("};");
-                EmitParamPush(p, v, attr.Value, line, ctx);
+                EmitParamPush(p, v, attr.Value, span, ctx);
             }
             else if (!attr.IsBind && attr.Kind == AttrValueKind.Literal)
             {
                 if (attr.ConvertedLiteral is null) continue; // EUI003 已报
-                Mapped(line, $"{v}.{p.Name} = {attr.ConvertedLiteral};");
+                MappedToken(span, $"{v}.{p.Name} = {attr.ConvertedLiteral};", attr.ConvertedLiteral);
             }
             else if (attr.Kind == AttrValueKind.Expression)
             {
                 if (ctx.IsContent)
                 {
                     // 内容内 P={expr} 是 Build 快照（§4.12.3 规则 8）
-                    Mapped(line, $"{v}.{p.Name} = ({p.ClrTypeDisplayName})({attr.Value.Trim()});");
+                    MappedToken(span, $"{v}.{p.Name} = ({p.ClrTypeDisplayName})({attr.Value.Trim()});",
+                        attr.Value.Trim());
                     continue;
                 }
-                EmitParamPush(p, v, attr.Value, line, ctx);
+                EmitParamPush(p, v, attr.Value, span, ctx);
             }
             // @bind 无回调 / 字面量写委托参数 / :bind 等非法形态：Analyzer 已报，不生成
         }
@@ -452,11 +479,12 @@ public sealed class Emitter
             if (!emittedSlots.Add(slot.Name)) continue;
             var group = slotFills.Where(f => ReferenceEquals(f.ResolvedSlot, slot)).ToList();
             var sv = $"slot{_varCounter++}";
-            Mapped(LineOf(fill.NameAttribute!.ValueSpan),
+            var slotSpan = fill.NameAttribute!.ValueSpan;
+            Mapped(slotSpan,
                 $"var {sv} = new global::System.Collections.Generic.List<global::EclipseUI.Element>();");
             foreach (var sibling in group)
                 EmitContentChildren(sibling.Children, sv, EmitContext.Content(v));
-            Mapped(LineOf(fill.NameAttribute!.ValueSpan),
+            Mapped(slotSpan,
                 slot.Cardinality == UiSlotCardinality.Single
                     ? $"{v}.{slot.PropertyName} = {sv}.Count == 0 ? null : {sv}[0];"
                     : $"{v}.{slot.PropertyName} = {sv};");
@@ -470,7 +498,7 @@ public sealed class Emitter
     }
 
     /// <summary>组件参数动态推送（§4.3.3）：相等保护下写参数并失效子组件；根级 U{N}、块级 R{N}。</summary>
-    private void EmitParamPush(UiParameterDef p, string target, string expression, int uiLine, EmitContext ctx)
+    private void EmitParamPush(UiParameterDef p, string target, string expression, TextSpan span, EmitContext ctx)
     {
         var type = p.ClrTypeDisplayName;
         if (ctx.IsRoot)
@@ -481,11 +509,11 @@ public sealed class Emitter
             var savedIndent = _indent;
             _out = sb;
             _indent = 2;
-            Mapped(uiLine, $"var v = ({type})({expression.Trim()});");
+            MappedToken(span, $"var v = ({type})({expression.Trim()});", expression.Trim());
             Line($"if (!global::System.Collections.Generic.EqualityComparer<{type}>.Default.Equals({target}.{p.Name}, v))");
             Line("{");
             _indent++;
-            Mapped(uiLine, $"{target}.{p.Name} = v;");
+            Mapped(span, $"{target}.{p.Name} = v;");
             Line($"{target}.Invalidate();");
             _indent--;
             Line("}");
@@ -503,11 +531,11 @@ public sealed class Emitter
         var savedIndentLocal = _indent;
         _out = sbLocal;
         _indent = savedIndentLocal + 1;
-        Mapped(uiLine, $"var v = ({type})({expression.Trim()});");
+        MappedToken(span, $"var v = ({type})({expression.Trim()});", expression.Trim());
         Line($"if (!global::System.Collections.Generic.EqualityComparer<{type}>.Default.Equals({target}.{p.Name}, v))");
         Line("{");
         _indent++;
-        Mapped(uiLine, $"{target}.{p.Name} = v;");
+        Mapped(span, $"{target}.{p.Name} = v;");
         Line($"{target}.Invalidate();");
         _indent--;
         Line("}");
@@ -550,7 +578,7 @@ public sealed class Emitter
     /// <summary>内容内 @if：Build 时按当前值展开的普通 C# if（§4.12.3 规则 7）。</summary>
     private void EmitPlainIf(UiIf node, string contentVar, EmitContext ctx)
     {
-        Mapped(LineOf(node.ConditionSpan), $"if ({node.Condition.Trim()})");
+        MappedToken(node.ConditionSpan, $"if ({node.Condition.Trim()})", node.Condition.Trim());
         Line("{");
         _indent++;
         EmitContentChildren(node.Children, contentVar, ctx);
@@ -561,9 +589,10 @@ public sealed class Emitter
     /// <summary>内容内 @foreach：Build 时展开的普通 C# foreach（§4.12.3 规则 7）。</summary>
     private void EmitPlainForeach(UiForeach node, string contentVar, EmitContext ctx)
     {
-        var fqItem = _itemTypes[node];
+        var fqItem = _itemTypes[node.CollectionSpan.Start];
         var itemVar = node.VarName.Length > 0 ? node.VarName : "item";
-        Mapped(LineOf(node.CollectionSpan), $"foreach (var {itemVar} in {node.Collection.Trim()})");
+        MappedToken(node.CollectionSpan, $"foreach (var {itemVar} in {node.Collection.Trim()})",
+            node.Collection.Trim());
         Line("{");
         _indent++;
         EmitContentChildren(node.Children, contentVar, ctx);
@@ -583,22 +612,22 @@ public sealed class Emitter
         if (slot is null || parentVar is null) return; // Analyzer 已报 EUI022
 
         var s = NewVar("slot");
-        var line = LineOf(host.NameAttribute!.ValueSpan);
+        var span = host.NameAttribute!.ValueSpan;
         if (slot.Cardinality == UiSlotCardinality.Single)
         {
-            Mapped(line, $"if ({slot.PropertyName} is {{ }} {s})");
+            Mapped(span, $"if ({slot.PropertyName} is {{ }} {s})");
             Line("{");
             _indent++;
-            Mapped(line, $"{parentVar}.Children.Add({s});");
+            Mapped(span, $"{parentVar}.Children.Add({s});");
             _indent--;
             Line("}");
         }
         else
         {
-            Mapped(line, $"foreach (var {s} in {slot.PropertyName})");
+            Mapped(span, $"foreach (var {s} in {slot.PropertyName})");
             Line("{");
             _indent++;
-            Mapped(line, $"{parentVar}.Children.Add({s});");
+            Mapped(span, $"{parentVar}.Children.Add({s});");
             _indent--;
             Line("}");
         }
@@ -613,21 +642,21 @@ public sealed class Emitter
             $"readTarget: () => {elementVar}.{attr.Name}, writeTarget: v => {elementVar}.{attr.Name} = v, " +
             $"readSource: () => {expression}, writeSource: v => {expression} = v, " +
             "invalidate: Invalidate)";
-        int line = LineOf(attr.ValueSpan);
+        var span = attr.ValueSpan;
 
         if (ctx.IsRoot)
         {
             var n = _varCounter++;
             var field = $"__bind{n}";
             _fields.Add(new FieldDecl(n, "bind", "global::EclipseUI.UiBinding"));
-            Mapped(line, $"{field} = {call};");
+            MappedToken(span, $"{field} = {call};", expression);
             Line($"Track({field});");
             _renderCalls.Add($"{field}.Refresh();");
             return;
         }
 
         var local = $"bind{_varCounter++}";
-        Mapped(line, $"var {local} = {call};");
+        MappedToken(span, $"var {local} = {call};", expression);
         Line($"{ctx.ScopeVar}.AddDisposable({local});");
         BlockRefresh(local, ctx);
     }
@@ -662,7 +691,7 @@ public sealed class Emitter
             {
                 if (segment.Kind == TextSegmentKind.Static)
                 {
-                    Mapped(LineOf(segment.Span),
+                    Mapped(segment.Span,
                         $"((global::EclipseUI.ITextContentHost){elementVar}).AddRun({UiLiterals.EscapeString(segment.Text)});");
                     continue;
                 }
@@ -697,44 +726,57 @@ public sealed class Emitter
         if (segments.All(s => s.Kind == TextSegmentKind.Static))
         {
             var combined = string.Concat(segments.Select(s => s.Text));
-            Mapped(LineOf(segments[0].Span), $"{elementVar}.{target} = {UiLiterals.EscapeString(combined)};");
+            Mapped(segments[0].Span, $"{elementVar}.{target} = {UiLiterals.EscapeString(combined)};");
             return;
         }
 
         var parts = new StringBuilder("$\"");
+        var firstExprSpan = segments[0].Span;
+        int firstExprOffset = 0;
+        bool seenExpr = false;
         foreach (var segment in segments)
         {
             if (segment.Kind == TextSegmentKind.Static)
+            {
                 parts.Append(EscapeInterpolation(segment.Text));
-            else
-                parts.Append('{').Append('(').Append(segment.Text.Trim()).Append(')').Append('}');
+                continue;
+            }
+            if (!seenExpr)
+            {
+                // 表达式在生成文本里的偏移：'{' + '(' 两个前缀。
+                firstExprSpan = segment.Span;
+                firstExprOffset = parts.Length + 2;
+                seenExpr = true;
+            }
+            parts.Append('{').Append('(').Append(segment.Text.Trim()).Append(')').Append('}');
         }
         parts.Append('"');
 
         var body = parts.ToString();
-        int textLine = LineOf(segments[0].Span);
         if (ctx.IsRoot)
-            RootUpdate($"{elementVar}.{target}", body, textLine);
+            RootUpdate($"{elementVar}.{target}", body, firstExprSpan, firstExprOffset);
         else
-            BlockUpdate($"{elementVar}.{target}", body, textLine, ctx);
+            BlockUpdate($"{elementVar}.{target}", body, firstExprSpan, firstExprOffset, ctx);
     }
 
     private void EmitDynamicUpdate(string expression, TextSpan span, EmitContext ctx,
         string target, bool interpolate)
     {
-        var body = interpolate ? $"$\"{{({expression.Trim()})}}\"" : expression.Trim();
-        int line = LineOf(span);
+        var trimmed = expression.Trim();
+        // 插值文本 $\"{(expr)}\" 的表达式前缀是 $ \" { ( 共 4 个字符。
+        var body = interpolate ? $"$\"{{({trimmed})}}\"" : trimmed;
+        var bodyOffset = interpolate ? 4 : 0;
 
         if (ctx.IsContent)
         {
             // 组件内容是 build-once 快照：直接赋值，不生成 U/R（spec/02 §4.12.3 规则 8）。
-            Mapped(line, $"{target} = {body};");
+            MappedToken(span, $"{target} = {body};", trimmed);
             return;
         }
         if (ctx.IsRoot)
-            RootUpdate(target, body, line);
+            RootUpdate(target, body, span, bodyOffset);
         else
-            BlockUpdate(target, body, line, ctx);
+            BlockUpdate(target, body, span, bodyOffset, ctx);
     }
 
     private string EmitIf(UiIf node, string? parentVar, EmitContext ctx)
@@ -757,7 +799,8 @@ public sealed class Emitter
         if (parentVar is not null)
             Line($"{parentVar}.Children.Add({v});");
 
-        Mapped(LineOf(node.ConditionSpan), $"{v}.SetCondition(() => {node.Condition.Trim()});");
+        MappedToken(node.ConditionSpan, $"{v}.SetCondition(() => {node.Condition.Trim()});",
+            node.Condition.Trim());
 
         if (node.Children.Count > 0)
         {
@@ -790,7 +833,7 @@ public sealed class Emitter
 
     private string EmitForeach(UiForeach node, string? parentVar, EmitContext ctx)
     {
-        var fqItem = _itemTypes[node];
+        var fqItem = _itemTypes[node.CollectionSpan.Start];
         bool root = ctx.IsRoot;
         string v;
         if (root)
@@ -809,7 +852,8 @@ public sealed class Emitter
         if (parentVar is not null)
             Line($"{parentVar}.Children.Add({v});");
 
-        Mapped(LineOf(node.CollectionSpan), $"{v}.SetItems(() => {node.Collection.Trim()});");
+        MappedToken(node.CollectionSpan, $"{v}.SetItems(() => {node.Collection.Trim()});",
+            node.Collection.Trim());
 
         var itemVar = node.VarName.Length > 0 ? node.VarName : "item";
 
@@ -817,8 +861,9 @@ public sealed class Emitter
         var keyAttr = firstElement?.Attributes.FirstOrDefault(a => a.Name == "Key");
         if (keyAttr is not null && !string.IsNullOrWhiteSpace(keyAttr.Value))
         {
-            Mapped(LineOf(keyAttr.ValueSpan),
-                $"{v}.SetKeySelector(({fqItem} {itemVar}) => (object?)({keyAttr.Value.Trim()}));");
+            MappedToken(keyAttr.ValueSpan,
+                $"{v}.SetKeySelector(({fqItem} {itemVar}) => (object?)({keyAttr.Value.Trim()}));",
+                keyAttr.Value.Trim());
         }
 
         var scopeVar = NewVar("scope");

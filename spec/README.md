@@ -16,7 +16,7 @@
 ## 权威关系
 
 1. **语法**：`spec/01` 取代 [design/03](../design/03-template-engine.md) §3.1–§3.5 的规范地位。
-   design/03 的 §3.5.3（v3 台账 D1–D41）、§3.5.4（v4 台账 D42–D76）与附录是代码差距的活记录。
+   design/03 的 §3.5.3（v3 台账 D1–D41）、§3.5.4（v4 台账 D42–D79）与附录是代码差距的活记录。
 2. **生成代码**：`spec/02` 取代 design/03 §3.6 与 [design/14](../design/14-control-template-contract.md) §14.8 的规范地位；
    design/14 §14.8 已标记为 v3 历史。
 3. **反应式/绑定**：`spec/03` 是规范正本。[design/15](../design/15-state-and-reactivity.md) 已停止（v3 历史，含 `[UiState]`/`UiWatch`/依赖分析）。
@@ -56,6 +56,6 @@ v1 规范的依赖订阅模型（`[UiState]`/`Signal<T>`/`UiWatch`/依赖分析�
 | V6 | 诊断 | EUI014/EUI034–EUI036/EUI038–EUI039/EUI041–EUI042/EUI044 | 停用上述码；新增 EUI045；下一码 EUI046 |
 | V7 | 历史文档 | design/15 为权威 | design/15 停止；design/03 §3.5.3 为 v3 台账，§3.5.4 为 v4 台账 |
 
-**实现偏差**：v4 差距以 [spec/02 §12](./02-generated-code-contract.md#12-实现偏差台账-d42d76) 与
-[design/03 §3.5.4](../design/03-template-engine.md#354-v4-实现偏差台账d42d76) 为准（同一张台账，双向同步）。
+**实现偏差**：v4 差距以 [spec/02 §12](./02-generated-code-contract.md#12-实现偏差台账-d42d79) 与
+[design/03 §3.5.4](../design/03-template-engine.md#354-v4-实现偏差台账d42d79) 为准（同一张台账，双向同步）。
 v1 README 中针对 v3 `BlockScope` 构造函数的 E1/E2 勘误随 v4 换轨作废，仅保留在 design/03 历史记录中。

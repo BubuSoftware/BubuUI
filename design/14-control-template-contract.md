@@ -809,7 +809,18 @@ Build(Compilation c):                       // 纯函数：同样的 Compilation
 - 目录依赖 `Compilation`，项目里任何改动都会让它**重建**（这是事实，别再承诺"不重建"）；
   目标是重建后**下游生成输出不变**，即 `CSharpGeneratorDriver` 的 `GetRunResults()` 里
   每个文件的 `IncrementalStepRunReason` 为 `Cached`/`Unchanged`。14.11.2 的增量测试按这个口径断言。
-- 目录构建仍是**每批编译一次**，不是每个 `.ui` 一次；当前 `Execute` 里在文件循环外构建（保持）。
+- 目录构建仍是**每批编译一次**，不是每个 `.ui` 一次（✅ G3 2026-11-08：管道根改为
+  `AdditionalTexts → UiFileInput` 与 `Compilation → UiCatalog` 两条；逐文件 `Combine` 后
+  `Select` 出 `(Input, Catalog, UiFileFacts)` 再逐文件 `RegisterSourceOutput`。
+  `UiFileFacts`（code-behind 表面 + 探针事实）是值相等 record，与目录同口径每轮重建、
+  下游按值命中缓存；单个 `.ui` 变化只重跑该文件的发射。
+  验收：`Incremental_UnrelatedSourceChange_KeepsPerFileOutputsCached`（无关源码改动，
+  两个文件均 `Cached`/`Unchanged`）、`Incremental_SingleUiChange_RerunsOnlyThatFile`
+  （只改 A.ui，A `Modified`/`New`、B `Cached`/`Unchanged`）。
+  更正旧测试注释：Roslyn 4.9.2 的 `TrackedSteps[...].Outputs` 元素是
+  `(object Value, IncrementalStepRunReason Reason)` 元组，reason **可以**公开断言，
+  此前「公开 API 没有 step reason」的说法是误读。facts 与目录一样每轮重建，
+  不做没有数字支撑的预优化。）
 - 若引用集增长到 100+ 程序集或过滤后仍 > 100 ms，再按实测数据决定是否加 `WithUpdateReason` 级别的拆分；
   不做没有数字支撑的预优化。
 
@@ -879,7 +890,7 @@ Build(Compilation c):                       // 纯函数：同样的 Compilation
 | 保留语法 | `Class=`、`Style=`、附加属性、把 `Slot`/`ContentSlot` 注册为控件/组件标签名（✅ C6 保留冲突进 HiddenTags）；`:bind`/`:value` | EUI031（不是"未知"）；EUI043 Warning |
 | 生成代码 | 每类构造的 golden 文本；`Track`/`BlockScope` 作用域登记 | 确定性一致 |
 | 集成 | `CSharpGeneratorDriver` 编译含 `.ui` 的测试项目；模拟第三方程序集（含跨程序集组件发现） | 无诊断 + 生成代码可编译 |
-| 增量 | 无关文件修改后跑 `CSharpGeneratorDriver`，读 `GetRunResults()` | 目录重建但**每个生成文件 `IncrementalStepRunReason` 为 `Cached`/`Unchanged`**（v2 口径，见 14.10.3） |
+| 增量 | 无关文件修改后跑 `CSharpGeneratorDriver`，读 `GetRunResults()` | ✅ G3 2026-11-08：目录重建但**每个生成文件 `IncrementalStepRunReason` 为 `Cached`/`Unchanged`**；单 `.ui` 变化只重跑该文件（v2 口径，见 14.10.3；`GeneratorContractTests` 3 例） |
 
 测试项目：新增 `tests/EclipseUI.Compiler.Tests`（net10.0，引用 Microsoft.CodeAnalysis.CSharp、生成器、运行时）。
 现有 `EclipseUI.Headless.Tests` 继续负责前端/分析器的纯结构测试。
@@ -1080,7 +1091,8 @@ EUI026 声明处诊断（D74 ②）与 EUI024 处理器签名匹配仍开放。
 2. ~~组件默认内容是否提前到 C4~~ 已定：C4 做参数与默认内容，C6 做具名插槽。
 3. `Ref` 的清理语义（卸载时置 null？）与作用域（code-behind 字段）。
 4. 事件 typed args（`Action<TArgs>`）的泛型事件模型。
-5. `#line` 列映射（G3）与 `.ui` 行列号在 LSP/调试器中的统一口径；XML 实体不解析已由 03 冻结。
+5. ~~`#line` 列映射（G3）~~ ✅ 已落地（2026-11-08，D79，口径见 spec/02 §2.4 规则 9/10）；
+   剩余 `.ui` 行列号在 LSP/调试器中的统一口径；XML 实体不解析已由 03 冻结。
 6. 第三方字面量转换器的长期机制（当前明确不支持，避免编译期执行用户代码）。
 7. 8 个继承事件是否需要在个别标签上用 `[UiIgnore]` 裁剪（如 `TextBlock.OnKeyDown` 合法但罕用）。
 

@@ -31,80 +31,119 @@ public sealed class TemplateGenerator : IIncrementalGenerator
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         var uiFiles = context.AdditionalTextsProvider
-            .Where(static file => Path.GetExtension(file.Path) is ".ui");
+            .Where(static file => Path.GetExtension(file.Path) is ".ui")
+            .Select(static (file, ct) => new UiFileInput(file.Path, file.GetText(ct)?.ToString() ?? ""));
 
         // 模板表面每轮从符号重建（design/14 §14.10.3：派生目录是唯一事实源，不允许手写缓存）。
         // UiCatalog 逐字段实现结构相等，所以控件 API 没变时下游仍按值命中缓存、不重生成代码。
         var catalogProvider = context.CompilationProvider
             .Select(static (compilation, _) => UiCatalogFactory.Build(compilation));
 
-        var pipeline = uiFiles.Collect().Combine(catalogProvider).Combine(context.CompilationProvider);
-        context.RegisterSourceOutput(pipeline, static (spc, data) =>
-            Execute(spc, data.Left.Left, data.Left.Right, data.Right));
+        // 逐文件语义事实（code-behind 表面 + 探针）：输入挂 Compilation 故每轮重建，但输出是值相等
+        // record——无关改动下值不变，下游逐文件 SourceOutput 按值命中 Cached/Unchanged
+        // （design/14 §14.10.3/§14.11.2 的验收口径）。不再 Collect 成批：单文件变化只重跑该文件。
+        var perFile = uiFiles.Combine(catalogProvider).Combine(context.CompilationProvider)
+            .Select(static (pair, _) => (
+                Input: pair.Left.Left,
+                Catalog: pair.Left.Right,
+                Facts: ExtractFacts(pair.Left.Left, pair.Left.Right, pair.Right)));
+        context.RegisterSourceOutput(perFile, static (spc, data) =>
+            ExecuteFile(spc, data.Input, data.Catalog, data.Facts));
     }
 
-    private static void Execute(SourceProductionContext spc, ImmutableArray<AdditionalText> files,
-        UiCatalog catalog, Compilation compilation)
+    private static UiFileFacts ExtractFacts(UiFileInput input, UiCatalog catalog, Compilation compilation)
     {
-        foreach (var file in files)
+        var className = Path.GetFileNameWithoutExtension(input.Path);
+        var validName = SyntaxFacts.IsValidIdentifier(className);
+        var codeBehindDiags = new List<UiDiagnostic>();
+        var type = validName ? FindCodeBehind(compilation, className) : null;
+        if (validName)
         {
-            var sourceText = file.GetText();
-            if (sourceText is null) continue;
-
-            var className = Path.GetFileNameWithoutExtension(file.Path);
-            var diags = new List<UiDiagnostic>();
-
-            if (!SyntaxFacts.IsValidIdentifier(className))
-            {
-                Report(spc, file.Path, sourceText, UiDiagnostics.Error(UiDiagnostics.InvalidClassName,
-                    $"'{className}' is not a valid class name; rename the .ui file", UiSpan.Zero));
-                continue;
-            }
-
-            var doc = FrontEnd.Parse(sourceText.ToString(), file.Path, diags);
-
-            // code-behind 发现：与 .ui 同名的 partial class（必须先于 Analyze——自身模板的
-            // <ContentSlot> 要按 code-behind 类的真实 [UiSlot] 属性解析，spec/02 §4.12.5）
-            var type = FindCodeBehind(compilation, className);
             if (type is null)
             {
-                diags.Add(UiDiagnostics.Error(UiDiagnostics.CodeBehindMissing,
+                codeBehindDiags.Add(UiDiagnostics.Error(UiDiagnostics.CodeBehindMissing,
                     $"no code-behind class '{className}' found; add a partial class with that name", UiSpan.Zero));
             }
-            else
+            else if (type.ContainingType is not null)
             {
-                if (type.ContainingType is not null)
-                    diags.Add(UiDiagnostics.Error(UiDiagnostics.CodeBehindNested,
-                        $"code-behind class '{className}' must be top-level", UiSpan.Zero));
-                else if (!IsPartial(type))
-                    diags.Add(UiDiagnostics.Error(UiDiagnostics.CodeBehindNotPartial,
-                        $"code-behind class '{className}' must be declared partial", UiSpan.Zero));
+                codeBehindDiags.Add(UiDiagnostics.Error(UiDiagnostics.CodeBehindNested,
+                    $"code-behind class '{className}' must be top-level", UiSpan.Zero));
             }
-
-            // 自身组件（spec/02 §4.12.5）：code-behind 符号直接派生插槽表——目录里没有
-            // code-behind 类的 def（基类由生成注入，源码不派生 Component），这是唯一权威来源。
-            var ownComponent = ResolveOwnComponent(type, compilation);
-            FrontEnd.Analyze(doc, catalog, diags, ownComponent?.Slots, ownComponent?.DisplayName);
-
-            // 编译期语义探针：@foreach item 类型推断 + @bind 源可写性校验
-            var itemTypes = type is null
-                ? new Dictionary<UiForeach, string>()
-                : ProbeSemantics(doc, type, compilation, diags);
-
-            bool hasErrors = false;
-            foreach (var diag in diags)
+            else if (!IsPartial(type))
             {
-                Report(spc, file.Path, sourceText, diag);
-                if (diag.IsError) hasErrors = true;
+                codeBehindDiags.Add(UiDiagnostics.Error(UiDiagnostics.CodeBehindNotPartial,
+                    $"code-behind class '{className}' must be declared partial", UiSpan.Zero));
             }
-            if (hasErrors || type is null) continue;
-
-            var code = new Emitter(doc,
-                AccessibilityOf(type), NamespaceName(type), className,
-                itemTypes, file.Path, ownComponent?.Slots).Emit();
-
-            spc.AddSource($"{className}.{StableHash(file.Path)}.g.cs", code);
         }
+
+        // 自身组件（spec/02 §4.12.5）：code-behind 符号直接派生插槽表——目录里没有
+        // code-behind 类的 def（基类由生成注入，源码不派生 Component），这是唯一权威来源。
+        var own = ResolveOwnComponent(type, compilation);
+        var slots = own is null
+            ? ImmutableArray<UiSlotDef>.Empty
+            : own.Value.Slots.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => kv.Value).ToImmutableArray();
+
+        // AST 不可值相等、不能跨缓存边界：这里解析只为喂探针，发射阶段再解析一次（前端纯函数，同文同果）。
+        var doc = FrontEnd.Parse(input.Text, input.Path, new List<UiDiagnostic>());
+        // 探针读 Analyze 回写在 AST 上的 PropDef/ParamDef/ResolvedDef，必须先分析一遍（诊断丢弃，发射阶段重报）。
+        FrontEnd.Analyze(doc, catalog, new List<UiDiagnostic>(),
+            own is null ? null : slots.ToDictionary(slot => slot.Name, StringComparer.Ordinal),
+            own?.DisplayName);
+        var probeDiags = new List<UiDiagnostic>();
+        var itemTypes = type is null
+            ? ImmutableArray<ItemTypeFact>.Empty
+            : ProbeSemantics(doc, type, compilation, probeDiags)
+                .Select(kv => new ItemTypeFact(kv.Key.CollectionSpan.Start, kv.Value))
+                .OrderBy(fact => fact.SpanStart)
+                .ToImmutableArray();
+
+        return new UiFileFacts(
+            type is null ? "internal" : AccessibilityOf(type),
+            type is null ? "" : NamespaceName(type),
+            own?.DisplayName ?? "",
+            slots,
+            codeBehindDiags.ToImmutableArray(),
+            probeDiags.ToImmutableArray(),
+            itemTypes);
+    }
+
+    private static void ExecuteFile(SourceProductionContext spc, UiFileInput input,
+        UiCatalog catalog, UiFileFacts facts)
+    {
+        var sourceText = SourceText.From(input.Text);
+        var className = Path.GetFileNameWithoutExtension(input.Path);
+        var diags = new List<UiDiagnostic>();
+
+        if (!SyntaxFacts.IsValidIdentifier(className))
+        {
+            Report(spc, input.Path, sourceText, UiDiagnostics.Error(UiDiagnostics.InvalidClassName,
+                $"'{className}' is not a valid class name; rename the .ui file", UiSpan.Zero));
+            return;
+        }
+
+        var doc = FrontEnd.Parse(input.Text, input.Path, diags);
+        diags.AddRange(facts.CodeBehindDiags);
+
+        var ownSlots = facts.DisplayName.Length == 0
+            ? null
+            : facts.Slots.ToDictionary(slot => slot.Name, StringComparer.Ordinal);
+        FrontEnd.Analyze(doc, catalog, diags, ownSlots, facts.DisplayName.Length == 0 ? null : facts.DisplayName);
+        diags.AddRange(facts.ProbeDiags);
+
+        bool hasErrors = false;
+        foreach (var diag in diags)
+        {
+            Report(spc, input.Path, sourceText, diag);
+            if (diag.IsError) hasErrors = true;
+        }
+        if (hasErrors) return;
+
+        var code = new Emitter(doc,
+            facts.Accessibility, facts.Namespace, className,
+            facts.ItemTypes.ToDictionary(fact => fact.SpanStart, fact => fact.Type),
+            input.Path, ownSlots).Emit();
+
+        spc.AddSource($"{className}.{StableHash(input.Path)}.g.cs", code);
     }
 
     private static string StableHash(string path)
@@ -547,5 +586,46 @@ public sealed class TemplateGenerator : IIncrementalGenerator
             },
             isEnabledByDefault: true);
         spc.ReportDiagnostic(Diagnostic.Create(descriptor, location, diag.Message));
+    }
+}
+
+internal sealed record UiFileInput(string Path, string Text);
+
+internal sealed record ItemTypeFact(int SpanStart, string Type);
+
+/// <summary>逐文件语义事实：值相等是增量缓存的前提（ImmutableArray 默认引用相等，必须逐元素比）。</summary>
+internal sealed record UiFileFacts(
+    string Accessibility,
+    string Namespace,
+    string DisplayName,
+    ImmutableArray<UiSlotDef> Slots,
+    ImmutableArray<UiDiagnostic> CodeBehindDiags,
+    ImmutableArray<UiDiagnostic> ProbeDiags,
+    ImmutableArray<ItemTypeFact> ItemTypes)
+{
+    public bool Equals(UiFileFacts? other) =>
+        other is not null &&
+        Accessibility == other.Accessibility &&
+        Namespace == other.Namespace &&
+        DisplayName == other.DisplayName &&
+        Slots.SequenceEqual(other.Slots) &&
+        CodeBehindDiags.SequenceEqual(other.CodeBehindDiags) &&
+        ProbeDiags.SequenceEqual(other.ProbeDiags) &&
+        ItemTypes.SequenceEqual(other.ItemTypes);
+
+    public override int GetHashCode()
+    {
+        var hash = 17;
+        hash = Add(hash, Accessibility);
+        hash = Add(hash, Namespace);
+        hash = Add(hash, DisplayName);
+        foreach (var slot in Slots) hash = Add(hash, slot);
+        foreach (var diag in CodeBehindDiags) hash = Add(hash, diag);
+        foreach (var diag in ProbeDiags) hash = Add(hash, diag);
+        foreach (var fact in ItemTypes) hash = Add(hash, fact);
+        return hash;
+
+        // netstandard2.0 没有 System.HashCode，与 CatalogValueEq 同口径累加。
+        static int Add(int h, object? v) => unchecked(h * 397 + (v?.GetHashCode() ?? 0));
     }
 }
