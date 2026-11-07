@@ -1225,4 +1225,234 @@ public class GeneratorContractTests
         Assert.Contains("(global::System.Action)", code);
         Assert.DoesNotContain("RoutedEventArgs>", code);
     }
+
+    // ---- C6：具名插槽（spec/02 §4.12.5，design/14 §14.6.3）----
+
+    /// <summary>Probe 自带 [UiSlot]（宿主 <ContentSlot> 用）+ SlotChip 组件（消费 <Slot> 用）。</summary>
+    private const string SlotFixtures = """
+        using System;
+        using System.Collections.Generic;
+        using EclipseUI;
+
+        public partial class Probe
+        {
+            [UiSlot("Header")] public Element? Header { get; set; }
+            [UiSlot("Rows")] public System.Collections.Generic.IReadOnlyList<Element> Rows { get; set; } = [];
+        }
+
+        public sealed class SlotChip : Component
+        {
+            protected override Element Build() => new global::EclipseUI.Elements.StackPanel();
+            [UiParameter] public string? Title { get; set; }
+            [UiParameter] [UiContent] public Element? Body { get; set; }
+            [UiSlot("Header")] public Element? Header { get; set; }
+            [UiSlot("Rows")] public IReadOnlyList<Element> Rows { get; set; } = [];
+        }
+        """;
+
+    /// <summary>
+    /// 把生成结果真正编译一次：形态断言只能证明文本写了什么，证明不了它能不能编。
+    /// 返回 C# 错误清单（含 #line 映射后的 .ui 位置）。
+    /// </summary>
+    private static List<string> CompileGenerated(string uiPath, string ui, string codeBehind)
+    {
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(
+            new[] { new TemplateGenerator().AsSourceGenerator() },
+            new AdditionalText[] { new UiAdditionalText(uiPath, ui) });
+        var updated = driver.RunGeneratorsAndUpdateCompilation(
+            CreateCompilation(codeBehind), out var output, out _);
+        return output.GetDiagnostics()
+            .Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
+            .Select(d => $"{d.Id} {d.Location.GetMappedLineSpan().Path}:{d.Location.GetMappedLineSpan().StartLinePosition.Line} :: {d.GetMessage()}")
+            .ToList();
+    }
+
+    /// <summary>消费侧 Single：build-once 列表 + 单根取首个 + 先于 Mount() 赋值。</summary>
+    [Fact]
+    public void SlotFill_SingleSlot_EmitsListAndAssignsFirstRoot()
+    {
+        const string ui = """
+            <StackPanel>
+              <SlotChip>
+                <Slot Name="Header"><TextBlock FontSize="10">a</TextBlock></Slot>
+              </SlotChip>
+            </StackPanel>
+            """;
+
+        var code = Generated(Run("C:\\templates\\Probe.ui", ui, SlotFixtures));
+
+        Assert.Matches(@"var slot\d+ = new global::System\.Collections\.Generic\.List<global::EclipseUI\.Element>\(\);", code);
+        Assert.Matches(@"cmp\d+\.Header = slot\d+\.Count == 0 \? null : slot\d+\[0\];", code);
+        Assert.Matches(@"slot\d+\.Add\(el\d+\);", code);
+        Assert.Matches(@"cmp\d+\.Mount\(\);", code);
+    }
+
+    /// <summary>消费侧 Multiple：多填充拼进同一列表；属性整表赋值，且只赋值一次；空填充为空列表 memberships。</summary>
+    [Fact]
+    public void SlotFill_MultipleSlot_ConcatenatesFills()
+    {
+        const string ui = """
+            <StackPanel>
+              <SlotChip>
+                <Slot Name="Rows"><TextBlock FontSize="10">r1</TextBlock></Slot>
+                <Slot Name="Rows"><Button Label="r2" /></Slot>
+              </SlotChip>
+            </StackPanel>
+            """;
+
+        var code = Generated(Run("C:\\templates\\Probe.ui", ui, SlotFixtures));
+
+        var assignments = System.Text.RegularExpressions.Regex.Matches(code, @"cmp\d+\.Rows = slot\d+;");
+        Assert.Single(assignments); // 同槽多填充共享一个列表，一次赋值
+        Assert.Matches(@"slot\d+\.Add\(el\d+\);\r?\n\W*var el\d+ = new global::EclipseUI\.Elements\.Button", code);
+    }
+
+    /// <summary>宿主侧 Single：Build 内联 `if (Header is { } s) parent.Children.Add(s)`——无运行时宿主元素。</summary>
+    [Fact]
+    public void ContentSlot_HostTemplate_SplicesSingleProperty()
+    {
+        const string ui = """<StackPanel><ContentSlot Name="Header" /></StackPanel>""";
+
+        var code = Generated(Run("C:\\templates\\Probe.ui", ui, SlotFixtures));
+
+        Assert.Matches(@"var el\d+ = new global::EclipseUI\.Elements\.StackPanel\(\);", code);
+        Assert.Matches(@"if \(Header is \{ \} slot\d+\)", code);
+        Assert.Matches(@"el\d+\.Children\.Add\(slot\d+\);", code);
+        Assert.DoesNotContain("ContentSlot", code);
+    }
+
+    /// <summary>宿主侧 Multiple：读一次属性逐项加入（no .Content 中转）。</summary>
+    [Fact]
+    public void ContentSlot_HostTemplate_SplicesMultipleProperty()
+    {
+        const string ui = """<StackPanel><ContentSlot Name="Rows" /></StackPanel>""";
+
+        var code = Generated(Run("C:\\templates\\Probe.ui", ui, SlotFixtures));
+
+        Assert.Matches(@"foreach \(var slot\d+ in Rows\)", code);
+        Assert.Matches(@"el\d+\.Children\.Add\(slot\d+\);", code);
+    }
+
+    /// <summary>消费侧未知插槽：EUI022（含建议），出错不生成。</summary>
+    [Fact]
+    public void SlotFill_UnknownSlot_ReportsEUI022_AndGeneratesNothing()
+    {
+        const string ui = """
+            <StackPanel>
+              <SlotChip>
+                <Slot Name="Heade"><TextBlock FontSize="10">a</TextBlock></Slot>
+              </SlotChip>
+            </StackPanel>
+            """;
+
+        var result = Run("C:\\templates\\Probe.ui", ui, SlotFixtures);
+
+        var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI022");
+        Assert.Contains("unknown slot 'Heade'", diag.GetMessage());
+        Assert.Contains("Header", diag.GetMessage());
+        Assert.Empty(result.GeneratedSources);
+    }
+
+    /// <summary>宿主侧未知插槽（code-behind 符号为准）：EUI022（含建议）+ 内容不生成。</summary>
+    [Fact]
+    public void ContentSlot_UnknownSlot_ReportsEUI022_AndGeneratesNothing()
+    {
+        const string ui = """<StackPanel><ContentSlot Name="Heade" /></StackPanel>""";
+
+        var result = Run("C:\\templates\\Probe.ui", ui, SlotFixtures);
+
+        var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI022");
+        Assert.Contains("unknown slot 'Heade'", diag.GetMessage());
+        Assert.Contains("Header", diag.GetMessage());
+        Assert.Empty(result.GeneratedSources);
+    }
+
+    /// <summary>宿主缺 <c>Name</c> 属性：EUI022。</summary>
+    [Fact]
+    public void ContentSlot_MissingName_ReportsEUI022()
+    {
+        const string ui = """<StackPanel><ContentSlot /></StackPanel>""";
+
+        var result = Run("C:\\templates\\Probe.ui", ui, SlotFixtures);
+
+        var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI022");
+        Assert.Contains("Name", diag.GetMessage());
+        Assert.Empty(result.GeneratedSources);
+    }
+
+    // ---- C6：生成结果真正编译（形态断言证明不了可编译性）----
+
+    [Theory]
+    [InlineData("""
+        <StackPanel>
+          <SlotChip>
+            <Slot Name="Header"><TextBlock FontSize="10">a</TextBlock></Slot>
+            <Slot Name="Rows"><TextBlock FontSize="10">r1</TextBlock></Slot>
+            <Slot Name="Rows"><Button Label="r2" /></Slot>
+          </SlotChip>
+        </StackPanel>
+        """)]
+    [InlineData("<StackPanel><ContentSlot Name=\"Header\" /></StackPanel>")]
+    [InlineData("<StackPanel><ContentSlot Name=\"Rows\" /></StackPanel>")]
+    [InlineData("""
+        <StackPanel>
+          <ContentSlot Name="Header" />
+          <ContentSlot Name="Rows" />
+          <SlotChip Title="t">
+            <Button Label="body" />
+            <Slot Name="Rows"><TextBlock FontSize="10">r</TextBlock></Slot>
+          </SlotChip>
+        </StackPanel>
+        """)]
+    public void SlotCode_GeneratedCompilation_HasNoCSharpErrors(string ui)
+    {
+        var errors = CompileGenerated("C:\\templates\\Probe.ui", ui, SlotFixtures);
+        Assert.Empty(string.Join(Environment.NewLine, errors));
+    }
+
+    [Fact]
+    public void SlotFill_ContentSlotInsideFill_IsEUI022_AndGeneratesNothing()
+    {
+        const string ui = """
+            <StackPanel>
+              <SlotChip Title="t">
+                <Slot Name="Rows"><ContentSlot Name="Rows" /></Slot>
+              </SlotChip>
+            </StackPanel>
+            """;
+
+        var result = Run("C:\\templates\\Probe.ui", ui, SlotFixtures);
+
+        Assert.Contains(result.Diagnostics, d => d.Id == "EUI022");
+        Assert.Empty(result.GeneratedSources);
+    }
+
+    /// <summary>spec/02 §4.12.5 规则 4：插槽赋值在参数之后、默认内容之后、Mount() 之前。</summary>
+    [Fact]
+    public void SlotFill_AssignsAfterParametersAndContent_BeforeMount()
+    {
+        const string ui = """
+            <StackPanel>
+              <SlotChip Title="t">
+                <Button Label="body" />
+                <Slot Name="Header"><TextBlock FontSize="10">h</TextBlock></Slot>
+              </SlotChip>
+            </StackPanel>
+            """;
+
+        var code = Generated(Run("C:\\templates\\Probe.ui", ui, SlotFixtures));
+
+        // el0 = 根 StackPanel，组件实例取到 cmp1。
+        var parameter = code.IndexOf("cmp1.Title = ", StringComparison.Ordinal);
+        var content = code.IndexOf("cmp1.Body = ", StringComparison.Ordinal);
+        var slot = code.IndexOf("cmp1.Header = ", StringComparison.Ordinal);
+        var mount = code.IndexOf("cmp1.Mount();", StringComparison.Ordinal);
+        Assert.True(parameter >= 0, "缺少参数赋值");
+        Assert.True(content >= 0, "缺少默认内容赋值");
+        Assert.True(slot >= 0, "缺少插槽赋值");
+        Assert.True(mount >= 0, "缺少 Mount() 调用");
+        Assert.True(parameter < content, "插槽切片不得改变参数先于内容的顺序");
+        Assert.True(content < slot, "子组件首次 Build() 在 Mount() 内读取插槽属性，赋值必须先于 Mount");
+        Assert.True(slot < mount, "插槽赋值必须先于 Mount()");
+    }
 }

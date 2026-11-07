@@ -9,7 +9,8 @@ public static class TemplateAnalyzer
 {
     private enum Ctx { Root, Container, TextRuns, Label, None, ContentSingle, ContentMulti }
 
-    public static void Analyze(UiDocument doc, UiCatalog catalog, List<UiDiagnostic> diags)
+    public static void Analyze(UiDocument doc, UiCatalog catalog, List<UiDiagnostic> diags,
+        IReadOnlyDictionary<string, UiSlotDef>? ownSlots = null, string? ownTypeDisplay = null)
     {
         int roots = doc.Nodes.Count(n => n is UiElement);
         if (roots != 1)
@@ -22,8 +23,215 @@ public static class TemplateAnalyzer
                     "control flow blocks are not allowed at the template root", node.Span));
         }
 
+        // 具名插槽宿主（spec/02 §4.12.5）：自身模板中的 <ContentSlot> 按 code-behind 类的
+        // [UiSlot] 属性解析。生成器/探针调用带 ownSlots（code-behind 符号扫描，权威——code-behind
+        // 类在源码里不派生 Component，目录不会有它的 def）；缺省时按目录显示名与 .ui 文件名
+        // 的短名匹配（Samples.TaskList ↔ TaskList，面向无符号的静态前端）。
+        var own = ownSlots is not null
+            ? new OwnComponent(ownTypeDisplay ?? doc.ClassName, ownSlots)
+            : OwnComponentFromCatalog(doc, catalog);
+        var placed = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var host in Nodes(doc.Nodes).OfType<UiContentSlotNode>())
+            ValidateContentSlot(host, own, doc, diags, placed);
+
         foreach (var node in doc.Nodes)
             Visit(node, Ctx.Root, catalog, diags, allowKey: false);
+    }
+
+    private static IEnumerable<UiNode> Nodes(IEnumerable<UiNode> nodes)
+    {
+        foreach (var node in nodes)
+        {
+            yield return node;
+            switch (node)
+            {
+                case UiElement element:
+                    foreach (var descendant in Nodes(element.Children)) yield return descendant;
+                    break;
+                case UiIf ifNode:
+                    foreach (var descendant in Nodes(ifNode.Children)) yield return descendant;
+                    break;
+                case UiForeach foreachNode:
+                    foreach (var descendant in Nodes(foreachNode.Children)) yield return descendant;
+                    break;
+            }
+        }
+    }
+
+    /// <summary>自身组件（生成器传入符号权威表，或静态前端按目录短名匹配）。</summary>
+    private sealed record OwnComponent(string DisplayName, IReadOnlyDictionary<string, UiSlotDef> Slots);
+
+    private static OwnComponent? OwnComponentFromCatalog(UiDocument doc, UiCatalog catalog)
+    {
+        OwnComponent? match = null;
+        var count = 0;
+        foreach (var def in catalog.Elements)
+        {
+            if (def.Origin != UiElementOrigin.Component) continue;
+            var display = def.ClrTypeDisplayName;
+            if (display != doc.ClassName &&
+                !display.EndsWith("." + doc.ClassName, StringComparison.Ordinal)) continue;
+            count++;
+            match ??= new OwnComponent(def.ClrTypeDisplayName, def.Slots);
+        }
+        return count == 1 ? match : null;
+    }
+
+    /// <summary>
+    /// 单个 <c>&lt;ContentSlot&gt;</c> 的名字层面校验（EUI022 家族）：非法属性 / 缺名 / 非字面量 /
+    /// 带内容 / 自身插槽未知 / 同名重复放置。全部通过才置 <see cref="UiContentSlotNode.ResolvedSlot"/>
+    /// （生成侧按它内联拼接）。
+    /// </summary>
+    private static void ValidateContentSlot(UiContentSlotNode host, OwnComponent? own, UiDocument doc,
+        List<UiDiagnostic> diags, HashSet<string> placed)
+    {
+        UiAttribute? nameAttr = null;
+        foreach (var attr in host.Attributes)
+        {
+            var isName = attr.Name == "Name" && !attr.IsBind && !attr.IsLegacy;
+            if (isName && nameAttr is null)
+            {
+                nameAttr = attr;
+                continue;
+            }
+            diags.Add(UiDiagnostics.Error(UiDiagnostics.SlotInvalid,
+                isName
+                    ? "duplicate 'Name' attribute on <ContentSlot>"
+                    : $"'{attr.Name}' is not allowed on <ContentSlot>; a slot host accepts only Name=<literal>",
+                attr.NameSpan));
+        }
+
+        if (nameAttr is null)
+        {
+            diags.Add(UiDiagnostics.Error(UiDiagnostics.SlotInvalid,
+                "slot host requires a Name attribute: <ContentSlot Name=\"...\" />", host.Span));
+            return;
+        }
+        if (nameAttr.Kind != AttrValueKind.Literal)
+        {
+            diags.Add(UiDiagnostics.Error(UiDiagnostics.SlotInvalid,
+                "'Name' of <ContentSlot> must be a string literal, not an expression", nameAttr.ValueSpan));
+            return;
+        }
+        if (host.HasChildren)
+        {
+            diags.Add(UiDiagnostics.Error(UiDiagnostics.SlotInvalid,
+                "'<ContentSlot>' is a placement marker and takes no content; write <ContentSlot Name=\"...\" />",
+                host.Span));
+        }
+
+        var name = nameAttr.Value;
+        if (own is null)
+        {
+            diags.Add(UiDiagnostics.Error(UiDiagnostics.SlotInvalid,
+                $"cannot resolve the slots of the component template of '{doc.ClassName}'; " +
+                "[UiSlot] properties on the code-behind class (or its base classes) define this template's slots",
+                host.Span));
+            return;
+        }
+        if (!own.Slots.TryGetValue(name, out var slot))
+        {
+            var hint = Suggest.Nearest(name, own.Slots.Keys);
+            diags.Add(UiDiagnostics.Error(UiDiagnostics.SlotInvalid,
+                $"unknown slot '{name}' on '{own.DisplayName}'" + (hint is null ? "" : $"; did you mean '{hint}'?"),
+                nameAttr.ValueSpan));
+            return;
+        }
+        if (!placed.Add(name))
+        {
+            diags.Add(UiDiagnostics.Error(UiDiagnostics.SlotInvalid,
+                $"slot '{name}' is placed more than once in this template; a spliced content element must have a single parent",
+                host.Span));
+            return;
+        }
+
+        host.ResolvedSlot = slot;
+    }
+
+    /// <summary>
+    /// 单个 <c>&lt;Slot&gt;</c> 填充（父组件标签直属）：Name 形状 → def.Slots 解析 → Single 的
+    /// 重复填充/多根计数（EUI022 家族）。解析成功才置 <see cref="UiSlotNode.ResolvedSlot"/>；
+    /// 子内容按插槽基数走建立 once 内容上下文（继承 EUI040/@bind、EUI010/Key、EUI006/裸文本）。
+    /// </summary>
+    private static void ValidateSlotFill(UiElement parent, UiElementDef def, UiSlotNode fill,
+        UiCatalog catalog, List<UiDiagnostic> diags)
+    {
+        UiAttribute? nameAttr = null;
+        foreach (var attr in fill.Attributes)
+        {
+            var isName = attr.Name == "Name" && !attr.IsBind && !attr.IsLegacy;
+            if (isName && nameAttr is null)
+            {
+                nameAttr = attr;
+                continue;
+            }
+            diags.Add(UiDiagnostics.Error(UiDiagnostics.SlotInvalid,
+                isName
+                    ? "duplicate 'Name' attribute on <Slot>"
+                    : $"'{attr.Name}' is not allowed on <Slot>; a named slot fill accepts only Name=<literal>",
+                attr.NameSpan));
+        }
+
+        if (nameAttr is null)
+        {
+            diags.Add(UiDiagnostics.Error(UiDiagnostics.SlotInvalid,
+                "named slot fill requires a Name attribute: <Slot Name=\"...\">", fill.Span));
+            return;
+        }
+        if (nameAttr.Kind != AttrValueKind.Literal)
+        {
+            diags.Add(UiDiagnostics.Error(UiDiagnostics.SlotInvalid,
+                "'Name' of <Slot> must be a string literal, not an expression", nameAttr.ValueSpan));
+            return;
+        }
+
+        // 槽填充只挂在组件标签上（spec/01 §4.15）；控件容器内的 <Slot> 是位置错误
+        if (def.Origin != UiElementOrigin.Component)
+        {
+            diags.Add(UiDiagnostics.Error(UiDiagnostics.SlotInvalid,
+                "named slot fills are only allowed as direct children of a component tag", fill.Span));
+            return;
+        }
+
+        var name = nameAttr.Value;
+        if (!def.Slots.TryGetValue(name, out var slot))
+        {
+            var hint = Suggest.Nearest(name, def.Slots.Keys);
+            diags.Add(UiDiagnostics.Error(UiDiagnostics.SlotInvalid,
+                $"unknown slot '{name}' on component '{parent.Tag}'" + (hint is null ? "" : $"; did you mean '{hint}'?"),
+                nameAttr.ValueSpan));
+            return;
+        }
+
+        if (slot.Cardinality == UiSlotCardinality.Single)
+        {
+            var prior = false;
+            foreach (var sibling in parent.Children)
+            {
+                if (ReferenceEquals(sibling, fill)) break;
+                prior |= sibling is UiSlotNode s &&
+                    s.NameAttribute is { Kind: AttrValueKind.Literal } a && a.Value == name;
+            }
+            if (prior)
+            {
+                diags.Add(UiDiagnostics.Error(UiDiagnostics.SlotInvalid,
+                    $"slot '{name}' of '{parent.Tag}' can be filled only once", nameAttr.ValueSpan));
+                return;
+            }
+
+            var rootCount = fill.Children.Count(c => c is UiElement or UiIf or UiForeach);
+            if (rootCount > 1)
+                diags.Add(UiDiagnostics.Error(UiDiagnostics.SlotInvalid,
+                    $"slot '{name}' of '{parent.Tag}' takes a single root ({slot.ClrTypeDisplayName}); " +
+                    $"one child element or block is allowed, found {rootCount}",
+                    fill.Span));
+            // 多根仍解析：单根赋值取首个（与 §4.12.3 单根内容同口径），错误已报
+        }
+
+        fill.ResolvedSlot = slot;
+        var childCtx = slot.Cardinality == UiSlotCardinality.Single ? Ctx.ContentSingle : Ctx.ContentMulti;
+        foreach (var child in fill.Children)
+            Visit(child, childCtx, catalog, diags, allowKey: false);
     }
 
     private static void Visit(UiNode node, Ctx ctx, UiCatalog catalog, List<UiDiagnostic> diags, bool allowKey)
@@ -35,6 +243,18 @@ public static class TemplateAnalyzer
                 break;
             case UiText text:
                 VisitText(text, ctx, diags);
+                break;
+            case UiSlotNode:
+                diags.Add(UiDiagnostics.Error(UiDiagnostics.SlotInvalid,
+                    "named slot fills are only allowed as direct children of a component tag", node.Span));
+                break;
+            case UiContentSlotNode:
+                if (ctx != Ctx.Container)
+                    diags.Add(UiDiagnostics.Error(UiDiagnostics.SlotInvalid,
+                        ctx == Ctx.Root
+                            ? "'<ContentSlot>' cannot be the template root; place it inside an element of the component's own template"
+                            : "'<ContentSlot>' is only allowed directly inside an element container of the component's own template",
+                        node.Span));
                 break;
             case UiIf ifNode:
                 VisitBlock(ifNode.ConditionSpan, ifNode.Children, ctx, catalog, diags, allowKeyRoot: false);
@@ -59,6 +279,16 @@ public static class TemplateAnalyzer
         bool firstRoot = true;
         foreach (var child in children)
         {
+            // 槽节点不进块：填充只允许组件标签直属；宿主 splice 是 build-once，块会按 refresh 重建内容
+            if (child is UiSlotNode or UiContentSlotNode)
+            {
+                diags.Add(UiDiagnostics.Error(UiDiagnostics.SlotInvalid,
+                    child is UiSlotNode
+                        ? "named slot fills are only allowed as direct children of a component tag"
+                        : "'<ContentSlot>' cannot appear inside @if/@foreach blocks; place it directly in an element container",
+                    child.Span));
+                continue;
+            }
             bool isKeyAllowed = allowKeyRoot && firstRoot && child is UiElement;
             firstRoot = false;
             Visit(child, childCtx, catalog, diags, isKeyAllowed);
@@ -124,21 +354,18 @@ public static class TemplateAnalyzer
         var resolution = catalog.Resolve(element.Tag);
         if (resolution.Kind != UiTagResolutionKind.Found)
         {
-            // EUI031：具名插槽消费侧语法保留到 G4（spec/01 §6.2）；出现同名真实控件时不走这里。
-            if (resolution.Kind == UiTagResolutionKind.NotFound && element.Tag is "Slot" or "ContentSlot")
-            {
-                diags.Add(UiDiagnostics.Error(UiDiagnostics.ReservedSyntax,
-                    $"'<{element.Tag}>' is reserved for named slots (G4) and has no effect yet", element.TagSpan));
-                element.ResolvedDef = null;
-                foreach (var child in element.Children)
-                    Visit(child, Ctx.Container, catalog, diags, allowKey: false);
-                return;
-            }
             diags.Add(UiDiagnostics.Error(UiDiagnostics.UnknownTag,
                 UnknownTagMessage(element.Tag, resolution, catalog), element.TagSpan));
             element.ResolvedDef = null;
             foreach (var child in element.Children)
-                Visit(child, Ctx.Container, catalog, diags, allowKey: false);
+            {
+                // 未知标签下的槽节点仍要报位置/形状错误，不能静默漏报
+                if (child is UiSlotNode or UiContentSlotNode)
+                    diags.Add(UiDiagnostics.Error(UiDiagnostics.SlotInvalid,
+                        "named slot fills are only allowed as direct children of a resolved component tag", child.Span));
+                else
+                    Visit(child, Ctx.Container, catalog, diags, allowKey: false);
+            }
             return;
         }
 
@@ -409,6 +636,20 @@ public static class TemplateAnalyzer
 
         foreach (var child in element.Children)
         {
+            // 具名插槽填充（spec/01 §4.15）：无论组件有无 [UiContent]，槽都按 def.Slots 解析；
+            // 槽填充不参与默认内容的根计数与内容模型。
+            if (child is UiSlotNode fill)
+            {
+                ValidateSlotFill(element, def, fill, catalog, diags);
+                continue;
+            }
+            if (child is UiContentSlotNode && isComponent)
+            {
+                diags.Add(UiDiagnostics.Error(UiDiagnostics.SlotInvalid,
+                    "'<ContentSlot>' belongs to the component's own template, not to a component use; " +
+                    "remove it here", child.Span));
+                continue;
+            }
             if (contentCtx == Ctx.None)
             {
                 // C5：EUI021 使用点（design/14 §14.5.4）——引用程序集控件的 [UiContent] 目标非法时
@@ -449,6 +690,7 @@ public static class FrontEnd
         return parser.ParseDocument(fileName);
     }
 
-    public static void Analyze(UiDocument doc, UiCatalog catalog, List<UiDiagnostic> diags)
-        => TemplateAnalyzer.Analyze(doc, catalog, diags);
+    public static void Analyze(UiDocument doc, UiCatalog catalog, List<UiDiagnostic> diags,
+        IReadOnlyDictionary<string, UiSlotDef>? ownSlots = null, string? ownTypeDisplay = null)
+        => TemplateAnalyzer.Analyze(doc, catalog, diags, ownSlots, ownTypeDisplay);
 }

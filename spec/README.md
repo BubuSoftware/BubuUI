@@ -9,14 +9,14 @@
 | 文件 | 内容 | 状态 |
 |---|---|---|
 | [01 模板语法规范](./01-template-syntax.md) | 词法、句法、赋值与反应式语义、内容模型、控制流、字面量、诊断触发点、完整示例 | v2 定稿（v4 模型） |
-| [02 生成代码契约](./02-generated-code-contract.md) | 生成器不变量 R1–R10、编译管线、节点/构造的生成形态、顺序与作用域、确定性、契约测试、版本兼容 | v2 定稿（v4 模型；S1/S2/S3 控件侧已落地） |
-| [03 反应式与绑定契约](./03-reactivity-and-binding.md) | 组件失效与 `Render`、失效队列、块刷新与 Keyed 复用、`@bind-P`/`PChanged`、事件自动失效、EUI033/EUI037/EUI040/EUI043/EUI045、S1–S5 | v1 定稿（v4 模型；S1/S2/S3 控件侧已落地） |
-| 04 控件与元数据（规划） | 标签/属性/事件/内容模型声明、符号派生目录、组件参数与插槽 | 迁移前以 [design/14](../design/14-control-template-contract.md) 为准；**C1/C2 已落地**（运行时声明特性 + `Compiler.Metadata` 符号扫描器；C2 起 分析器/生成器读派生目录、手写目录删除，事件表面 1 → 9 个事件名，见 design/14 §14.12.1/§14.12.2） |
+| [02 生成代码契约](./02-generated-code-contract.md) | 生成器不变量 R1–R10、编译管线、节点/构造的生成形态、顺序与作用域、确定性、契约测试、版本兼容 | v2 定稿（v4 模型；S1–S3 已落地，含组件侧） |
+| [03 反应式与绑定契约](./03-reactivity-and-binding.md) | 组件失效与 `Render`、失效队列、块刷新与 Keyed 复用、`@bind-P`/`PChanged`、事件自动失效、EUI033/EUI037/EUI040/EUI043/EUI045、S1–S5 | v1 定稿（v4 模型；S1–S3 已落地，S4/S5 未开始） |
+| 04 控件与元数据（规划） | 标签/属性/事件/内容模型声明、符号派生目录、组件参数与插槽 | 迁移前以 [design/14](../design/14-control-template-contract.md) 为准；**C1–C6 已落地**（运行时声明特性 + `Compiler.Metadata` 符号扫描器；C2 起分析器/生成器读派生目录、手写目录删除，事件表面 1 → 9 个事件名；C4 组件标签、C5 `Ref`、C6 具名插槽，见 design/14 §14.12.1–§14.12.6） |
 
 ## 权威关系
 
 1. **语法**：`spec/01` 取代 [design/03](../design/03-template-engine.md) §3.1–§3.5 的规范地位。
-   design/03 的 §3.5.3（v3 台账 D1–D41）、§3.5.4（v4 台账 D42–D72）与附录是代码差距的活记录。
+   design/03 的 §3.5.3（v3 台账 D1–D41）、§3.5.4（v4 台账 D42–D76）与附录是代码差距的活记录。
 2. **生成代码**：`spec/02` 取代 design/03 §3.6 与 [design/14](../design/14-control-template-contract.md) §14.8 的规范地位；
    design/14 §14.8 已标记为 v3 历史。
 3. **反应式/绑定**：`spec/03` 是规范正本。[design/15](../design/15-state-and-reactivity.md) 已停止（v3 历史，含 `[UiState]`/`UiWatch`/依赖分析）。
@@ -56,6 +56,6 @@ v1 规范的依赖订阅模型（`[UiState]`/`Signal<T>`/`UiWatch`/依赖分析�
 | V6 | 诊断 | EUI014/EUI034–EUI036/EUI038–EUI039/EUI041–EUI042/EUI044 | 停用上述码；新增 EUI045；下一码 EUI046 |
 | V7 | 历史文档 | design/15 为权威 | design/15 停止；design/03 §3.5.3 为 v3 台账，§3.5.4 为 v4 台账 |
 
-**实现偏差**：v4 差距以 [spec/02 §12](./02-generated-code-contract.md#12-实现偏差台账-d42d72) 与
-[design/03 §3.5.4](../design/03-template-engine.md#354-v4-实现偏差台账d42d72) 为准（同一张台账，双向同步）。
+**实现偏差**：v4 差距以 [spec/02 §12](./02-generated-code-contract.md#12-实现偏差台账-d42d76) 与
+[design/03 §3.5.4](../design/03-template-engine.md#354-v4-实现偏差台账d42d76) 为准（同一张台账，双向同步）。
 v1 README 中针对 v3 `BlockScope` 构造函数的 E1/E2 勘误随 v4 换轨作废，仅保留在 design/03 历史记录中。

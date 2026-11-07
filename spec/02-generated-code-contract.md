@@ -1,6 +1,7 @@
 # 02 · 生成代码契约
 
-> 状态：v2 定稿（2026-10-29），对应模板语义 **v4 失效重算**；S1/S2 生成形态已落地（2026-10-30），其余见 §12。
+> 状态：v2 定稿（2026-10-29），对应模板语义 **v4 失效重算**；S1–S3 与 C1–C6 的生成形态已落地
+> （S1/S2 2026-10-30，S3 控件侧 2026-11-02、组件侧随 C4 2026-11-05，C6 插槽 2026-11-05），其余见 §12。
 > 本文是 `.ui` 模板**生成代码**的规范正本：定义生成器必须遵守的不变量、文件级契约、
 > 命名与编号、每种构造的精确生成形态、语句顺序、首次求值与失效、确定性要求与契约测试。
 > 取代 spec/02 v1（依赖订阅模型）；v1 中 `UiWatch`/`Signal<T>`/`[UiState]` 相关的生成形态全部作废。
@@ -76,7 +77,8 @@
 | `@foreach` | §4.10 | ✅ S2 |
 | 组件标签 | §4.12 | ✅ C4 |
 | `Key` | §4.13 | ✅ S2 |
-| `Ref` | §4.14 | ✅ C5（Class/Style/插槽/附加属性仍 G4/G4+） |
+| `Ref` | §4.14 | ✅ C5（Class/Style/附加属性仍 G4/G4+） |
+| 具名插槽（`<Slot>` + `<ContentSlot>`） | §4.12.5 | ✅ C6 |
 
 ### 0.6 示例约定
 
@@ -973,6 +975,68 @@ cmp0.Header = content5;
 - 组件内容内的组件根通过 `content{N}.Add(cmp{N}.Root)` 加入；实例 `receiver.TrackContent`。
 - 组件不能直接作为 `Children` 的元素；生成器只添加 `cmpN.Root`。
 
+#### 4.12.5 具名插槽（`[UiSlot]`，✅ C6）
+
+具名插槽镜像 §4.12.3 的内容规则，分两侧：
+
+**消费侧**（父模板中 `<Slot Name="...">...</Slot>`，design/14 §14.6.3）：
+
+```csharp
+var slot5 = new global::System.Collections.Generic.List<global::EclipseUI.Element>();
+var el6 = new global::EclipseUI.Elements.TextBlock();
+((global::EclipseUI.ITextContentHost)el6).AddRun("头部");
+slot5.Add(el6);
+var cmp0 = new global::App.ProbeCard();
+cmp0.Header = slot5.Count == 0 ? null : slot5[0];   // 单根插槽
+cmp0.Rows = slot7;                                  // 多根插槽（整表赋值）
+cmp0.Mount();
+```
+
+规则（编号与 §4.12.3 对齐的部分同口径）：
+
+1. 填充生成完全镜像 §4.12.3 规则 2–9：`List<Element>` 累加、内容内子组件
+   `receiver.TrackContent` 归**接收方**、`@if`/`@foreach` 展开为普通 C# 语句、
+   `{expr}` 为 Build 快照、`@bind` → `EUI040`、`Key` → `EUI010`、裸文本 → `EUI006`。
+2. 单根插槽（`Element?`）赋值 `slot{N}.Count == 0 ? null : slot{N}[0]`；静态多根填充已由
+   分析器拒绝（`EUI022`，但解析仍取首根——与 §4.12.3 规则 3 同口径）。
+3. 多根插槽（`IReadOnlyList<Element>`）整表赋值（同一引用，不拷贝）；**允许同一父下多次
+   `<Slot Name="同名">` 填充**，按源码顺序全部拼进**同一条列表**，只赋值一次。
+4. 赋值顺序在参数之后、默认内容之后、`Mount()` 之前（紧贴 §4.12.1 规则 1 的固定顺序；
+   子组件首次 `Build()` 在 `Mount()` 内读取插槽属性）。无任何填充时**不生成任何插槽代码**。
+5. 填充只能出现在组件标签直属子级（控件、块、文档根、自身 `<ContentSlot>` 内均 `EUI022`）；
+   `<Slot>` 属性只接受字面量 `Name`，槽名解析父组件 def 的 `Slots`（未知含建议 → `EUI022`）。
+
+**宿主侧**（组件自身模板中 `<ContentSlot Name="..." />`）：
+
+不引入新的运行时宿主元素——拼接发生在组件自身 `Build()` 内，按 build-once 语义
+`<ContentSlot>` 所在位置内联展开：
+
+```csharp
+// Single：属性非空则加入父容器
+if (Header is { } slot8)
+{
+    parent.Children.Add(slot8);
+}
+// Multiple：读取一次属性，逐项加入
+foreach (var slot8 in Rows)
+{
+    parent.Children.Add(slot8);
+}
+```
+
+规则：
+
+6. `<ContentSlot>` 只能出现在元素容器（`Children` 模型）子级；**不进 `@if`/`@foreach` 块**
+   （块模板会随刷新重复重建，拼接结果是 build-once 快照，重复拼装语义不成立）、
+   不可作文档根、`Text`/`TextRuns`/`Label` 模型内非法；以上均 `EUI022`。
+7. 不出现在使用其他组件的填充里（`<ContentSlot>` 属于组件自身模板）→ `EUI022`。
+8. 自身插槽按 code-behind 类（含基类链）的 `[UiSlot]` 属性解析（生成器传符号权威表；
+   静态前端按目录显示名与 `.ui` 文件名的短名匹配，偏差 D75）；未知插槽 → `EUI022`。
+9. 单根拼接对 null 属性**跳过**（无占位元素）；多根拼接对空列表**为零次循环**（不产生空容器）。
+10. 属性只接受字面量 `Name`；带内容、多余属性、同名重复放置 → `EUI022`
+    （重复放置违反「一个元素只有一个父」：拼接会把同一实例加进两个容器）。
+
+
 ### 4.13 `Key`
 
 - `Key={expr}` 只出现在 `@foreach` item 模板的**第一个元素根**上；其他位置 → `EUI010`。
@@ -987,7 +1051,7 @@ cmp0.Header = content5;
 |---|---|---|---|
 | `Ref={ident}` | Build 时把元素/组件赋给 code-behind 字段 | ✅ C5 | `EUI029`（保留） |
 | `Class`/`Style` | 样式/主题 | G4 | `EUI031` |
-| `<Slot Name="...">` / `<ContentSlot>` | 具名插槽 | G4 | `EUI031`（G4 后 `EUI022`） |
+| `<Slot Name="...">` / `<ContentSlot>` | 具名插槽 | ✅ C6 | `EUI022`（生成形态见 §4.12.5） |
 | 附加属性 `P.Attached` | 附加属性 | G4 | `EUI031` |
 | 泛型标签 `<C<T>>` | 泛型组件/控件 | G4 | `EUI030` |
 
@@ -1261,7 +1325,7 @@ public interface ITextContentHost
 
 ## 10. `EUI045` 与 code-behind 边界
 
-`EUI045` 守护生成成员与 code-behind 的冲突；计划 C3 实现（spec/03 §11.1）。
+`EUI045` 守护生成成员与 code-behind 的冲突；原计划 C3，C3 收敛时未落地，2026-11-05 重排 G3（D57）。
 
 触发条件：
 
@@ -1289,10 +1353,10 @@ public interface ITextContentHost
   `SetTemplate(Action<T, BlockScope>)` 取代。
 - 旧语法的生成文本与新语法相同，差异只在分析器 `EUI043`。
 
-## 12. 实现偏差台账 D42–D74
+## 12. 实现偏差台账 D42–D76
 
-**S1 已收敛（2026-10-30）、S2 已收敛（2026-10-30）、S3 已收敛（2026-11-02，控件侧）、C1 已收敛（2026-11-02，目录派生）、C3 已收敛（2026-11-03，字面量转换器/使用点诊断/保留语法）、C4 已收敛（2026-11-05，组件标签）**，
-下表中标 ✅ S1/✅ S2/✅ S3/✅ C1/✅ C4 的条目已关闭；其余偏差按 S4/C3 余项/C5/G 阶段收敛。台账之外的差异视为实现缺陷。
+**S1 已收敛（2026-10-30）、S2 已收敛（2026-10-30）、S3 已收敛（2026-11-02，控件侧）、C1 已收敛（2026-11-02，目录派生）、C3 已收敛（2026-11-03，字面量转换器/使用点诊断/保留语法）、C4 已收敛（2026-11-05，组件标签）、C5 已收敛（2026-11-05，Ref/使用点诊断）、C6 已收敛（2026-11-05，具名插槽 §4.12.5）**，
+下表中标 ✅ S1/✅ S2/✅ S3/✅ C1/✅ C4/✅ C5/✅ C6 的条目已关闭；其余偏差按 S4/C3 余项/G 阶段收敛。台账之外的差异视为实现缺陷。
 **C1/C2 改元数据来源，不改本文的生成形态**：生成器已改读派生目录（C2，2026-11-02），
 生成代码形态与本文规则一致；以下台账条目随之关闭——D62/D65/D69/D72 ✅ C2、
 D64/D68 ✅ C1。
@@ -1314,7 +1378,7 @@ D64/D68 ✅ C1。
 | D54 | ✅ C4：组件 `@bind-P` 生成「`{P}Changed` 回调赋值（build-once）+ 推送 `U{N}`/`R{N}`」；组件目标判定/内容体内 `@bind` 禁用已落地（EUI040）；内层推送形态与 §4.3.3 一致。回调 `{P}Changed` 的**类型**与参数严格匹配仍静态不可判，由 C# 编译错误兜底（D73） | §4.4.3/§4.4.4 | ✅ C4 |
 | D55 | ✅ S1：事件生成 `h{N}` 委托局部 + 包装内 `Invalidate()` | §4.6 | ✅ S1 |
 | D56 | ✅ C4：组件默认内容 build-once 落地——`List<Element>` 累加、单根 `content{N}.Count == 0 ? null : content{N}[0]`、内容子组件 `receiver.TrackContent`、内容内 `@if`/`@foreach` 展开为普通 C# 语句、内容内动态属性为 Build 快照、内容内 `@bind`/`Key`/裸文本分别报 EUI040/EUI010/EUI006 | §4.12.3 | ✅ C4 |
-| D57 | `EUI045` 未实现 | §10 | C3 |
+| D57 | `EUI045`（code-behind 与生成成员冲突）未实现，诊断码常量也未分配；C3 已收敛但本项未随其落地，2026-11-05 重排 G3 | §10 | G3（原 C3） |
 | D58 | ✅ S1：hint name 为 `{ClassName}.{stableHash}.g.cs`（SHA-256 前 16 hex） | §2.1 | ✅ S1 |
 | D59 | ✅ S2：`ITextContentHost.AddRun(string)` 已实现；`TextBlock` 实现该接口，运行时不再需要手建 `TextRun` | §4.8/§7 | ✅ S2 |
 | D60 | ✅ S2：`ForEachBlock.UpdateChildren` 仅在根序列实际变化时改 `Children` | spec/03 §7.3 | ✅ S2 |
@@ -1331,10 +1395,12 @@ D64/D68 ✅ C1。
 | D71 | `[UiIgnore]` 与 `[UiParameter]`/`[UiSlot]` 同时出现时 `[UiIgnore]` 生效并按 **EUI028** 记问题；design/14 §14.6.1 只写「不得」，没为这条分配诊断码，EUI028 原文只覆盖「参数声明非法」。C4 未处理（沿用 EUI028，不复用新码）；需要细化时另起新码并先记台账 | design/14 §14.6.1/§14.9.1 | 开放 |
 | D72 | ✅ C2（语义修订）：golden 快照落成仓库内文件 `TestData/BuiltInSurface.golden.txt`（`ECLIPSEUI_UPDATE_SURFACE_GOLDEN=1` 再生）；原文「固定目录从快照反序列化」不采纳——快照改为扫描结果的**渲染评审门**（显式再生成 + diff 强制评审），纯结构测试各自现扫 `Compilation`（全扫实测 45 ms） | design/14 §14.11.1/§14.12.2 | ✅ C2 |
 | D73 | ✅ C4（残余风险登记）：组件 `@bind-P` 只静态校验「存在 `{P}Changed` 委托参数」（EUI040），不校验其实参类型与 `P` 匹配——恰与 spec/01 §4.14 「缺失/类型不符 → EUI040」中的「类型不符」不可严格一致。类型不匹配由生成代码的 C# 编译错误兜底（经 `#line` 指回 `.ui`）；不要在运行时静默吞掉。若未来 Roslyn 类型推断下放到扫描期，可再收紧 | §4.4.3 规则 1 / spec/01 §4.14 | ✅ C4 |
-| D74 | ✅ C5（部分收敛 + 残余登记）：① 使用点 EUI019/EUI020/EUI021 落地——`UiElementDef.IsFromReferencedAssembly`（新记录字段，进值相等/哈希）区分来源，只有引用程序集控件的 `def.Problems` 在用点暴露，源项目控件仍落 EUI002（design/14 §14.9.1 v2 口径）；② **EUI026 声明处诊断仍无编译期出口**：扫描侧 problem 只进 `HiddenTags`/`def.Problems`/`catalog.Problems`，源项目控件的声明错误靠使用点 EUI002 兜底、引用程序集靠 D74 ① 暴露——声明处报错（属性/特性 span）需要生成器把源声明定位到语法，留后续切片 | design/14 §14.5.4/§14.9.1/§14.12.5 | ✅ C5 ① / 开放 ② |
+| D74 | ✅ C5（部分收敛 + 残余登记）：① 使用点 EUI019/EUI020/EUI021 落地——`UiElementDef.IsFromReferencedAssembly`（新记录字段，进值相等/哈希）区分来源，只有引用程序集控件的 `def.Problems` 在用点暴露，源项目控件仍落 EUI002（design/14 §14.9.1 v2 口径）；② **EUI026 声明处诊断仍无编译期出口**：扫描侧 problem 只进 `HiddenTags`/`def.Problems`/`catalog.Problems`，源项目控件的声明错误靠使用点 EUI002 兜底、引用程序集靠 D74 ① 暴露——声明处报错（属性/特性 span）需要生成器把源声明定位到语法，留后续切片 | design/14 §14.5.4/§14.9.1/§14.12.5 | ✅ C5 ① / G3 ②（原「开放」，2026-11-05 排入 G3 诊断出口补全） |
+| D75 | ✅ C6（解析口径两级）：自身插槽的解析——分析器按「目录显示名与 `.ui` 文件名短名匹配」投影自身 def（静态前端无符号信息）；生成器则用 code-behind **符号**直接沿基类链读 `[UiSlot]` 传给分析器/发射器作权威（code-behind 类在源码里不派生 `Component`——基类由生成注入，目录里不会有它的 def）。两级在正常房间结构下指向同一组插槽；目录匹配失败而符号可用时生成侧仍有效。与既有 `FindCodeBehind` 的近似-符号双口径同型 | §4.12.5 | ✅ C6 |
+| D76 | ✅ C6（契约补写）：基链同名**成员**的胜出规则原文未定。Roslyn 的 `GetAttributes()` 不把特性带进 override（与反射的 `Inherited=true` 语义不同），因此「按名字一律去重」会让 `public override Element? Header`（不写特性）把基类 `[UiSlot("Header")]`/`[UiParameter]` 静默丢掉；「不去重」又会把同一个 override 报成重复插槽（EUI028）。实现定为：**派生侧显式写了模板特性或 `[UiIgnore]` 才算覆盖**，否则基类声明继续生效；`[UiIgnore]` 在 override 上是基类同名声明的显式退出。已回写 design/14 §14.10.2（参数/插槽条目）与 spec/01 §4.15 | design/14 §14.10.2/§14.6.1 | ✅ C6 |
 
 - 每项收敛必须同时删除对应的 v3 路径；不得两套模型并存。
-- 新增偏差必须登记编号（从 D74 起）并注明目标阶段；不得只改代码不改台账。
+- 新增偏差必须登记编号（从 D77 起）并注明目标阶段；不得只改代码不改台账。
 - 台账编号与 design/03 §3.5.4 保持一致；两边冲突以本文为准并回写 design/03。
 
 ## 13. 变更规则

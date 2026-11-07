@@ -24,6 +24,10 @@ namespace EclipseUI.Compiler.Generator;
 [Generator(LanguageNames.CSharp)]
 public sealed class TemplateGenerator : IIncrementalGenerator
 {
+    private const string UiSlotAttributeName = "EclipseUI.UiSlotAttribute";
+    private const string UiParameterAttributeName = "EclipseUI.UiParameterAttribute";
+    private const string UiIgnoreAttributeName = "EclipseUI.UiIgnoreAttribute";
+
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         var uiFiles = context.AdditionalTextsProvider
@@ -58,9 +62,9 @@ public sealed class TemplateGenerator : IIncrementalGenerator
             }
 
             var doc = FrontEnd.Parse(sourceText.ToString(), file.Path, diags);
-            FrontEnd.Analyze(doc, catalog, diags);
 
-            // code-behind 发现：与 .ui 同名的 partial class
+            // code-behind 发现：与 .ui 同名的 partial class（必须先于 Analyze——自身模板的
+            // <ContentSlot> 要按 code-behind 类的真实 [UiSlot] 属性解析，spec/02 §4.12.5）
             var type = FindCodeBehind(compilation, className);
             if (type is null)
             {
@@ -77,6 +81,11 @@ public sealed class TemplateGenerator : IIncrementalGenerator
                         $"code-behind class '{className}' must be declared partial", UiSpan.Zero));
             }
 
+            // 自身组件（spec/02 §4.12.5）：code-behind 符号直接派生插槽表——目录里没有
+            // code-behind 类的 def（基类由生成注入，源码不派生 Component），这是唯一权威来源。
+            var ownComponent = ResolveOwnComponent(type, compilation);
+            FrontEnd.Analyze(doc, catalog, diags, ownComponent?.Slots, ownComponent?.DisplayName);
+
             // 编译期语义探针：@foreach item 类型推断 + @bind 源可写性校验
             var itemTypes = type is null
                 ? new Dictionary<UiForeach, string>()
@@ -92,7 +101,7 @@ public sealed class TemplateGenerator : IIncrementalGenerator
 
             var code = new Emitter(doc,
                 AccessibilityOf(type), NamespaceName(type), className,
-                itemTypes, file.Path).Emit();
+                itemTypes, file.Path, ownComponent?.Slots).Emit();
 
             spc.AddSource($"{className}.{StableHash(file.Path)}.g.cs", code);
         }
@@ -113,6 +122,63 @@ public sealed class TemplateGenerator : IIncrementalGenerator
             if (symbol is INamedTypeSymbol type && type.TypeKind == TypeKind.Class)
                 return type;
         return null;
+    }
+
+    /// <summary>
+    /// code-behind 类的插槽表（spec/02 §4.12.5）：沿基类链读 [UiSlot] 属性。
+    /// [UiParameter] 胜出（参数占表面，槽退出，与目录 EUI028 口径一致）；[UiIgnore] 胜出；
+    /// 类型只接受 <c>Element?</c>（单根）与 <c>IReadOnlyList&lt;Element&gt;</c>（多根），
+    /// 其余不进表（声明期问题归目录 EUI021 族）。
+    /// </summary>
+    private static (string DisplayName, IReadOnlyDictionary<string, UiSlotDef> Slots)? ResolveOwnComponent(
+        INamedTypeSymbol? type, Compilation compilation)
+    {
+        if (type is null) return null;
+
+        var element = compilation.GetTypeByMetadataName("EclipseUI.Element");
+        var elementList = compilation.GetTypeByMetadataName("System.Collections.Generic.IReadOnlyList`1");
+        var nullable = compilation.GetTypeByMetadataName("System.Nullable`1");
+        var slots = new Dictionary<string, UiSlotDef>(StringComparer.Ordinal);
+        for (var current = type; current is not null && current.SpecialType != SpecialType.System_Object; current = current.BaseType)
+        {
+            foreach (var member in current.GetMembers().OfType<IPropertySymbol>())
+            {
+                if (member.IsStatic || member.IsIndexer) continue;
+                var attributes = member.GetAttributes().ToList();
+                if (attributes.Any(a => a.AttributeClass?.ToDisplayString() == UiIgnoreAttributeName)) continue;
+                var slot = attributes.FirstOrDefault(a => a.AttributeClass?.ToDisplayString() == UiSlotAttributeName);
+                if (slot is null) continue;
+                // 参数胜出（catalog 口径："[UiParameter] and [UiSlot]; the parameter wins"）
+                if (attributes.Any(a => a.AttributeClass?.ToDisplayString() == UiParameterAttributeName)) continue;
+
+                var name = slot.ConstructorArguments.Length == 1 &&
+                    slot.ConstructorArguments[0].Value is string slotName ? slotName : null;
+                if (string.IsNullOrEmpty(name) || slots.ContainsKey(name!)) continue;
+                if (CardinalityOf(member.Type, element, elementList, nullable) is not { } cardinality) continue;
+
+                slots[name!] = new UiSlotDef(
+                    name!, member.Name, member.Type.ToDisplayString(UiCatalogFactory.Qualified), cardinality);
+            }
+        }
+        return (type.ToDisplayString(UiCatalogFactory.Qualified), slots);
+    }
+
+    private static UiSlotCardinality? CardinalityOf(
+        ITypeSymbol type, ITypeSymbol? element, ITypeSymbol? elementList, ITypeSymbol? nullable)
+    {
+        if (element is null) return null;
+        if (elementList is not null && type is INamedTypeSymbol named &&
+            SymbolEqualityComparer.Default.Equals(named.OriginalDefinition, elementList) &&
+            named.TypeArguments.Length == 1 &&
+            SymbolEqualityComparer.Default.Equals(named.TypeArguments[0], element))
+            return UiSlotCardinality.Multiple;
+        var unwrapped = type;
+        if (unwrapped is INamedTypeSymbol wrapper && nullable is not null &&
+            SymbolEqualityComparer.Default.Equals(wrapper.OriginalDefinition, nullable))
+            unwrapped = wrapper.TypeArguments[0];
+        return SymbolEqualityComparer.Default.Equals(unwrapped, element)
+            ? UiSlotCardinality.Single
+            : null;
     }
 
     private static bool IsPartial(INamedTypeSymbol type)
@@ -170,6 +236,11 @@ public sealed class TemplateGenerator : IIncrementalGenerator
                             ValidateRefTarget(element, attr, probe, scope, diags);
                         }
                         Walk(element.Children, scope);
+                        break;
+                    case UiSlotNode fill:
+                        // 插槽填充的内容是组件 Build 的一部分：@foreach item 推断与 @bind 校验
+                        // 必须穿透（EUI007/EUI037 与内容上下文同口径）
+                        Walk(fill.Children, scope);
                         break;
                     case UiIf ifNode:
                         Walk(ifNode.Children, scope);

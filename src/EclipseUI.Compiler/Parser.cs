@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace EclipseUI.Compiler;
 
@@ -122,7 +123,35 @@ public sealed class Parser
         return node;
     }
 
-    private UiElement ParseElement()
+    private UiNode ParseElement()
+    {
+        var element = ParseElementCore();
+        // 保留标签名（spec/01 §3.1 / §6.2）：`<Slot>`/`<ContentSlot>` 不是普通元素——不再依赖
+        // 「目录无同名控件」的口径，解析器直接特判成槽节点；目录把占用这两个名字的标签报保留冲突。
+        return element.Tag switch
+        {
+            "Slot" or "ContentSlot" => CreateSlotNode(element),
+            _ => element,
+        };
+    }
+
+    private static UiNode CreateSlotNode(UiElement element)
+    {
+        var nameAttr = element.Attributes.FirstOrDefault(a => a.Name == "Name" && !a.IsBind && !a.IsLegacy);
+        if (element.Tag == "Slot")
+        {
+            var fill = new UiSlotNode { Span = element.Span, Children = element.Children };
+            fill.Attributes.AddRange(element.Attributes);
+            NormalizeChildren(fill.Children);
+            return fill;
+        }
+
+        var host = new UiContentSlotNode { Span = element.Span, HasChildren = element.Children.Count > 0 };
+        host.Attributes.AddRange(element.Attributes);
+        return host;
+    }
+
+    private UiElement ParseElementCore()
     {
         var open = Advance(); // 消费 '<'
         if (_tok.Kind != TokenKind.Identifier)

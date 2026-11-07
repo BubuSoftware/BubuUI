@@ -263,7 +263,7 @@ public sealed class UiParameterAttribute : Attribute      // 组件参数，14.6
 }
 
 [AttributeUsage(AttributeTargets.Property)]
-public sealed class UiSlotAttribute : Attribute          // 具名插槽，G4
+public sealed class UiSlotAttribute : Attribute          // 具名插槽，✅ C6
 {
     public UiSlotAttribute(string name);
     public string Name { get; }
@@ -406,8 +406,10 @@ public sealed class UiCatalog
 - **组件**：保留属性 → `Parameters`（委托参数就是事件，14.6.2，不做 `On*` 前缀推断）→ 未知。
   控件与组件的发现规则不对称（D2 vs D3），解析顺序必须分支，否则组件的 `OnClose` 委托参数会被当成事件字段。
 - 未实现但已保留的写法报保留诊断，不报 EUI002/EUI001 的"未知"，避免用户在正确语法上收到拼写错误提示：
-  `Class`/`Style`/`<Slot>`/`<ContentSlot>`/附加属性 → **EUI031**；泛型标签 → **EUI030**；`Ref` 目标非法 → **EUI029**；
+  `Class`/`Style`/附加属性 → **EUI031**；泛型标签 → **EUI030**；`Ref` 目标非法 → **EUI029**；
   `:bind`/`:value` → **EUI043** Warning（弃用别名，不是保留）。
+  具名插槽 `<Slot>`/`<ContentSlot>` 是解析器特判的**句法保留名**（✅ C6）：使用点错误走 **EUI022** 家族；
+  目录把占用这两个名字注册的控件报 EUI031 并进 HiddenTags。
 - `@bind-P` 在控件分支按属性表解析，在组件分支按参数表解析；解析失败先 `EUI002`，解析成功但目标不可绑 → `EUI040`。
 
 未知时在**全部命名空间**里找最近名（Levenshtein ≤ 3）给建议，跨类别也提示（"did you mean event 'OnClick'?"）；
@@ -478,10 +480,17 @@ public sealed class UiCatalog
 - 内容体内不得出现 `@bind`（`EUI040`）；`Key` → `EUI010`；裸文本 → `EUI006`。
 - 内容中的子组件用 `receiver.TrackContent(cmp)` 登记到接收方，随接收方释放；不得 `Track` 到模板父组件。
 - 内容中的事件处理器仍失效模板父组件（表达式属于父模板），接收方不得比父组件活得更久。
-- 具名插槽（G4）：`[UiSlot("Header")]` 标在属性上；消费侧 `<Slot Name="Header">...</Slot>`；
-  组件模板侧用 `<ContentSlot Name="Header" />`（新增宿主元素）放置。
+- 具名插槽（✅ C6 2026-11-05）：`[UiSlot("Header")]` 标在属性上（`Element?` 单根 /
+  `IReadOnlyList<Element>` 多根，其他类型 → 声明期 EUI021）；消费侧 `<Slot Name="Header">...</Slot>`
+  只允许组件标签直属子级；组件模板侧 `<ContentSlot Name="Header" />` **不是新的运行时宿主元素**——
+  生成器在组件自身 `Build()` 的该位置按 build-once 语义内联拼接插槽属性
+  （Single：`if (Header is { } s) parent.Children.Add(s);`；Multiple：`foreach (var s in Rows)`，
+  spec/02 §4.12.5）。
+- 自身插槽解析（D75）：生成器用 code-behind 符号沿基类链读 `[UiSlot]` 作权威（code-behind
+  类在源码里不派生 `Component`，目录不会有它的 def）；静态前端按目录显示名与 `.ui` 文件名
+  短名匹配投影（spec/02 §4.12.5 / design/14 §14.12.6）。
 - 插槽/内容在 `Mount()` 前赋值；父级状态变化不重建内容（与 14.6.6 一致）。
-- v1（C4 ✅ 2026-11-05）已实现参数与默认内容；具名插槽实现排 C6。
+- 其他参数与默认内容规则 v1 不变；具名插槽 C6 已落地，剩余泛型标签/附加属性见 §14.12.6 范围说明。
 
 ### 14.6.4 生命周期
 
@@ -678,16 +687,16 @@ v3 的 EUI014/EUI032/EUI034–EUI036/EUI038–EUI039/EUI041–EUI042/EUI044 已�
 | EUI019 | 属性不可写 / `{Name}Property` 类型不符（**仅对已进入目录的属性成立**：源项目里缺 `{Name}Property` 的属性根本不进目录，用户撞到的是 EUI002；EUI019 只在引用程序集带问题时目录里才触发，见 14.5.4。✅ C5 使用点：`def.Problems` 在用点暴露，消息带完整类型名；`UiElementDef.IsFromReferencedAssembly` 区分来源） | 属性名 | Error |
 | EUI020 | 事件字段缺失或类型不是 `RoutedEvent`（✅ C5 使用点：`On{x}` ↔ `{x}Event` 字段名匹配，仅引用程序集） | 属性名 | Error |
 | EUI021 | 内容目标缺失或类型不匹配（✅ C5 使用点：引用程序集控件内容被降级为 None 时，在使用点接管 children 诊断） | 子内容 | Error |
-| EUI022 | 插槽未知/重复/位置非法（G4） | 标签/属性 | Error |
+| EUI022 | 插槽非法（✅ C6）：消费侧 `<Slot>` 未知插槽（含建议）/重复填充/位置非法（只允许组件标签直属子级）/缺 `Name` /非字面量 `Name` /多余属性/单根槽多根填充；宿主侧 `<ContentSlot>` 未知/重复放置/位置（元素容器内才合法；块、根非法）/缺 `Name` /带内容/多余属性（错误明细见 spec/01 §6.2） | 标签/属性 | Error |
 | EUI023 | 属性类型没有字面量转换器 | 属性值 | Error |
 | EUI024 | 事件处理器签名不匹配（可静态判定时） | 属性值 | Error |
 | EUI025 | 同一标签重复属性 | 属性名 | Error |
 | EUI026 | 控件元数据声明非法（源项目） | 声明处 | Error/Warning |
 | EUI027 | 组件必填参数缺失 | 标签 | Error |
-| EUI028 | 组件参数/委托声明非法：非 public / 无 setter / `init` / 使用 C# `required`（应改 `[UiParameter(Required = true)]`）/ 非法泛型实参 / 委托含 `ref`/`out`/`in` | 声明处/属性名 | Error |
+| EUI028 | 组件参数/委托声明非法：非 public / 无 setter / `init` / 使用 C# `required`（应改 `[UiParameter(Required = true)]`）/ 非法泛型实参 / 委托含 `ref`/`out`/`in`；✅ C6 起含 `[UiSlot]` 声明项：重复插槽名、`[UiParameter]+[UiSlot]` 同属性（参数胜出）、`[UiIgnore]+[UiSlot]`（忽略胜出，D71） | 声明处/属性名 | Error |
 | EUI029 | `Ref` 目标非法（✅ C5：语法级=非简单标识符，分析器报；语义级=字段缺失/只读/静态/类型不符，生成器探针报并引用 C# 诊断；生成形态 spec/01 §4.3 / spec/02 §4.14） | 属性值 | Error |
 | EUI030 | 泛型标签暂不支持 | 标签 | Error |
-| EUI031 | 语法已保留、尚未实现（`Class`/`Style`/`<Slot>`/`<ContentSlot>`/附加属性） | 标签/属性 | Error |
+| EUI031 | 语法已保留、尚未实现（`Class`/`Style`/附加属性）；✅ C6 起还覆盖**保留标签名冲突**——控件/组件把 `Slot`/`ContentSlot` 注册为标签名（解析器特判这两种写法为槽节点，`<Slot>`/`<ContentSlot>` 使用点错误由 EUI022 接管） | 标签/属性 | Error |
 | EUI032 | **停用**：原"非 `Signal<T>` 组件参数一次性赋值"；后继 EUI044 亦停用 | — | — |
 | EUI033 | 同一目标重复赋值（文本内容 + 显式目标属性；`P=` 与 `@bind`/`:bind`/`:value` 冲突） | 属性值/文本 | Error |
 | EUI034 | **停用**：v3 非法 `[UiState]`/`[UiObservable]` 声明；状态生成器移除 | — | — |
@@ -743,6 +752,8 @@ Build(Compilation c):                       // 纯函数：同样的 Compilation
           if !IsPublic(type): continue                     // 不可见 → EUI001
           if !CanExpose(type, out reason):                 // 抽象/嵌套/无参构造/泛型
               hidden.Add(HiddenTag(type, reason)); continue
+          if TagOf(type) in {"Slot", "ContentSlot"}:       // ✅ C6：句法保留名（解析器特判成槽节点）
+              hidden.Add(HiddenTag(tag, EUI031)); problems.Add(EUI031(...)); continue
           exposed.Add(Describe(type))                      // 标签/属性/事件/内容/参数/插槽
   groups = GroupByTag(exposed)                             // 同 Tag ≥2 → Ambiguous（EUI016）
   return UiCatalog(groups, hidden, problems)               // 记录类型 + 稳定排序 → 可结构比较
@@ -767,6 +778,14 @@ Build(Compilation c):                       // 纯函数：同样的 Compilation
   注意 `GetAttributes()` **不返回继承来的特性**，基链必须自己走（`Panel` 上的 `[UiContent(Children)]` 要传到 `StackPanel`）。
 - 参数/插槽：只扫组件；`[UiParameter]` / `[UiSlot]` 按属性读取；参数只记录名称、类型、可写性、必填与委托形状，
   不记录可观察性（v4 无该概念）；`@bind` 目标另查同名 `{P}Changed` 参数，记入 `ChangedCallbackName`。
+  插槽（✅ C6）：`[UiSlot("名")]` → `UiSlotDef(名字, 属性名, 类型显示名, 基数)`；类型 `Element?` → Single、
+  `IReadOnlyList<Element>` → Multiple、其他 → EUI021 问题（槽不进表面）；重复名 → EUI028；
+  `[UiParameter]+[UiSlot]` 同属性 → 参数胜出（EUI028）；`[UiIgnore]` 胜出（D71）。
+  同名成员按基链派生优先，但**只有派生侧显式写了模板特性或 `[UiIgnore]` 才算覆盖**：
+  Roslyn 的 `GetAttributes()` 不把特性带进 override，若一律按名字去重，
+  `public override Element? Header` 会把基类 `[UiSlot("Header")]` 静默丢掉（✅ C6，偏差 D76）。
+  code-behind 类不是 Component 派生，因此**不在目录里**——生成器经 `ResolveOwnComponent`
+  按符号沿基类链单独读 `[UiSlot]`（14.12.6 / spec/02 §4.12.5，偏差 D75）。
 - 类型形状：枚举成员、委托、`Signal<T>` 类型名识别；用于字面量与表达式规则；`Signal<T>` 不改变模板语义。
 - 类型名：`ClrTypeDisplayName` 取 `FullyQualifiedFormat`；`CanonicalKey` 单独归一（14.5.1）。
 
@@ -854,10 +873,10 @@ Build(Compilation c):                       // 纯函数：同样的 Compilation
 | 事件 | `ClickEvent`；字段缺失；字段类型错；**静态宿主类上的 `RoutedEvent` 字段**；`InputEvents` 迁入 `Element` 后 8 事件全员可见；`:bind` | `OnClick` 可用/EUI020/EUI026/EUI004 |
 | 内容 | Text/Label、TextRuns、Children、None；空白文本；控制流 | 生成/EUI006 |
 | 字面量 | double/int/bool/string/enum/TimeSpan；格式错；无转换器；**`CanonicalKey` 与 `global::` 显示名不串键** | 转换/EUI003/EUI023 |
-| 组件 | 参数、`[UiParameter(Required=true)]` 缺参、委托参数、`{P}Changed`、C# `required`/`init` 拒绝、默认内容/单根 | 生成/EUI027/EUI028/EUI040/EUI021 |
+| 组件 | 参数、`[UiParameter(Required=true)]` 缺参、委托参数、`{P}Changed`、C# `required`/`init` 拒绝、默认内容/单根、✅ C6 插槽：`<Slot>` 填充解析/重复/多根拼接、`<ContentSlot>` 宿主解析/重复放置/块内非法、各自未知名带建议 | 生成/EUI027/EUI028/EUI040/EUI021/EUI022 |
 | 反应式 | `P={expr}` 根级/块内、`@if`/`@foreach` 刷新、Keyed 复用（Key + item 身份）、`@bind-P` 源/目标（EUI037/EUI040）、控件事件自动失效 | 失效重算正确/诊断正确/停用码零出现 |
 | 冲突 | 两个程序集同标签；暴露属性名占用 `On{事件}` / 保留名 | EUI016 + 候选名 / EUI026 |
-| 保留语法 | 未实现阶段写 `Class=`、`Style=`、`<Slot>`、附加属性；`:bind`/`:value` | EUI031（不是"未知"）；EUI043 Warning |
+| 保留语法 | `Class=`、`Style=`、附加属性、把 `Slot`/`ContentSlot` 注册为控件/组件标签名（✅ C6 保留冲突进 HiddenTags）；`:bind`/`:value` | EUI031（不是"未知"）；EUI043 Warning |
 | 生成代码 | 每类构造的 golden 文本；`Track`/`BlockScope` 作用域登记 | 确定性一致 |
 | 集成 | `CSharpGeneratorDriver` 编译含 `.ui` 的测试项目；模拟第三方程序集（含跨程序集组件发现） | 无诊断 + 生成代码可编译 |
 | 增量 | 无关文件修改后跑 `CSharpGeneratorDriver`，读 `GetRunResults()` | 目录重建但**每个生成文件 `IncrementalStepRunReason` 为 `Cached`/`Unchanged`**（v2 口径，见 14.10.3） |
@@ -874,7 +893,7 @@ Build(Compilation c):                       // 纯函数：同样的 Compilation
 | **C3** ✅（2026-11-03） | 转换器扩展（float/decimal/long/short/byte/char/枚举/TimeSpan；Color 预留 G4）；使用点诊断 **EUI023**（无转换器）/ **EUI025**（纯普值重复属性）/ **EUI031**（Class/Style/点号附加属性/`<Slot>`/`<ContentSlot>`）落地；属性暴露一致性测试 | 诊断表前半可用；无转换器类型正确报 EUI023 —— ✅ 全部落地（落地记录见 §14.12.3） | `Catalog.cs`、`Analyzer.cs`、`Metadata/UiCatalogFactory.cs` |
 | **C4** ✅（2026-11-05） | 组件标签：参数元数据（`[UiParameter(Required=true)]`、`{P}Changed`）、委托事件、默认内容、生命周期与作用域释放；生成器集成测试 | 第三方/自定义组件可写入 `.ui`；参数/内容生成与 spec/02 §4.12 一致 —— ✅ 全部落地（落地记录见 §14.12.4） | `TemplateGenerator.cs`、`Emitter.cs`、`Component.cs`、`Metadata/UiCatalogFactory.cs`、`Analyzer.cs` |
 | **C5** ✅ | `Ref`（G3）；保留语法诊断与剩余分析器收敛（**EUI019/EUI020/EUI021** 使用点与 **EUI029**；EUI025/EUI031 已由 C3 落地，EUI033 为 S2 既有） | G3 非反应式缺口收敛；诊断不再落"未知" | `Analyzer.cs`、`Emitter.cs` |
-| **C6** | 具名插槽 + `ContentSlot` 宿主；附加属性；泛型标签（G4） | 与 03 语法表对齐 | 编译器/运行时/样式 |
+| **C6** | 具名插槽 + `ContentSlot` 宿主（✅ 2026-11-05，§14.12.6）；附加属性、泛型标签实拆留 G4 | 与 03 语法表对齐 | 编译器/运行时/样式 |
 
 状态/反应式不在 C1–C6 内重复排期：失效队列/`U{N}`/根级重算属
 [spec/03 §13](../spec/03-reactivity-and-binding.md) 的 **S1**；块 v4/键控复用属 **S2**；
@@ -998,7 +1017,7 @@ Roslyn 4.9.2 的公开 API 没有这个成员（公开的是 `IModuleSymbol.Refe
 | 生成器校验 | `ValidateBindSource` 扩展到组件目标（`@bind-P` 源可写性按参数类型判定，spec/02 §4.4.3 规则 8 无 EUI042） |
 | 测试 | `C4ComponentTests`（Headless 18 例：参数解析/EUI002 参数建议/EUI004/EUI027/EUI040 三形态/EUI021 双场景/EUI010 内容/EUI033 重叠；合成 `ProbeCard`/`ProbeList` 目录）+ `CatalogScannerTests` 9 例（EUI028 形状/类型/内容参数/类级 `[UiContent]`/多内容参数/继承/约定链接）+ `GeneratorContractTests` 11 例（生命周期顺序/字段提升/U 推送形态/回调形态/块级 Adopt+R/TrackContent/字面量化/EUI027/EUI040/EUI021/EUI004 阻断生成/内容快照无 U/R） |
 
-**范围说明**：具名插槽（`[UiSlot]` 消费）留 C6/G4（✅ C5 已由 §14.12.5 落地 Ref 与使用点诊断）；`{P}Changed` 类型与参数严格匹配静态不可判，
+**范围说明**：具名插槽（`[UiSlot]` 消费）✅ C6 已落地（§14.12.6）（✅ C5 已由 §14.12.5 落地 Ref 与使用点诊断）；`{P}Changed` 类型与参数严格匹配静态不可判，
 由 C# 编译错误兜底（spec/02 §12 D73）；组件参数推送不会重建子组件模板（无参数 diff，spec/03 §10.2）。
 
 ### 14.12.5 C5 落地记录（2026-11-05）
@@ -1014,7 +1033,27 @@ Roslyn 4.9.2 的公开 API 没有这个成员（公开的是 `IModuleSymbol.Refe
 | EUI021 使用点 | 内容被降级为 None 且 def 带 `ContentTargetInvalid` 问题（引用程序集）时，用点 children 接管既有 EUI006 指引 → **EUI021**；源项目控件保留 EUI006 指引不变 |
 | 测试 | `C5UseSiteTests`（Headless 15 例：Ref 合成标识符/字面量/成员访问/裸 token（EUI100×2+EUI029）/重复/`@bind-Ref`；引用程序集 EUI019/EUI020/EUI021 + 源项目对照（仍 EUI002/EUI006）+ 自闭合不触发）+ `GeneratorContractTests` 12 例（Ref 控件/组件生成形态、缺失/类型/readonly/静态探针、非标识符/字面量 EUI029、**真实 Emit 引用程序集**端到端 EUI019/EUI020/EUI021 与干净不触发）|
 
-**范围说明（C5 后仍开放）**：EUI026 声明处诊断仍**未消费**（目录 problem 只进 `HiddenTags`/`def.Problems`，源项目控件的声明错误靠使用点 EUI002 兜底；`catalog.Problems`/`StaticEventHost` 诊断至今没有编译期出口——留作后续切片或 D74 登记）；Roslyn tokenizer 已落地（2026-11-05：`@foreach` 头与事件委托形态判定从正则换成解析/深度感知扫描；EUI024 签名匹配另片）；EUI024 处理器签名匹配、G4 样式/插槽不变。
+**范围说明（C5 后仍开放）**：EUI026 声明处诊断仍**未消费**（目录 problem 只进 `HiddenTags`/`def.Problems`，源项目控件的声明错误靠使用点 EUI002 兜底；`catalog.Problems`/`StaticEventHost` 诊断至今没有编译期出口——留作后续切片或 D74 登记）；Roslyn tokenizer 已落地（2026-11-05：`@foreach` 头与事件委托形态判定从正则换成解析/深度感知扫描；EUI024 签名匹配另片）；EUI024 处理器签名匹配、G4 样式不变（插槽项已由 §14.12.6 的 C6 关闭）。
+
+### 14.12.6 C6 落地记录（2026-11-05）
+
+具名插槽双侧落地（消费侧 `<Slot>` + 宿主侧 `<ContentSlot>`），`dotnet test` 409 例全绿（Headless 190 / Compiler 158 / Rendering 61）；本切片新增 54 例（`C6SlotTests` 26 + `GeneratorContractTests` C6 13 + `CatalogScannerTests` C6 15）：
+
+| 工作项 | 结果 |
+|---|---|
+| 句法保留名 | `<Slot>`/`<ContentSlot>` 由**解析器特判**成槽节点（`Parser.CreateSlotNode` → `UiSlotNode`/`UiContentSlotNode`），不再依赖 C3 的「目录无同名真实控件才拦截」口径；目录把注册这两个标签名的类型（类名或 `[UiTag]`）挡进 `HiddenTags` 并记 **EUI031** 保留冲突（`UiCatalogFactory`） |
+| 声明侧 | `UiSlotDef(名字, 属性名, 类型显示名, 基数)`；`Element?`/`Element` → Single、`IReadOnlyList<Element>` → Multiple（严格匹配 OriginalDefinition，`List<Element>` 不算）、其余类型 → **EUI021** 且槽不进表面；重复槽名 / `[UiParameter]+[UiSlot]`（参数胜出，槽退出）/ `[UiIgnore]+[UiSlot]`（忽略胜出）/ `[UiSlot]` 空名 → **EUI028** |
+| 基链胜出规则 | 成员基链自己走（Roslyn 不把特性带进 override），但同名成员**只在派生侧显式声明模板特性或 `[UiIgnore]` 时才算覆盖**：否则基类声明继续生效（override 不写特性 = 继承，写 `[UiIgnore]` = 显式退出）。契约原文未定此规则，登记 **D76** |
+| 消费侧分析 | 位置（只允许已解析组件标签的直属子级；控件容器、`@if`/`@foreach`、文档根、未知标签下 → EUI022）/ `Name` 形状（缺失、非字面量、重复、多余属性）/ 未知槽名含建议 / Single 的重复填充与多根填充 → **EUI022** 家族；解析成功按基数进 `ContentSingle`/`ContentMulti`，继承 build-once 内容规则（`@bind` → EUI040、`Key` → EUI010、裸文本 → EUI006）；单根多根报错仍保留首根解析（与 §4.12.3 同口径） |
+| 宿主侧分析 | 自身插槽两级解析（**D75**：生成器按 code-behind 符号沿基类链读 `[UiSlot]` 作权威，静态前端按目录显示名与 `.ui` 文件名短名匹配）；位置（元素容器子级才合法；`@if`/`@foreach`、模板根、`Text`/`TextRuns`/`Label` 模型、组件使用点的槽填充内 → EUI022）/ 同名重复放置 / 带内容 / 多余属性 / 非字面量 `Name` / 自身插槽不可解析 → **EUI022** |
+| 生成形态 | spec/02 §4.12.5 冻结：消费侧按填充源码顺序聚合到同一条 `List<Element>`，Single 赋 `slot.Count == 0 ? null : slot[0]`、Multiple 整表一次赋值，位置在参数与默认内容之后、`Mount()` 之前（子组件首次 `Build()` 在 `Mount()` 内读槽属性）；无填充不生成任何插槽代码。宿主侧**不引入运行时元素**，在组件自身 `Build()` 的该位置内联拼接（Single `if (P is { } s) parent.Children.Add(s);`，Multiple `foreach (var s in P)`） |
+| 测试 | `C6SlotTests`（Headless 26 例：消费侧解析/形状/未知含建议/重复填充/多根拼接/位置三态/`@bind`与`Key`继承；宿主侧单多根解析/未知/缺名/多余属性/带内容/块内/根位/重复放置/使用点/自身 def 不可解析/`Text` 模型）+ `CatalogScannerTests` 15 例（基数、EUI021 三形态、EUI028 重复/空名/参数胜出/忽略胜出、继承/override/`[UiIgnore]` 覆盖、保留标签名冲突 EUI031 + HiddenTags）+ `GeneratorContractTests` 13 例（单/多根发射形态、多填充拼接一次赋值、宿主 Single/Multiple 内联拼接、EUI022 阻断生成、**真实编译生成代码零 C# 错误**、赋值先于 `Mount()` 的顺序契约） |
+
+**范围说明（C6 后仍开放）**：C6 只落地具名插槽——design/09 原文把「附加属性、泛型标签」与插槽并列，实拆为插槽单独成片，
+附加属性（`Grid.Row`，EUI031）与泛型标签（`DataGrid<Order>`，契约 EUI030、当前 `EUI100`，D5）仍留 G4；
+插槽转发（把收到的槽再传给下一层，`<Slot>` 内 `<ContentSlot>`）不支持 → EUI022；
+槽内容随接收方 `TrackContent` 释放、build-once 不随父渲染重算（§14.6.6 口径不变）；
+EUI026 声明处诊断（D74 ②）与 EUI024 处理器签名匹配仍开放。
 
 ## 14.13 风险与开放问题
 

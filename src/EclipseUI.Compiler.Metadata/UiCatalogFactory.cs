@@ -135,6 +135,20 @@ public static class UiCatalogFactory
                         continue;
                     }
 
+                    // C6：`<Slot>`/`<ContentSlot>` 是解析器特判的保留标签名（spec/01 §3.1）——
+                    // 目录不再「同名控件让位」，而是把占用者挡在面板外并记声明问题。
+                    var exposedTag = TagOf(type);
+                    if (exposedTag is "Slot" or "ContentSlot")
+                    {
+                        hidden.Add(new UiHiddenTag(exposedTag, Display(type), UiDiagnostics.ReservedSyntax,
+                            $"'{exposedTag}' is a reserved template tag (named slots, spec/01 §4.15); " +
+                            $"rename the type or its [UiTag]"));
+                        problems.Add(Problem(UiDiagnostics.ReservedSyntax, type, null,
+                            $"'{Display(type)}' registers the reserved template tag '{exposedTag}' (named slots); " +
+                            "rename the type or its [UiTag]"));
+                        continue;
+                    }
+
                     exposed.Add(Describe(type, origin.Value, fromReferencedAssembly));
                 }
             }
@@ -475,6 +489,11 @@ public static class UiCatalogFactory
             Dictionary<string, UiSlotDef> slots,
             List<UiMetadataProblem> problems)
         {
+            // 基链自己走（Roslyn 的 GetAttributes 不把特性带进 override，也不含继承的类型特性）。
+            // 同名成员按派生优先，但只有派生侧**显式写了模板声明或 [UiIgnore]** 才算覆盖：
+            // 否则 override 会把基类的参数/插槽静默丢掉。重复处理同一声明会把它误报成
+            // 重复插槽声明，并让基类定义覆盖派生定义（Required/形状以派生声明为准）。
+            var seenMembers = new HashSet<string>(StringComparer.Ordinal);
             for (var current = type; current is not null && current.SpecialType != SpecialType.System_Object; current = current.BaseType)
             {
                 foreach (var member in current.GetMembers().OfType<IPropertySymbol>())
@@ -483,15 +502,20 @@ public static class UiCatalogFactory
                     var parameter = FindAttribute(member, UiParameterAttributeName);
                     var slot = FindAttribute(member, UiSlotAttributeName);
                     var contentMark = FindAttribute(member, UiContentAttributeName);
-                    if (parameter is null && slot is null && contentMark is null) continue;
-                    // design/14 §14.6.1「参数属性不得是 [UiIgnore]」：忽略优先，成员退出表面并记问题
+                    // design/14 §14.6.1「参数属性不得是 [UiIgnore]」：忽略优先，成员退出表面并记问题。
+                    // 同时占用名字——派生侧的 [UiIgnore] 也是基类同名模板声明的显式退出。
                     if (HasIgnore(member))
                     {
+                        // 显式 [UiIgnore] 占用这个名字：基类同名的模板声明随之退出表面。
+                        seenMembers.Add(member.Name);
                         if (parameter is not null || slot is not null || contentMark is not null)
                             problems.Add(Problem(UiDiagnostics.ParameterDeclarationInvalid, current, member.Name,
                                 $"'{member.Name}' is both [UiIgnore] and a template parameter/slot/content; [UiIgnore] wins and the member leaves the surface"));
                         continue;
                     }
+
+                    if (parameter is null && slot is null && contentMark is null) continue;
+                    if (!seenMembers.Add(member.Name)) continue;
 
                     if (parameter is not null)
                     {
@@ -536,15 +560,41 @@ public static class UiCatalogFactory
 
                     if (slot is not null)
                     {
-                        var slotName = slot.ConstructorArguments.Length == 1 ? slot.ConstructorArguments[0].Value as string : null;
-                        if (string.IsNullOrEmpty(slotName))
+                        if (parameter is not null)
                         {
-                            problems.Add(Problem(UiDiagnostics.MetadataDeclarationInvalid, current, member.Name,
-                                "[UiSlot] must name the slot"));
+                            // [UiParameter] 胜出：参数 Only 表面（design/14 §14.6.1）；槽属性退出表面并记问题。
+                            problems.Add(Problem(UiDiagnostics.ParameterDeclarationInvalid, current, member.Name,
+                                $"'{member.Name}' is both [UiParameter] and [UiSlot]; the parameter wins and " +
+                                "the slot leaves the template surface"));
                         }
                         else
                         {
-                            slots[slotName!] = new UiSlotDef(slotName!, member.Name, Display(member.Type), UiSlotCardinality.Single);
+                            var slotName = slot.ConstructorArguments.Length == 1 ? slot.ConstructorArguments[0].Value as string : null;
+                            if (string.IsNullOrEmpty(slotName))
+                            {
+                                problems.Add(Problem(UiDiagnostics.ParameterDeclarationInvalid, current, member.Name,
+                                    "[UiSlot] must name the slot"));
+                            }
+                            else if (slots.ContainsKey(slotName!))
+                            {
+                                problems.Add(Problem(UiDiagnostics.ParameterDeclarationInvalid, current, member.Name,
+                                    $"a slot named '{slotName}' is already declared on this component; slot names must be unique"));
+                            }
+                            else if (IsElementListType(member.Type))
+                            {
+                                // IReadOnlyList<Element> → 多根填充拼接；Element（含 ?）→ 单根取首个（§4.12.5）。
+                                slots[slotName!] = new UiSlotDef(slotName!, member.Name, DisplayQualified(member.Type), UiSlotCardinality.Multiple);
+                            }
+                            else if (IsElementType(member.Type))
+                            {
+                                slots[slotName!] = new UiSlotDef(slotName!, member.Name, DisplayQualified(member.Type), UiSlotCardinality.Single);
+                            }
+                            else
+                            {
+                                problems.Add(Problem(UiDiagnostics.ContentTargetInvalid, current, member.Name,
+                                    $"slot '{member.Name}' has type {Display(member.Type)}; [UiSlot] properties must be " +
+                                    $"Element? (single root) or IReadOnlyList<Element> (multiple roots)"));
+                            }
                         }
                     }
                     else if (contentMark is not null)

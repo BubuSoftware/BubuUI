@@ -12,17 +12,23 @@
 
 - 设计文档 01–15（痛点、架构、模板引擎、运行时、布局/渲染/输入、IDE、工具链、里程碑、
   各 G 阶段切片记录、控件契约、状态与反应式）。
-- `.ui` 前端：Lexer / Parser / AST / 字面量转换与建议 / 诊断（EUI001–EUI033 部分未实现；S3 新增
-  EUI037/EUI040/EUI043 已实现）。C2 起 `EclipseUI.Compiler.Metadata` 的目录构建产出
-  EUI017/018/019/021/026/028/030 的**元数据问题**（`UiMetadataProblem`，不是 `.ui` 上的诊断）；
-  使用点落地仍在 C3/C5。
+- `.ui` 前端：Lexer / Parser / AST / 字面量转换与建议 / 诊断。已实现的出口：EUI001–EUI013/EUI015、
+  EUI019/020/021/022/023/025/027/029/031、EUI033/037/040/043、EUI100。
+  `EclipseUI.Compiler.Metadata` 的目录构建另产出 EUI017/018/019/021/026/028/030 的**元数据问题**
+  （`UiMetadataProblem`，不是 `.ui` 上的诊断）；其中 EUI016/017/018/026/028/030 仍无编译期出口，
+  EUI024（委托签名匹配）未实现 —— 台账 D74 ②。
 - Roslyn 增量源生成器：code-behind 发现、模板解析与动态点生成、`@foreach` item 类型推断、代码发射、`#line` 映射。
 - 运行时：`Signal<T>`（遗留原语，不参与模板反应式）、`StyledProperty<T>`、元素树、measure/arrange、路由事件、`@if`/`@foreach` 协调器、`Component`、无头宿主。
 - 输入/焦点：HitTest、指针冒泡、按下捕获、Tab 遍历、空格/回车激活；`InputRouter` 无头/窗口共用。
 - 文本：HarfBuzz shaping（真实字体测试），`HarfBuzzTextPainter` 让布局与绘制共用 shaping 缓存。
 - 渲染：`DisplayList` 契约、Vello CPU/GPU 后端、`ElementPainter` 场景图遍历、Win32 宿主 + wgpu 上屏、
   元素级 damage 与空闲跳帧。
-- 测试：257 个测试全绿（103 无头 + 93 编译器 + 61 渲染）；编译器测试用快照钉住 C2 变宽后的
+- 控件/组件标签契约（C1–C6 ✅）：目录从 Roslyn 符号派生、事件迁入 `Element`、字面量转换器、
+  组件标签（参数/委托事件/必填/`{P}Changed`/默认内容/生命周期）、`Ref={field}`、具名插槽
+  `<Slot>` + `<ContentSlot>`（见 [14 §14.12](./14-control-template-contract.md)）。
+- 反应式 S1–S3 ✅：`Invalidate`/`Render`/`U{N}`/`R{N}`、块 `Refresh` 与 Key 复用、`UiBinding` 双向
+  （控件侧与组件侧），旧语法 `:bind`/`:value` 报 EUI043 Warning。
+- 测试：409 个测试全绿（190 无头 + 158 编译器 + 61 渲染）；编译器测试用快照钉住 C2 变宽后的
   模板表面（17 属性项 / 9 个事件名），样例 `.ui` 已用 `@bind-P` 新语法。
 
 **尚不具备**
@@ -30,30 +36,32 @@
 - retained layer / 合成器 / 真正的局部重绘、像素 golden 自动化。
 - 样式/主题、虚拟化、基础控件库。
 - 文本编辑（字符输入/IME）、多行断行、bidi、字体 fallback。
-- 控件/组件标签契约：标准控件之外无法在 `.ui` 中声明新控件或组件（见 [14](./14-control-template-contract.md)）。
 - LSP / TextMate / VS Code / Rider 插件。
 - 热重载、DevTools、调试映射的 IDE 接入。
 - WebGPU 视口控件（不做 3D 引擎）。
 - CI、LICENSE、NuGet 打包、benchmark、AOT 冒烟。
+- 组件作者面的真实样例：`samples/` 里没有任何 `[UiParameter]`/`[UiContent]`/`[UiSlot]` 用法，
+  C4–C6 的组件契约只在测试夹具中验证过，尚未经真实 App 检验。
 
 ## 9.2 总体进度评估
 
 > 百分比是主观估算，用于排期沟通，不作为绩效指标。
+> **2026-11-05 按 S1–S3 / C1–C6 落地重估**；上一版 65–70% / 42–47% / 10–15% 写在 S/C 切片之前。
 
 | 视角 | 完成度 | 说明 |
 |---|---:|---|
-| 托管核心（编译器前端 + 生成器 + 运行时 + 无头测试） | **65–70%** | 主链路可运行，但有语义缺口（状态与反应式 S1–S5、块布局、列表作用域）和工程缺口（增量、诊断覆盖、性能）。 |
-| 0.1 alpha（可交付的 2D 桌面框架） | **42–47%** | 渲染与 Win32 宿主已打通到窗口像素，元素树→display list→上屏、输入路由与 damage v0 可用；仍缺样式/主题、基础控件集、layer/合成器。 |
-| 完整设计愿景（含 IDE、3D、多平台、DevTools、1.0 硬化） | **10–15%** | IDE、3D、平台扩展、无障碍与稳定性尚未开始。 |
+| 托管核心（编译器前端 + 生成器 + 运行时 + 无头测试） | **80–85%** | 主链路与组件契约已通（S1–S3、C1–C6，409 例全绿）；剩 S4/S5、块布局透明化、按文件增量、诊断出口（D74 ②）、`#line` 列映射、属性存储去装箱、性能基准。 |
+| 0.1 alpha（可交付的 2D 桌面框架） | **55–60%** | 渲染与 Win32 宿主已打通到窗口像素，元素树→display list→上屏、输入路由与 damage v0 可用（G1 门「有条件 Go」，GPU 200 元素 @1280×800 实测 6.36 ms/帧）；仍缺样式/主题、TextBox/ListBox/Grid/ScrollViewer 控件集、layer/合成器。 |
+| 完整设计愿景（含 IDE、3D、多平台、DevTools、1.0 硬化） | **12–17%** | IDE、3D、平台扩展、无障碍与稳定性尚未开始；编译器线的完成度是本次上调的唯一来源。 |
 
 ### 分领域状态
 
 | 领域 | 状态 | 到 0.1 还差什么 |
 |---|---|---|
-| 模板前端 | 🟢 可用 MVP | `@switch`、附加属性、泛型标签、具名插槽、trivia/pretty-printer、Roslyn 语义分析 |
-| 源生成器 | 🟢 可用 MVP | v4 失效重算生成（`Render`/`U{N}`/块 `Refresh`）、`P={expr}` 重算、按文件增量、组件注册表、`#line` 列映射 |
-| 运行时/属性 | 🟢 可用基础 | 失效队列与 `Render`、属性存储去装箱、生命周期 Unmount、样式优先级、性能基准 |
-| 布局 | 🟡 部分 | Grid/Wrap/Scroll、块布局透明化、约束与裁剪、虚拟化 |
+| 模板前端 | 🟢 可用 MVP | `@switch`、附加属性、泛型标签、trivia/pretty-printer、表达式全量 Roslyn 语义分析 |
+| 源生成器 | 🟢 可用 MVP | 按文件增量、`#line` 列映射、组件作者面样例 |
+| 运行时/属性 | 🟢 可用基础 | 属性存储去装箱、生命周期 Unmount、样式优先级、性能基准 |
+| 布局 | 🟡 部分 | Grid/Wrap/Scroll、块布局透明化（`ConditionalBlock`/`ForEachBlock` 仍是 `StackPanelBase`）、约束与裁剪、虚拟化 |
 | 文本 | 🟡 单行 shaping 已接入 | 断行、bidi、fallback、emoji、glyph 缓存、display list 集成 |
 | 输入/焦点 | 🟡 元素路由已通 | 字符输入/IME、滚轮/触摸、Shift+Tab、无障碍 |
 | 渲染/合成器 | 🟡 scene graph + 上屏 + damage v0 | retained layer/合成器、局部重绘、帧预算 |
@@ -183,10 +191,9 @@ Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-s
 - 控制流块布局透明化（`@if`/`@foreach` 不再作为 StackPanel 参与布局）。
 - 状态与反应式 S1–S3（[spec/03](../spec/03-reactivity-and-binding.md)）：`Component.Invalidate`/`ProcessInvalidations`/`Render`、
   `U{N}`/`R{N}` 生成、根级 `P={expr}`/文本重算、块 v4（`BlockScope.RenderActions` 与显式 `Refresh`）、
-  `@bind-P` 双向与 `UiBinding`（控件侧 ✅ S3）、item 身份重建与 `ForEachBlock.Dispose` 泄漏修复；
-  诊断 EUI007/EUI010/EUI033/EUI037/EUI040/EUI043。组件 `@bind`/`{P}Changed` 依赖组件标签（C4），
-  记为未收敛 D54。
-  S4（所有权/深度排序、参数推送与相等保护、异步/后台失效、`ShouldRender`）随 G4 推进，S5 收口归 G8。
+  `@bind-P` 双向与 `UiBinding`（控件侧 ✅ S3、组件侧 ✅ 随 C4）、item 身份重建与 `ForEachBlock.Dispose` 泄漏修复；
+  诊断 EUI007/EUI010/EUI033/EUI037/EUI040/EUI043。组件 `@bind`/`{P}Changed` 已随 C4 收敛（D54/D56 关闭）。
+  S4（所有权/深度排序、异步/后台失效、`ShouldRender`；参数推送与相等保护已随 C4 落地，D52）随 G4 推进，S5 收口归 G8。
 - 语法级表达式重写（Roslyn SyntaxRewriter，替代正则）。
   —— ✅ **Tokenizer 切片（2026-11-05，G3 小片）**：v4 无表达式重写需求（D20 取消信号重写），
   该项收敛为两处形态判定的正则替代。`Emitter.EventHandlerType` 换 `SyntaxFactory.ParseExpression`
@@ -197,7 +204,7 @@ Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-s
   Generator 事件形态 4 例；**358 例全绿（167/130/61）**。
 - 组件注册表：从 Compilation 收集元素/属性/事件/内容模型（契约、数据模型与阶段 C1–C6 见
   [14 控件与模板契约](./14-control-template-contract.md)）。
-  **进度（2026-11-03）：C1 ✅ / C2 ✅ / C3 ✅ / C4 ✅（2026-11-05）/ C5 ✅（2026-11-05）** —— `Runtime/UiAttributes.cs` 六个声明特性 + 内置控件标注、
+  **进度（2026-11-05）：C1 ✅ / C2 ✅ / C3 ✅ / C4 ✅ / C5 ✅ / C6 ✅** —— `Runtime/UiAttributes.cs` 六个声明特性 + 内置控件标注、
   `Compiler.Metadata` 目录模型与 Roslyn 符号扫描器、42 例一致性/快照测试全部落地；
   派生目录 **⊇** 手写目录（属性项 6→17，差集 12 项逐条评审见 [14 §14.12.1](./14-control-template-contract.md)）。
   **C2 切换完成**：分析器与生成器改读派生目录、手写目录删除；`InputEvents` 7 个事件迁入 `Element`
@@ -207,7 +214,8 @@ Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-s
   扫描器对 §14.10.2 伪码的一处 API 偏离都记进台账（D63/D65/D67/D71/D72）。
 - 控件契约落地：目录从符号派生（C1–C2，含**输入事件字段从 `InputEvents` 迁入 `Element`**，
   模板事件表面 1 → 8、属性项 6 → 17）、转换器与 EUI016–EUI026 + EUI031 诊断（C3）、组件标签
-  （参数/委托事件/`[UiParameter(Required=true)]`/`{P}Changed`，C4）、`Ref={field}` 与剩余语法收敛（C5）。
+  （参数/委托事件/`[UiParameter(Required=true)]`/`{P}Changed`，C4）、`Ref={field}` 与剩余语法收敛（C5）、
+  具名插槽 `<Slot>` + `<ContentSlot>` 宿主（C6）。
   契约 v4 换轨见 [14 §14.18](./14-control-template-contract.md)。
   **C3 完成（2026-11-03）**：内置转换器补齐（float/decimal/long/short/byte/char/枚举/TimeSpan，
   接近了 spec/01 §5.2 全表的内置类型）；使用点诊断 `EUI023`（无转换器）、`EUI025`（纯普值重复属性，
@@ -224,7 +232,17 @@ Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-s
   引用程序集控件的元数据问题经 `def.Problems` 在用点暴露（消息带完整类型名），源项目控件
   仍落 EUI002/EUI006（声明处归 EUI026）；台账新增 D74（① 使用点 ✅ / ② EUI026 声明处出口开放）；
   落地记录见 [14 §14.12.5](./14-control-template-contract.md)。
-- 按文件增量生成；`#line` 列映射；诊断覆盖 EUI005/008/009/011/012/013/015。
+  **C6 完成（2026-11-05）**：具名插槽落地——声明侧 `[UiSlot]` 进派生目录（`Element?` → Single、
+  `IReadOnlyList<Element>` → Multiple，其余 EUI021 且不进表面；重名/与 `[UiParameter]` 同属性 → EUI028），
+  消费侧 `<Slot Name="…">` 与宿主侧 `<ContentSlot Name="…">` 由 EUI022 校验，
+  生成形态冻结于 spec/02 §4.12.5（填充在参数与默认内容之后、`Mount()` 之前赋值；宿主在自身 `Build()` 内拼接）；
+  保留标签名 `Slot`/`ContentSlot` 冲突走 EUI031 + HiddenTags。本切片 54 例（C6SlotTests 26 +
+  GeneratorContract C6 13 + CatalogScanner C6 15），**409 例全绿（158/190/61）**；
+  台账新增 D75（解析两级口径）/D76（基链同名成员胜出规则）；
+  落地记录见 [14 §14.12.6](./14-control-template-contract.md)。附加属性与泛型标签实拆留 G4。
+- 按文件增量生成；`#line` 列映射；诊断出口补全 EUI016/017/018/024/026/028/030（D74 ②、D57）。
+  —— EUI005/008/009/011/012/013/015 **已实现**（`TemplateGenerator` 的 code-behind 发现与 `Parser` 的指令判定），
+  本项原文把它们列为待办是 stale，2026-11-05 按代码核对后更正。
 - 属性存储去装箱、失效队列分配预算、benchmark 基线。
 
 **出口标准**
@@ -235,8 +253,10 @@ Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-s
   C2 起生成器目录即派生目录，样例组件（Counter/Prefs/TaskList 经 `.ui`）与第三方程序集同链路覆盖。
 - 内置控件目录由符号派生（手写目录删除），目录与 `StyledPropertyRegistry` 的一致性测试通过。—— ✅ C2（2026-11-02）：
   手写目录已删除（D64），符号派生与 `StyledPropertyRegistry`/事件字段一致性测试通过。
-- 控件/组件标签契约（[14](./14-control-template-contract.md)）C1–C5 落地：自定义控件与组件可写入 `.ui`，
+- 控件/组件标签契约（[14](./14-control-template-contract.md)）C1–C6 落地：自定义控件与组件可写入 `.ui`，
   元数据错误在声明处或使用点报 EUI016–EUI031、EUI033/EUI037/EUI040/EUI043/EUI045（停用码零出现）。
+  —— 🟡 **部分**：C1–C6 切片均已收敛，但 EUI016/017/018/024/026/028/030 无编译期出口、EUI045 未实现
+  （D57/D74 ②，见上文「诊断出口补全」），本条出口尚未达成。
 - 状态与反应式 S1–S3 出口按 [spec/03 §13.1](../spec/03-reactivity-and-binding.md#131-阶段定义) 执行：`dotnet test` 全绿、
   失效合并、无泄漏、普通状态驱动的 Gallery/TaskList、无 `SetValue` 生成。
 - 生成器增量口径按 14.10.3 实测确立：目录每轮重建（14 程序集 / 688 类型全扫 45.1 ms），
@@ -250,7 +270,8 @@ Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-s
 - 控件集：ListBox、TextBox、ScrollViewer、Grid、WrapPanel、Slider 等。
 - `VirtualizingPanel` 与 item 模板的容器复用。
 - 状态与反应式 S4：组件所有权/深度排序、参数推送与相等保护、异步/后台失效、`ShouldRender`（[spec/03 §13.1](../spec/03-reactivity-and-binding.md#131-阶段定义)）。
-- 控件契约 C6：具名插槽 + `ContentSlot` 宿主、附加属性、泛型标签（14 §14.12）。
+- 控件契约 C6：具名插槽 + `ContentSlot` 宿主（✅ 2026-11-05，14 §14.12.6）；
+  附加属性、泛型标签实拆留 G4（14 §14.12.6 范围说明）。
 - 键盘/焦点/IME 接口预留。
 
 **出口标准**

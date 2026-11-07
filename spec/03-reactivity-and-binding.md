@@ -1,6 +1,7 @@
 # 03 · 反应式与绑定契约（失效重算）
 
-> 状态：v1 定稿（2026-10-29）。**S1 已落地（2026-10-30）**；S2–S5 未开始，实现按 §13 分阶段推进。
+> 状态：v1 定稿（2026-10-29）。**S1–S3 已落地**（S1/S2 2026-10-30，S3 控件侧 2026-11-02、组件侧随 C4 2026-11-05）；
+> S4/S5 未开始，实现按 §13 分阶段推进。
 > 本文是模板**反应式语义、组件失效、块刷新与双向绑定**的规范正本。
 > 语法/词法见 [spec/01](./01-template-syntax.md)，生成文本形态见 [spec/02](./02-generated-code-contract.md)，
 > 控件/组件元数据见 [design/14](../design/14-control-template-contract.md)（将迁移为 `spec/04`）。
@@ -20,7 +21,7 @@
 | 保留元素树、动态表达式求值时机、块刷新 | 控件如何声明属性/事件/内容模型（design/14） |
 | `@if`/`@foreach` 的分支重建与 Keyed 复用 | 布局、绘制、hit test（design/05） |
 | `@bind-P` 的单向刷新、回写、组件 `PChanged` | `UiBinding`/`BlockScope` 的逐语句生成形态（spec/02 §4） |
-| 事件自动失效、异步/后台线程的显式失效 | 样式/主题/插槽（G4） |
+| 事件自动失效、异步/后台线程的显式失效 | 样式/主题（G4） |
 | 诊断码 EUI007/EUI010/EUI033/EUI037/EUI040 的反应式口径 | 控件元数据诊断 EUI001–EUI033（design/14 §14.9） |
 
 ### 0.2 权威关系
@@ -134,7 +135,7 @@ v4 **不采用** Blazor 的虚拟 DOM diff：元素实例保留，静态结构�
 10. **大小写敏感，不做别名**；表达式就是 C# 表达式；不兼容 XAML。
 11. **移除旧状态契约**：`[UiState]`/`[UiObservable]`/`[UiComputed]`、`IUiObservable`、`UiWatch`、依赖分析、
     `EUI014`/`EUI034`–`EUI036`/`EUI038`/`EUI039`/`EUI041`/`EUI042`/`EUI044` 不再是模板契约的一部分。
-12. **未实现的语法必须显式保留并报诊断**（`EUI031`/`EUI029`/`EUI030`/`EUI008`；插槽错误从 G4 起用 `EUI022`），
+12. **未实现的语法必须显式保留并报诊断**（`EUI031`/`EUI029`/`EUI030`/`EUI008`；插槽错误用 `EUI022`，✅ C6 已实现），
     不得落进"未知属性/未知标签"的兜底。
 
 任何违反冻结线的提案，必须先在本文登记状态与诊断，再改代码；不接受"先生效、后补文档"。
@@ -320,7 +321,8 @@ public void Adopt(Component child)
   `Key={expr}`、`@bind-P={expr}` 的源、组件动态参数、`Ref={expr}`（G3 仅 Build 求值）。
 - 字面量（双引号字符串）是静态的，只在 Build 时转换与赋值。
 - 事件处理器表达式是**build-once**：控件 `On*`、组件委托参数。不参与渲染重算（§9）。
-- `Class`/`Style`/插槽/附加属性按 G4 定义；实现前的保留行为不参与渲染。
+- `Class`/`Style`/附加属性按 G4 定义；实现前的保留行为不参与渲染。
+  具名插槽（✅ C6）不参与渲染重算，规则见 §10.4。
 
 ### 4.2 求值时机
 
@@ -764,7 +766,8 @@ new cmp
 
 ### 10.4 内容与插槽
 
-- 默认内容（`[UiContent]`）与具名插槽（G4）是 **build-once**：父组件只在构造时生成内容，渲染时不重建。
+- 默认内容（`[UiContent]`）与具名插槽（✅ C6，spec/01 §4.15 / spec/02 §4.12.5）是 **build-once**：父组件只在构造时生成内容，渲染时不重建。
+  插槽的宿主拼接（`<ContentSlot>`）发生在接收组件自身 `Build()` 的该位置，因此槽内容也不随接收组件的失效重算。
 - 内容参数不可作为 `@bind` 目标（`EUI040`）；`P={expr}` 也不写内容参数（`EUI021`）。
 - 内容**体内**不得出现 `@bind`（`EUI040`）：内容没有渲染动作作用域，无法刷新绑定。
 - 内容中的动态表达式属于内容的构建作用域：在 Build 时求值一次；父组件后续渲染不重算内容。
@@ -773,7 +776,7 @@ new cmp
   或让内容自身是一个独立组件。
 - 内容中的子组件用 `receiver.TrackContent(cmp)` 登记到接收方，随接收方释放；不得 `Track` 到模板父组件。
 - 内容中的事件处理器仍失效模板父组件（表达式属于父模板）；接收方不得比父组件活得更久。
-- 插槽错误从 G4 起用 `EUI022`；当前保留 `EUI031`。
+- 插槽非法使用报 `EUI022`（✅ C6）；把 `Slot`/`ContentSlot` 注册成控件标签名是保留冲突，报 `EUI031` 并隐藏该标签。
 
 ## 11. 诊断
 
@@ -785,9 +788,9 @@ new cmp
 | `EUI010` | `Key` 位置错（非条目第一个元素根）、字面量、空表达式 | 属性 | Error | S2 |
 | `EUI033` | 同一目标重复赋值（文本+显式目标；`P=`+`@bind`；`P=`+`:bind`/`:value`；`@bind`+其它写入） | 属性值/文本 | Error | S2/S3 |
 | `EUI037` | `@bind` 源非法（非可写左值/静态/const/readonly/init/方法/索引器/`?.`/struct 属性中间段/值类型 item 成员/类型不符） | 表达式 | Error | ✅ S3（控件与 item 源；自绑静态不可判定不报） |
-| `EUI040` | `@bind` 目标非法（控件不可写/无 `{Name}Property`；组件参数无 public setter/委托/内容/保留；组件缺少 `{P}Changed` 或类型不符）；组件内容体内出现 `@bind` | 属性名/内容 | Error | ✅ S3（控件：不可绑/事件/保留名；组件侧待 C4） |
+| `EUI040` | `@bind` 目标非法（控件不可写/无 `{Name}Property`；组件参数无 public setter/委托/内容/保留；组件缺少 `{P}Changed` 或类型不符）；组件内容体内出现 `@bind` | 属性名/内容 | Error | ✅ S3（控件与组件侧；自绑静态不可判定不报） |
 | `EUI043` | 旧语法 `:bind`/`:value` 弃用 | 属性名 | Warning | ✅ S3 |
-| `EUI045` | code-behind 与生成成员冲突（`Build`/`Render`/`U{N}`/`__` 字段/基类/隐藏 `Invalidate` 等） | code-behind 声明 | Error | C3 |
+| `EUI045` | code-behind 与生成成员冲突（`Build`/`Render`/`U{N}`/`__` 字段/基类/隐藏 `Invalidate` 等） | code-behind 声明 | Error | G3（原 C3，D57 重排；尚未实现） |
 | `EUI100` | 纯语法错误（标签不匹配、属性缺值、未闭合注释、非法 `@bind-` 形态） | 语法位置 | Error | ✅ |
 
 其余 `EUI001`–`EUI006`、`EUI008`–`EUI009`、`EUI011`–`EUI013`、`EUI015`–`EUI031` 的语义按 spec/01 §6.2（v4 修订版）为准；其中：
@@ -868,15 +871,16 @@ O(根级动态绑定数 + 根级块数 + Σ 块刷新成本)
 |---|---|---|
 | **S1** ✅ | `Component.Invalidate/ProcessInvalidations/Render/ShouldRender`；失效队列与合并；生成字段与 `U{N}`；根级 `P=`/文本重算；控件事件自动失效 | 根级动态属性/文本在失效后更新；同帧多次失效只渲染一次；Dispose 后 no-op |
 | **S2** ✅ | `ConditionalBlock`/`ForEachBlock` v4；`BlockScope.RenderActions`；`@if` 分支切换；`@foreach` 重新枚举、null=空、Keyed 复用；嵌套块；`EUI033`（文本 + 显式目标） | 分支切换释放旧作用域；同 Key 同 item 复用、不同 item 重建；列表类型不受限 |
-| **S3** 🟡 | `UiBinding` v4；控件 `@bind`；item 绑定；`EUI033`（`P=` 与绑定冲突）/`EUI037`/`EUI040`/`EUI043` —— 控件侧 ✅（2026-11-02）；组件 `PChanged` 与组件 `@bind` 待 C4（spec/02 D54） | 双向绑定源值胜出；目标变化回写+失效；无回环；~~组件参数向上同步~~（待 C4） |
+| **S3** ✅ | `UiBinding` v4；控件 `@bind`；item 绑定；`EUI033`（`P=` 与绑定冲突）/`EUI037`/`EUI040`/`EUI043` —— 控件侧 ✅（2026-11-02）；组件 `PChanged` 与组件 `@bind` 随 C4 ✅（2026-11-05，spec/02 D54/D56 关闭） | 双向绑定源值胜出；目标变化回写+失效；无回环；组件参数向上同步 |
 | **S4** | 组件所有权/深度排序；参数推送与相等保护；异步/后台失效；`ShouldRender` 与异步失效的组合语义 | 父先于子渲染；后台失效合并；异步续体显式失效；无泄漏 |
 | **S5** | 基准/预算；AOT/裁剪；死循环上限；旧语法清理；诊断清理与最终审计 | 性能预算达标；零停用诊断；样例迁移完成 |
 
 ### 13.2 与 C/G 阶段的关系
 
-- C1–C6（符号目录、控件事件、字面量、组件标签、`Ref`、插槽/附加属性/泛型标签）按 design/14 §14.12，
+- C1–C6（符号目录、控件事件、字面量、组件标签、`Ref`、具名插槽）按 design/14 §14.12，
   与 S1–S5 并行；S2/S3 依赖 C4 的组件标签与 `PChanged` 元数据。
-- G3（块布局透明、`Ref`、增量、列映射）与 G4（样式/主题/插槽）不改变本文语义。
+  C6 实拆只做具名插槽，附加属性与泛型标签留 G4（design/14 §14.12.6 范围说明）。
+- G3（块布局透明、`Ref`、增量、列映射）与 G4（样式/主题/附加属性/泛型标签）不改变本文语义。
 - 阶段标记按"规范已定、代码未实现"使用；未实现项必须出现在 spec/02 §12 与 design/03 §3.5.4。
 
 ## 14. 契约测试矩阵
@@ -924,6 +928,16 @@ struct/值类型 item/名字不存在）、`EUI040`（事件与保留名目标�
 T15 见样例迁移到 `@bind-` 后 `CounterApp`/`GalleryApp` 编译 0 error 0 warning。
 202 个测试全绿（Headless 102 / Compiler 39 / Rendering 61）。
 组件 `@bind`、`PChanged` 与 T9 属 C4 依赖项，未在本阶段收敛（spec/02 D54/D56）。
+
+**S3 门禁（组件侧，随 C4 于 2026-11-05 收敛）**：T9 三项出口全部有据——
+参数在 `Mount()` 前就位（`GeneratorContractTests.SlotFill_AssignsAfterParametersAndContent_BeforeMount`
+钉住「参数 < 默认内容 < 插槽 < `Mount()`」的发射顺序）；相同值不失效子
+（`Emitter.EmitParamPush` 的根级 `U{N}` 与内层 `R{N}` 都用 `EqualityComparer<T>.Default.Equals`
+守卫，`Invalidate()` 只在不等时发射）；`PChanged` 回写（`Emitter` 先赋 `{P}Changed = v => …`
+再在源码位置推送，回写前同样做相等守卫以免回环）。诊断侧 `C4ComponentTests`
+覆盖 `BindWithoutChangedCallback_IsEUI040`/`BindOnDelegateParameter_IsEUI040`/`BindInsideContent_IsEUI040`/
+`DuplicateBoundComponentParameter_IsEUI033`，生成侧 `GeneratorContractTests.ComponentBindWithoutChanged_EUI040_BlocksGeneration`。
+D54/D56 关闭。S3 至此整体 ✅；当前 **409 个测试全绿（Headless 190 / Compiler 158 / Rendering 61）**。
 
 **C1 目录派生（非 S 阶段，2026-11-02 通过）**：本阶段不改反应式与生成形态，只把控件元数据的来源换成符号。
 与反应式的交点是 **D62**：`EUI040` 的「目标可绑」判定此前只来自手写目录的 `UiPropDef.Bindable` 标注，

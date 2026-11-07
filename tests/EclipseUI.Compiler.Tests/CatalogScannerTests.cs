@@ -857,4 +857,226 @@ public class CatalogScannerTests
         Assert.Equal("NameChanged", card.Parameters["Name"].ChangedCallbackName);
     }
 
+    // ---- C6：插槽声明侧（design/14 §14.6.3、spec/01 §4.15、spec/02 §4.12.5）----
+
+    [Fact]
+    public void ComponentSlot_InheritedFromBase_IsCollected()
+    {
+        var catalog = Scan("""
+            using System.Collections.Generic;
+            using EclipseUI;
+
+            public abstract class Base : Component
+            {
+                [UiSlot("Rows")] public IReadOnlyList<Element> Rows { get; set; } = [];
+            }
+            public partial class Card : Base
+            {
+                [UiSlot("Header")] public Element? Header { get; set; }
+            }
+            """);
+        var card = Assert.Single(catalog.Elements, e => e.Tag == "Card");
+        Assert.Equal(2, card.Slots.Count);
+        Assert.Equal(UiSlotCardinality.Multiple, card.Slots["Rows"].Cardinality);
+        Assert.Equal(UiSlotCardinality.Single, card.Slots["Header"].Cardinality);
+        Assert.Empty(card.Problems);
+    }
+
+    [Fact]
+    public void ComponentSlot_OverrideOnDerived_CountsOnce_AndDerivedDeclarationWins()
+    {
+        // 基链必须自己走（GetAttributes 不含继承特性），但 override 不是第二个插槽：
+        // 派生声明胜出，不得报重复。
+        var catalog = Scan("""
+            using EclipseUI;
+
+            public class Base : Component
+            {
+                [UiSlot("Header")] public virtual Element? Header { get; set; }
+            }
+            public partial class Card : Base
+            {
+                [UiSlot("Header")] public override Element? Header { get; set; }
+            }
+            """);
+        var card = Assert.Single(catalog.Elements, e => e.Tag == "Card");
+        var slot = Assert.Single(card.Slots.Values);
+        Assert.Equal(UiSlotCardinality.Single, slot.Cardinality);
+        Assert.DoesNotContain(card.Problems, p => p.Message.Contains("already declared"));
+    }
+
+    [Fact]
+    public void ComponentSlot_OverrideWithoutAttribute_KeepsInheritedDeclaration()
+    {
+        // 同名成员去重后，派生侧符号是唯一的读取点：Roslyn 必须把基类特性带进 override，
+        // 否则 override 会把插槽静默丢掉（与反射 Inherited=true 的语义一致才可接受）。
+        var catalog = Scan("""
+            using EclipseUI;
+
+            public class Base : Component
+            {
+                [UiSlot("Header")] public virtual Element? Header { get; set; }
+            }
+            public partial class Card : Base
+            {
+                public override Element? Header { get; set; }
+            }
+            """);
+        var card = Assert.Single(catalog.Elements, e => e.Tag == "Card");
+        var slot = Assert.Single(card.Slots.Values);
+        Assert.Equal("Header", slot.Name);
+        Assert.Equal(UiSlotCardinality.Single, slot.Cardinality);
+    }
+
+    [Fact]
+    public void ComponentSlot_IgnoreOnOverride_ExitsInheritedSlot()
+    {
+        // [UiIgnore] 是派生侧对同名声明的显式退出：基类的插槽不再进表面（design/14 §14.6.1）。
+        var catalog = Scan("""
+            using EclipseUI;
+
+            public class Base : Component
+            {
+                [UiSlot("Header")] public virtual Element? Header { get; set; }
+            }
+            public partial class Card : Base
+            {
+                [UiIgnore] public override Element? Header { get; set; }
+            }
+            """);
+        var card = Assert.Single(catalog.Elements, e => e.Tag == "Card");
+        Assert.Empty(card.Slots);
+    }
+
+    [Theory]
+    [InlineData("string? Header", "string")]
+    [InlineData("List<Element> Header", "System.Collections.Generic.List")]
+    [InlineData("Element[] Header", "Element[]")]
+    public void ComponentSlot_TypeNotElementOrElementList_IsEUI021_AndLeavesSurface(string declaration, string typeFragment)
+    {
+        var catalog = Scan($$"""
+            using System.Collections.Generic;
+            using EclipseUI;
+
+            public partial class Card : Component
+            {
+                [UiSlot("Header")] public {{declaration}} { get; set; }
+            }
+            """);
+        var card = Assert.Single(catalog.Elements, e => e.Tag == "Card");
+        Assert.Empty(card.Slots);
+        var problem = Assert.Single(card.Problems, p => p.Code == UiDiagnostics.ContentTargetInvalid);
+        Assert.Contains("Header", problem.Message);
+        Assert.Contains(typeFragment, problem.Message);
+    }
+
+    [Fact]
+    public void ComponentSlot_DuplicateName_IsEUI028()
+    {
+        var catalog = Scan("""
+            using EclipseUI;
+
+            public partial class Card : Component
+            {
+                [UiSlot("Header")] public Element? First { get; set; }
+                [UiSlot("Header")] public Element? Second { get; set; }
+            }
+            """);
+        var card = Assert.Single(catalog.Elements, e => e.Tag == "Card");
+        var slot = Assert.Single(card.Slots.Values);
+        Assert.Equal("First", slot.PropertyName);
+        var problem = Assert.Single(card.Problems, p => p.Code == UiDiagnostics.ParameterDeclarationInvalid);
+        Assert.Equal("Second", problem.MemberName);
+        Assert.Contains("already declared", problem.Message);
+    }
+
+    [Theory]
+    [InlineData("[UiSlot(\"\")]")]          // 空名：AttributeArgument 存在但值为空串
+    [InlineData("[UiSlot(null)]")]          // null 名：构造参数为 null
+    public void ComponentSlot_WithoutUsableName_IsEUI028(string attribute)
+    {
+        // UiSlotAttribute 只有 (string name) 一个构造，缺实参是 C# 错误；可达的非法形态是空串/null。
+        var catalog = Scan($$"""
+            using EclipseUI;
+
+            public partial class Card : Component
+            {
+                {{attribute}} public Element? Header { get; set; }
+            }
+            """);
+        var card = Assert.Single(catalog.Elements, e => e.Tag == "Card");
+        Assert.Empty(card.Slots);
+        var problem = Assert.Single(card.Problems, p => p.Code == UiDiagnostics.ParameterDeclarationInvalid);
+        Assert.Contains("must name the slot", problem.Message);
+    }
+
+    [Fact]
+    public void ComponentSlot_WithUiParameter_ParameterWinsAndSlotLeaves_IsEUI028()
+    {
+        // spec/01 §4.15：[UiParameter] 胜出，槽退出表面。
+        var catalog = Scan("""
+            using EclipseUI;
+
+            public partial class Card : Component
+            {
+                [UiParameter] [UiSlot("Header")] public Element? Header { get; set; }
+            }
+            """);
+        var card = Assert.Single(catalog.Elements, e => e.Tag == "Card");
+        Assert.True(card.Parameters.ContainsKey("Header"));
+        Assert.False(card.Parameters["Header"].IsContent);
+        Assert.Empty(card.Slots);
+        var problem = Assert.Single(card.Problems, p => p.Code == UiDiagnostics.ParameterDeclarationInvalid);
+        Assert.Contains("parameter wins", problem.Message);
+    }
+
+    [Fact]
+    public void ComponentSlot_WithUiIgnore_IgnoreWinsAndMemberLeaves_IsEUI028()
+    {
+        var catalog = Scan("""
+            using EclipseUI;
+
+            public partial class Card : Component
+            {
+                [UiIgnore] [UiSlot("Header")] public Element? Header { get; set; }
+            }
+            """);
+        var card = Assert.Single(catalog.Elements, e => e.Tag == "Card");
+        Assert.Empty(card.Slots);
+        Assert.False(card.Parameters.ContainsKey("Header"));
+        Assert.Contains(card.Problems, p => p.Code == UiDiagnostics.ParameterDeclarationInvalid &&
+            p.Message.Contains("[UiIgnore] wins"));
+    }
+
+    [Theory]
+    [InlineData("Slot")]
+    [InlineData("ContentSlot")]
+    public void ControlRegisteringReservedSlotTag_IsHiddenWithEUI031(string tag)
+    {
+        // spec/01 §3.1：`<Slot>`/`<ContentSlot>` 是解析器特判的句法保留名，同名控件挡在面板外。
+        var catalog = Scan($$"""
+            using EclipseUI;
+
+            public class {{tag}} : StackPanel { }
+            """);
+        Assert.DoesNotContain(catalog.Elements, e => e.Tag == tag);
+        var hidden = Assert.Single(catalog.HiddenTags, h => h.Tag == tag);
+        Assert.Equal(UiDiagnostics.ReservedSyntax, hidden.ReasonCode);
+        Assert.Contains("reserved template tag", hidden.Reason);
+        Assert.Contains(catalog.Problems, p => p.Code == UiDiagnostics.ReservedSyntax &&
+            p.Message.Contains("rename the type or its [UiTag]"));
+    }
+
+    [Fact]
+    public void ControlWithUiTagSlot_IsHidden_EvenWhenTypeNameIsNotSlot()
+    {
+        var catalog = Scan("""
+            using EclipseUI;
+
+            [UiTag("Slot")]
+            public class SlotBox : StackPanel { }
+            """);
+        Assert.DoesNotContain(catalog.Elements, e => e.Tag == "Slot");
+        Assert.Contains(catalog.HiddenTags, h => h.Tag == "Slot" && h.ReasonCode == UiDiagnostics.ReservedSyntax);
+    }
 }

@@ -185,36 +185,10 @@ public class C3LiteralAndDiagnosticsTests
         Assert.Contains("attached", diag.Message);
     }
 
-    [Theory]
-    [InlineData("Slot")]
-    [InlineData("ContentSlot")]
-    public void ReservedSlotTags_AreReservedSyntax(string tag)
-    {
-        var (_, diags) = ParseAnalyze(UiTestCatalogs.BuiltIn(), $"<{tag} Name=\"body\"><TextBlock FontSize=\"12\">x</TextBlock></{tag}>");
-        var diag = Assert.Single(diags);
-        Assert.Equal(UiDiagnostics.ReservedSyntax, diag.Code);
-        Assert.Contains("named slots", diag.Message);
-    }
-
-    [Fact]
-    public void SlotTagWithRealControl_KeepsTagResolution()
-    {
-        // 有同名控件时（用户自定义）不走保留诊断——探针里手动加一个真实 Slot 定义。
-        var built = UiTestCatalogs.BuiltIn();
-        var custom = new UiElementDef(
-            "Slot", "global::Probe.SlotHost", UiElementOrigin.Control,
-            UiContentModel.Children, "Children",
-            new Dictionary<string, UiPropDef>(StringComparer.Ordinal),
-            new Dictionary<string, UiEventDef>(StringComparer.Ordinal),
-            new Dictionary<string, UiParameterDef>(StringComparer.Ordinal),
-            new Dictionary<string, UiSlotDef>(StringComparer.Ordinal), []);
-        var catalog = new UiCatalog(
-            built.Elements.Append(custom).ToArray(), built.HiddenTags, built.Problems);
-        var (_, diags) = ParseAnalyze(catalog, """<Slot />""");
-        Assert.Empty(diags);
-    }
-
     // ---- 直接单元级转换（不经过解析器） ----
+    // C6 前 `<Slot>`/`<ContentSlot>` 走保留语法（EUI031，见 git history 的
+    // ReservedSlotTags_AreReservedSyntax / SlotTagWithRealControl_KeepsTagResolution），
+    // 现由解析器特判成槽节点、按 EUI022 校验（见 C6SlotTests）。
 
     [Fact]
     public void ConvertDoubleSuite()

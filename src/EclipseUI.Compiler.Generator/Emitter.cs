@@ -46,6 +46,9 @@ public sealed class Emitter
     private readonly string _namespace;
     private readonly string _className;
     private readonly Dictionary<UiForeach, string> _itemTypes;
+    /// <summary>自身 code-behind 组件的插槽（spec/02 §4.12.5）——TemplateGenerator 按
+    /// code-behind 符号精确匹配传入；分析器的短名近似只用于诊断，发射以此为准。</summary>
+    private readonly IReadOnlyDictionary<string, UiSlotDef> _ownSlots;
     private readonly string _linePath;
     private readonly StringBuilder _sb = new();
     private readonly StringBuilder _body = new();
@@ -58,13 +61,15 @@ public sealed class Emitter
     private int _fnCounter;
 
     public Emitter(UiDocument doc, string accessibility, string namespaceName, string className,
-        Dictionary<UiForeach, string> itemTypes, string filePath)
+        Dictionary<UiForeach, string> itemTypes, string filePath,
+        IReadOnlyDictionary<string, UiSlotDef>? ownSlots = null)
     {
         _doc = doc;
         _accessibility = accessibility;
         _namespace = namespaceName;
         _className = className;
         _itemTypes = itemTypes;
+        _ownSlots = ownSlots ?? new Dictionary<string, UiSlotDef>(StringComparer.Ordinal);
         // #line 的文件名不是 C# 字符串字面量：反斜杠原样写入，否则映射路径会变成双反斜杠。
         _linePath = filePath.Replace("\"", "\\\"");
     }
@@ -437,6 +442,26 @@ public sealed class Emitter
             Line($"{v}.{contentParam.Name} = {(contentParam.ContentIsMultiple ? ck : single)};");
         }
 
+        // 具名插槽填充（§4.12.5）：按填充源码顺序聚合；同槽多次填充（Multiple）拼接进同一列表，
+        // Single 只发射首个（后续填充 Analyzer 已报 EUI022 且 ResolvedSlot 为 null）。
+        var slotFills = element.Children.OfType<UiSlotNode>().Where(f => f.ResolvedSlot is not null).ToList();
+        var emittedSlots = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var fill in slotFills)
+        {
+            var slot = fill.ResolvedSlot!;
+            if (!emittedSlots.Add(slot.Name)) continue;
+            var group = slotFills.Where(f => ReferenceEquals(f.ResolvedSlot, slot)).ToList();
+            var sv = $"slot{_varCounter++}";
+            Mapped(LineOf(fill.NameAttribute!.ValueSpan),
+                $"var {sv} = new global::System.Collections.Generic.List<global::EclipseUI.Element>();");
+            foreach (var sibling in group)
+                EmitContentChildren(sibling.Children, sv, EmitContext.Content(v));
+            Mapped(LineOf(fill.NameAttribute!.ValueSpan),
+                slot.Cardinality == UiSlotCardinality.Single
+                    ? $"{v}.{slot.PropertyName} = {sv}.Count == 0 ? null : {sv}[0];"
+                    : $"{v}.{slot.PropertyName} = {sv};");
+        }
+
         Line($"{v}.Mount();");
 
         if (parentVar is not null)
@@ -516,6 +541,8 @@ public sealed class Emitter
                     break;
                 case UiText:
                     break; // Analyzer 已报 EUI006
+                case UiSlotNode or UiContentSlotNode:
+                    break; // 槽节点单独发射（§4.12.3/§4.12.5）；Analyzer 已报位置
             }
         }
     }
@@ -542,6 +569,39 @@ public sealed class Emitter
         EmitContentChildren(node.Children, contentVar, ctx);
         _indent--;
         Line("}");
+    }
+
+    /// <summary>
+    /// <c>&lt;ContentSlot&gt;</c> 宿主拼接（§4.12.5）：不产生运行时元素——在组件自身 Build 的该位置
+    /// 直接把插槽属性装入父容器；Single 逐一次（属性 null 则跳过），Multiple 读取一次逐项加入。
+    /// </summary>
+    private void EmitContentSlotSplice(UiContentSlotNode host, string parentVar)
+    {
+        var slot = _ownSlots.TryGetValue(host.Name, out var ownSlot)
+            ? ownSlot                      // 精确匹配 code-behind 的 def 为发射事实源
+            : host.ResolvedSlot;           // 分析器短名近似（头显测试/回退）
+        if (slot is null || parentVar is null) return; // Analyzer 已报 EUI022
+
+        var s = NewVar("slot");
+        var line = LineOf(host.NameAttribute!.ValueSpan);
+        if (slot.Cardinality == UiSlotCardinality.Single)
+        {
+            Mapped(line, $"if ({slot.PropertyName} is {{ }} {s})");
+            Line("{");
+            _indent++;
+            Mapped(line, $"{parentVar}.Children.Add({s});");
+            _indent--;
+            Line("}");
+        }
+        else
+        {
+            Mapped(line, $"foreach (var {s} in {slot.PropertyName})");
+            Line("{");
+            _indent++;
+            Mapped(line, $"{parentVar}.Children.Add({s});");
+            _indent--;
+            Line("}");
+        }
     }
 
     private void EmitBinding(UiAttribute attr, UiPropDef propDef, string elementVar, EmitContext ctx)
@@ -584,6 +644,9 @@ public sealed class Emitter
                 break;
             case UiForeach foreachNode:
                 EmitForeach(foreachNode, parentVar, ctx);
+                break;
+            case UiContentSlotNode host:
+                EmitContentSlotSplice(host, parentVar);
                 break;
             case UiText:
                 break; // Analyzer 已报错
@@ -800,6 +863,8 @@ public sealed class Emitter
                 case UiForeach foreachNode:
                     roots.Add(EmitForeach(foreachNode, parentVar: null, ctx));
                     break;
+                case UiSlotNode or UiContentSlotNode:
+                    break; // Analyzer 已报 EUI022（槽不进块，§4.12.5）
             }
         }
         return roots;
