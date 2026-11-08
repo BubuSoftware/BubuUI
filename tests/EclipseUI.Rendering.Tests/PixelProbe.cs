@@ -149,19 +149,27 @@ public sealed class PixelProbe
 
     /// <summary>帧内 region 与 other 的对应区域逐字节一致。</summary>
     public PixelProbe SameAs(RenderTarget other, Rect region, string? because = null) =>
-        Compare(other, region, outside: false, because);
+        Compare(other, new[] { region }, outside: false, because);
 
-    /// <summary>帧内 region 之外的所有像素与 other 逐字节一致（脏区外不变）。</summary>
+    /// <summary>帧内各 region 之外的所有像素与 other 逐字节一致（脏区外不变）。</summary>
     public PixelProbe SameAsOutside(RenderTarget other, Rect region, string? because = null) =>
-        Compare(other, region, outside: true, because);
+        Compare(other, new[] { region }, outside: true, because);
+
+    /// <summary>帧内 regions 覆盖之外的所有像素与 other 逐字节一致（多脏区并集外不变）。</summary>
+    public PixelProbe SameAsOutside(RenderTarget other, IReadOnlyList<Rect> regions, string? because = null) =>
+        Compare(other, regions, outside: true, because);
 
     /// <summary>帧内 region 与原始 RGBA 缓冲（如 compositor 快照）逐字节一致。</summary>
     public PixelProbe SameAs(byte[] rgba, Rect region, string? because = null) =>
-        Compare(rgba, region, outside: false, because);
+        Compare(rgba, new[] { region }, outside: false, because);
 
     /// <summary>帧内 region 之外的所有像素与原始 RGBA 缓冲逐字节一致。</summary>
     public PixelProbe SameAsOutside(byte[] rgba, Rect region, string? because = null) =>
-        Compare(rgba, region, outside: true, because);
+        Compare(rgba, new[] { region }, outside: true, because);
+
+    /// <summary>帧内 regions 覆盖之外的所有像素与原始 RGBA 缓冲逐字节一致。</summary>
+    public PixelProbe SameAsOutside(byte[] rgba, IReadOnlyList<Rect> regions, string? because = null) =>
+        Compare(rgba, regions, outside: true, because);
 
     // -------------------------------------------------------------------
     // 终结
@@ -209,25 +217,25 @@ public sealed class PixelProbe
         return matched;
     }
 
-    private PixelProbe Compare(RenderTarget other, Rect region, bool outside, string? because)
+    private PixelProbe Compare(RenderTarget other, IReadOnlyList<Rect> regions, bool outside, string? because)
     {
         if (other.Width != _frame.Width || other.Height != _frame.Height)
         {
             Fail(
-                $"SameAs[{(outside ? "外" : "")}{Describe(region)}] 尺寸不一致：帧 {_frame.Width}x{_frame.Height}，" +
+                $"SameAs[{(outside ? "区域外" : "")}{Describe(regions)}] 尺寸不一致：帧 {_frame.Width}x{_frame.Height}，" +
                 $"other {other.Width}x{other.Height}{Because(because)}");
             return this;
         }
 
-        return Compare((x, y) => other.GetPixel(x, y), region, outside, "other", because);
+        return Compare((x, y) => other.GetPixel(x, y), regions, outside, "other", because);
     }
 
-    private PixelProbe Compare(byte[] rgba, Rect region, bool outside, string? because)
+    private PixelProbe Compare(byte[] rgba, IReadOnlyList<Rect> regions, bool outside, string? because)
     {
         if (rgba.Length != _frame.Pixels.Length)
         {
             Fail(
-                $"SameAs[{(outside ? "外" : "")}{Describe(region)}] 缓冲长度不一致：帧 {_frame.Pixels.Length}，" +
+                $"SameAs[{(outside ? "区域外" : "")}{Describe(regions)}] 缓冲长度不一致：帧 {_frame.Pixels.Length}，" +
                 $"other {rgba.Length}{Because(because)}");
             return this;
         }
@@ -235,11 +243,25 @@ public sealed class PixelProbe
         return Compare(
             (x, y) => new Color(rgba[y * _frame.Stride + x * 4], rgba[y * _frame.Stride + x * 4 + 1],
                                 rgba[y * _frame.Stride + x * 4 + 2], rgba[y * _frame.Stride + x * 4 + 3]),
-            region, outside, "other", because);
+            regions, outside, "other", because);
     }
 
-    private PixelProbe Compare(Func<int, int, Color> otherPixel, Rect region, bool outside, string otherDesc, string? because)
+    private PixelProbe Compare(
+        Func<int, int, Color> otherPixel, IReadOnlyList<Rect> regions, bool outside, string otherDesc, string? because)
     {
+        // 区域先对齐到像素格（floor/ceil，与合成器 CopyRegion 的拷贝范围一致），
+        // 避免「double 区域边界内的整像素已被拷贝、却被中心点判定为区域外」的半像素误报。
+        var pixelRegions = regions.Select(PixelGrid).ToList();
+        bool Inside(int x, int y)
+        {
+            var center = new Point(x + 0.5, y + 0.5);
+            foreach (var region in pixelRegions)
+            {
+                if (region.Contains(center)) return true;
+            }
+            return false;
+        }
+
         int compared = 0, mismatched = 0;
         (int x, int y, Color a, Color b)? firstMismatch = null;
 
@@ -248,8 +270,7 @@ public sealed class PixelProbe
         {
             for (int x = 0; x < _frame.Width; x++)
             {
-                bool inside = region.Contains(new Point(x + 0.5, y + 0.5));
-                if (inside == outside) continue; // outside=true 跳过区域内，反之亦然
+                if (Inside(x, y) == outside) continue; // outside=true 跳过区域内，反之亦然
 
                 compared++;
                 var a = _frame.GetPixel(x, y);
@@ -264,11 +285,18 @@ public sealed class PixelProbe
         {
             var hit = firstMismatch!.Value;
             Fail(
-                $"SameAs[{(outside ? "区域外" : "")}{Describe(region)}] 与 {otherDesc} 不一致：{mismatched}/{compared} 像素，" +
+                $"SameAs[{(outside ? "区域外" : "")}{Describe(regions)}] 与 {otherDesc} 不一致：{mismatched}/{compared} 像素，" +
                 $"首个 ({hit.x},{hit.y}) 本帧 {hit.a} / {otherDesc} {hit.b}{Because(because)}");
         }
         return this;
     }
+
+    /// <summary>区域向外对齐到整数像素格（floor 左/上、ceil 右/下），覆盖抗锯齿边缘。</summary>
+    private static Rect PixelGrid(Rect region) => new(
+        Math.Floor(region.Left),
+        Math.Floor(region.Top),
+        Math.Ceiling(region.Right) - Math.Floor(region.Left),
+        Math.Ceiling(region.Bottom) - Math.Floor(region.Top));
 
     private static bool Close(Color a, Color b, int tolerance) =>
         Math.Abs(a.R - b.R) <= tolerance &&
@@ -278,6 +306,9 @@ public sealed class PixelProbe
 
     private static string Describe(Rect region) =>
         $"({region.Left:0.#},{region.Top:0.#},{region.Width:0.#},{region.Height:0.#})";
+
+    private static string Describe(IReadOnlyList<Rect> regions) =>
+        regions.Count == 1 ? Describe(regions[0]) : $"{regions.Count} rects";
 
     private static string Because(string? because) => because is null ? "" : $"（{because}）";
 

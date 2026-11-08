@@ -355,6 +355,18 @@ CPU 侧部分收敛（2026-11-08/D84）：CPU 像素 golden（`PixelGoldenTests`
   首跑校准：14 场景全部 0 违例、最大通道差 ≤1（CPU/GPU 共用 VelloSharp 渲染核心）；
   文本/字体不进矩阵（字形光栅化跨机器差异大，由 DrawGlyphs 结构测试与画廊目检覆盖）；
   GPU 探测助手与仓库根定位提取到 `Render.TryCreateGpuBackend`/`Render.RepoRoot` 共享。
+  ⑥ G2 retained 显示列表收敛（D93）：`ElementPainter` 段级 retained——每元素的**自绘命令**
+  （类型绘制 + 卡片 + 焦点环）按 (RenderVersion, 绝对位置, 尺寸, 焦点态) 缓存在
+  `ConditionalWeakTable`（元素回收随 GC、无泄漏），树未变的元素整段复用、帧间命令构造
+  分配趋零；失效契约与 DamageTracker 一致（一切影响像素的变化 bump RenderVersion），
+  arrange 失效（滚动平移）由段键 Position/Size 捕获；clip 作用域与滚动条在段外每帧
+  生成（thumb 位置依赖 extent/viewport 不进 Version）。`LastBuildStats` 暴露复用/重画数，
+  `ResetSegments` 强制全量。`RetainedPaintTests` 8 例：复用统计（无变化全复用/按下只重画
+  该按钮/焦点迁移重画新旧两处/追加子只重画新子+变高的根/滚动重画 viewer+平移子树）、
+  **金标准 retained 渲染 == 全量渲染逐像素**（状态迁移后逐命令类型序列 + hash 相等）、
+  GPU 后端分支的 retained 合成等价（`RetainedFrameCompositor` + GPU 后端，脏区外逐字节
+  = 上一帧、全帧 == GPU 整帧参照）。VelloSharp 无 scissor API（D84 结论），光栅化仍整帧、
+  构建层 retained 先行；真·脏区光栅化等上游提供裁剪 API。GalleryCheck --selfcheck 全链路 PASS。
 - 属性存储去装箱（`IValueBox`/`ValueBox<T>`，✅ 2026-11-08/D83）；剩失效队列分配预算门槛、
   benchmark 基线、帧预算门槛、CI 配置。
 

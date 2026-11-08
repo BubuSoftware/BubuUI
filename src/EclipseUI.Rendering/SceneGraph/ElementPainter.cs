@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using EclipseUI.Elements;
 
 namespace EclipseUI.Rendering;
@@ -13,17 +14,29 @@ namespace EclipseUI.Rendering;
 /// <item>根元素由宿主 arrange 到整个可视区；根自身不画卡片，只画主题 surface。</item>
 /// </list>
 ///
-/// G2 仍为全量构建 display list；<see cref="BuildFrame"/> 额外产出元素级脏区，
-/// 宿主据此跳过空闲帧的上屏。真正按脏区裁剪绘制需要 retained layer（后续切片）。
+/// G2 retained（D93）：每个元素的**自绘命令**（类型绘制 + 卡片 + 焦点环）按
+/// (RenderVersion, 绝对位置, 尺寸, 焦点态) 缓存——树未变的元素直接复用命令段，
+/// 不再逐条重新构造（帧间分配趋零）；失效契约与 <c>DamageTracker</c> 一致：
+/// 「一切影响像素的变化都递增 <see cref="Element.RenderVersion"/>」。
+/// clip 作用域与滚动条每帧重新生成（位置可能变、且成本可忽略），不属于段。
+/// 金标准：retained 构建与全量构建渲染结果逐像素一致（<c>RetainedPaintTests</c> 锁定）。
+/// <see cref="BuildFrame"/> 额外产出元素级脏区，宿主据此跳过空闲帧的上屏。
 /// </summary>
 public sealed class ElementPainter
 {
+    /// <summary>单元素自绘命令段；缓存后视为只读。</summary>
+    private sealed record Segment(long Version, Point Position, Size Size, bool Focused, List<DrawCommand> Commands);
+
     private readonly ElementTheme _theme;
     private readonly ITextPainter? _text;
     private readonly DamageTracker _damageTracker = new();
+    private readonly ConditionalWeakTable<Element, Segment> _segments = new();
 
     private DisplayList _list = null!;
+    private DisplayList _paintList = null!;
     private Element? _focused;
+    private int _reusedSegments;
+    private int _repaintedSegments;
 
     public ElementPainter(ElementTheme? theme = null, ITextPainter? textPainter = null)
     {
@@ -32,6 +45,12 @@ public sealed class ElementPainter
     }
 
     public ElementTheme Theme => _theme;
+
+    /// <summary>上一次构建的段复用统计（复用数 / 重画数）。</summary>
+    public (int Reused, int Repainted) LastBuildStats { get; private set; }
+
+    /// <summary>丢弃全部段缓存：下一次构建为全量重画（窗口遮挡恢复、测试对照）。</summary>
+    public void ResetSegments() => _segments.Clear();
 
     /// <summary>
     /// 构建一帧（不做脏区跟踪）。会清空脏区历史：下一次 <see cref="BuildFrame"/> 按整帧处理。
@@ -66,7 +85,10 @@ public sealed class ElementPainter
 
         var list = new DisplayList(size);
         _list = list;
+        _paintList = list;
         _focused = focused;
+        _reusedSegments = 0;
+        _repaintedSegments = 0;
 
         var scaled = scale > 0 && Math.Abs(scale - 1) > 1e-6;
         if (scaled)
@@ -83,6 +105,7 @@ public sealed class ElementPainter
         if (clipSurface) list.Add(new PopClip());
         if (scaled) list.Add(new PopTransform());
 
+        LastBuildStats = (_reusedSegments, _repaintedSegments);
         return list;
     }
 
@@ -92,11 +115,54 @@ public sealed class ElementPainter
         var rect = new Rect(offset.X + final.X, offset.Y + final.Y, final.Width, final.Height);
 
         // 焦点环画在元素矩形之外，脏区必须包含它。
-        var visualBounds = ReferenceEquals(element, _focused) && element.IsFocusable
-            ? Inflate(rect, _theme.FocusRingWidth)
-            : rect;
+        var focused = ReferenceEquals(element, _focused) && element.IsFocusable;
+        var visualBounds = focused ? Inflate(rect, _theme.FocusRingWidth) : rect;
         tracker?.Visit(element, visualBounds);
 
+        // retained 段：自绘命令（类型绘制 + 卡片 + 焦点环）按失效键复用。
+        if (_segments.TryGetValue(element, out var segment) &&
+            segment.Version == element.RenderVersion &&
+            segment.Position == rect.Location &&
+            segment.Size == rect.Size &&
+            segment.Focused == focused)
+        {
+            _list.AddRange(segment.Commands);
+            _reusedSegments++;
+        }
+        else
+        {
+            var buffer = new DisplayList();
+            _paintList = buffer;
+            PaintSelf(element, rect, focused, isRoot);
+            _paintList = _list;
+            _segments.Remove(element);
+            _segments.Add(element, new Segment(element.RenderVersion, rect.Location, rect.Size, focused, buffer.Commands));
+            _list.AddRange(buffer.Commands);
+            _repaintedSegments++;
+        }
+
+        // ScrollViewer 无论 ClipToBounds 与否都必须裁剪：内容按 -Offset 平移，不裁就画出视口外。
+        var clip = (element is Panel { ClipToBounds: true } || element is ScrollViewer)
+                   && rect.Width > 0 && rect.Height > 0;
+        if (clip) _list.Add(new PushClip(rect));
+
+        // G2 的可视子节点全部来自 Panel（TextBlock 的 run 也是 Panel.Children 的一部分）。
+        if (element is Panel panel)
+        {
+            foreach (var child in panel.Children)
+                PaintElement(child, rect.Location, isRoot: false, tracker);
+        }
+
+        if (clip) _list.Add(new PopClip());
+
+        // 滚动条画在内容之上（裁剪作用域外也不越界：位置按视口矩形内缩计算）。
+        if (element is ScrollViewer viewer)
+            PaintScrollBar(viewer, rect);
+    }
+
+    /// <summary>元素的自身绘制（写入当前段缓冲；子树由 <see cref="PaintElement"/> 递归处理）。</summary>
+    private void PaintSelf(Element element, Rect rect, bool focused, bool isRoot)
+    {
         switch (element)
         {
             case TextBlock block:
@@ -126,26 +192,8 @@ public sealed class ElementPainter
             }
         }
 
-        if (ReferenceEquals(element, _focused) && element.IsFocusable)
+        if (focused)
             PaintFocusRing(element, rect);
-
-        // ScrollViewer 无论 ClipToBounds 与否都必须裁剪：内容按 -Offset 平移，不裁就画出视口外。
-        var clip = (element is Panel { ClipToBounds: true } || element is ScrollViewer)
-                   && rect.Width > 0 && rect.Height > 0;
-        if (clip) _list.Add(new PushClip(rect));
-
-        // G2 的可视子节点全部来自 Panel（TextBlock 的 run 也是 Panel.Children 的一部分）。
-        if (element is Panel panel)
-        {
-            foreach (var child in panel.Children)
-                PaintElement(child, rect.Location, isRoot: false, tracker);
-        }
-
-        if (clip) _list.Add(new PopClip());
-
-        // 滚动条画在内容之上（裁剪作用域外也不越界：位置按视口矩形内缩计算）。
-        if (element is ScrollViewer viewer)
-            PaintScrollBar(viewer, rect);
     }
 
     /// <summary>叠加式滚动条：可滚动方向在视口内缘画拇指（v1 只显示，不做命中拖拽）。</summary>
@@ -162,7 +210,7 @@ public sealed class ElementPainter
                 var offset = Math.Clamp(viewer.VerticalOffset, 0, viewer.ScrollableHeight);
                 var thumbY = rect.Y + ScrollBarInset
                              + (trackHeight - thumbHeight) * (offset / maxScroll);
-                _list.Add(new FillRoundedRect(
+                _paintList.Add(new FillRoundedRect(
                     new Rect(rect.Right - ScrollBarInset - ScrollBarThickness, thumbY, ScrollBarThickness, thumbHeight),
                     ScrollBarThickness / 2,
                     _theme.ScrollBarThumb));
@@ -180,7 +228,7 @@ public sealed class ElementPainter
                 var offset = Math.Clamp(viewer.HorizontalOffset, 0, viewer.ScrollableWidth);
                 var thumbX = rect.X + ScrollBarInset
                              + (trackWidth - thumbWidth) * (offset / maxScroll);
-                _list.Add(new FillRoundedRect(
+                _paintList.Add(new FillRoundedRect(
                     new Rect(thumbX, rect.Bottom - ScrollBarInset - ScrollBarThickness, thumbWidth, ScrollBarThickness),
                     ScrollBarThickness / 2,
                     _theme.ScrollBarThumb));
@@ -201,7 +249,7 @@ public sealed class ElementPainter
             var fontSize = run.GetValue(TextBlock.FontSizeProperty);
             var color = fontSize < _theme.MutedFontSizeBelow ? _theme.MutedForeground : _theme.Foreground;
             var origin = new Point(rect.X + run.FinalRect.X, rect.Y + run.FinalRect.Y);
-            _text?.Paint(_list, text, fontSize, origin, color);
+            _text?.Paint(_paintList, text, fontSize, origin, color);
         }
     }
 
@@ -209,7 +257,7 @@ public sealed class ElementPainter
     {
         if (rect.Width <= 0 || rect.Height <= 0) return;
 
-        _list.Add(new FillRoundedRect(
+        _paintList.Add(new FillRoundedRect(
             rect,
             _theme.ButtonRadius,
             button.IsPressed ? _theme.AccentPressed : _theme.Accent));
@@ -235,7 +283,7 @@ public sealed class ElementPainter
 
         if (checkBox.Checked)
         {
-            _list.Add(new FillRoundedRect(box, _theme.CheckBoxRadius,
+            _paintList.Add(new FillRoundedRect(box, _theme.CheckBoxRadius,
                 checkBox.IsPressed ? _theme.AccentPressed : _theme.Accent));
 
             var strokeWidth = Math.Max(1.5, boxSize * 0.11);
@@ -244,13 +292,13 @@ public sealed class ElementPainter
                 .LineTo(box.X + boxSize * 0.43, box.Y + boxSize * 0.71)
                 .LineTo(box.X + boxSize * 0.77, box.Y + boxSize * 0.31)
                 .Build();
-            _list.Add(new StrokePath(check, _theme.OnAccent, strokeWidth));
+            _paintList.Add(new StrokePath(check, _theme.OnAccent, strokeWidth));
         }
         else
         {
-            _list.Add(new FillRoundedRect(box, _theme.CheckBoxRadius,
+            _paintList.Add(new FillRoundedRect(box, _theme.CheckBoxRadius,
                 checkBox.IsPressed ? _theme.AccentPressed : _theme.ControlBackground));
-            _list.Add(new StrokePath(
+            _paintList.Add(new StrokePath(
                 PathGeometry.RoundedRectangle(Inset(box, _theme.BorderWidth / 2), _theme.CheckBoxRadius),
                 _theme.ControlBorder,
                 _theme.BorderWidth));
@@ -270,10 +318,10 @@ public sealed class ElementPainter
     {
         if (rect.Width <= 0 || rect.Height <= 0) return;
 
-        _list.Add(new FillRoundedRect(rect, radius, background));
+        _paintList.Add(new FillRoundedRect(rect, radius, background));
 
         if (_theme.BorderWidth <= 0 || border.A == 0) return;
-        _list.Add(new StrokePath(
+        _paintList.Add(new StrokePath(
             PathGeometry.RoundedRectangle(Inset(rect, _theme.BorderWidth / 2), radius),
             border,
             _theme.BorderWidth));
@@ -292,7 +340,7 @@ public sealed class ElementPainter
         };
 
         var ring = Inflate(rect, _theme.FocusRingWidth);
-        _list.Add(new StrokePath(
+        _paintList.Add(new StrokePath(
             PathGeometry.RoundedRectangle(ring, radius + _theme.FocusRingWidth),
             _theme.FocusRing,
             _theme.FocusRingWidth));
