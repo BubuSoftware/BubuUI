@@ -140,6 +140,12 @@
 > `Style=` 内联（S-C）与控件模板（S-D）远期。
 > **668 个用例（Headless 332 / Compiler 241 / Rendering 95），全绿**。
 >
+> **S-C 最小主题资源已通过（2026-11-09，D100）**：`ThemeColor` 暗亮双色——`Visual.BackgroundResource/
+> ForegroundResource`（解析优先级 resource > 静态覆盖 > 主题令牌）+ `StyleBuilder` 双色重载；
+> painter 在**段构建期**按 `ElementTheme.IsLight` 解析，换主题 `ReplaceTheme` 丢段重建即随新表刷新
+> （无需新增失效维度）。画廊分区卡/标题/primary/tool 样式全改双色资源——**亮暗切换整页跟随**，
+> inline 静态色保留以并示「静态覆盖 vs 主题跟随」。**670 个用例（332/241/97），全绿**。
+>
 > **画廊完全重构（2026-11-09）**：根 `ScrollViewer` 包整页——内容超出窗口即可滚动（窗口根有限高度
 > 使视口生效）；分区卡片陈列框架全部能力：模板组件（@bind/@if/@foreach/@switch）、Button/CheckBox/
 > TextBlock、StackPanel/WrapPanel/Grid（附加属性）、ScrollViewer、VirtualizingStackPanel（1000 项）、

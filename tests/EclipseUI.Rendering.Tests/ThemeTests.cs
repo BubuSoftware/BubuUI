@@ -79,4 +79,47 @@ public class ThemeTests
         _ = painter.Build(root, Surface);
         Assert.Equal((2, 0), painter.LastBuildStats);
     }
+
+    // ---- S-C：ThemeColor 主题资源 ----
+
+    private static Color? CardFill(IReadOnlyList<DrawCommand> commands, Color dark, Color light)
+        => commands.OfType<FillRoundedRect>()
+            .Select(f => f.Brush)
+            .OfType<SolidColorBrush>()
+            .Select(b => (Color?)b.Color)
+            .FirstOrDefault(c => c == dark || c == light);
+
+    [Fact]
+    public void ThemeColor_ResolvesByThemeLightness()
+    {
+        var resource = new ThemeColor(Dark: new Color(1, 2, 3), Light: new Color(4, 5, 6));
+        Assert.Equal(new Color(1, 2, 3), resource.Resolve(ElementTheme.Dark));
+        Assert.Equal(new Color(4, 5, 6), resource.Resolve(ElementTheme.Light));
+    }
+
+    [Fact]
+    public void BackgroundResource_FollowsThemeSwitch_AndKeepsSegmentSemantics()
+    {
+        var dark = new Color(31, 37, 50);
+        var light = new Color(255, 255, 255);
+        // 资源卡不能作树根：根节点跳过卡片背景绘制（PaintElement isRoot 分支）。
+        var root = new StackPanel();
+        var card = new StackPanel();
+        Visual.SetBackgroundResource(card, new ThemeColor(dark, light));
+        card.Children.Add(new Button { Label = "Ok" });
+        root.Children.Add(card);
+        Layout(root);
+
+        var painter = new ElementPainter(ElementTheme.Dark);
+        var first = painter.Build(root, Surface);
+        Assert.Equal(dark, CardFill(first.Commands, dark, light));
+
+        painter.ReplaceTheme(ElementTheme.Light);
+        var relit = painter.Build(root, Surface);
+        Assert.Equal((0, 3), painter.LastBuildStats); // 换表丢段：全量重画
+        Assert.Equal(light, CardFill(relit.Commands, dark, light)); // 资源色随新主题解析
+
+        _ = painter.Build(root, Surface);
+        Assert.Equal((3, 0), painter.LastBuildStats); // 新主题下恢复复用
+    }
 }

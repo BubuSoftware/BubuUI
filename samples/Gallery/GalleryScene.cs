@@ -101,28 +101,37 @@ public static class GalleryScene
         return new Scene(rootViewer, counter, taskList, addTaskButton, themeButton);
     }
 
-    /// <summary>样式系统演示区（代码构建——Class/Visual 覆盖尚不支持模板语法 EUI031）。</summary>
+    /// <summary>
+    /// 样式系统演示区（代码构建——Class/Visual 覆盖尚不支持模板语法 EUI031）。
+    /// inline 按钮保留静态色：与主题资源按钮并列，正好展示「静态覆盖 vs 主题跟随」两种语义。
+    /// </summary>
     private static StackPanel BuildStyleSection()
     {
-        // 按钮四连：主题默认 → class primary → class tool → inline Visual 覆盖（local 层最高）。
+        // 按钮四连：主题默认 → class primary（主题资源）→ class tool（主题资源）→ inline Visual 静态覆盖。
         var row = new WrapPanel { Gap = 8 };
         row.Children.Add(new Button { Label = "theme default" });
         row.Children.Add(new Button { Label = "class: primary", Classes = ["primary"] });
         row.Children.Add(new Button { Label = "class: tool", Classes = ["tool"] });
-        var inline = new Button { Label = "inline: Visual" };
+        var inline = new Button { Label = "inline: static" };
         Visual.SetBackground(inline, new Color(196, 84, 152));
         Visual.SetCornerRadius(inline, 18);
         row.Children.Add(inline);
 
         // Visual 覆盖卡片：StackPanel 背景/圆角 + 文本前景覆盖（painter 回落主题当未设置）。
         var card = new StackPanel { Gap = 6, Padding = 14 };
-        Visual.SetBackground(card, new Color(38, 84, 124));
+        Visual.SetBackgroundResource(card, new ThemeColor(
+            Dark: new Color(38, 84, 124),
+            Light: new Color(208, 232, 244)));
         Visual.SetCornerRadius(card, 14);
-        var cardTitle = Text("StackPanel + Visual.Background / CornerRadius", 14);
-        Visual.SetForeground(cardTitle, new Color(233, 238, 248));
+        var cardTitle = Text("StackPanel + ThemeColor resource (follows theme)", 14);
+        Visual.SetForegroundResource(cardTitle, new ThemeColor(
+            Dark: new Color(233, 238, 248),
+            Light: new Color(30, 34, 44)));
         card.Children.Add(cardTitle);
-        var fgText = Text("TextBlock + Visual.Foreground override (local beats muted-by-font-size rule)", 15);
-        Visual.SetForeground(fgText, new Color(126, 220, 180));
+        var fgText = Text("TextBlock + ThemeColor foreground override (local beats muted-by-size rule)", 15);
+        Visual.SetForegroundResource(fgText, new ThemeColor(
+            Dark: new Color(126, 220, 180),
+            Light: new Color(18, 118, 88)));
         card.Children.Add(fgText);
 
         var section = new StackPanel { Gap = 10 };
@@ -132,17 +141,20 @@ public static class GalleryScene
     }
 
     /// <summary>
-    /// 分区卡片：面板背景/圆角走 Visual 覆盖（静态强调色）。卡片是静态深色装饰层，
-    /// 标题前景同步固定为浅色——S-B 静态色不随主题重解析（资源查找属 S-C），
-    /// 若标题随主题变深灰会在浅主题下出现深卡深字。
+    /// 分区卡片：背景/圆角/标题前景走 <see cref="ThemeColor"/> 主题资源（S-C）——
+    /// 亮暗切换时 ReplaceTheme 丢段重建，卡片与标题随新主题自动换色。
     /// </summary>
     private static StackPanel Section(string title, Element content)
     {
         var card = new StackPanel { Gap = 10, Padding = 16 };
-        Visual.SetBackground(card, new Color(31, 37, 50));
+        Visual.SetBackgroundResource(card, new ThemeColor(
+            Dark: new Color(31, 37, 50),
+            Light: new Color(255, 255, 255)));
         Visual.SetCornerRadius(card, 12);
         var heading = Text(title, 18);
-        Visual.SetForeground(heading, new Color(233, 238, 248));
+        Visual.SetForegroundResource(heading, new ThemeColor(
+            Dark: new Color(233, 238, 248),
+            Light: new Color(30, 34, 44)));
         card.Children.Add(heading);
         card.Children.Add(content);
         return card;

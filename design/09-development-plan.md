@@ -78,7 +78,7 @@
 | 文本 | 🟡 单行 shaping 已接入 | 断行、bidi、fallback、emoji、glyph 缓存、display list 集成 |
 | 输入/焦点 | 🟡 元素路由已通 | 字符输入/IME、滚轮/触摸、Shift+Tab、无障碍 |
 | 渲染/合成器 | 🟡 scene graph + 上屏 + damage v0 + retained 构建层（✅ D93） | 脏区光栅化（上游 scissor API）、合成器、帧预算门槛 |
-| 样式/主题 | 🟡 令牌 + Class 样式已落（2026-11-09，D98/D99） | 模板 Class 语法与编译期类名校验、按主题资源查找、`Style=` 内联（S-C）、控件模板（S-D） |
+| 样式/主题 | 🟡 令牌 + Class 样式 + 最小主题资源已落（2026-11-09，D98–D100） | 模板 Class 语法与编译期类名校验、资源字典/`Style=` 模板语法（S-C 后续）、控件模板（S-D） |
 | 控件库 | 🟡 极简 | TextBlock/Button/CheckBox/StackPanel/ListBoxItem 之外的基础控件 |
 | IDE | 🔴 未开始 | TextMate、LSP server、VS Code/Rider 壳 |
 | 工具链 | 🔴 基本未开始 | 热重载、断点映射、DevTools、无头测试 SDK |
@@ -469,8 +469,12 @@ CPU 侧部分收敛（2026-11-08/D84）：CPU 像素 golden（`PixelGoldenTests`
   `Styling.Provider`（`IStyleProvider` 注入，Rendering 层 `StyleRegistry` 类名直配 setter 序列、
   无运行时选择器引擎；晚装配补应用 pending 声明）；`Visual` 附加属性组（Background/Foreground/
   CornerRadius，null=不覆盖）+ painter 读覆盖回落主题（未设置零漂移）；「显式取消覆盖」=
-  `ClearLocalValue`（null 值盒不占层）。模板 `Class` 语法（目录/生成器/编译期类名校验）与
-  按主题资源查找留下一片；`Style=` 内联（S-C）与控件模板（S-D）远期。
+  `ClearLocalValue`（null 值盒不占层）。**S-C 最小资源查找（2026-11-09，D100）**：`ThemeColor`
+  暗亮双色 + `ElementTheme.IsLight` 虚标志；`Visual.BackgroundResource/ForegroundResource`
+  （优先级 resource > 静态覆盖 > 主题令牌）+ `StyleBuilder` 双色重载；painter 在段构建期解析——
+  `ReplaceTheme` 丢段重建即随新表刷新，无需新增失效维度；Gallery 分区卡/样式表全改双色资源
+  （inline 静态色并示两种语义）。完整资源字典、`Style=` 内联与模板 `Class` 语法（目录/生成器/
+  编译期类名校验）留 S-C 后续片；控件模板（S-D）远期。
 - 控件集：ListBox、TextBox、ScrollViewer ✅（2026-11-09）、Grid ✅、WrapPanel ✅、Slider 等。
 - `VirtualizingPanel` 与 item 模板的容器复用。—— ✅ **v1 切片（2026-11-09）**：元素级 `VirtualizingStackPanel`（ItemCount + ItemFactory、视口窗口实例化、均匀行高）；容器复用（pooling）、变高行、item 模板编译 RenderUnit 留后续片。
 - 状态与反应式 S4：组件所有权/深度排序、参数推送与相等保护、异步/后台失效、`ShouldRender`（[spec/03 §13.1](../spec/03-reactivity-and-binding.md#131-阶段定义)）。

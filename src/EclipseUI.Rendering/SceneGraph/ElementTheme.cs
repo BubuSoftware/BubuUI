@@ -13,6 +13,10 @@ public class ElementTheme
     /// <summary>预置浅色主题。</summary>
     public static ElementTheme Light { get; } = new LightTheme();
 
+    /// <summary>明暗标志（S-C 主题资源用）：<see cref="ThemeColor"/> 据此取色。
+    /// 自定义 token 表按视觉明暗覆盖此属性。</summary>
+    public virtual bool IsLight => false;
+
     // ---- 颜色（深色）----
     public virtual Color Surface { get; init; } = new(15, 17, 25);
     public virtual Color PanelBackground { get; init; } = new(27, 31, 42);
@@ -66,4 +70,7 @@ public sealed class LightTheme : ElementTheme
 
     // ---- 文本 ----
     public override double MutedFontSizeBelow { get; init; } = 14;
+
+    // ---- 明暗 ----
+    public override bool IsLight => true;
 }

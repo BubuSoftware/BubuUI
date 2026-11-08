@@ -896,6 +896,7 @@ v4 换轨后，**S1 已收敛（2026-10-30）、S2 已收敛（2026-10-30）、S
 | D97 | ✅ G2：**retained 段缓存标签回归修复 + 画廊布局复位**——PaintButton/PaintCheckBox 的 `_text.Paint` 写 `_list` 非段缓冲（D93 漏改）：首帧背景后画盖字、复用帧段缺文字；两路径同错金标准抓不到，补 2 例探针回归测试。G4 showcase 把 add 按钮/任务卡推出视口致 GalleryCheck add-task 失败（bisect 排除渲染回归），交互演示复位到 showcase 前，selfcheck PASS | spec/02 §12、design/09 §9.3 G2 ⑨ | ✅ G2（2026-11-09） |
 | D98 | ✅ G4：**S-A 主题令牌化**——ElementTheme virtual 令牌 + Dark/Light 预置；ReplaceTheme 换表丢段 + 整帧重绘；WindowHost.SetTheme；Gallery Toggle theme 接线 | spec/02 §12、design/09 §9.3 G4 | ✅ G4（2026-11-09） |
 | D99 | ✅ G4：**S-B Class 样式 + 有效值分层**——local > class > 继承 > 默认（SetStyleValue/ClearStyleValues/ClearLocalValue）；Element.Classes + Styling.Provider 注入；StyleRegistry 类名直配（无选择器引擎）；Visual 附加属性组 + painter 覆盖回落；模板 Class 语法与资源查找留下一片 | spec/02 §12、design/09 §9.3 G4 | ✅ G4（2026-11-09） |
+| D100 | ✅ G4：**S-C 最小资源查找——ThemeColor 主题感知双色**——ElementTheme.IsLight 虚标志；Visual.BackgroundResource/ForegroundResource（优先级 resource > 静态覆盖 > 主题令牌）+ StyleBuilder 双色重载；painter 段构建期解析（ResolveBackground/Foreground/PeekForeground）——ReplaceTheme 丢段重建即随新表刷新，无需新增失效维度（ThemeTests +2；资源卡不能作树根——根节点跳过卡片绘制）；画廊分区卡/样式表全改双色，inline 静态粉并示两种语义；完整资源字典/`Style=` 语法仍留 S-C 后续 | spec/02 §12、design/09 §9.3 G4 | ✅ G4（2026-11-09） |
 
 - 每项收敛必须同时删除对应的 v3 路径；不得两套模型并存。
 - 新增偏差必须登记编号（从 D89 起）并注明目标阶段；不得只改代码不改台账。

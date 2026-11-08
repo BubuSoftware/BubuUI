@@ -252,10 +252,22 @@ public sealed class ElementPainter
     private const double ScrollBarInset = 4;
     private const double ScrollBarThickness = 6;
 
+    // ---- S-C 有效色解析：主题资源 > 静态覆盖 > 主题令牌（解析发生在段构建期，
+    // 换主题 ReplaceTheme 丢段重建即随新表刷新）----
+
+    /// <summary>前景覆盖探测（可空）：null = 未设置，调用方回落自身规则（如字号次色）。</summary>
+    private Color? PeekForeground(Element element) =>
+        Visual.GetForegroundResource(element)?.Resolve(_theme) ?? Visual.GetForeground(element);
+
+    private Color ResolveForeground(Element element, Color fallback) => PeekForeground(element) ?? fallback;
+
+    private Color ResolveBackground(Element element, Color fallback) =>
+        Visual.GetBackgroundResource(element)?.Resolve(_theme) ?? Visual.GetBackground(element) ?? fallback;
+
     private void PaintTextBlock(TextBlock block, Rect rect)
     {
-        // S-B：显式前景覆盖优先于字号次色规则。
-        var explicitForeground = Visual.GetForeground(block);
+        // S-B：显式前景覆盖优先于字号次色规则；S-C：主题资源最先解析。
+        var explicitForeground = PeekForeground(block);
         foreach (var run in block.Runs)
         {
             var text = run.Text;
@@ -274,9 +286,8 @@ public sealed class ElementPainter
         if (rect.Width <= 0 || rect.Height <= 0) return;
 
         // S-B：元素级视觉覆盖（class/inline）优先，null 回落主题令牌；
-        // 覆盖色完全接管按下态换色（v1 口径）。
-        var background = Visual.GetBackground(button)
-                         ?? (button.IsPressed ? _theme.AccentPressed : _theme.Accent);
+        // 覆盖色完全接管按下态换色（v1 口径）。S-C：主题资源最先解析。
+        var background = ResolveBackground(button, button.IsPressed ? _theme.AccentPressed : _theme.Accent);
         _paintList.Add(new FillRoundedRect(rect, _theme.ButtonRadius, background));
 
         var label = button.Label;
@@ -289,7 +300,7 @@ public sealed class ElementPainter
             rect.Y + (rect.Height - metrics.Height) / 2);
         // 必须写段缓冲 _paintList：写 _list 会先于背景 AddRange（背景后画盖掉文字），
         // 且文字命令不进段、复用帧彻底丢失（D97 回归测试锁定）。
-        _text.Paint(_paintList, label, fontSize, origin, Visual.GetForeground(button) ?? _theme.OnAccent);
+        _text.Paint(_paintList, label, fontSize, origin, ResolveForeground(button, _theme.OnAccent));
     }
 
     private void PaintCheckBox(CheckBox checkBox, Rect rect)
@@ -302,8 +313,8 @@ public sealed class ElementPainter
 
         if (checkBox.Checked)
         {
-            var checkedBg = Visual.GetBackground(checkBox)
-                            ?? (checkBox.IsPressed ? _theme.AccentPressed : _theme.Accent);
+            var checkedBg = ResolveBackground(checkBox,
+                checkBox.IsPressed ? _theme.AccentPressed : _theme.Accent);
             _paintList.Add(new FillRoundedRect(box, _theme.CheckBoxRadius, checkedBg));
 
             var strokeWidth = Math.Max(1.5, boxSize * 0.11);
@@ -332,15 +343,15 @@ public sealed class ElementPainter
             rect.X + boxSize + 8,
             rect.Y + (rect.Height - metrics.Height) / 2);
         // 同 PaintButton：标签必须写段缓冲（D97）；前景覆盖优先（S-B）。
-        _text.Paint(_paintList, label, fontSize, origin, Visual.GetForeground(checkBox) ?? _theme.Foreground);
+        _text.Paint(_paintList, label, fontSize, origin, ResolveForeground(checkBox, _theme.Foreground));
     }
 
     private void PaintCard(Element element, Rect rect, Color background, Color border, double radius)
     {
         if (rect.Width <= 0 || rect.Height <= 0) return;
 
-        // S-B：卡片三件套均可被元素级覆盖替换。
-        var bg = Visual.GetBackground(element) ?? background;
+        // S-B：卡片三件套均可被元素级覆盖替换；S-C：主题资源最先解析。
+        var bg = ResolveBackground(element, background);
         var corner = Visual.GetCornerRadius(element) ?? radius;
         _paintList.Add(new FillRoundedRect(rect, corner, bg));
 

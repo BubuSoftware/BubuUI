@@ -62,6 +62,12 @@ public sealed class StyleBuilder
 
     public StyleBuilder Foreground(Color color) => Set(Visual.ForegroundProperty, (Color?)color);
 
+    // ---- S-C：主题资源 setter——亮暗切换自动跟随（优先级高于静态覆盖）----
+
+    public StyleBuilder Background(ThemeColor resource) => Set(Visual.BackgroundResourceProperty, resource);
+
+    public StyleBuilder Foreground(ThemeColor resource) => Set(Visual.ForegroundResourceProperty, resource);
+
     public StyleBuilder CornerRadius(double radius) => Set(Visual.CornerRadiusProperty, (double?)radius);
 
     public StyleBuilder FontSize(double size) => Set(TextBlock.FontSizeProperty, size);
