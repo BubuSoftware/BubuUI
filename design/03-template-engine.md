@@ -888,6 +888,7 @@ v4 换轨后，**S1 已收敛（2026-10-30）、S2 已收敛（2026-10-30）、S
 | D89 | ✅ S4/G4：Element.Unmount 卸载链路落地（K33）——UnmountedEvent（Direct，[UiIgnore] 退出事件表面）、Unmount() 子树级钩子与事件、组件根订阅自 Dispose（Dispose 退订防泄漏回归）、FocusManager.ClearFocusIfDetached 接入两个宿主；UnmountTests 9 例，全量 575 例（Rendering 1 既有红除外）全绿 | spec/03 §13.1、design/14/15 | ✅ S4/G4（2026-11-09） |
 | D90 | ✅ G4 布局：**WrapPanel 流式布局**——`Orientation`（Horizontal/Vertical）+ `Gap`；主轴装箱换行、期望尺寸取最长行（首版漏 maxMain 已修）、越界子项独占一行不裁剪；目录表面 5→6 标签、17→22 属性项、37→44 事件项，golden 重生成（+15 行）；`WrapPanelTests` 5 例（水平/竖直换行、Gap+Padding、不换行、越界独占、空面板） | design/09 §9.3 G4 布局补全 | ✅ G4（2026-11-09） |
 | D91 | ✅ G2：**像素探针 DSL**——`PixelProbe` 流式断言门面（点 `At`/`AlphaAt`、区域 `DominantColor`/`Contains`/`NotContains`/`CountIn`/`Count`、帧间 `SameAs`/`SameAsOutside` 逐字节精确，失败聚合 + 直方图/坐标诊断）；`PixelGoldenTests` 双层门禁（语义探针先于基线比对、生成基线前先过语义探针），Damage/Retained 手写双循环收敛；既有红定位为 VelloSharp AA 舍入差 1 并随基线重生成清零，`PixelProbeTests` 8 例，全量 643 例全绿 | spec/02 §12、design/09 §9.3 G2 ④ | ✅ G2（2026-11-09） |
+| D92 | ✅ G2：**CPU/GPU 交叉一致性门禁**——`CrossBackendGateTests` 场景矩阵 14 项（实色/圆角/椭圆/路径/三种渐变/裁剪栈/变换/图层透明度/混合模式/阴影/1:1 图像/虚线）；四级容差策略（Tight ±2/0.05%、Edges ±2/0.5%、Gradient ±4/2%、Loose ±16/5%），超阈值失败聚合首违点双侧颜色；无 GPU 自动跳过并写 TestResults 报告留痕（首跑校准 14 场景 0 违例、最大通道差 ≤1） | spec/02 §12、design/09 §9.3 G2 ⑤ | ✅ G2（2026-11-09） |
 
 - 每项收敛必须同时删除对应的 v3 路径；不得两套模型并存。
 - 新增偏差必须登记编号（从 D89 起）并注明目标阶段；不得只改代码不改台账。

@@ -346,6 +346,15 @@ CPU 侧部分收敛（2026-11-08/D84）：CPU 像素 golden（`PixelGoldenTests`
   `SameAsOutside`/`SameAs`。既有红根因定位：`4,32` 半覆盖像素 `#FFFFFF80`→`#FFFFFF7F`
   （VelloSharp AA 舍入差 1）+ `transform-clip` 探针点外 AA 边缘漂移，基线重生成后
   `PixelGoldens_MatchBaseline` 首次全绿；`PixelProbeTests` 8 例（手工帧，不依赖后端）。
+  ⑤ G2 CPU/GPU 交叉一致性门禁收敛（D92）：`CrossBackendGateTests`——场景矩阵 14 项按图元/特性
+  逐项覆盖（实色/圆角/椭圆/路径/三种渐变/裁剪栈/变换/图层透明度/混合模式/阴影/1:1 图像/虚线）；
+  四级容差策略 Tight ±2/0.05%、Edges ±2/0.5%（G1 口径）、Gradient ±4/2%、Loose ±16/5%（模糊/混合），
+  每场景独立定容差、超阈值即门禁失败（消息聚合全部违例 + 首违点坐标与双侧颜色）；无 GPU
+  （CI 容器/无驱动）自动跳过并把探测结论写入 TestResults/cross-backend-gate-report.txt，
+  有 GPU 时每场景一行实际 mismatch 数据（比率/最大通道差），同时作为策略校准依据——
+  首跑校准：14 场景全部 0 违例、最大通道差 ≤1（CPU/GPU 共用 VelloSharp 渲染核心）；
+  文本/字体不进矩阵（字形光栅化跨机器差异大，由 DrawGlyphs 结构测试与画廊目检覆盖）；
+  GPU 探测助手与仓库根定位提取到 `Render.TryCreateGpuBackend`/`Render.RepoRoot` 共享。
 - 属性存储去装箱（`IValueBox`/`ValueBox<T>`，✅ 2026-11-08/D83）；剩失效队列分配预算门槛、
   benchmark 基线、帧预算门槛、CI 配置。
 

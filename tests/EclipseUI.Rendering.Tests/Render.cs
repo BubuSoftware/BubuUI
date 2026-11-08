@@ -32,4 +32,38 @@ public static class Render
             Math.Abs(expected.A - actual.A) <= tolerance,
             $"expected {expected} ±{tolerance} but got {actual}{(because is null ? "" : " (" + because + ")")}");
     }
+
+    /// <summary>
+    /// 探测 GPU 后端可用性（成功则返回已初始化的后端，调用方负责 Dispose）。
+    /// 无 GPU（CI 容器/无驱动）时返回 false，调用方自动跳过并留痕。
+    /// </summary>
+    public static bool TryCreateGpuBackend(out IRenderBackend backend)
+    {
+        try
+        {
+            var gpu = new VelloCpuBackend(new VelloBackendOptions { UseCpu = false, ValidateDisplayList = true });
+            var probe = new RenderTarget(32, 32);
+            gpu.Render(new DisplayList(new Size(32, 32)), probe);
+            backend = gpu;
+            return true;
+        }
+        catch
+        {
+            backend = null!;
+            return false;
+        }
+    }
+
+    /// <summary>仓库根目录（含 EclipseUI.slnx 的最近祖先）。</summary>
+    public static string RepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "EclipseUI.slnx")))
+                return dir.FullName;
+            dir = dir.Parent;
+        }
+        throw new DirectoryNotFoundException("找不到仓库根目录（未发现 EclipseUI.slnx）。");
+    }
 }

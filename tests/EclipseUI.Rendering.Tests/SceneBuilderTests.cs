@@ -52,7 +52,7 @@ public class SceneBuilderTests
     [Fact]
     public void Gpu_backend_matches_cpu_backend_within_tolerance()
     {
-        if (!TryCreateGpuTarget(out var backend))
+        if (!Render.TryCreateGpuBackend(out var backend))
             return; // 无可用 GPU（CI 容器/无驱动）时跳过：CPU 路径仍被上面的确定性测试覆盖。
 
         const int width = 300;
@@ -62,6 +62,7 @@ public class SceneBuilderTests
         var cpu = Render.Frame(list, width, height);
         var gpu = new RenderTarget(width, height);
         backend.Render(list, gpu);
+        backend.Dispose();
 
         var mismatches = 0;
         for (int y = 0; y < height; y++)
@@ -79,22 +80,5 @@ public class SceneBuilderTests
         // G1 结论：圆角/抗锯齿边缘允许 <0.5% 像素差异。
         var ratio = mismatches / (double)(width * height);
         Assert.True(ratio < 0.0005, $"gpu/cpu pixel mismatch {ratio:P2} ({mismatches} px) exceeds 0.05%");
-    }
-
-    private static bool TryCreateGpuTarget(out IRenderBackend backend)
-    {
-        try
-        {
-            var gpu = new VelloCpuBackend(new VelloBackendOptions { UseCpu = false, ValidateDisplayList = true });
-            var probe = new RenderTarget(32, 32);
-            gpu.Render(new DisplayList(new Size(32, 32)), probe);
-            backend = gpu;
-            return true;
-        }
-        catch
-        {
-            backend = null!;
-            return false;
-        }
     }
 }
