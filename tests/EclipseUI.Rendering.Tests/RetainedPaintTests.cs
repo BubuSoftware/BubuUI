@@ -235,6 +235,76 @@ public class RetainedPaintTests
         }
     }
 
+    // ---- D97 回归：Button/CheckBox 标签必须写进段缓冲 ----
+    // PaintButton/PaintCheckBox 的 _text.Paint 曾写主帧列表 _list（D93 段缓存重构漏改）：
+    // 首帧文字命令先于背景 AddRange（背景后画盖掉居中文字），且文字不进段、复用帧彻底丢字。
+    // 两条路径同错导致「retained == 全量」金标准抓不到——这里用按颜色可识别的探针
+    // 绘制器锁两个语义：顺序（文字在控件背景之后）+ 复用帧存在（段完整）。
+
+    [Fact]
+    public void ButtonLabel_CommandsInsideSegment_AndReusedAcrossFrames()
+    {
+        var root = new StackPanel();
+        root.Children.Add(new Button { Label = "Hit" });
+        Layout(root);
+        var painter = new ElementPainter(textPainter: new RectTextPainter());
+
+        var first = painter.Build(root, Surface);
+        AssertLabelAfterBackground(first.Commands, "button label before/without background");
+
+        var second = painter.Build(root, Surface); // 全复用帧
+        Assert.Equal((2, 0), painter.LastBuildStats);
+        AssertLabelAfterBackground(second.Commands, "label missing on reused frame");
+    }
+
+    [Fact]
+    public void CheckBoxLabel_CommandsInsideSegment_AndReusedAcrossFrames()
+    {
+        var root = new StackPanel();
+        root.Children.Add(new CheckBox { Label = "Opt" });
+        Layout(root);
+        var painter = new ElementPainter(textPainter: new RectTextPainter());
+
+        var first = painter.Build(root, Surface);
+        AssertLabelAfterBackground(first.Commands, "checkbox label before/without box");
+
+        var second = painter.Build(root, Surface); // 全复用帧
+        Assert.Equal((2, 0), painter.LastBuildStats);
+        AssertLabelAfterBackground(second.Commands, "label missing on reused frame");
+    }
+
+    /// <summary>文字探针命令必须在最后的圆角矩形背景之后出现（每帧至少一条）。</summary>
+    private static void AssertLabelAfterBackground(List<DrawCommand> commands, string context)
+    {
+        var lastRounded = -1;
+        for (var i = 0; i < commands.Count; i++)
+            if (commands[i] is FillRoundedRect)
+                lastRounded = i;
+
+        var textProbe = -1;
+        for (var i = 0; i < commands.Count; i++)
+            if (commands[i] is FillRect { Brush: SolidColorBrush { Color: var c } }
+                && c.R == RectTextPainter.ProbeR && c.G == 0 && c.B == 0)
+                textProbe = i;
+
+        Assert.True(lastRounded >= 0, $"{context}: no control background found");
+        Assert.True(textProbe > lastRounded,
+            $"{context}: label probe at {textProbe}, background at {lastRounded}");
+    }
+
+    /// <summary>产出品红小方块的探针文本绘制器：命令可按颜色识别、无字体依赖。</summary>
+    private sealed class RectTextPainter : ITextPainter
+    {
+        public const byte ProbeR = 255;
+
+        public TextLineMetrics Measure(string text, double fontSize)
+            => new(fontSize, fontSize * 0.4, text.Length * fontSize * 0.5);
+
+        public void Paint(DisplayList list, string text, double fontSize, Point topLeft, Color color)
+            => list.Add(new FillRect(new Rect(topLeft.X, topLeft.Y, fontSize, fontSize),
+                new Color(ProbeR, 0, 0, 255)));
+    }
+
     private sealed class FakeTextPainter : ITextPainter
     {
         public TextLineMetrics Measure(string text, double fontSize)

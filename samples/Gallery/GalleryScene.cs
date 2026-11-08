@@ -53,9 +53,12 @@ public static class GalleryScene
         root.Children.Add(Text("EclipseUI G4 Gallery", 26));
         root.Children.Add(Text("Checkbox reveals +1 · Tab / Space focus · Esc closes", 12));
         root.Children.Add(counter.Root);
-        root.Children.Add(showcase.Root);
+        // 交互演示（Counter/TaskList）放在控件陈列区之前：G4 showcase 高约 700px，
+        // 排在其后会把 add 按钮与任务卡推出 760px 视口（selfcheck 的 add task 步骤
+        // 点击窗口外坐标会静默丢失——D97 审计发现并复位顺序）。
         root.Children.Add(addTaskButton);
         root.Children.Add(taskList.Root);
+        root.Children.Add(showcase.Root);
         return (root, counter, taskList, addTaskButton);
     }
 

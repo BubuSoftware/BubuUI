@@ -270,7 +270,9 @@ public sealed class ElementPainter
         var origin = new Point(
             rect.X + (rect.Width - metrics.Width) / 2,
             rect.Y + (rect.Height - metrics.Height) / 2);
-        _text.Paint(_list, label, fontSize, origin, _theme.OnAccent);
+        // 必须写段缓冲 _paintList：写 _list 会先于背景 AddRange（背景后画盖掉文字），
+        // 且文字命令不进段、复用帧彻底丢失（D97 回归测试锁定）。
+        _text.Paint(_paintList, label, fontSize, origin, _theme.OnAccent);
     }
 
     private void PaintCheckBox(CheckBox checkBox, Rect rect)
@@ -311,7 +313,8 @@ public sealed class ElementPainter
         var origin = new Point(
             rect.X + boxSize + 8,
             rect.Y + (rect.Height - metrics.Height) / 2);
-        _text.Paint(_list, label, fontSize, origin, _theme.Foreground);
+        // 同 PaintButton：标签必须写段缓冲（D97）。
+        _text.Paint(_paintList, label, fontSize, origin, _theme.Foreground);
     }
 
     private void PaintCard(Rect rect, Color background, Color border, double radius)

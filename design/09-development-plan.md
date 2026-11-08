@@ -393,6 +393,14 @@ CPU 侧部分收敛（2026-11-08/D84）：CPU 像素 golden（`PixelGoldenTests`
   `Gallery.Desktop.csproj`：`PublishTrimmed`（Release 条件）+ `TrimMode=full` + AOT 开关
   走自定义属性 `EnableAot`（**坑：`-p:PublishTrimmed=true` 命令行全局属性会传染 netstandard2.0
   的源生成器项目 → NETSDK1124，必须放 csproj**）。
+  ⑨ G2 retained 标签回归修复 + 画廊布局复位（2026-11-09，D97）：`PaintButton`/`PaintCheckBox`
+  的 `_text.Paint` 写主帧列表 `_list` 而非段缓冲 `_paintList`（D93 重构漏改）——首帧文字命令
+  先于背景 AddRange（背景后画盖掉居中文字），且文字不进段、复用帧彻底丢字；**两条路径同错
+  使「retained == 全量」金标准抓不到**（教训：金标准只锁一致性，不锁语义正确性——探针回归
+  测试补上，按颜色可识别的 FillRect 文字绘制器锁「文字在控件背景之后 + 复用帧存在」）。
+  GalleryCheck `add task appends item` 失败 bisect 排除渲染回归：G4 showcase（~700px）排在
+  add 按钮与任务卡之前把二者推出 760px 视口，点击窗口外坐标静默丢失——交互演示复位到
+  showcase 之前，selfcheck PASS。全量 659 例全绿（332/241/86）。
 - 属性存储去装箱（`IValueBox`/`ValueBox<T>`，✅ 2026-11-08/D83）；剩失效队列分配预算门槛、
   benchmark 基线、帧预算门槛、CI 配置。
 

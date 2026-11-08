@@ -123,6 +123,13 @@
 > 验收清单与数字全面同步——S5 出口核对：基准/预算 ✅ D94、AOT/裁剪 ✅ D95、死循环上限 ✅ D96、
 > 弃用清理 ✅ S6/K27、最终审计 ✅ D96；正式性能吞吐基准表随 G8。
 >
+> **G2 retained 标签回归修复 + 画廊布局复位（2026-11-09，D97）**：按钮/勾选框文字消失定位为
+> `PaintButton`/`PaintCheckBox` 的 `_text.Paint` 写主帧列表而非段缓冲（D93 重构漏改）——首帧
+> 背景后画盖字、复用帧段缺文字；两条路径同错使 retained 金标准抓不到，补 2 例探针回归测试。
+> GalleryCheck `add task` 失败经 bisect 排除渲染回归——G4 showcase 把 add 按钮/任务卡推出
+> 760px 视口，交互演示复位到 showcase 之前，selfcheck PASS。
+> **659 个用例（Headless 332 / Compiler 241 / Rendering 86），全绿**。
+>
 > **表达式语义预检已通过（2026-11-09，EUI049 Warning）**：属性 `{expr}`、`@if` 条件、插值文本段
 > 经探针编译在使用点直接提示「拼错成员/类型不匹配」（CS0103/CS0029），不再等 C# 编译才发现；
 > Warning 不短路生成——类型错误仍经 `#line` 由 C# 报权威错误（spec/02 §2.4 规则 11）。
