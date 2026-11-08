@@ -81,6 +81,10 @@
 > 帧预算/分配预算门槛、CI）、G2（GPU retained layer/真正局部重绘、目标机稳定 60fps 结论、
 > 像素探针 DSL、CPU/GPU 交叉一致性门禁）、G4（样式/主题；附加属性首批 ✅ 2026-11-09；泛型标签暂缓 K19）、IDE/DevTools。
 
+> **表达式语义预检已通过（2026-11-09，EUI049 Warning）**：属性 `{expr}`、`@if` 条件、插值文本段
+> 经探针编译在使用点直接提示「拼错成员/类型不匹配」（CS0103/CS0029），不再等 C# 编译才发现；
+> Warning 不短路生成——类型错误仍经 `#line` 由 C# 报权威错误（spec/02 §2.4 规则 11）。
+>
 > **G4 列表虚拟化切片已通过（2026-11-09）**：`VirtualizingStackPanel`——`ItemCount` + `ItemFactory`
 > 只实例化视口窗口（含上下各 1 缓冲；10 万行 RealizedCount=22），extent = 均匀行高 × 行数；
 > 滚动在 ArrangeCore 同步窗口（滚动只触发 Arrange 失效、Measure 被约束短路）；无滚动祖先退化全量堆叠。
@@ -112,7 +116,7 @@
 > （`UnmountTests` 9 例）；手工 `Children.Remove` 保守不触发（契约锁定）。② `WrapPanel`
 > 流式布局（水平/竖直换行、Gap、越界独占一行，`WrapPanelTests` 5 例）——内置表面 5→6 标签、
 > 17→22 属性项、37→44 事件项。
-> **628 个用例（Headless 327 / Compiler 234 / Rendering 67 → 627 绿）**——唯一红仍是既有像素
+> **635 个用例（Headless 327 / Compiler 241 / Rendering 67 → 634 绿）**——唯一红仍是既有像素
 > golden `PixelGoldens_MatchBaseline`。
 >
 > **S6 语法对齐（✅ 已实现 2026-11-08，K23 + K24–K31）**：`.ui` 语法表面向 Blazor/Razor 对齐——

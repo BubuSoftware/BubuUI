@@ -537,8 +537,16 @@ public sealed class TemplateGenerator : IIncrementalGenerator
                             ValidateBindSource(attr, probe, scope, diags);
                             ValidateRefTarget(element, attr, probe, scope, diags);
                             ValidateEventHandlerSignature(attr, probe, scope, diags);
+                            ValidateExpressionValue(attr, probe, scope, diags);
                         }
                         Walk(element.Children, scope);
+                        break;
+                    case UiText text:
+                        foreach (var segment in text.Segments)
+                        {
+                            if (segment.Kind != TextSegmentKind.Expression) continue;
+                            ProbeExpression(segment.Text, segment.Span, probe, scope, diags);
+                        }
                         break;
                     case UiSlotNode fill:
                         // 插槽填充的内容是组件 Build 的一部分：@foreach item 推断与 @bind 校验
@@ -546,8 +554,13 @@ public sealed class TemplateGenerator : IIncrementalGenerator
                         Walk(fill.Children, scope);
                         break;
                     case UiIf ifNode:
+                        ProbeExpression(ifNode.Condition, ifNode.ConditionSpan, probe, scope, diags);
                         Walk(ifNode.Children, scope);
-                        foreach (var elseIf in ifNode.ElseIfs) Walk(elseIf.Children, scope);
+                        foreach (var elseIf in ifNode.ElseIfs)
+                        {
+                            ProbeExpression(elseIf.Condition, elseIf.ConditionSpan, probe, scope, diags);
+                            Walk(elseIf.Children, scope);
+                        }
                         if (ifNode.ElseChildren is not null) Walk(ifNode.ElseChildren, scope);
                         break;
                     case UiSwitch switchNode:
@@ -601,6 +614,34 @@ public sealed class TemplateGenerator : IIncrementalGenerator
                     section.LabelSpan));
             }
         }
+    }
+
+    /// <summary>
+    /// EUI049：普通表达式属性值（非 bind/事件/Ref——各有专属探针；目标未知 EUI002 已报的不重复）
+    /// 做语义探针编译，句内 CS 错误与「表达式 → 目标类型」转换错误在使用点直接报。
+    /// </summary>
+    private static void ValidateExpressionValue(UiAttribute attr, TemplateProbe probe,
+        IReadOnlyList<(ITypeSymbol Type, string Name)> env, List<UiDiagnostic> diags)
+    {
+        if (attr.Kind != AttrValueKind.Expression || attr.IsBind) return;
+        if (attr.EventDef is not null || attr.RefTarget is not null) return;
+        var targetClrType =
+            attr.PropDef?.ClrTypeDisplayName ?? attr.ParamDef?.ClrTypeDisplayName ?? attr.AttachedDef?.ClrTypeDisplayName;
+        if (targetClrType is null) return;
+        ProbeExpression(attr.Value, attr.ValueSpan, probe, env, diags, targetClrType);
+    }
+
+    /// <summary>EUI049 共用入口：表达式原文放探针编译，句内 CS 错误逐条升级为模板诊断。</summary>
+    private static void ProbeExpression(string expression, TextSpan span, TemplateProbe probe,
+        IReadOnlyList<(ITypeSymbol Type, string Name)> env, List<UiDiagnostic> diags,
+        string? targetClrType = null)
+    {
+        var trimmed = expression.Trim();
+        if (trimmed.Length == 0) return;
+        foreach (var error in probe.ProbeExpressionErrors(trimmed, env, targetClrType))
+            diags.Add(UiDiagnostics.Warning(UiDiagnostics.ExpressionSemantic,
+                $"template expression '{trimmed}' does not compile against the code-behind: {error}",
+                span));
     }
 
     /// <summary>
@@ -898,6 +939,47 @@ public sealed class TemplateGenerator : IIncrementalGenerator
             if (failure is null) return true;
             reason = failure;
             return false;
+        }
+
+        /// <summary>
+        /// EUI049（表达式语义分析最小闭环）：把模板表达式放进合成方法体做探针编译，
+        /// 落在表达式本体 span 内的 CS 错误逐条返回（消息 + 代码）——拼错成员（CS0103）、
+        /// 类型不匹配（CS0029/CS0266）等在使用点直接报。带 <paramref name="targetClrType"/> 时
+        /// 先声明目标类型的局部变量再赋值（生成代码同形态：左值 = 表达式），类型转换错误一并捕获；
+        /// 无目标类型（条件/文本段）用 var 探针。脚手架自身的句外错误忽略；
+        /// 生成代码仍经 #line 由 C# 兜底（同一错误两处可见是探针校验的既定权衡）。
+        /// </summary>
+        public IReadOnlyList<string> ProbeExpressionErrors(string expression,
+            IReadOnlyList<(ITypeSymbol Type, string Name)> env, string? targetClrType = null)
+        {
+            SyntaxTree tree;
+            if (targetClrType is null)
+            {
+                tree = ProbeTree("var __value = (" + expression + ");", env);
+            }
+            else
+            {
+                // 与生成代码同形态：目标局部 = 表达式。错误过滤锚定赋值右侧。
+                tree = ProbeTree(
+                    ClrTypeOf(targetClrType) + " __value = default!; __value = (" + expression + ");", env);
+            }
+
+            var model = Augment(tree).GetSemanticModel(tree);
+            var valueNode = targetClrType is null
+                ? tree.GetRoot().DescendantNodes().OfType<VariableDeclaratorSyntax>()
+                    .FirstOrDefault(v => v.Identifier.ValueText == "__value")?.Initializer?.Value
+                : tree.GetRoot().DescendantNodes().OfType<AssignmentExpressionSyntax>()
+                    .FirstOrDefault()?.Right;
+            if (valueNode is null) return Array.Empty<string>();
+
+            var errors = new List<string>();
+            foreach (var diagnostic in model.GetDiagnostics())
+            {
+                if (diagnostic.Severity != RoslynSeverity.Error) continue;
+                if (!valueNode.Span.Contains(diagnostic.Location.SourceSpan)) continue;
+                errors.Add($"{diagnostic.GetMessage()} ({diagnostic.Id})");
+            }
+            return errors;
         }
 
         /// <summary>

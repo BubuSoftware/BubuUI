@@ -268,6 +268,14 @@ namespace {Namespace};
 10. 规则 9 的语义按 Roslyn 4.9.2 实测固化在 `LineSpanMappingTests`；Roslyn 升级时该测试先行。
     本章后续「生成文本」示例沿用 `#line N "path"` 简写（只用于说明 C# 语句结构），
     实际发射一律按规则 9 的 span 形态，示例中的行号不表示真实 span 坐标。
+11. **表达式语义预检（✅ G4 最小闭环，2026-11-09，`EUI049` Warning）**：属性 `{expr}`、
+    `@if`/`else if` 条件与插值文本段经 `TemplateProbe.ProbeExpressionErrors` 探针编译——
+    带 PropDef/ParamDef/AttachedDef 目标类型时按生成同形态（`T __value = default!; __value = (expr);`）
+    捕获「拼错成员（CS0103）」与「类型不匹配（CS0029/CS0266）」；`@bind`/事件/`Ref` 各有专属探针
+    （EUI037/EUI024/EUI029）不重复覆盖。**级别刻意为 Warning**：Error 会短路生成（EUI024 口径），
+    而类型错误的规则 9 `#line` 映射契约要求生成代码带着类型错误走出去由 C# 报权威错误——
+    规则 8 的「不重复报」在此退让为「`.ui` 预检警告 + C# 权威错误」双可见。`@foreach` 集合与
+    `@switch` 值维持原静默推断口径（EUI007 / C# 兜底）。
 
 ### 2.5 生成文本禁止项
 

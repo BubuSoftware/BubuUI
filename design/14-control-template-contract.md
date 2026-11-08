@@ -713,6 +713,7 @@ v3 的 EUI014/EUI032/EUI034–EUI036/EUI038–EUI039/EUI041–EUI042/EUI044 已�
 | EUI043 | 旧语法 `:bind`/`:value` 弃用 | 属性名 | Warning |
 | EUI044 | **停用**：v3 非可观察组件参数不刷新；v4 所有参数推送 + `Invalidate()` | — | — |
 | EUI045 | code-behind 与生成代码冲突（`Build`/`Render`/`U{N}`/`__` 字段/基类/隐藏 `Invalidate`） | code-behind 声明 | Error |
+| EUI049 | 模板表达式语义预检（✅ G4 最小闭环）：属性 `{expr}`（带目标类型赋值探针）、`@if`/`else if` 条件、插值文本段的探针编译句内 CS 错误（CS0103 拼错成员、CS0029/CS0266 类型不匹配）；`@bind`/事件/`Ref` 走 EUI037/EUI024/EUI029 专属探针；**Warning 不短路生成**——C# 经 `#line` 报权威错误（spec/02 §2.4 规则 11） | 属性值/条件/文本段 | Warning |
 
 **EUI045 已落地（2026-11-08，D57/D80）**：`TemplateGenerator.ProbeCodeBehindConflicts` 覆盖
 spec/02 §10 五类触发，诊断用纯数据 `UiSourceLocation` 定位到 code-behind 源声明，

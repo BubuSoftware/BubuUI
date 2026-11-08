@@ -83,6 +83,12 @@ public static class UiDiagnostics
     // K31：@using 别名（@using Btn = My.Controls.Button）不合法——目标不在控件目录、
     // 同一模板重复定义、或与 @using 命名空间同名。
     public const string UsingAliasInvalid = "EUI048";
+    // G4（表达式语义分析最小闭环）：模板表达式（属性 {expr}、@if 条件、插值文本段）放进
+    // 探针编译后句内仍存在 CS 错误——拼错成员/类型不匹配在使用点直接给出 Warning 预检。
+    // 刻意不设 Error：Error 会短路生成（EUI024 口径），而类型错误的 #line 映射契约
+    // （spec/02 §2.4 规则 9/10）要求生成代码带着类型错误走出去由 C# 报权威错误；
+    // 规则 8 的「不重复报」在此退让为「预检警告 + C# 权威错误」双可见，属既定权衡。
+    public const string ExpressionSemantic = "EUI049";
 
     // 语法诊断
     public const string Syntax = "EUI100";

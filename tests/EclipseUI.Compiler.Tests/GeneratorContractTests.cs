@@ -1054,7 +1054,8 @@ public class GeneratorContractTests
             """;
 
         var result = RunWithReferences("C:\\templates\\Probe.ui", ui, ComponentFixtures);
-        Assert.Empty(result.Diagnostics);
+        // EUI049 预检警告（Gap 是 double 而 color 是 string）允许出现；Error 仍必须为零。
+        Assert.Empty(result.Diagnostics.Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error));
         var code = Generated(result);
 
         // 内容内动态属性是快照赋值：不出现 U/R 方法
