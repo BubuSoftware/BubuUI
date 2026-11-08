@@ -833,7 +833,7 @@ D37–D41 描述的生成文本偏差已随 v4 S2 收敛，形态以 spec/02 为
 ### 3.5.4 v4 实现偏差台账（D42–D88）
 
 v4 换轨后，**S1 已收敛（2026-10-30）、S2 已收敛（2026-10-30）、S3 已收敛（控件侧 2026-11-02、组件侧随 C4 2026-11-05）、C1 已收敛（2026-11-02，目录派生）、C3 已收敛（2026-11-03，字面量转换器/使用点诊断/保留语法）、C4 已收敛（2026-11-05，组件标签）、C5 已收敛（2026-11-05，Ref/使用点诊断）、C6 已收敛（2026-11-05，具名插槽）、G3 七个小切片全部收敛（块布局透明 2026-11-05/D77；§3.5.3 的 D16 随之关闭、失效迁移 2026-11-07/D78、按文件增量 2026-11-08、`#line` 列映射 2026-11-08/D79、EUI045 code-behind 冲突诊断 2026-11-08/D57/D80、诊断出口补全 2026-11-08/D74 ②/D81、EUI024 事件处理器签名匹配 2026-11-08/D82）、S4/S5 运行时硬化部分收敛（2026-11-08/D83）、G2 CPU 侧部分收敛（2026-11-08/D84）、**S6 语法对齐已收敛（2026-11-08/D85–D88 关闭：`@using`（K22/D85）、`@code` 单文件（K21/K23④/D86）、`else`/`else if`/`@switch`（K23③/K29/D87）、`@* *@` 与未闭合注释（K23/K26/D88，D12 随之关闭）、`EUI046`/`EUI047` 新诊断（K27/K29）、样例与约 94 例 golden 补 `@using` 一次性迁移，`dotnet test EclipseUI.slnx` 497 例全绿）**；
-其余偏差按下列余项收敛：S4/S5（[spec/03 §13](../spec/03-reactivity-and-binding.md#13-阶段-s1s5) 的 S4；Element.Unmount 属 G4、AOT/裁剪、最终审计、帧预算/分配预算门槛、CI——旧语法清理已随 S6 提前完成（K27/D85–D88 ✅ 2026-11-08））、G2（GPU retained layer/真正局部重绘、目标机稳定 60fps 结论、像素探针 DSL、CPU/GPU 交叉一致性门禁）、G4（样式/主题/附加属性；泛型标签暂缓 K19、不排期）、IDE/DevTools。本表与 [spec/02 §12](../spec/02-generated-code-contract.md#12-实现偏差台账-d42d88) 是同一张台账，
+其余偏差按下列余项收敛：S4/S5（[spec/03 §13](../spec/03-reactivity-and-binding.md#13-阶段-s1s5) 的 S4；AOT/裁剪、最终审计、帧预算/分配预算门槛、CI——Element.Unmount 已随 D89/K33 收敛——旧语法清理已随 S6 提前完成（K27/D85–D88 ✅ 2026-11-08））、G2（GPU retained layer/真正局部重绘、目标机稳定 60fps 结论、像素探针 DSL、CPU/GPU 交叉一致性门禁）、G4（样式/主题/附加属性；泛型标签暂缓 K19、不排期）、IDE/DevTools。本表与 [spec/02 §12](../spec/02-generated-code-contract.md#12-实现偏差台账-d42d88) 是同一张台账，
 任一侧更新必须同步另一侧；台账之外的差异视为实现缺陷。
 
 | # | 偏差 | 目标（spec） | 阶段 |
@@ -885,6 +885,8 @@ v4 换轨后，**S1 已收敛（2026-10-30）、S2 已收敛（2026-10-30）、S
 | D86 | 规范先行（K21/K23 ④，2026-11-08）：`@code { }` 为合法顶层节点，位置不限、可多个块、书写顺序不影响成员可见性，成员合并进同一 partial 类并与 code-behind 并存，`EUI005` 放宽。**当前实现**：`@code` 撞 `EUI009`，`EUI005` 仍强制同名 `.cs`，`TemplateProbe.ProbeTree` 只注入 code-behind 声明。收敛条件：P1 块体捕获、P2 `UiCodeBlock` + 根层例外、P3 成员透传 + **先全量收集再建探针 Compilation**（否则前置 `{expr}` 误报 `EUI007`/`EUI024`）+ `EUI045` 扩到 `@code` 成员、P6 单文件端到端用例与底部 `@code` 样例 | K21、K23、spec/01 §1.5、design/16 §5.2/附录 B | ✅ S6（2026-11-08 收敛） |
 | D87 | 规范先行（K23 ③，2026-11-08）：`else`/`else if`（不带 `@`）与 `@switch`（`case`/`break`/`default`）纳入目标语法，`EUI008` 停用、新码从 `EUI046` 起。**当前实现**：只有单分支 `@if`，分支续接撞 `EUI100`，`@switch` 报 `EUI008`。收敛条件：P1 续接与 case 头、P2 分支/switch 节点、P4 `ConditionalBlock` 多分支（`AddBranch`/`SetDefault`）与 `SwitchBlock<T>`（草案见 design/16 附录 B）、P5 停用码零出现 + 诊断快照；`case` 内嵌 `@foreach` 与 `@for`/`@while` 属 Q3/P4 待定 | K23、spec/01 §1.5、design/16 §3.1/附录 A | ✅ S6（2026-11-08 收敛） |
 | D88 | 规范先行（K23 / design/16 §3.1，2026-11-08）：新增 `@* ... *@` 编译器丢弃注释，未闭合报 `EUI100`（顺带关闭 **D12**）；`<!-- -->` 按 spec/01 §8 规则 2 给弃用期，具体形态待 Q6。**当前实现**：只识别 `<!-- -->`，且 `Lexer.SkipComment` 未闭合时静默吞到文件尾（D12 开放）。收敛条件：P1 词法、`TokenizerTests` 与未闭合注释用例、P6 样例迁移；Q6 未拍板前不删除 `<!-- -->` 支持 | K23、D12、design/16 §3.1 | ✅ S6（2026-11-08 收敛） |
+| D89 | ✅ S4/G4：Element.Unmount 卸载链路落地（K33）——UnmountedEvent（Direct，[UiIgnore] 退出事件表面）、Unmount() 子树级钩子与事件、组件根订阅自 Dispose（Dispose 退订防泄漏回归）、FocusManager.ClearFocusIfDetached 接入两个宿主；UnmountTests 9 例，全量 575 例（Rendering 1 既有红除外）全绿 | spec/03 §13.1、design/14/15 | ✅ S4/G4（2026-11-09） |
+| D90 | ✅ G4 布局：**WrapPanel 流式布局**——`Orientation`（Horizontal/Vertical）+ `Gap`；主轴装箱换行、期望尺寸取最长行（首版漏 maxMain 已修）、越界子项独占一行不裁剪；目录表面 5→6 标签、17→22 属性项、37→44 事件项，golden 重生成（+15 行）；`WrapPanelTests` 5 例（水平/竖直换行、Gap+Padding、不换行、越界独占、空面板） | design/09 §9.3 G4 布局补全 | ✅ G4（2026-11-09） |
 
 - 每项收敛必须同时删除对应的 v3 路径；不得两套模型并存。
 - 新增偏差必须登记编号（从 D89 起）并注明目标阶段；不得只改代码不改台账。

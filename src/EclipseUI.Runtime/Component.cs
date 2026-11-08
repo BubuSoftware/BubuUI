@@ -24,6 +24,9 @@ public abstract class Component : IDisposable
 
     public bool IsMounted => _isMounted;
 
+    /// <summary>组件是否已释放（Dispose 后为 true；卸载根元素会触发释放，G4/K33）。</summary>
+    public bool IsDisposed => _disposed;
+
     internal int Depth
     {
         get
@@ -40,8 +43,14 @@ public abstract class Component : IDisposable
         if (_isMounted) return;
         ObjectDisposedException.ThrowIf(_disposed, this);
         Root = Build();
+        // 组件根被卸载（直接 Unmount，或祖先 Unmount 传播到根）→ 组件随之释放：
+        // Dispose 递归释放被 Track 的子组件与作用域资源，绑定监听随之解除（G4/K33）。
+        Root.AddHandler(Element.UnmountedEvent, HandleRootUnmounted);
         _isMounted = true;
     }
+
+    private void HandleRootUnmounted(RoutedEventArgs args)
+        => Dispose();
 
     protected abstract Element Build();
 
@@ -169,6 +178,10 @@ public abstract class Component : IDisposable
         if (_disposed)
             return;
         _disposed = true;
+        // 退订根元素的 UnmountedEvent：否则存活的元素树经委托强引用已释放组件，
+        // 破坏「Dispose 后可回收」的硬化口径（RuntimeHardeningTests 泄漏回归）。
+        Root?.RemoveHandler(Element.UnmountedEvent, HandleRootUnmounted);
+        _isMounted = false;
         // 清空自身失效队列：已释放组件不会再被 ProcessInvalidations 排空
         // （_disposed 时直接返回），残留队列会多持有一轮强引用。
         // 与 EnqueueInvalidation / ProcessInvalidations / MigratePending 共用同一把锁。
@@ -252,6 +265,8 @@ public sealed class HeadlessRoot
 
     public void UpdateLayout()
     {
+        // 卸载/摘除后焦点元素可能已离树：布局前修剪，避免 Tab 从游离元素起算。
+        Focus.ClearFocusIfDetached();
         _rootComponent?.ProcessInvalidations();
         _content.Measure(AvailableSize);
         _content.Arrange(new Rect(Point.Zero, _content.DesiredSize));

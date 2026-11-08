@@ -519,7 +519,7 @@ public class CatalogScannerTests
     // ---- 快照 ----
 
     /// <summary>
-    /// design/14 §14.11.1 内置表面快照（C2 口径）：5 标签 / 17 属性项 / 37 事件项（9 个不同的事件名）。
+    /// design/14 §14.11.1 内置表面快照（C2 口径）：6 标签 / 22 属性项 / 44 事件项（9 个不同的事件名）。
     /// `Element` 的 7 个输入/焦点事件按 §14.4.3 声明在元素基类上，继承到每个标签；
     /// `Button.OnClick` 与 `CheckBox.CheckedChanged` 声明在具体控件上。
     /// 与文本 golden 的分工：这里钉住键的排序与数量，golden 文件钉住每一项的完整形状。
@@ -535,6 +535,8 @@ public class CatalogScannerTests
                 ["ClipToBounds", "FontSize", "IsHitTestVisible", "Padding"], inherited),
             ["StackPanel"] = (UiContentModel.Children, "Children",
                 ["ClipToBounds", "Gap", "IsHitTestVisible", "Padding"], inherited),
+            ["WrapPanel"] = (UiContentModel.Children, "Children",
+                ["ClipToBounds", "Gap", "IsHitTestVisible", "Orientation", "Padding"], inherited),
             ["ListBoxItem"] = (UiContentModel.Children, "Children",
                 ["ClipToBounds", "Gap", "IsHitTestVisible", "Padding"], inherited),
             ["Button"] = (UiContentModel.Text, "Label",
@@ -556,8 +558,8 @@ public class CatalogScannerTests
             Assert.Equal(want.Events, element.Events.Keys.ToArray());
         }
 
-        Assert.Equal(17, catalog.Elements.Sum(e => e.Properties.Count));
-        Assert.Equal(37, catalog.Elements.Sum(e => e.Events.Count));
+        Assert.Equal(22, catalog.Elements.Sum(e => e.Properties.Count));
+        Assert.Equal(44, catalog.Elements.Sum(e => e.Events.Count));
         // 9 个不同的事件名：Element 继承 7 个 + Button.OnClick + CheckBox.CheckedChanged
         Assert.Equal(9, catalog.Elements.SelectMany(e => e.Events.Keys).Distinct().Count());
     }

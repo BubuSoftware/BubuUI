@@ -45,6 +45,21 @@ public sealed class FocusManager
         old.RaiseEvent(new RoutedEventArgs(Element.LostFocusEvent) { Source = old });
     }
 
+    /// <summary>
+    /// 焦点元素已不在本管理器的根子树内（被 Unmount/摘除）时清除焦点并广播 LostFocus。
+    /// 宿主在每帧布局前调用；返回是否发生了清除。
+    /// </summary>
+    public bool ClearFocusIfDetached()
+    {
+        var focused = Focused;
+        if (focused is null) return false;
+        for (Element? node = focused; node is not null; node = node._parent)
+            if (ReferenceEquals(node, _root))
+                return false;
+        ClearFocus();
+        return true;
+    }
+
     /// <summary>移到下一个可聚焦元素（环形）。Tab 键的默认实现。</summary>
     public Element? MoveNext()
     {

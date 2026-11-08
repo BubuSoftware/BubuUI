@@ -231,7 +231,8 @@ public sealed class TextBlock : Panel, ITextContentHost
 - 所有构造、属性赋值、事件订阅都在 UI 线程同步完成；模板 Build 不异步、不等待。
 - 控件 MUST NOT 在构造函数里假设已有父元素、假设已完成布局、或调用 `Measure/Arrange`。
 - 控件的构造与属性 setter MUST 无副作用地可重复执行（`@if`/`@foreach` 会重建子树）。
-- 元素（Element）没有 Unmount 回调；v1 不提供 `Dispose`。需要释放的资源应挂在组件（14.6）上。
+- 控件释放资源用 `OnUnmount` 钩子（G4/K33）：`Element.Unmount()` 子树级触发
+  `UnmountedEvent`（Direct）与钩子；控件自身仍不实现 `IDisposable`。
 - `Ref`（G3）用于把元素实例交给 code-behind 字段；在此之前用 C# 侧的直接引用。
 
 ### 14.4.6 声明特性
@@ -507,7 +508,9 @@ parentN.Children.Add(cmp0.Root);
   先登记后赋值：参数 setter/内容构建/`Mount()` 失败时，调用方仍可释放组件。
 - 组件实例由调用方作用域释放：根 → 父组件 `Dispose`；`@if` → 内容卸载；`@foreach` → 条目移除。
   组件内容内的子组件由接收方 `TrackContent` 登记；`Dispose` 幂等。
-- 从元素树中**手工**移除组件根元素不会触发 Dispose（v1 限制；G4 补 Unmount 事件）。
+- 从元素树中**手工** `Children.Remove` 仍不触发 Dispose（保守原语义，保护重挂载场景）；
+  显式 `root.Unmount()` 触发子树 `UnmountedEvent`，组件根订阅后自 `Dispose`（G4/K33）。
+  组件 `Dispose` 会退订该事件，不产生元素树 → 组件的强引用（泄漏回归锁定）。
 - `Key=` 仅 `@foreach` 模板根；key 或 item 身份变化 = 销毁旧实例 + 新建。
 - `Ref=`（G3）绑定组件实例到 code-behind 字段。
 
@@ -949,10 +952,11 @@ C4 只负责组件标签与参数/内容元数据，C5 只保留 `Ref` 与语法
 |---|---|---|---|
 | `Button` | `Text:Label` | `IsHitTestVisible`、`Label` | `OnClick` |
 | `CheckBox` | `Text:Label` | `Checked`、`IsHitTestVisible`、`Label` | — |
+| `WrapPanel` | `Children:Children` | `ClipToBounds`、`Gap`、`IsHitTestVisible`、`Orientation`、`Padding` | — |
 | `ListBoxItem` | `Children:Children` | `ClipToBounds`、`Gap`、`IsHitTestVisible`、`Padding` | — |
 | `StackPanel` | `Children:Children` | `ClipToBounds`、`Gap`、`IsHitTestVisible`、`Padding` | — |
 | `TextBlock` | `TextRuns:—` | `ClipToBounds`、`FontSize`、`IsHitTestVisible`、`Padding` | — |
-| **合计** | 5 标签 | **17 属性项** | **1 事件项** |
+| **合计** | 6 标签 | **22 属性项** | **1 事件项** |
 
 隐藏标签 4 个（`Component`/`Element`/`Panel`/`StackPanelBase`，均 EUI017「类型是抽象的」）；
 `TextRun`/`ConditionalBlock`/`ForEachBlock<T>` 走 `[UiIgnore]` 完全退出表面，不进 `HiddenTags`。

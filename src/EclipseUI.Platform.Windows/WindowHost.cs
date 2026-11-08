@@ -165,6 +165,8 @@ public sealed class WindowHost : IDisposable
 
             var start = Stopwatch.GetTimestamp();
 
+            // 卸载/摘除后焦点元素可能已离树：布局前修剪（G4/K33）。
+            Input.Focus.ClearFocusIfDetached();
             _rootComponent?.ProcessInvalidations();
             _root.Measure(size);
             _root.Arrange(new Rect(Point.Zero, size));

@@ -556,7 +556,8 @@ public sealed class Signal<T> : ISignal
 
 - 生成代码不得把订阅存静态字段、单例或 `ConditionalWeakTable`；R6/R8。
 - 组件内部的订阅登记在组件自身；父作用域只负责 `Dispose` 组件实例。
-- 手工从元素树移除元素不会释放绑定（Element 无 Unmount）；v1 限制，G4 补。
+- 手工 `Children.Remove` 不释放绑定（保守原语义）；显式 `Element.Unmount()` 使组件根
+  `Dispose` → 作用域 → 绑定随之解除（G4/K33）。
 
 ### 15.3.7 线程、异常与重入
 
@@ -1149,7 +1150,7 @@ public partial class UserCard : Component
 - 父绑定/观察订阅在父作用域；父 `Dispose` 释放。
 - 子状态对象可能被外部持有；组件 Dispose 不会清空状态，只释放订阅。
 - 组件 `Mount()` 只 Build 一次；状态在 Mount 前可写，Build 读取当前值。
-- 从元素树手工移除组件不会 Dispose（v1 限制，G4 Unmount）。
+- 组件根被 `Unmount`（直接或经祖先传播）即 `Dispose`（G4/K33）；手工 `Remove` 不触发。
 
 ### 15.7.6 已知限制
 
@@ -1336,7 +1337,7 @@ public partial class UserCard : Component
 |---|---|---|
 | 状态声明 | `[UiState]`/`[UiObservable]`/`[UiComputed]`、初始化、限制、诊断 | record/struct/泛型（明确非目标） |
 | 模板位置 | `P`、文本、`@if`、`@foreach`、`Key`、事件、组件、item | `Ref`（G3 另定） |
-| 作用域 | 根/if 内容/if 条件/foreach 集合/item/组件/绑定 | 手工移除元素的 Unmount（G4） |
+| 作用域 | 根/if 内容/if 条件/foreach 集合/item/组件/绑定、元素卸载（`Unmount`，G4/K33） | 卸载后重挂载（未定义，v1 禁止） |
 | 对象自变化 | 写契约、可观察/不可观察、逃生舱、线程 | Dispatcher/批处理（G4/S5） |
 | 诊断 | EUI014/032/034–044 | 抑制配置（S5） |
 | 迁移 | 旧 Signal、`:bind`/`:value`、组件参数、列表 | 自动迁移工具（无） |

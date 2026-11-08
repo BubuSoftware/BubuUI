@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using EclipseUI.Elements;
 
 namespace EclipseUI;
 
@@ -9,6 +10,9 @@ public enum RoutingStrategy
 {
     Tunnel,
     Bubble,
+
+    /// <summary>只在目标元素自身分发（不沿父链）。用于元素自身的生命周期通知（Unmounted）。</summary>
+    Direct,
 }
 
 public sealed class RoutedEvent
@@ -122,6 +126,14 @@ public abstract class Element
     public static readonly RoutedEvent KeyUpEvent = new RoutedEvent("KeyUp", RoutingStrategy.Bubble);
     public static readonly RoutedEvent GotFocusEvent = new RoutedEvent("GotFocus", RoutingStrategy.Bubble);
     public static readonly RoutedEvent LostFocusEvent = new RoutedEvent("LostFocus", RoutingStrategy.Bubble);
+
+    /// <summary>
+    /// 元素被卸载（<see cref="Unmount"/>，或作为其祖先卸载子树的一部分）。
+    /// <see cref="RoutingStrategy.Direct"/>：子树按自上而下逐元素分发，处理方拿到的是当前元素。
+    /// 生命周期通知而非模板作者事件：[UiIgnore] 使其退出目录派生的事件表面（design/14 §14.4.3，K33）。
+    /// </summary>
+    [UiIgnore]
+    public static readonly RoutedEvent UnmountedEvent = new RoutedEvent("Unmounted", RoutingStrategy.Direct);
 
     public T GetValue<T>(StyledProperty<T> property)
     {
@@ -276,6 +288,10 @@ public abstract class Element
             for (Element? node = this; node is not null && !args.Handled; node = node._parent)
                 node.InvokeHandlers(args);
         }
+        else if (args.RoutedEvent.Strategy == RoutingStrategy.Direct)
+        {
+            InvokeHandlers(args);
+        }
         else
         {
             var chain = new List<Element>();
@@ -341,6 +357,38 @@ public abstract class Element
             y -= node.FinalRect.Y;
         }
         return new Point(x, y);
+    }
+
+    // ---- 卸载（G4，K33）----
+    // v1 限制「手工移除元素/组件根不释放资源」由本 API 补齐：显式 Unmount 触发子树级
+    // UnmountedEvent（组件根订阅后自 Dispose → 作用域 → 绑定随之解除）；
+    // 直接 Children.Remove 仍不触发（保守原语义，避免误杀重挂载场景）。
+
+    /// <summary>
+    /// 卸载子树：先从父级摘除（若仍在树上），再自上而下对子树每个元素触发
+    /// <see cref="OnUnmount"/> 钩子与 <see cref="UnmountedEvent"/>。
+    /// 幂等：已脱离父级的元素可安全重复调用（测试用来验证事件可重入，不做「只发一次」标记，
+    /// 以支持「卸载 → 改树 → 再卸载」的调试场景）。
+    /// </summary>
+    public void Unmount()
+    {
+        if (_parent is Panel panel)
+            panel.Children.Remove(this);
+        UnmountSubtree();
+    }
+
+    private void UnmountSubtree()
+    {
+        OnUnmount();
+        RaiseEvent(new RoutedEventArgs(UnmountedEvent));
+        // OnUnmount/处理器理论上可能改动子树，快照后再递归。
+        foreach (var child in VisualChildren.ToArray())
+            child.UnmountSubtree();
+    }
+
+    /// <summary>卸载钩子：控件可在此停动画/释放原生资源；此时 Parent 已为 null。</summary>
+    protected virtual void OnUnmount()
+    {
     }
 
     public override string ToString() => GetType().Name;

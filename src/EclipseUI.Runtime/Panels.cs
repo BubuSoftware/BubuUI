@@ -124,3 +124,136 @@ public class ListBoxItem : StackPanelBase
     /// <summary>列表项默认内边距：行内文字不贴边（样式系统落地前的最小视觉约定）。</summary>
     public ListBoxItem() => Padding = 8;
 }
+
+/// <summary>流式换行方向。</summary>
+public enum Orientation
+{
+    Horizontal,
+    Vertical,
+}
+
+/// <summary>
+/// 流式布局（G4 布局补全第一片）：子元素按期望尺寸沿主轴排列，超出可用空间即换行（换列）。
+/// 水平方向逐行从上往下；行内不拉伸子元素（保持 DesiredSize），行高 = 行内最大子高。
+/// </summary>
+public class WrapPanel : Panel
+{
+    public static readonly StyledProperty<Orientation> OrientationProperty =
+        StyledProperty<Orientation>.Register<WrapPanel>("Orientation", Orientation.Horizontal,
+            new PropertyOptions { Invalidate = InvalidateKind.Measure });
+
+    /// <summary>与 StackPanel.Gap 同义的条目间距（主轴/换行方向共用一个值）。</summary>
+    public static readonly StyledProperty<double> GapProperty =
+        StyledProperty<double>.Register<WrapPanel>("Gap", 0d,
+            new PropertyOptions { Invalidate = InvalidateKind.Measure });
+
+    public Orientation Orientation
+    {
+        get => GetValue(OrientationProperty);
+        set => SetValue(OrientationProperty, value);
+    }
+
+    public double Gap
+    {
+        get => GetValue(GapProperty);
+        set => SetValue(GapProperty, value);
+    }
+
+    private double LayoutPadding => IsLayoutTransparent ? 0 : Padding;
+
+    protected internal override Size MeasureCore(Size available)
+    {
+        var padding = LayoutPadding;
+        var gap = Gap;
+        var innerWidth = Math.Max(0, available.Width - padding * 2);
+        var innerHeight = Math.Max(0, available.Height - padding * 2);
+
+        // 先量所有孩子（主轴给足约束让它量出期望，交叉轴给可用约束），再按主轴装箱。
+        var constraints = Orientation == Orientation.Horizontal
+            ? new Size(double.PositiveInfinity, innerHeight)
+            : new Size(innerWidth, double.PositiveInfinity);
+
+        var wrapLimit = Orientation == Orientation.Horizontal ? innerWidth : innerHeight;
+        double maxMain = 0;         // 各行主轴占用的最大值（期望尺寸取最长行）
+        double lineMain = 0;        // 当前行主轴已占用
+        double lineCross = 0;       // 当前行交叉轴最大尺寸
+        double totalCross = 0;      // 换行方向累计
+        bool lineHasItem = false;
+
+        foreach (var child in Children)
+        {
+            child.Measure(constraints);
+            var size = child.DesiredSize;
+
+            var childMain = Orientation == Orientation.Horizontal ? size.Width : size.Height;
+            var childCross = Orientation == Orientation.Horizontal ? size.Height : size.Width;
+
+            if (lineHasItem && lineMain + gap + childMain > wrapLimit)
+            {
+                // 装不下：结账当前行，另起一行
+                totalCross += lineCross + gap;
+                maxMain = Math.Max(maxMain, lineMain);
+                lineMain = 0;
+                lineCross = 0;
+                lineHasItem = false;
+            }
+
+            lineMain += (lineHasItem ? gap : 0) + childMain;
+            lineCross = Math.Max(lineCross, childCross);
+            lineHasItem = true;
+        }
+
+        maxMain = Math.Max(maxMain, lineMain); // 最后一行
+        totalCross += lineCross;
+
+        return Orientation == Orientation.Horizontal
+            ? new Size(maxMain + padding * 2, totalCross + padding * 2)
+            : new Size(totalCross + padding * 2, maxMain + padding * 2);
+    }
+
+    protected internal override void ArrangeCore(Rect final)
+    {
+        var padding = LayoutPadding;
+        var gap = Gap;
+        var innerWidth = Math.Max(0, final.Width - padding * 2);
+        var innerHeight = Math.Max(0, final.Height - padding * 2);
+
+        double lineMain = padding;  // 当前行主轴游标（局部坐标）
+        double lineCrossStart = padding; // 当前行交叉轴起点
+        double lineCross = 0;
+        bool lineHasItem = false;
+
+        foreach (var child in Children)
+        {
+            var size = child.DesiredSize;
+            var childMain = Orientation == Orientation.Horizontal ? size.Width : size.Height;
+            var childCross = Orientation == Orientation.Horizontal ? size.Height : size.Width;
+
+            if (lineHasItem && lineMain - padding + gap + childMain > (Orientation == Orientation.Horizontal ? innerWidth : innerHeight))
+            {
+                lineMain = padding;
+                lineCrossStart += lineCross + gap;
+                lineCross = 0;
+                lineHasItem = false;
+            }
+
+            if (!lineHasItem)
+                lineMain = padding;
+            else
+                lineMain += gap;
+            lineHasItem = true;
+
+            if (Orientation == Orientation.Horizontal)
+            {
+                child.Arrange(new Rect(lineMain, lineCrossStart, size.Width, size.Height));
+                lineMain += size.Width;
+            }
+            else
+            {
+                child.Arrange(new Rect(lineCrossStart, lineMain, size.Width, size.Height));
+                lineMain += size.Height;
+            }
+            lineCross = Math.Max(lineCross, childCross);
+        }
+    }
+}

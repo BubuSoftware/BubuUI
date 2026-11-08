@@ -81,6 +81,15 @@
 > 帧预算/分配预算门槛、CI）、G2（GPU retained layer/真正局部重绘、目标机稳定 60fps 结论、
 > 像素探针 DSL、CPU/GPU 交叉一致性门禁）、G4（样式/主题/附加属性；泛型标签暂缓 K19）、IDE/DevTools。
 
+> **G4 首批切片已通过（2026-11-09，K33/D89 + D90）**：① `Element.Unmount` 卸载链路——
+> `UnmountedEvent`（Direct 路由，`[UiIgnore]` 退出模板事件表面）、子树级 `OnUnmount` 钩子、
+> 组件根订阅自 `Dispose`（作用域/绑定随之解除；Dispose 退订防泄漏回归）、焦点离树修剪
+> （`UnmountTests` 9 例）；手工 `Children.Remove` 保守不触发（契约锁定）。② `WrapPanel`
+> 流式布局（水平/竖直换行、Gap、越界独占一行，`WrapPanelTests` 5 例）——内置表面 5→6 标签、
+> 17→22 属性项、37→44 事件项。
+> **575 个用例（Headless 288 / Compiler 227 / Rendering 65 → 574 绿）**——唯一红仍是既有像素
+> golden `PixelGoldens_MatchBaseline`。
+>
 > **S6 语法对齐（✅ 已实现 2026-11-08，K23 + K24–K31）**：`.ui` 语法表面向 Blazor/Razor 对齐——
 > 模板 `@using`（内置控件也须导入、生成代码保留 using，K22）、`@using Alias = Ns.Type` 类型别名
 > （同时可当标签用，用于解决第三方控件与内置控件的 tag 重名，K31）、`@code` 单文件「代码 + 模板」（位置不限，K21）、
