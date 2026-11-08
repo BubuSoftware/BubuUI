@@ -159,3 +159,65 @@ DWM 合成节奏抖动大，合成钟本身不可靠，把节奏锚上去反而�
 `ISurfacePresenter.IsVsync`（`Fifo`/`AutoVsync` 为 true）随本次新增到
 `src/EclipseUI.Rendering/ISurfacePresenter.cs`（`VelloSurfaceBackend` 返回实际配置的呈现模式）。
 按决策口径：`IsVsync == false` 沿用软限速、不做 DWM 对齐，文档说明即可，不做专门处理。
+
+## 8. 2026-11-09 复测（retained 显示列表 D93 后；机器已更换）
+
+> `tools/bench-60fps.ps1 -RunWindowMeasure -IncludeWindowSpike -Frames 600 -MaxFps 60`
+> 全步骤实跑（1m54s，日志 `out/bench-60fps-20261109-044321.log`）。与 §1–§7 **不是同一台机器**：
+> 机器 DESKTOP-SFG7EQV，GPU 为 **NVIDIA GeForce RTX 2070**（渲染路径）+ GameViewer 虚拟适配器（0Hz），
+> 物理适配器自报 **59Hz**（< 60 判定线，见 §8.3 环境提示）。本次同时验证 D93 retained 段缓存
+> 落地后的构建/渲染链路与 `bench-60fps.ps1` 的刷新率采集改进（§6.4 完成：逐适配器列出 +
+> 识别虚拟链路 + 优先物理适配器——本跑正确选中 RTX 2070 而非虚拟适配器）。
+
+### 8.1 结果
+
+| 指标 | 实测 | 判定 |
+|---|---|---|
+| Release 构建 | 0 警告 0 错误（24.8s） | ✅ |
+| CPU 渲染测试（Release） | 84/84 通过 | ✅ 必须通过 |
+| RenderSpike GPU 200 元素 1280×800 | **1.91 ms**（含 readback）；10k 命令 8.37 ms | 参考（RTX 2070，优于 G1 报告 Intel 630 的 6.4ms——机器差异，不与历史直接对比） |
+| RenderSpike 像素一致性 | 5 场景全部「一致」 | ✅ |
+| **GalleryCheck 帧成本（Immediate + 限速 60）** | **avg 3.00 ms / p95 3.43 ms**（600 帧，76 元素，damage 全 1 局部 599） | ✅ ≤16.7ms 预算 |
+| **WindowSpike Immediate + 限速 60 墙钟** | **60.0 fps**（frame=16.68 含限速等待；stages acquire 2.91 / render 2.64 / present 0.24 ms） | ✅ 节奏修复在 D93 后保持（§4.1 口径 ≥59） |
+| Fifo 自由跑 | 未复采（§7.3 上游 latency=2 阻塞，本机结论不因换机改变） | ⛔ 上游 |
+
+### 8.2 判读
+
+- **帧成本 PASS 且余量进一步拉大**：GalleryCheck avg 3.00ms / p95 3.43ms（预算 16.7ms 的 ~18%）；
+  D93 retained 段缓存生效后构建层开销趋零（damage 局部 599 帧、覆盖率 0.00% 的静止画面全部复用段）。
+- **Immediate 墙钟 60.0fps**：软限速修复（§7.1–7.2）在 retained 后保持有效。
+- **上屏侧结论不变**：59Hz 面板 + 虚拟链路仍不满足「物理 ≥60Hz 目标机」前置；Fifo 确定性锁帧
+  仍被 VelloSharp `desired_maximum_frame_latency=2` 阻塞（§7.3）。
+
+### 8.3 环境提示（脚本输出）
+
+`CurrentRefreshRate=59Hz < 60Hz` → 帧时间不能作为 60fps 达标依据，本次窗口测量结论记「不适用」；
+帧成本判定（PASS）只反映渲染管线工作成本。两级判定口径见 §4。
+
+## 9. 物理目标机复测指引（60fps 最终结论的唯一剩余前置）
+
+1. **前置**：≥60Hz **物理**显示器（笔记本内屏通常 60/90/120/144Hz 即可）；独显/核显驱动正常；
+   关闭可变刷新率（G-Sync/FreeSync）与 HDR（减少干扰项）；电源计划「高性能」；窗口保持前台无遮挡。
+2. **步骤**（仓库根目录）：
+   ```powershell
+   dotnet build EclipseUI.slnx -c Release
+   powershell -File tools/bench-60fps.ps1 -RunWindowMeasure -IncludeWindowSpike -Frames 1200 -MaxFps 60
+   ```
+   脚本自动：列出适配器并优先取物理适配器刷新率 → Release 构建 → CPU 渲染测试 →
+   RenderSpike GPU bench（像素一致性）→ GalleryCheck 窗口帧成本（Immediate）→
+   WindowSpike Immediate 分段与墙钟 → 16.7ms 预算判定，全部落 `out/bench-60fps-*.log`。
+3. **补充采集（Fifo 侧）**：
+   ```powershell
+   dotnet run --project sandbox/WindowSpike -c Release -- --frames 1200 --max-fps 60      # Fifo + 限速 60
+   dotnet run --project sandbox/WindowSpike -c Release -- --frames 1200 --max-fps 10000   # Fifo 无软限速（acquire 观察 vblank）
+   ```
+   若 Fifo 墙钟仍波动：以 `DwmGetCompositionTimingInfo`（rateRefresh/rateCompose）或
+   手机慢动作拍屏（240fps 拍 2 秒数帧）核对上屏节奏，区分「渲染侧」与「合成侧」。
+4. **判定（两级口径，全部满足即给「稳定 60fps」结论）**：
+   - 帧成本：GalleryCheck `frame=` avg 与 p95 ≤ 16.7ms（渲染管线能力）；
+   - 墙钟：WindowSpike `Immediate + 限速 60` fps ≥ 59（pacing 能力）；
+   - 上屏：Fifo + 限速 60 的墙钟 fps ≥ 59 且 acquire 无 33.4ms 双峰（vblank 逐帧命中；
+     若仅此项受上游 latency=2 阻塞，在报告记录并在上游暴露配置后复测）。
+5. **回填**：复制 `design/reports/target-machine-60fps-template.md` 为
+   `target-machine-60fps-<日期>.md`，按模板口径填 §1 环境 / §2 命令 / §3 结果 / §4 结论；
+   在 README 状态块与 design/09 台账登记结论行。

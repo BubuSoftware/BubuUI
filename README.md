@@ -102,6 +102,10 @@
 > clip 作用域与滚动条每帧生成（thumb 位置不进 Version）。金标准 retained 渲染 == 全量渲染
 > 逐像素（`RetainedPaintTests` 8 例，含 GPU 后端分支 retained 合成等价）。VelloSharp 无 scissor
 > API，光栅化仍整帧、构建层 retained 先行。GalleryCheck 全链路 PASS。
+> **60fps 复测（2026-11-09，机器已换 RTX 2070）**：GalleryCheck 帧成本 avg 3.00ms / p95 3.43ms
+> （预算 ~18%）、`Immediate` 墙钟 60.0fps（软限速修复 + D93 保持）；`bench-60fps.ps1` 刷新率采集
+> 改为逐适配器列出并优先物理适配器；`Fifo` 上屏仍受虚拟链合成波动与上游 `frame latency=2`
+> 双重阻塞，稳定 60fps 结论待物理目标机——操作指引见报告 §9。
 > **652 个用例（Headless 327 / Compiler 241 / Rendering 84），全绿**。
 >
 > **表达式语义预检已通过（2026-11-09，EUI049 Warning）**：属性 `{expr}`、`@if` 条件、插值文本段

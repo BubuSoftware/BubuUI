@@ -86,23 +86,41 @@ try {
     Write-Log ("日志: " + $script:LogPath)
 
     # ---- 显示器刷新率（判定有效性的前置条件）----
+    # 逐适配器列出并优先取「非虚拟」适配器：虚拟显示链（GameViewer/DisplayLink 等）自报的
+    # 刷新率不代表渲染路径的有效节奏（2026-11-08 报告 §5：本机会采到虚拟适配器的 144Hz）。
     $refreshValue = [double]::NaN
     $refreshText = "n/a"
+    $refreshSource = ""
+    $virtualPattern = 'Virtual|GameViewer|DisplayLink|Spacedesk|Duet|SuperDisplay|indirect'
     try {
         $controllers = @(Get-CimInstance -ClassName Win32_VideoController -ErrorAction Stop)
-        $names = @($controllers | ForEach-Object { $_.Name })
-        if ($names.Count -gt 0) { Write-Log ("显卡: " + ($names -join "; ")) }
         foreach ($c in $controllers) {
-            if ($c.CurrentRefreshRate -and $c.CurrentRefreshRate -gt 0) {
-                $refreshValue = [double]$c.CurrentRefreshRate
-                $refreshText = [string]$c.CurrentRefreshRate
-                break
+            $rate = [double]0
+            if ($c.CurrentRefreshRate) { $rate = [double]$c.CurrentRefreshRate }
+            $isVirtual = ($c.Name -match $virtualPattern)
+            Write-Log ("适配器: " + $c.Name + " @ " + $rate + " Hz" + $(if ($isVirtual) { "（虚拟链路，仅供参考）" } else { "" }))
+            if ($rate -le 0) { continue }
+            if (-not $isVirtual -and [double]::IsNaN($refreshValue)) {
+                $refreshValue = $rate
+                $refreshText = [string]$rate
+                $refreshSource = $c.Name
+            }
+        }
+        if ([double]::IsNaN($refreshValue) -and $controllers.Count -gt 0) {
+            # 全部是虚拟适配器：取第一个 >0 的并明确标注来源供人工甄别。
+            foreach ($c in $controllers) {
+                if ($c.CurrentRefreshRate -and $c.CurrentRefreshRate -gt 0) {
+                    $refreshValue = [double]$c.CurrentRefreshRate
+                    $refreshText = [string]$c.CurrentRefreshRate
+                    $refreshSource = $c.Name + "（虚拟适配器，需人工甄别）"
+                    break
+                }
             }
         }
     } catch {
         Write-Log ("Win32_VideoController 查询失败: " + $_.Exception.Message)
     }
-    Write-Log ("CurrentRefreshRate: " + $refreshText + " Hz（判定要求 >= 60 Hz）")
+    Write-Log ("CurrentRefreshRate: " + $refreshText + " Hz（来源: " + $refreshSource + "；判定要求 >= 60 Hz）")
 
     $combined = ""
 
@@ -202,12 +220,17 @@ try {
     }
 
     # ---- 环境限制提示 ----
-    Write-Log "---- 环境限制 ----"
-    if (-not [double]::IsNaN($refreshValue) -and $refreshValue -lt 60) {
+    if ([double]::IsNaN($refreshValue)) {
+        Write-Log "注意: 未采集到有效刷新率；窗口测量受刷新率/vsync 限制，本次帧时间不能作为 60fps 达标依据。"
+    } elseif ($refreshValue -lt 60) {
         Write-Log ("注意: CurrentRefreshRate=" + $refreshText + "Hz < 60Hz；窗口测量受刷新率/vsync 限制，本次帧时间不能作为 60fps 达标依据，结论记「不适用」。")
+    } elseif ($refreshSource -match $virtualPattern) {
+        Write-Log ("注意: 刷新率来自虚拟适配器（" + $refreshSource + "）；虚拟链的合成/串流节奏可能与自报值不符，上屏侧结论需人工甄别。")
+    } else {
+        Write-Log ("刷新率 " + $refreshText + " Hz 满足 >=60Hz 前置条件（来源: " + $refreshSource + "）。")
     }
-    Write-Log "本机为 29Hz 虚拟显示器（Intel UHD 630 + GameViewer 虚拟显示），刷新率不足 60Hz；本机 CPU/bench 数据不得据此下 60fps 结论。"
-    Write-Log "请在 >=60Hz、具备 GPU 适配器的目标机复测，并回填 design/reports/target-machine-60fps-template.md。"
+    Write-Log "帧成本判定（avg/p95 <= 16.7ms）只反映渲染管线工作成本；「墙钟稳定 60fps」还需 vsync 模式下墙钟 fps >= 59（见 design/reports/target-machine-60fps-2026-11-08.md §4 的两级口径）。"
+    Write-Log "请在 >=60Hz 物理显示器目标机复测（步骤见该报告「物理目标机复测指引」节），并回填 design/reports/target-machine-60fps-template.md。"
     Write-Log ("日志已写入: " + $script:LogPath)
     Write-Log "========== 结束 =========="
 }
