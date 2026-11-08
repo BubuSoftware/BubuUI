@@ -40,4 +40,11 @@
             </StackPanel>
         </ScrollViewer>
     </Grid>
+
+    <TextBlock FontSize="13">VirtualizingStackPanel - 1000 items, viewport realizes ~10</TextBlock>
+    <Grid RowDefinitions="150">
+        <ScrollViewer>
+            <VirtualizingStackPanel Ref={virtualList} ItemCount="1000" Gap="4" />
+        </ScrollViewer>
+    </Grid>
 </StackPanel>

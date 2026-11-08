@@ -929,6 +929,7 @@ Build(Compilation c):                       // 纯函数：同样的 Compilation
 | **C4** ✅（2026-11-05） | 组件标签：参数元数据（`[UiParameter(Required=true)]`、`{P}Changed`）、委托事件、默认内容、生命周期与作用域释放；生成器集成测试 | 第三方/自定义组件可写入 `.ui`；参数/内容生成与 spec/02 §4.12 一致 —— ✅ 全部落地（落地记录见 §14.12.4） | `TemplateGenerator.cs`、`Emitter.cs`、`Component.cs`、`Metadata/UiCatalogFactory.cs`、`Analyzer.cs` |
 | **C5** ✅ | `Ref`（G3）；保留语法诊断与剩余分析器收敛（**EUI019/EUI020/EUI021** 使用点与 **EUI029**；EUI025/EUI031 已由 C3 落地，EUI033 为 S2 既有） | G3 非反应式缺口收敛；诊断不再落"未知" | `Analyzer.cs`、`Emitter.cs` |
 | **C6** | 具名插槽 + `ContentSlot` 宿主（✅ 2026-11-05，§14.12.6）；附加属性实拆留 G4，泛型标签暂缓（K19） | 与 03 语法表对齐 | 编译器/运行时/样式 |
+| **G4-列表虚拟化** ✅（2026-11-09） | `VirtualizingStackPanel : Panel`：`ItemCount` + `ItemFactory`（index → 容器）只实例化视口窗口（含上下各 1 缓冲）；extent = 均匀行高 × 数（行高取 item 0 测量期望）；滚动时在 **ArrangeCore** 同步窗口（滚动只触发 Arrange 失效、Measure 被约束短路）；窗口外容器出树即释放，item 0 容器留作探针缓存；无 ScrollViewer 祖先时退化全量纵向堆叠（变高可用）。后续片：容器复用（pooling）、变高行、item 模板编译为 RenderUnit（design/05 意图全量） | 10 万行 RealizedCount=22；滚动/滚轮/Gap/退化/Refresh 7 例 | `VirtualizingStackPanel.cs`、`VirtualizingStackPanelTests.cs` |
 | **G4-ScrollViewer** ✅（2026-11-09） | `ScrollViewer : Panel` 滚动视口：首子元素为内容，测量纵给无穷量出 `ExtentHeight`、视口 = min(extent, 可用)（可用无限=不滚动）；`VerticalOffset`/`HorizontalOffset`（Arrange 失效）+ `ScrollTo*/ScrollToEnd/ScrollToHome`（使用点钳制、属性不回写避免排列循环）；滚轮路由 `PointerWheelChanged`（Bubble，InputRouter 命中冒泡；Win32 `WM_MOUSEWHEEL` 已接线，一格 120 刻度 = 48px）；绘制侧强制 PushClip 视口 + 叠加滚动条拇指（`ScrollBarThumb` 主题色）。v1 不做：拇指拖拽命中、键盘滚动、Shift 横滚（横滚仅 API 通路） | 7 例 Headless（overflow/钳制/滚轮消费/约束行/无穷退化/Padding/空）+ 2 例 Rendering（强制裁剪 + 拇指位置） | `ScrollViewer.cs`、`Input.cs`、`InputRouter.cs`、`ElementPainter.cs`、`ElementTheme.cs` |
 | **G4-Grid 布局** ✅（2026-11-09） | `Grid : Panel` 行列布局：`RowDefinitions`/`ColumnDefinitions` 紧凑串（`Auto,*,2*,120`，未设置退化单星）、`Gap` 轨道间距；测量单遍（固定轨精确约束/Auto 取格内最大期望/星号分剩余，可用无限时星号退化按内容）、排列按最终尺寸重解星号；`Grid.Row`/`Grid.Column` 越界钳制；同格叠放；空透明块不占格（D77）；非法定义 `FormatException` fail-fast。不排期：RowSpan/ColumnSpan（后续片） | 固定/Auto/星号/混合/Gap+Padding/钳制/退化 14 例直测 + 模板全管线端到端（`RowDefinitions="60,Auto"` `ColumnDefinitions="*,2*"`） | `Grid.cs`、`GridTests.cs` |
 | **G4-附加属性** ✅（2026-11-09） | 附加属性首批切片（§14.5.5）：`AttachedProperty<T>` 弱表存储 + `Grid` 静态类载体（Row/Column）、目录 `UiAttachedPropDef` + 扫描规则（顶层宿主/访问器配对/冲突）、EUI031 解禁 → 未知点号落 EUI002、生成直调静态 setter（字面量/表达式 U{N}/R{N}）；组件标签可携带；表面快照 +2 项 | 模板 `Grid.Row="1"` → `Grid.GetRow(el)` 取值正确；234 Compiler / 298 Headless 用例绿 | `AttachedProperty.cs`、`Grid.cs`、`UiCatalogModel.cs`、`UiCatalogFactory.cs`、`Analyzer.cs`、`Ast.cs`、`Emitter.cs` |
@@ -960,10 +961,11 @@ C4 只负责组件标签与参数/内容元数据，C5 只保留 `Ref` 与语法
 | `WrapPanel` | `Children:Children` | `ClipToBounds`、`Gap`、`IsHitTestVisible`、`Orientation`、`Padding` | — |
 | `Grid` | `Children:Children` | `ClipToBounds`、`ColumnDefinitions`、`Gap`、`IsHitTestVisible`、`Padding`、`RowDefinitions` | — |
 | `ScrollViewer` | `Children:Children` | `ClipToBounds`、`HorizontalOffset`、`IsHitTestVisible`、`Padding`、`VerticalOffset` | — |
+| `VirtualizingStackPanel` | `Children:Children` | `ClipToBounds`、`Gap`、`IsHitTestVisible`、`ItemCount`、`Padding` | — |
 | `ListBoxItem` | `Children:Children` | `ClipToBounds`、`Gap`、`IsHitTestVisible`、`Padding` | — |
 | `StackPanel` | `Children:Children` | `ClipToBounds`、`Gap`、`IsHitTestVisible`、`Padding` | — |
 | `TextBlock` | `TextRuns:—` | `ClipToBounds`、`FontSize`、`IsHitTestVisible`、`Padding` | — |
-| **合计** | 8 标签 | **33 属性项** | **66 事件项** |
+| **合计** | 9 标签 | **38 属性项** | **74 事件项** |
 
 隐藏标签 4 个（`Component`/`Element`/`Panel`/`StackPanelBase`，均 EUI017「类型是抽象的」）；
 `TextRun`/`ConditionalBlock`/`ForEachBlock<T>` 走 `[UiIgnore]` 完全退出表面，不进 `HiddenTags`。

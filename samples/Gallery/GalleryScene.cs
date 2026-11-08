@@ -29,10 +29,12 @@ public static class GalleryScene
         taskList.Mount();
         SetPadding(taskList.Root, 16);
 
-        // 控件展示区（G4 布局切片）：Grid 行列布局 + WrapPanel 流式换行。
+        // 控件展示区（G4 布局切片）：Grid 行列布局 + WrapPanel 流式换行 + 滚动 + 虚拟化。
         var showcase = new Showcase();
         showcase.Mount();
         SetPadding(showcase.Root, 16);
+        showcase.virtualList.ItemFactory =
+            i => new Button { Label = $"virtual item {i + 1}" };   // 1000 行只实例化视口可见
 
         var addTaskButton = new Button { Label = "+ Add task" };
         var nextId = 4;
