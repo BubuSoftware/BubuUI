@@ -130,6 +130,16 @@
 > 760px 视口，交互演示复位到 showcase 之前，selfcheck PASS。
 > **659 个用例（Headless 332 / Compiler 241 / Rendering 86），全绿**。
 >
+> **G4 样式系统首批已通过（2026-11-09，D98/D99）**：**S-A 主题令牌化**——`ElementTheme` 变可替换
+> token 表（virtual + Dark/Light 预置），`ReplaceTheme` 换表丢段 + 整帧重绘，`WindowHost.SetTheme`
+> 运行时切换，Gallery「Toggle theme」双宿主接线（亮暗一键切换）。**S-B Class 样式 + 有效值分层**——
+> 属性系统落分层（local > class > 继承 > 默认，失效语义同 SetValue）；`Element.Classes` +
+> `Styling.Provider` 注入，`StyleRegistry` 类名直配 setter 序列（无运行时选择器引擎，AOT 友好）；
+> `Visual` 覆盖属性（Background/Foreground/CornerRadius）+ painter 读覆盖回落主题（未设置零漂移）；
+> Gallery primary/tool 双 class 演示。模板 `Class` 语法与编译期类名校验、按主题资源查找留下一片；
+> `Style=` 内联（S-C）与控件模板（S-D）远期。
+> **668 个用例（Headless 332 / Compiler 241 / Rendering 95），全绿**。
+>
 > **表达式语义预检已通过（2026-11-09，EUI049 Warning）**：属性 `{expr}`、`@if` 条件、插值文本段
 > 经探针编译在使用点直接提示「拼错成员/类型不匹配」（CS0103/CS0029），不再等 C# 编译才发现；
 > Warning 不短路生成——类型错误仍经 `#line` 由 C# 报权威错误（spec/02 §2.4 规则 11）。
@@ -347,8 +357,9 @@ public partial class Counter
 - 渲染：`DisplayList` → Vello CPU（PNG/CI）与 GPU surface（真实窗口）两条路径已通；
   scene graph 与元素级 damage（空闲跳帧）已落地（G2 第二/三切片）；
   **retained 构建层已落地（D93 段级缓存，帧间命令构造趋零）**；真正的局部重绘（脏区光栅化）
-  等 VelloSharp 提供 scissor API，合成器与样式系统仍未实现；
-  主题是 `ElementTheme` 临时数据，文本主/次色暂按字号阈值区分。
+  等 VelloSharp 提供 scissor API，合成器仍未实现；
+  样式系统首批已落（D98/D99：主题 token 可替换 + 亮暗切换、Class 样式 + 有效值分层）——
+  模板 Class 语法、按主题资源查找、`Style=` 内联与控件模板留后续片。
 - 字体 fallback 未实现（缺字显示 `.notdef`）；CPU 光栅化每次约 60 ms 固定开销，仅用于 CI/离线导出。
 - 3D：**不提供 3D 引擎**。规划为 WebGPU 视口控件——应用自带渲染器，框架负责布局、
   裁剪、DPI、输入与纹理合成（见 [05 布局、渲染与输入](./design/05-layout-rendering-input.md) 与 G7）。
@@ -393,5 +404,6 @@ IDE/DevTools 随后。
    出口标准 = D85–D88 关闭 + 样例与 golden 迁移 + 用例基线全绿（497 → 548）；计划见 [16](./design/16-blazor-alignment-plan.md)。
 4. **G4 样式/控件/虚拟化**：~~`VirtualizingPanel`~~ ✅（2026-11-09，窗口虚拟化 + 均匀行 extent）；
    基础控件集首批 ✅（WrapPanel/Grid/ScrollViewer/附加属性/Unmount，2026-11-09）；
-   余选择器编译、亮暗主题、样式系统。
+   ~~主题切换~~ ✅ D98、~~Class 样式 + 有效值分层~~ ✅ D99（2026-11-09）；
+   余模板 Class 语法、按主题资源查找、`Style=` 内联（S-C）、控件模板（S-D）。
 5. **G5 IDE P0–P1**：TextMate grammar + LSP server（表达式投影进 Roslyn）+ VS Code/Rider 壳。

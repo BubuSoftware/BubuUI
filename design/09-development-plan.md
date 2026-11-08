@@ -78,7 +78,7 @@
 | 文本 | 🟡 单行 shaping 已接入 | 断行、bidi、fallback、emoji、glyph 缓存、display list 集成 |
 | 输入/焦点 | 🟡 元素路由已通 | 字符输入/IME、滚轮/触摸、Shift+Tab、无障碍 |
 | 渲染/合成器 | 🟡 scene graph + 上屏 + damage v0 + retained 构建层（✅ D93） | 脏区光栅化（上游 scissor API）、合成器、帧预算门槛 |
-| 样式/主题 | 🔴 未开始 | 选择器编译、资源查找、亮暗主题、控件模板 |
+| 样式/主题 | 🟡 令牌 + Class 样式已落（2026-11-09，D98/D99） | 模板 Class 语法与编译期类名校验、按主题资源查找、`Style=` 内联（S-C）、控件模板（S-D） |
 | 控件库 | 🟡 极简 | TextBlock/Button/CheckBox/StackPanel/ListBoxItem 之外的基础控件 |
 | IDE | 🔴 未开始 | TextMate、LSP server、VS Code/Rider 壳 |
 | 工具链 | 🔴 基本未开始 | 热重载、断点映射、DevTools、无头测试 SDK |
@@ -461,6 +461,16 @@ CPU 侧部分收敛（2026-11-08/D84）：CPU 像素 golden（`PixelGoldenTests`
 **范围**
 
 - 选择器编译（AOT 友好）、样式优先级、资源查找、亮暗主题。
+  —— ✅ **S-A 主题令牌化（2026-11-09，D98）**：`ElementTheme` 变可替换 token 表（virtual 令牌 +
+  静态 Dark/Light 预置）；`ElementPainter.ReplaceTheme` 换表丢弃全部段缓存（段内命令持有颜色
+  快照）+ 重置脏区，下一帧整帧重绘；`WindowHost.SetTheme` 运行时切换；Gallery「Toggle theme」
+  按钮双宿主接线。**S-B Class 样式 + 有效值分层（2026-11-09，D99）**：属性系统落分层
+  （local > class > 继承 > 默认，失效语义与 SetValue 一致）；`Element.Classes` +
+  `Styling.Provider`（`IStyleProvider` 注入，Rendering 层 `StyleRegistry` 类名直配 setter 序列、
+  无运行时选择器引擎；晚装配补应用 pending 声明）；`Visual` 附加属性组（Background/Foreground/
+  CornerRadius，null=不覆盖）+ painter 读覆盖回落主题（未设置零漂移）；「显式取消覆盖」=
+  `ClearLocalValue`（null 值盒不占层）。模板 `Class` 语法（目录/生成器/编译期类名校验）与
+  按主题资源查找留下一片；`Style=` 内联（S-C）与控件模板（S-D）远期。
 - 控件集：ListBox、TextBox、ScrollViewer ✅（2026-11-09）、Grid ✅、WrapPanel ✅、Slider 等。
 - `VirtualizingPanel` 与 item 模板的容器复用。—— ✅ **v1 切片（2026-11-09）**：元素级 `VirtualizingStackPanel`（ItemCount + ItemFactory、视口窗口实例化、均匀行高）；容器复用（pooling）、变高行、item 模板编译 RenderUnit 留后续片。
 - 状态与反应式 S4：组件所有权/深度排序、参数推送与相等保护、异步/后台失效、`ShouldRender`（[spec/03 §13.1](../spec/03-reactivity-and-binding.md#131-阶段定义)）。
@@ -472,7 +482,9 @@ CPU 侧部分收敛（2026-11-08/D84）：CPU 像素 golden（`PixelGoldenTests`
 
 **出口标准**
 
-- 主题切换 demo；样式变更只重排/重绘受影响子树。
+- 主题切换 demo；样式变更只重排/重绘受影响子树。—— ✅ 主题切换 demo（Toggle theme，D98）；
+  样式值变更按属性失效级别触发重算（与 SetValue 同一失效路径，D99）——整帧重绘为当前上屏粒度
+  （脏区光栅化等上游 scissor API）。
 - 1000+ 条目列表滚动流畅；容器复用有测试。
 - 状态与反应式 S4 出口按 [spec/03 §13.1](../spec/03-reactivity-and-binding.md#131-阶段定义)：所有权/参数推送/异步失效/`ShouldRender` 测试通过。
 
