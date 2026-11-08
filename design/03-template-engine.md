@@ -780,7 +780,7 @@ parent0.Children.Add(c0.Root);   // 最后挂到父级
 
 | # | 规范 | 当前实现 | 影响 | 收敛 |
 |---|---|---|---|---|
-| D1 | `:value` 是弃用别名（≡ `P={expr}`），报 `EUI043` Warning | Parser 只识别 `:bind`，`P:value` 进入属性名 → `EUI002`（[Parser.cs:147](../src/EclipseUI.Compiler/Parser.cs#L147)） | 用户在正确语法上收到拼写错误 | S3 |
+| D1 | `:value` 是弃用别名（≡ `P={expr}`），报 `EUI043` Warning | ✅ S6（K27）：旧语法 `P:bind`/`P:value` 直接移除，解析到 `:` 后缀属性名即报 `EUI046` Error；`EUI043` 停用且保持停用（[Parser.cs](../src/EclipseUI.Compiler/Parser.cs)） | 不再有静默降级或误导性拼写错误 | ✅ S6 |
 | D2 | ✅ C3：`Class`/`Style` 在使用点报 `EUI031`（G4 实现样式后语义不变） | 已修复（2026-11-03，[Analyzer.cs](../src/EclipseUI.Compiler/Analyzer.cs)） | ✅ C3 |
 | D3 | ✅ C3：`<Slot>`/`<ContentSlot>` 在使用点报 `EUI031`（仅当目录无同名真实控件；G4 实现后有插槽错误从 `EUI022` 报） | 已修复（2026-11-03） | ✅ C3 |
 | D4 | `Ref` G3，当前应报保留/`EUI029` | 未知属性 → `EUI002` | 同上 | C5 |
@@ -790,7 +790,7 @@ parent0.Children.Add(c0.Root);   // 最后挂到父级
 | D8 | `Key` 只允许 `@foreach` item 根 | ✅ S2：`VisitBlock` 仅对 `@foreach` 的第一个元素根放行 `Key`，`@if` 报 `EUI010`（[Analyzer.cs](../src/EclipseUI.Compiler/Analyzer.cs)） | 误放行已修复 | ✅ S2 |
 | D9 | item 模板禁止组件级状态（`EUI014`）；item 自己的可观察属性与 item `@bind` 允许；`Key` 不得依赖可观察状态（`EUI039`） | 只检查根层元素属性/根层文本并豁免 `Key`（[TemplateGenerator.cs:196](../src/EclipseUI.Compiler.Generator/TemplateGenerator.cs#L196)）；嵌套元素、条件/嵌套块与 `Key` 未查 | 可能生成无订阅/陈旧更新 | S2/S3 |
 | D10 | 重写按符号与目标类型：状态属性直接读、`Signal<T>` 取 `.Value`、item 成员不重写 | 正则盲替换（[Emitter.cs:125](../src/EclipseUI.Compiler.Generator/Emitter.cs#L125)） | 字符串/同名 item/`Signal<T>` 参数误改 | S2（语义模型，同 D31） |
-| D11 | 表达式由 Roslyn tokenizer 捕获 | 手写大括号/字符串扫描（[Lexer.cs:228](../src/EclipseUI.Compiler/Lexer.cs#L228)） | verbatim/raw string、注释内大括号、格式说明符不支持 | C5 |
+| D11 | 表达式按 **C# 词法**捕获 | ✅ S6：`CaptureExpression`/`@code` 体/指令参数统一走 `CSharpSnippet.FindMatchingClose`（[CSharpSnippet.cs](../src/EclipseUI.Compiler/CSharpSnippet.cs)）——跳过 `//`/`/* */` 注释、字符字面量、普通/verbatim/插值/raw 字符串（含插值洞递归与 `{{`/`}}`、`""` 转义、`:F2` 格式符）。刻意不引 Roslyn（前端保持可独立测试），用最小状态机对齐 C# 词法 | 已消除：注释内大括号、`@"a""}""b"`、`"""a}b"""`、`$"{(flag ? "a" : "b")}"` 均正确配对（`ExpressionCaptureTests` 13 例） | ✅ S6 |
 | D12 | 未闭合注释报 `EUI100` | ✅ S6：`SkipComment`/`SkipHtmlComment` 未闭合报 `EUI100`（K26，2026-11-08），静默吞 EOF 行为废止 | 已修复 | ✅ S6 |
 | D13 | 依赖分析按符号解析，可见成员范围由 C# 语义决定（含基类成员；`[UiState]` 基类的 `IUiObservable` 覆盖基类属性） | `GetMembers()` 不扫描基类，基类信号既不被发现也不报错（[TemplateGenerator.cs:81](../src/EclipseUI.Compiler.Generator/TemplateGenerator.cs#L81)） | 基类信号按普通成员生成，值陈旧且无订阅 | S2 |
 | D14 | ✅ C3：无转换器报 `EUI023`（`HasConverter` 区分），格式/范围/成员错仍 `EUI003` | 已修复（2026-11-03，[Analyzer.cs](../src/EclipseUI.Compiler/Analyzer.cs)） | ✅ C3 |
@@ -859,7 +859,7 @@ v4 换轨后，**S1 已收敛（2026-10-30）、S2 已收敛（2026-10-30）、S
 | D60 | ✅ S2：`ForEachBlock.UpdateChildren` 仅在根序列实际变化时改 `Children` | spec/03 §7.3 | ✅ S2 |
 | D61 | ✅ S2：样例与 README 已迁移到普通 CLR 状态；`Signal<T>` 仅留作运行时遗留原语与历史章节说明，不参与模板生成 | spec/02/spec/03 | ✅ S2 |
 | D62 | ✅ C2：`EUI040` 的目标可绑性此前只来自手写目录 `UiPropDef.Bindable`；C1 的派生目录已对每个模板可见属性给出符号级 `CanWrite`（public 可写 + `{Name}Property`），并有覆盖测试证明派生 ⊇ 手写标注；C2 起分析器改读派生 `CanWrite`（[Analyzer.cs](../src/EclipseUI.Compiler/Analyzer.cs) `propDef.CanWrite`） | spec/01 §4.2 | ✅ C2 |
-| D63 | ✅ C1：运行时声明特性落地 `Runtime/UiAttributes.cs`（`UiContentKind`/`[UiTag]`/`[UiContent]`/`[UiIgnore]`/`[UiParameter]`/`[UiSlot]`），内置控件加标注（`Panel`=Children、`Button`/`CheckBox`=Text→Label、`TextBlock`=TextRuns；`TextRun`/`ConditionalBlock`/`ForEachBlock`=`[UiIgnore]`） | design/14 §14.4.6/§14.4.4 | ✅ C1 |
+| D63 | ✅ C1：运行时声明特性落地 `Runtime/UiAttributes.cs`（`UiContentKind`/`[UiContent]`/`[UiIgnore]`/`[UiParameter]`/`[UiSlot]`；`[UiTag]` 已于 K32 退役），内置控件加标注（`Panel`=Children、`Button`/`CheckBox`=Text→Label、`TextBlock`=TextRuns；`TextRun`/`ConditionalBlock`/`ForEachBlock`=`[UiIgnore]`） | design/14 §14.4.6/§14.4.4 | ✅ C1 |
 | D64 | ✅ C1+**C2**：`Compiler.Metadata` 目录模型 + Roslyn 符号扫描器（`UiCatalogFactory.Build`）落地，纯函数、不抛异常，元数据问题进 `Problems`/`HiddenTags`。C1 只建派生、分析器与生成器行为不变；**C2 删除手写目录，分析器/生成器全部读派生目录**（`TemplateGenerator` 管道值 = `UiCatalogFactory.Build(compilation)`） | design/14 §14.5/§14.10.2/§14.12.2 | ✅ C2 |
 | D65 | ✅ C2：`EclipseUI.Compiler.Metadata` 源码链接进生成器程序集（`Compile Include`，排除 Metadata 的 `Polyfills.cs`，诊断码常量经 Metadata→Compiler 单一定义）；测试项目只引用生成器避免重复类型身份 | design/14 §14.10.1/§14.12.2 | ✅ C2 |
 | D66 | ✅ C1：`UiContentKind` 与目录内部 `UiContentModel` 数值一一对应，断言测试 `ContentKind_And_MetadataContentModel_NumbersMatch` | design/14 §14.4.4 | ✅ C1 |

@@ -260,19 +260,21 @@ public string Key { get => ""; set { } }
     [Fact]
     public void AmbiguousTag_ReportsEUI016()
     {
+        // `[UiTag]` 退役后，重名只能来自「不同命名空间的同名类型」——第三方库撞名的主场景。
         const string source = """
 using EclipseUI;
 using EclipseUI.Elements;
 public partial class Probe { }
-[UiTag("Dup")] public class FirstBox : StackPanel { }
-[UiTag("Dup")] public class SecondBox : StackPanel { }
+namespace A { public class DupBox : StackPanel { } }
+namespace B { public class DupBox : StackPanel { } }
 """;
 
-        var result = Run(source, "@using EclipseUI.Elements\n<Dup />");
+        var result = Run(source, "@using A\n@using B\n<DupBox />");
 
         var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI016");
-        Assert.Contains("FirstBox", diag.GetMessage());
-        Assert.Contains("SecondBox", diag.GetMessage());
+        Assert.Contains("A.DupBox", diag.GetMessage());
+        Assert.Contains("B.DupBox", diag.GetMessage());
+        Assert.Contains("@using DupBoxAlt = A.DupBox", diag.GetMessage());
         Assert.DoesNotContain(result.Diagnostics, d => d.Id == "EUI001");
     }
 

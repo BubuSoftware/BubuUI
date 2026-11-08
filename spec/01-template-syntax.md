@@ -61,7 +61,7 @@
 
 ### 1.1 一个文件 = 一个类 = 一个根元素
 
-- 一个 `.ui` 文件只包含一个文档：注释、空白与**恰好一个根元素**（§1.5 目标语法另允许顶层 `@code`/`@using` 指令节点，已随 ✅ S6 实现）。
+- 一个 `.ui` 文件只包含一个文档：注释、空白、顶层 `@code`/`@using` 指令节点与**恰好一个根元素**（§1.5）。
 - 文件名（去扩展名）必须是合法 C# 标识符，并作为生成类名；否则 `EUI013`。
 - code-behind 必须是与文件同名的**顶层 `partial` 类**：
   - 缺失 → `EUI005`；嵌套 → `EUI015`；非 `partial` → `EUI011`。
@@ -75,9 +75,8 @@
 
 ### 1.2 code-behind 与状态
 
-- 当前实现：code-behind 是唯一状态载体（字段、自动属性、方法、辅助类型）。
-  **K23 ④（✅ S6 已实现（2026-11-08））**：状态载体 = 同名 `.cs` partial 类 **与** 模板内 `@code` 成员，
-  二者合并进同一个 partial 类；见 §1.5 / D86。
+- 状态载体 = 同名 `.cs` partial 类 **与** 模板内 `@code` 成员，二者合并进同一个 partial 类（K21/K23 ④）：
+  单文件模板可以只有 `@code`、没有 `.cs`（`EUI005` 放宽为「`@code` 或同名 partial 至少其一」）。
 - 模板作者写**普通类型**：`int`、`string`、`List<T>`、数组、字典、LINQ 结果、普通类/record/struct。
   不需要 `[UiState]`/`[UiObservable]`/`[UiComputed]`，不需要 `INotifyPropertyChanged`，
   集合不需要 `INotifyCollectionChanged`/`ObservableCollection<T>`（spec/03 §1.1）。
@@ -86,8 +85,8 @@
   写入 `.Value` 不会自动刷新，需要显式 `Invalidate()`（spec/03 §4.6）。
 - 非 UI 事件引起的状态变化（后台线程、`await` 续体、定时器、直接改集合/对象）必须显式调用
   `Invalidate()`；控件事件与组件回调的包装会自动失效所属组件（spec/03 §9）。
-- 模板不声明局部变量、类型参数；类成员与命名空间导入按 **§1.5 目标语法**（`@code` / `@using`，
-  K21/K22/K23 ✅ S6 已实现（2026-11-08），当前仍报 `EUI009`）；复杂逻辑放 code-behind 或 `@code`，模板只写 C# 表达式。
+- 模板不声明局部变量、类型参数；类成员与命名空间导入写在 `@code` / `@using` 里（K21/K22），
+  复杂逻辑放 code-behind 或 `@code` 成员，模板只写 C# 表达式。
 
 ### 1.3 编译期与运行期分工
 
@@ -130,21 +129,21 @@
 
 任何违反冻结线的语法提案，必须先在本文登记状态与诊断，再改代码；不接受"先生效、后补文档"。
 
-### 1.5 v3 语法对齐目标（K23，✅ S6 已实现）
+### 1.5 语法对齐（K23，✅ S6 已实现）
 
 > **权威决策**：[spec/02 §14 K23](./02-generated-code-contract.md)（并含 K21 `@code` 位置、K22 `@using` 与标签作用域）。
-> 本节登记的是**目标语法**；本文 §2–§6 描述的是**当前 v2 实现**。凡与本节冲突处以本节为准，
-> 实现差距登记为 [spec/02 §12 D85–D88](./02-generated-code-contract.md#12-实现偏差台账-d42d88)。
-> **当前实现尚未支持下列任何一项**，模板里写它们仍会报错（`EUI009`/`EUI100`/`EUI008`）；
-> 实施排期 **S6 语法对齐**（design/09 §9.5/§9.6），阶段 P0–P6 见 design/16。
+> **状态：✅ S6 已实现（2026-11-08）**——本节语法已全链路落地（词法 → 解析 → 分析 → 探针 → 发射 → 运行时块协调器），
+> 本文 §2–§6 已按实现口径更新，不再区分「目标 / 当前」两套说法。
+> 收敛前快照与逐条关闭条件保留在 [spec/02 §12 D85–D88](./02-generated-code-contract.md#12-实现偏差台账-d42d88)（已关闭，作历史）。
 
-| 目标语法 | 口径 | 决策 | 偏差 |
+| 语法 | 口径 | 决策 | 偏差（已关闭） |
 |---|---|---|---|
-| `@using Ns` | 指令，多条、位置不限；生成文件保留普通 `using Ns;`；标签只在导入命名空间内解析，**内置控件（`EclipseUI.Elements`）无豁免**；未导入 → `EUI001` + 缺失 `@using` 建议 | K22 | D85 |
-| `@code { ... }` | 顶层类成员（字段/属性/方法），可多个块、位置不限、书写顺序不影响可见性；与同名 `.cs` partial **并存**；`EUI005` 放宽为「`@code` 或同名 partial 至少其一」 | K21 + K23 ④ | D86 |
-| `else` / `else if` | **不带 `@`**，紧接前一分支 `}`；生成侧为多分支 `ConditionalBlock` | K23 ③ | D87 |
-| `@switch (...) { case ...: break; default: ... break; }` | `EUI008` 停用，新诊断从 `EUI046` 起 | K23 ③ | D87 |
-| `@* ... *@` | 编译器丢弃的注释；未闭合报 `EUI100`；`<!-- -->` **永久保留为等价合法注释**（K26，双注释并存、不设弃用期） | K23 / K26 | D88 |
+| `@using Ns` | 指令，多条、位置不限；生成文件保留普通 `using Ns;`；标签只在导入命名空间内解析，**内置控件（`EclipseUI.Elements`）无豁免**；未导入 → `EUI001` + 缺失 `@using` 建议 | K22 | D85 ✅ |
+| `@using Alias = Ns.Type` | 别名（K31）：生成 `using Alias = global::Ns.Type;` 供 `@code`/表达式使用；**同时**让 `<Alias/>` 在本模板内解析为该类型，且优先于目录 tag。目标须是目录里的已知元素/组件，否则 `EUI048`。别名**不进**命名空间可见性集合 | K31 | — |
+| `@code { ... }` | 顶层类成员（字段/属性/方法），可多个块、位置不限、书写顺序不影响可见性；与同名 `.cs` partial **并存**；`EUI005` 放宽为「`@code` 或同名 partial 至少其一」 | K21 + K23 ④ | D86 ✅ |
+| `else` / `else if` | **不带 `@`**，紧接前一分支 `}`；生成侧为多分支 `ConditionalBlock` | K23 ③ | D87 ✅ |
+| `@switch (...) { case ...: break; default: ... break; }` | 每个 `case`/`default` 独立分支（无贯穿）；`break;` 必须单独成行；空 section 必须显式写 `break;`（K30）；生成侧 `SwitchBlock<T>` | K23 ③ + K29/K30 | D87 ✅ |
+| `@* ... *@` | 编译器丢弃的注释；未闭合报 `EUI100`；`<!-- -->` **永久保留为等价合法注释**（K26，双注释并存、不设弃用期），两种注释未闭合统一 `EUI100` | K23 / K26 | D88 ✅ |
 | `{expr}` | **保持不变**：单花括号 C# 表达式，文本与属性共用；`@` 不用于表达式（Q1 推荐口径 A 为本波工作基线） | K23 ⑥ | — |
 | 保持不动 | 目录驱动标签/属性、`@bind-P`、`Key`/`Ref`、具名插槽、K1–K18 保留元素树 + 失效重算模型、span 型 `#line`、逐文件增量、EUI 诊断体系 | K23 ① | — |
 
@@ -154,12 +153,15 @@
 `RenderFragment`、`EventCallback`、DI、SSR/WASM。它们不是「待实现」，是**永久不提供**；
 `@switch` 已从保留位转入目标语法，不属此列；泛型标签仍按 K19 暂缓、不排期。
 
-**实施细节已拍板（2026-11-08，K24–K29，见 spec/02 §14）**：K24 `@for`/`@while`/`@do` 本波不提供
+**实施细节已拍板（2026-11-08，K24–K30，见 spec/02 §14）**：K24 `@for`/`@while`/`@do` 本波不提供
 （`EUI009` + 改写建议）；K25 `@code` 内容边界（嵌套类型允许、块内 `using` 不允许、空块合法、
 顶层语句交 C#、`EUI045` 只扩到生成保留名冲突）；K26 `<!-- -->` 永久保留为等价注释（无弃用期）；
 K27 `P:bind`/`P:value` 本波移除（`EUI043` 停用、新增 `EUI046`）；K28 `@{ }` 不采纳（`EUI100`）；
 K29 `@switch` 分支体为完整内容模板、case 标签须编译期常量（`EUI047`）、无贯穿但要求 `break`、
-`default` 至多一个。Q5 三项类形状指令已由 K23 ② 定为不做。
+`default` 至多一个；K30 section 边界口径（`break;` 单独成行；空 section 必须显式 `break;`，
+`case 1:` 紧跟 `case 2:` 不是 C# 式标签组，报 `EUI100`）。**K31**（2026-11-09）：`@using Alias = Ns.Type`
+一体两用——生成 C# 别名行（Blazor 口径）并登记模板标签别名（本框架扩展，优先于目录 tag）；
+目标不在目录、重复声明、与已导入命名空间同名报 `EUI048`。Q5 三项类形状指令已由 K23 ② 定为不做。
 
 ## 2. 词法
 
@@ -168,7 +170,7 @@ K29 `@switch` 分支体为完整内容模板、case 标签须编译期常量（`
 - 扩展名 `.ui`，以 `AdditionalFiles` 进入编译；编码按 Roslyn 文本读取（UTF-8）。
 - 文件名（去扩展名）必须是合法 C# 标识符；否则 `EUI013`。
 - 换行支持 LF/CRLF；`#line` 使用 1 基行/列坐标（span 形态见 spec/02 §2.4）。
-- 一个文件只包含一个文档；文件级只有注释、空白和一个根元素（§3.2）。
+- 一个文件只包含一个文档；文件级只有注释、空白、根层 `@using`/`@code` 指令和一个根元素（§3.1/§3.2）。
 
 ### 2.2 两种扫描模式
 
@@ -194,7 +196,8 @@ bind-attr  ::= "@bind-" attr-base
   泛型标签按 K19 暂缓实现、不排期（`EUI030` 为保留位诊断，当前写法落 `EUI100`）。
 - 属性名支持 `Owner.Name` 形状仅为附加属性预留（G4，如 `Grid.Row`）；
   附加属性实现前报保留诊断 `EUI031`，不退化为 `EUI002`。
-- 末尾 `:ident` 是旧修饰符：`bind` / `value` 均已弃用（S3 起 `EUI043`）；
+- 末尾 `:ident` 是旧修饰符：`bind` / `value` **已移除**（K27）：`P:bind`/`P:value` 报 `EUI046`（Error），
+  提示改写为 `@bind-P={...}` / `P={...}`；`EUI043` 停用且保持停用；
   其它修饰符按未知属性处理 `EUI002`。
 - `@bind-P` 是双向绑定的**独立属性形态**：只出现在标记模式的属性名位置，
   `@bind-` 是字面前缀，`P` 是 `attr-base`；它不是指令，不参与 `@if`/`@foreach` 的 `@name` 解析。
@@ -202,8 +205,8 @@ bind-attr  ::= "@bind-" attr-base
   - `@bind-P:bind` 或 `@bind- P`（带空白）是语法错误 `EUI100`。
   - 不得绑定保留属性 `Key`/`Ref`/`Class`/`Style`、事件 `On*` 或 `[UiContent]`/`[UiSlot]` 参数 → `EUI040`。
 - 名字**大小写敏感**；标签冲突由目录报 `EUI016`。
-  **K22（✅ S6 已实现（2026-11-08），§1.5 / D85）**：标签只在模板 `@using` 导入的命名空间内解析，内置控件无豁免，
-  未导入报 `EUI001` + 缺失 `@using` 建议；当前实现仍是全局短名目录、不做命名空间优先级。
+  标签只在模板 `@using` 导入的命名空间内解析（K22 / D85 ✅），内置控件无豁免，未导入报 `EUI001` +
+  缺失 `@using` 建议；全局命名空间里的类型始终可见；同名多解仍报 `EUI016`。
 - `Key` / `Ref` / `Class` / `Style` 是保留属性名，控件不得声明同名属性（design/14 §14.4.2）。
 
 实现说明：当前 `Lexer` 接受比规范更宽的名字字符集（含 Unicode 字母与 `.`/`:`/`-` 开头），
@@ -220,8 +223,8 @@ bind-attr  ::= "@bind-" attr-base
 | `{...}` | C# 表达式（§2.6） |
 | `@bind-属性名` | 双向绑定属性（仅标记模式属性位置，§2.3） |
 | `@name` / `@name(...)` | 指令（§2.7） |
-| `<!-- ... -->` | 注释（§2.9，当前实现） |
-| `@* ... *@` | 注释（§1.5 目标语法，K23/D88，已随 ✅ S6 实现） |
+| `<!-- ... -->` | 注释（§2.9，与 `@* *@` 等价） |
+| `@* ... *@` | 注释（§2.9，K23/K26） |
 
 - 标签/属性之间允许任意空白与换行；`<StackPanel>`、`<StackPanel >`、
   `<StackPanel\n  Gap="8"\n>` 等价。
@@ -240,14 +243,13 @@ bind-attr  ::= "@bind-" attr-base
 
 `{ csharp-expression }`：
 
-- 从 `{` 开始按平衡大括号捕获；`"` 和 `'` 字符串内部的大括号不计数；`\` 转义字符串内的下一个字符。
+- 从 `{` 开始按平衡大括号捕获，配对由**C# 片段扫描器**完成（D11，`CSharpSnippet`）：
+  普通字符串、verbatim `@"..."`、raw `"""..."""`、插值字符串 `$"..."`（含插值洞与格式说明符）、
+  字符字面量 `'c'`、行/块注释里的 `{`/`}` 都**不计数**。
 - 可以包含嵌套 `{}`、lambda 块体、`=>`、泛型 `<...>`；`>` 不会截断表达式。
 - 表达式必须是 **C# 表达式**，不是语句/声明。需要复杂逻辑时调用 code-behind 方法或在 code-behind 里准备好值。
-- 当前词法限制（由当前扫描器决定，C5 换 Roslyn tokenizer 后消除）：
-  - 不支持 verbatim 字符串 `@"..."` 与 raw string `"""..."""`；
-  - 不支持 C# 注释里出现不平衡的 `{`/`}`；
-  - 不支持插值格式说明符：`{price:F2}` 会被当作表达式 `price:F2`，不是合法 C#；
-    请写 `{price.ToString("F2")}`。
+- **不提供插值格式说明符**（语言规则，不是扫描限制）：文本里的 `{price:F2}` 就是表达式 `price:F2`，
+  不是合法 C#。要格式化就写 `{price.ToString("F2")}`。
 - 空表达式 `{}`、不完整表达式不在词法层报错，交给生成代码的 C# 编译错误（经 `#line` 指回 `.ui`）。
 - 文本/指令里的表达式不做 trim；C# 自行忽略外围空白。
 - 表达式**原样输出**：生成器不做 `Signal<T>` 裸名重写、不做语义模型改写；
@@ -255,17 +257,23 @@ bind-attr  ::= "@bind-" attr-base
 
 ### 2.7 指令
 
-- `@name` 后可选 `(...)`；括号按平衡圆括号捕获，字符串感知；指令名只含字母/数字/`_`。
-- 当前实现：`@if (...)`、`@foreach (...)`（单分支）。
-- **目标语法（K23 ③，§1.5 / D87，已随 ✅ S6 实现）**：`else`/`else if` 续接（不带 `@`）、`@switch`（`case`/`break`/`default`）。
-- `@switch`：当前实现保留并报 `EUI008`、不解析块体；**K23 ③ 已定转实现（§1.5 / D87），`EUI008` 停用**。
+- `@name` 后可选 `(...)`；括号按平衡圆括号捕获（同 §2.6 的 C# 片段扫描：字符串/注释/插值感知）；
+  指令名只含字母/数字/`_`。
+- 指令全集（K21–K31，✅ S6 + K31）：`@if (...)`、`@foreach (...)`、`@switch (...)`、`@code { ... }`、
+  `@using Ns`、`@using Alias = Ns.Type`；`else` / `else if (...)` 是不带 `@` 的续接（紧接前一分支的 `}`，
+  由词法一次性识别）。
+- `@using` 只接受两种形态，**同一行内写完**：命名空间导入与类型别名。`@using (...)`、`@using static`、
+  `@using Ns;`（尾分号）、泛型别名、`A.B = ...`（别名必须是单个标识符）都在词法层报 `EUI100` 专属消息，
+  且错误 token 吞掉整行——绝不把残余字符交回文本模式（否则会报成与写法无关的 `EUI006`）。
+  别名语法与语义见 §4.17。
+- `@switch` 的块体形态见 §4.16；`EUI008` 随其转实现而停用，停用码保持停用。
 - `@bind-属性名` 只在标记模式属性位置识别，不是指令；文本模式写 `@bind` 仍是未知指令 `EUI009`。
-- 其它 `@name`：`EUI009`。**`@using`/`@code` 按 §1.5 已定为合法指令（已随 ✅ S6 实现），实施后 `EUI009` 收窄到明确拒绝清单**；
-  Web/类形状指令（`@page`/`@rendermode`/…）按 K23 ② **永久不提供**，仍报 `EUI009`。
-- `@` 没有文本转义；要输出字面 `@`，写 `{"@"}`。
-- 当前实现：指令只允许出现在元素内容或块内容中，不能出现在文档根。
-  **§1.5 目标语法**：文档顶层额外允许 `@code`/`@using`（K21/K22/K23），`EUI006`/`EUI012` 改为
-  「元素根节点恰好 1 个 + 顶层非元素节点仅限 `@code`/`@using`/注释」。
+- 其它 `@name`：`EUI009`（收窄到明确拒绝清单：`@for`/`@while`/`@do` 给 `@foreach` 改写建议，K24；
+  `@page`/`@rendermode` 等 Web/类形状指令按 K23 ② 永久不提供）。
+- `@` 没有文本转义；要输出字面 `@`，写 `{"@"}`。`@` 后跟 `{`（代码语句块）按 K28 不采纳，报 `EUI100`。
+- 文档顶层（根层）除唯一元素外，还允许 `@code` / `@using` / 注释（K21/K22）；
+  其它指令出现在根层仍是 `EUI012`（元素根数量）或 `EUI100`。
+  孤立出现的裸 `else`（前面没有 `@if` 分支）不是续接，按普通文本处理并落 `EUI006`。
 
 ### 2.8 文本与特殊字符
 
@@ -285,11 +293,12 @@ bind-attr  ::= "@bind-" attr-base
 
 ### 2.9 注释
 
-- `<!-- ... -->` 只在文本模式识别；不能写在标签内部。
+- 两种等价注释（K26）：`<!-- ... -->` 与 `@* ... *@`，都只在文本模式识别；不能写在标签内部。
+  两套并存、`<!-- -->` **不设弃用期**（语义未改义，`@* *@` 是新增语法）。
 - 注释不嵌套；内容丢弃，不进入 AST，不是 trivia；相邻文本会拼成同一文本节点
   （`a<!--c-->b` → `ab`）。
-- 未闭合注释报 `EUI100`（当前实现静默消费到文件尾，见 design/03 D12 / D88）。
-- **§1.5 目标语法（已随 ✅ S6 实现）**：新增 `@* ... *@`，两种注释都不得吞到文件尾；`<!-- -->` 按 §8 规则 2 走弃用期（形态待 Q6）。
+- **未闭合的两种注释都报 `EUI100`**，且词法推进到文件尾（不得静默吞尾、也不得停在原地导致解析死循环；
+  D12 / D88）。
 - 注释不参与 pretty-printer（当前没有 pretty-printer）。
 
 ### 2.10 空白与规范化
@@ -309,8 +318,8 @@ bind-attr  ::= "@bind-" attr-base
 ### 3.1 EBNF
 
 ```ebnf
-document      ::= node* EOF
-node          ::= element | text-run | if-block | foreach-block
+document      ::= { using-directive | code-block | node } EOF
+node          ::= element | text-run | if-block | foreach-block | switch-block
 
 element       ::= "<" tag-name attribute* ( "/>" | ">" node* "</" tag-name ">" )
 attribute     ::= ( attr-name | bind-attr ) "=" ( string | expression )
@@ -320,7 +329,16 @@ bind-attr     ::= "@bind-" attr-base
 text-run      ::= ( text-char | expression )+
 
 if-block      ::= "@if" "(" csharp-expression ")" "{" node* "}"
+                 { "else" "if" "(" csharp-expression ")" "{" node* "}" }
+                 [ "else" "{" node* "}" ]
 foreach-block ::= "@foreach" "(" "var" ident "in" csharp-expression ")" "{" node* "}"
+switch-block  ::= "@switch" "(" csharp-expression ")" "{" section* "}"
+section       ::= ( "case" csharp-expression ":" | "default" ":" ) node* "break" ";"
+
+using-directive ::= "@using" namespace
+                 |  "@using" ident "=" type-name      // K31：类型别名（同时是标签别名）
+type-name      ::= [ "global::" ] ident ( "." ident )*
+code-block      ::= "@code" "{" csharp-member* "}"
 
 expression    ::= "{" csharp-expression "}"
 string        ::= '"' raw-char* '"'
@@ -328,19 +346,23 @@ string        ::= '"' raw-char* '"'
 
 说明：
 
-- **K21 / K22 / K23（✅ S6 已实现（2026-11-08），见 §1.5）**：`document` 顶层将额外允许 `@code` / `@using` 指令节点，
-  并加入 `else`/`else if`/`@switch` 分支续接；下方 EBNF 仍是当前实现的 v2 现状，实施时随整波一起改写。
+- 顶层（`document`）允许 `@using` / `@code` / 注释与任意节点；`@code`/`@using` 不进入元素内容（K21/K22）。
+- `using-directive` 的别名形态（K31）左侧必须是**单个标识符**（不能是 `A.B`），右侧是类型名（可带 `global::`），
+  且整条指令写在同一行——别名用于在模板内给重名控件起短名，见 §4.17。
+- `else` / `else if` 是 `@if` 的续接，**不带 `@`**，必须紧接前一分支的 `}`（K23 ③）。
+- `switch-block` 的 `case`/`default` 头、`break;` 与分支体文本都是裸文本形态，
+  由解析器按 C# 片段扫描 + 行首标记拆开（见 §4.16）。
 - `text-char` 排除 `<`、`{`、`}`、`@`；注释在词法层删除，不进入 `node*`。
 - 结束标签必须与开始标签同名（区分大小写）；自闭合 `<X />` 等价于 `<X></X>`。
 - `attribute` 必须有值；不允许只写属性名。
 - `bind-attr` 的值**必须**是 `expression`：`@bind-P="true"` 报 `EUI037`（不是字面量转换）。
-- 同一元素上 `@bind-P` 与 `P=`/`P:bind`/`P:value` 同时出现 → `EUI033`（同一目标重复赋值）；
+- 同一元素上 `@bind-P` 与 `P=` 同时出现 → `EUI033`（同一目标重复赋值）；
   完全相同的属性名重复 → `EUI025`。
-- 当前实现：根层（`document`）在去掉注释/空白后必须恰好是一个 `element`；`text-run` 或块出现在根层是 `EUI006`，
-  0 个或多个元素根是 `EUI012`。**§1.5 目标语法**放宽顶层非元素节点为 `@code`/`@using`/注释（D86/D85）。
+- 根层（`document`）在去掉注释/空白后必须恰好是一个 `element`，另允许顶层 `@code`/`@using` 指令节点；
+  `text-run` 或控制流块出现在根层是 `EUI006`，0 个或多个元素根是 `EUI012`（K21/K22，D85/D86 ✅）。
 - `node*` 的合法组合由内容模型进一步限制（§4.9），句法层先接受再语义拒绝。
-- 当前实现没有 `else`、`else if`、`@switch`、`@code`、`@using`；**它们按 §1.5（K21/K22/K23）已定为目标语法（已随 ✅ S6 实现）**。
-  `@inherits`/`@model`/`@page`/`@rendermode` 等按 K23 ② 永久不提供；未知 `@` 指令是 `EUI009`。
+- `@inherits`/`@model`/`@page`/`@rendermode` 等按 K23 ② 永久不提供；`@for`/`@while`/`@do` 按 K24 不提供；
+  未知 `@` 指令是 `EUI009`，`@{}` 语句块按 K28 报 `EUI100`。
 - 泛型标签（`DataGrid<Order>`）、附加属性（`Grid.Row`）不在当前句法内；附加属性按 G4 保留，
   泛型标签按 K19 暂缓、不排期（§4.15）。
   插槽标签（`<Slot>`/`<ContentSlot>`）是**句法级保留名**：解析器特判成槽节点（§4.15），
@@ -351,12 +373,17 @@ string        ::= '"' raw-char* '"'
 | 规则 | 诊断 | 状态 |
 |---|---|---|
 | 文档恰好一个根元素 | `EUI012` | ✅ |
-| 根层不允许文本或控制流块 | `EUI006` | ✅ |
+| 根层不允许文本或控制流块（`@code`/`@using`/注释除外） | `EUI006` | ✅ |
 | 开始/结束标签同名且大小写一致 | `EUI100` | ✅ |
 | 属性必须有 `=` 和值 | `EUI100` | ✅ |
 | 同一元素重复属性 | `EUI025` | ✅ C3（纯普值同名重复；任一侧是绑定的同名重叠仍 `EUI033`，见 §3.3） |
-| `@if`/`@foreach` 只能出现在 `Children` 内容模型内 | `EUI006` | ✅ |
+| `@if`/`@foreach`/`@switch` 只能出现在 `Children` 内容模型内 | `EUI006` | ✅ |
 | 块内容只允许元素与嵌套块，不允许裸文本 | `EUI006` | ✅ |
+| `@switch` 非空 section 缺 `break;` | `EUI100` | ✅ S6 |
+| `@switch` 空 section 未写 `break;`（多标签形态） | `EUI100` | ✅ S6（K30） |
+| `@switch` 重复 `default` | `EUI100` | ✅ S6 |
+| `@switch` case 标签非常量形态 | `EUI047` | ✅ S6（常量性由探针判定） |
+| `@switch` 嵌套块内写 `break` | `EUI100` | ✅ S6 |
 | `Key` 只能出现在 `@foreach` item 模板的第一个元素根上 | `EUI010` | ✅ |
 | `@foreach` 必须写 `var 名字 in ...` | `EUI100` | ✅ |
 | `@bind-P` 的值不是 `{expr}` | `EUI037` | ✅ S3 |
@@ -368,9 +395,9 @@ string        ::= '"' raw-char* '"'
 
 ### 3.3 内容模型的句法后果
 
-块（`@if`/`@foreach`）的内容**永远按"元素容器"处理**，即使外层是 `Text`/`TextRuns` 模型；因此：
+块（`@if`/`@foreach`/`@switch`）的内容**永远按"元素容器"处理**，即使外层是 `Text`/`TextRuns` 模型；因此：
 
-- `@if`/`@foreach` 里不能直接写裸文本或 `{expr}` 文本，必须先包一个 `TextBlock`；
+- `@if`/`@foreach`/`@switch` 里不能直接写裸文本或 `{expr}` 文本，必须先包一个 `TextBlock`；
 - 在 `Text`/`TextRuns` 模型里写块直接 `EUI006`；
 - "条件文本"不能用 `<TextBlock>@if ...</TextBlock>`：把 `@if` 放在容器层控制整个 `TextBlock`，
   或在 `TextBlock` 内写文本表达式（复杂逻辑放 code-behind 方法）。
@@ -392,8 +419,9 @@ string        ::= '"' raw-char* '"'
 | `Key={expr}` | item 变量 + code-behind 实例成员 | 每次枚举每个 item 求值 |
 | 控件事件/组件委托参数 | 同上 | Build 一次（build-once） |
 
-- 当前实现：模板不声明局部变量、方法、类型参数；复杂逻辑放 code-behind 方法/属性，模板只写表达式。
-  **§1.5 目标语法（K23 ④，已随 ✅ S6 实现）**：`@code` 内可声明类成员（字段/属性/方法），表达式仍只写在模板位置。
+- 模板本身不声明局部变量、方法、类型参数；类成员写在 code-behind `.cs` partial 或根层 `@code` 块（K23 ④，✅ S6）。
+  `@code` 成员与 code-behind 成员在同一条生成链上一视同仁（`EUI045` 只拦与生成保留名冲突的成员），
+  表达式仍只写在模板位置。
 - 没有"可观察路径"概念：`Vm.Count`、`GetName()`、`Tasks.Where(...)` 都是普通 C# 表达式。
 - item 变量遮蔽遵循 C#：item 变量遮蔽同名 code-behind 成员；规范建议不要制造这种遮蔽。
 - 事件处理器里的读取发生在触发时（§4.13）；事件体不参与任何渲染重算。
@@ -415,7 +443,8 @@ string        ::= '"' raw-char* '"'
 - 事件属性只对控件按 `On{EventName}` 解析；组件的 `OnClose` 若存在同名委托参数，按参数处理，
   不按事件字段处理。
 - `@bind-P` 的 `P` 按上表解析；解析失败先报 `EUI002`（未知属性），解析成功但不可绑报 `EUI040`。
-- `P:bind` / `P:value` 先按 `P` 解析目标，再按 §4.6 映射到新语义并报 `EUI043` Warning。
+- `P:bind` / `P:value` 属已移除的旧语法（K27）：一旦出现即报 `EUI046` Error，不再解析目标、不做语义映射；
+  `EUI043` 停用并保持停用（§4.6、§6.2）。
 - 事件/属性同名的元数据冲突由 design/14 §14.4.2 的 `EUI026` 拦截。
 - 保留属性优先于控件同名属性；控件不得声明 `Key`/`Ref`/`Class`/`Style` 同名属性。
 - 控件的内容模型目标若是普通可写属性（如 `Button.Label`），可作为 `@bind-P` 目标；
@@ -430,8 +459,8 @@ string        ::= '"' raw-char* '"'
 | `P="literal"` | Build 一次 | 否 | 编译期转换 + 属性赋值 | `EUI003`/`EUI023` | ✅（§5.2 全表，C3） |
 | `P={expr}` | Build + 每次渲染 | 是（组件级） | 控件属性直接写（相等短路）；组件参数相等保护 + 子 `Invalidate()` | 目标可写；不做依赖分析 | S1/S4（当前一次性，D23）；组件推送形态 ✅ C4 |
 | `@bind-P={expr}` | Build + 双向 | 是 | 控件 `UiBinding`；组件 `PChanged` + 参数推送 | 源可写左值；目标可写；组件需 `PChanged` | ✅ S3（控件）/ S4+C4（组件） |
-| `P:bind={expr}` | 同 `@bind-P` | 是 | 同 | 旧语法，`EUI043` Warning | ✅ S3 → 弃用 |
-| `P:value={expr}` | 同 `P={expr}` | 是 | 同 | 旧语法，`EUI043` Warning | ✅ S3 → 弃用 |
+| `P:bind={expr}` | — | — | — | 已移除（K27），`EUI046` Error | 停用（`EUI043` 不复用） |
+| `P:value={expr}` | — | — | — | 已移除（K27），`EUI046` Error | 停用（`EUI043` 不复用） |
 | `OnE={expr}` | Build 时 `AddHandler` | 否 | 处理器后自动 `Invalidate()` | `Action` / `Action<RoutedEventArgs>` | ✅（控件）/ C4 组件 |
 | `Key={expr}` | 每次枚举 | 身份 | Keyed 复用 | 第一个元素根；条目身份 | ✅（基础）/ S2（v4 复用） |
 | `Ref={ident}` | Build 时赋给字段 | 否 | 编译期字段赋值 | 简单标识符、字段可写（生成器探针校验） | ✅ C5（非标识符/语义非法 `EUI029`） |
@@ -493,12 +522,11 @@ string        ::= '"' raw-char* '"'
 - **组件内容体内不得出现 `@bind`**（`EUI040`）：内容 build-once，没有渲染动作作用域；
   需要内容随状态变化时，把组件标签放进父模板的 `@if`/`@foreach`，或让内容自身是独立组件。
 
-### 4.6 旧语法 `:bind` / `:value`（弃用）
+### 4.6 旧语法 `:bind` / `:value`（已移除，K27）
 
-- `P:bind={expr}` ≡ `@bind-P={expr}`；`P:value={expr}` ≡ `P={expr}`。
-- S3 起两者都报 `EUI043` Warning；至少保留一个发布周期，S5 评估改为 Error/移除。
-- v4 不再把 `Signal<T>` 对象当作特殊绑定源：`:bind={sig}` 现在要求 `sig` 是可写左值，
-  其类型必须与目标一致；要写信号值请写 `:bind={sig.Value}` 或改用普通属性。
+- `P:bind={expr}` / `P:value={expr}` **不再合法**：报 `EUI046`（Error），消息提示改写为
+  `@bind-P={expr}` / `P={expr}`，并短路生成输出。
+- `EUI043`（旧语法弃用告警）停用且保持停用（§8 规则 4）；测试与诊断快照零出现。
 - 迁移：`:bind` → `@bind-P`；`:value` → `P=`；`Signal<T>` 字段 → 普通字段/属性（§附录 B.3）。
 
 ### 4.7 `Signal<T>` 与值上下文
@@ -555,8 +583,8 @@ string        ::= '"' raw-char* '"'
     静态段不受影响，不重新 `AddRun`。
 - 集合内容变化不会自动触发：`{Tasks.Count}`、`@foreach` 都在组件 `Invalidate()` 后的渲染/刷新中
   重新求值；UI 事件内自动失效，非 UI 事件需显式调用（spec/03 §9）。
-- 文本插值使用 C# `$"..."`：当前区域文化、`ToString()` 语义；不支持格式说明符
-  （写 `.ToString("F2")`，§2.6）。
+- 文本插值使用 C# `$"..."`：当前区域文化、`ToString()` 语义。`{expr}` 里**没有** `{expr:F2}` 这种格式说明符位置
+  （格式说明符是 `$"..."` 内插值串的语法，不是模板语法）；要格式化写 `{price.ToString("F2")}` 或整段 `$"..."`（§2.6）。
 - 文本里不能嵌套元素或块；`TextRuns` 也只接受文本段，需要多段不同样式等富文本能力时另设控件（G4）。
 - **同一目标重复赋值是错误**：`Text` 模型下显式 `Label="..."` 和文本内容同时存在，
   或 `P={expr}` 与同一目标绑定同时存在，报 `EUI033`（文本 + 显式目标已实现，S2）。
@@ -566,9 +594,10 @@ string        ::= '"' raw-char* '"'
 
 ### 4.10 `@if`
 
-- 形式：`@if (condition) { ... }`；条件必须是 C# `bool` 表达式；当前实现没有 `else`/`else if`
-  （**§1.5 目标语法 / K23 ③ / D87**：`else`/`else if` 不带 `@`，由多分支 `ConditionalBlock` 承担）
-  （用两个 `@if` 或取反）。非 `bool` 由 C# 通过 `#line` 报类型错误，没有专门的模板诊断。
+- 形式：`@if (condition) { ... }`，可选 `else if (condition) { ... }` 链，可带末端 `else { ... }`；
+  `else`/`else if` 不带 `@`（K23 ③ / D87，✅ S6），由多分支 `ConditionalBlock` 承担。
+  条件必须是 C# `bool` 表达式；非 `bool` 由 C# 通过 `#line` 报类型错误，没有专门的模板诊断。
+  孤立 `else`（前面不是 `@if` 块）不参与续接，落成普通文本 → `EUI006`；`EUI009` 只留给其它未识别指令。
 - 首次求值在 Build 时；之后每次所属作用域渲染通过 `ConditionalBlock.Refresh()` 重新求值。
   条件可包含方法调用/索引器/LINQ；没有"条件依赖"分析，也不需要。
 - 条件在两次渲染间不变：分支内容保留，重跑分支的渲染动作（`BlockScope.RenderActions`）。
@@ -734,8 +763,8 @@ new cmp0
 | `Ref={ident}` | 元素/组件实例赋给 code-behind 字段 | ✅ C5（生成形态 spec/02 §4.14） | `EUI029`（非简单标识符=语法级；字段缺失/不可写/类型不符=生成器探针语义级） |
 | `Class="..."` | 样式类 | G4 | ✅ `EUI031`（C3，D2 关闭） |
 | `Style="..."` | 内联样式 | G4 | ✅ `EUI031`（C3，D2 关闭） |
-| `P:bind={expr}` | 旧双向绑定（≡ `@bind-P`） | ✅ → 弃用 | `EUI043` Warning（S3 起） |
-| `P:value={expr}` | 旧单向别名（≡ `P={expr}`） | ✅ → 弃用 | `EUI043` Warning（S3 起） |
+| `P:bind={expr}` | 旧双向绑定 | 已移除（K27） | `EUI046` Error（`EUI043` 停用） |
+| `P:value={expr}` | 旧单向别名 | 已移除（K27） | `EUI046` Error（`EUI043` 停用） |
 | `<Slot Name="...">` | 具名插槽（消费侧） | ✅ C6 | `EUI022` 家族（错误明细见下） |
 | `<ContentSlot Name="..." />` | 插槽宿主（组件模板侧） | ✅ C6 | `EUI022` 家族（错误明细见下） |
 | `<DataGrid<Order>>` | 泛型标签 | 暂缓（K19，不排期） | 当前 `EUI100`（D5 精确 `EUI030` 随之暂缓；目录侧泛型类型标签不可用仍报 `EUI030`） |
@@ -765,6 +794,58 @@ new cmp0
 - `@bind-` 不是保留语法：它是双向绑定的语法形态；目标/源非法分别报 `EUI040`/`EUI037`，
   不得退化成 `EUI001`/`EUI002`；
 - 实现保留语法时只增加状态，不改变已有语法的含义。
+
+### 4.16 `@switch`（K23 ③ / K29 / K30）
+
+形态：`@switch (value) { case CONST: … break; default: … break; }`。
+
+- **分支体是完整内容模板**：元素、文本、嵌套 `@if`/`@foreach`/`@switch` 均可，与 `@if` 分支体能力对等（K29 ①）。
+- **case 标签必须是编译期常量形态**（K29 ②）：字面量、`const` 成员、枚举成员、括号/正负号包裹的常量表达式。
+  调用/运算等非常量形态在语法层拒绝（`EUI047`）；常量性由生成器探针判定，不可判定交 C#（经 `#line`）。
+- **无贯穿语义**（K29 ③）：每个 `case`/`default` 是独立分支，等价隐式 `break`。
+  因此 `case 1:` 紧跟 `case 2:` **不共享分支体**，这种写法报 `EUI100`（K30）——
+  要么复制分支体，要么只用一个标签。
+- **`break;` 必须结束该行**：可以跟在元素同一行的末尾，但该行其后只能是空白；
+  非空 section 缺 `break;` 报 `EUI100`；嵌套块内的 `break` 报 `EUI100`（块内无「跳出」语义）。
+- **`default` 至多一个**（重复报 `EUI100`）；缺 `default` 合法（无匹配时块为空，同 `@if` 全假）。
+- **空 section 必须显式写 `break;`**：`case 1:` + `break;` 合法（渲染空内容）；`case 1:` 后直接跟下一个
+  section 头报 `EUI100`（K30）。
+- 匹配用 `EqualityComparer<T>.Default`；`T` 由生成器探针从 selector 推断，推断失败退化为 `object`。
+- 生成形态见 spec/02 §4.17：`SwitchBlock<T>` + `SetSelector` / `AddCase` / `SetDefault`。
+
+### 4.17 `@using Alias = Namespace.Type`（K31）
+
+形态：`@using Btn = ThirdParty.Controls.Button`（整条一行，无分号）。
+
+一条指令两个效果，缺一不可：
+
+| 效果 | 落点 | 说明 |
+|---|---|---|
+| C# 类型别名 | 生成文件头 `using Btn = global::ThirdParty.Controls.Button;` | `@code` 成员与模板表达式里都能写 `Btn`（Blazor 口径）。目标一律补齐 `global::`，避免被生成类所在命名空间的同名类型劫持 |
+| 模板标签别名 | 本文件的标签解析 | `<Btn/>` 解析为该类型，**优先于目录 tag**。本框架的扩展：Blazor 的别名不改变标签名 |
+
+```xml
+@using EclipseUI.Elements
+@using Btn = ThirdParty.Controls.Button
+
+<StackPanel>
+    <Btn Label="hello" />
+</StackPanel>
+```
+
+- **目标是目录里的已知元素/组件**（派生 `Element`/`Component`、可见性合规）。不是 → `EUI048`，
+  span 指向目标类型名；使用点不再叠加「未知标签」，同一处只有一条错。
+- **别名绕过命名空间可见性**：目标所在命名空间不必 `@using`。这正是它解决重名的机制——
+  `@using A` + `@using B` 都导入时同名 tag 是 `EUI016`，别名则是模板内的显式选择。
+- **别名优先于目录 tag**：`@using Button = ThirdParty.Controls.Button` 之后 `<Button/>` 指第三方类型；
+  未命中别名才回落到目录解析。
+- **同一模板内别名只能声明一次**（重复 → `EUI048`，先声明者生效）；
+  **不得与已导入的命名空间同名**（`@using Btn` + `@using Btn = …` → `EUI048`，避免落到 CS0576 指向生成文件）。
+- **别名不参与命名空间可见性集合**：`CollectImports` 只收命名空间形态。否则别名会被当成命名空间
+  去匹配候选，导致所有标签静默不可见。
+- 词法上只支持单行、非泛型、右侧点分类型名（可带 `global::`）；`@using static`、`@using (...)`、
+  尾分号、`A.B = …`、`List<string>` 都在词法层报 `EUI100` 专属消息，错误 token 吞掉整行。
+- 生成形态见 spec/02 §4.18。
 
 ## 5. 字面量
 
@@ -857,7 +938,7 @@ new cmp0
 | `EUI030` | 泛型标签暂不支持 | 标签 | Error | ✅ 2026-11-08（D74 ②，泛型类型作为不可用标签在使用点分流）；泛型标签语法按 K19 暂缓、不排期（C6 实拆只做插槽，见 §4.15） |
 | `EUI031` | 语法已保留、尚未实现（`Class`/`Style`/附加属性）；C6 起还覆盖**保留标签名冲突**——控件/组件把 `Slot`/`ContentSlot` 注册为标签名（解析器特判，标签进 HiddenTags） | 标签/属性 | Error | ✅ C3（`<Slot>`/`<ContentSlot>` 使用点口径由 EUI022 接管，C6） |
 | `EUI032` | **停用**：原"非 Signal 组件参数"，后继 EUI044 亦停用 | — | — | — |
-| `EUI033` | 同一目标重复赋值（文本内容 + 显式目标属性；`P=` 与 `@bind`/`:bind`/`:value` 冲突） | 属性值/文本 | Error | ✅ S2 |
+| `EUI033` | 同一目标重复赋值（文本内容 + 显式目标属性；`P=` 与 `@bind-P` 冲突）。旧语法 `P:bind`/`P:value` 已移除，出现时先报 `EUI046` | 属性值/文本 | Error | ✅ S2 |
 | `EUI034` | **停用**：v3 非法 `[UiState]`/`[UiObservable]` 声明；状态生成器移除 | — | — | — |
 | `EUI035` | **停用**：v3 非法 `[UiComputed]`；`[UiComputed]` 移除 | — | — | — |
 | `EUI036` | **停用**：v3 "反应式位置读取不可观察成员 → 一次性"；v4 无依赖分析 | — | — | — |
@@ -867,17 +948,20 @@ new cmp0
 | `EUI040` | `@bind` 目标非法（控件不可写/无 `{Name}Property`；组件参数无 public setter/委托/内容/保留；组件缺少 `{P}Changed` 或类型不符；组件内容体内出现 `@bind`） | 属性名/内容 | Error | ✅ S3+C4（控件 ✅ S3；组件 ✅ C4；`{P}Changed` 类型匹配静态不可判，记 D73） |
 | `EUI041` | **停用**：v3 集合未实现 INCC；v4 每次刷新重新枚举 | — | — | — |
 | `EUI042` | **停用**：v3 item `@bind` 禁止组件级源；v4 允许 | — | — | — |
-| `EUI043` | 旧语法 `:bind`/`:value` 弃用 | 属性名 | Warning | ✅ S3 |
+| `EUI043` | **停用**：旧语法 `:bind`/`:value` 弃用告警；K27 起旧语法移除，改由 `EUI046` 报错 | — | — | — |
 | `EUI044` | **停用**：v3 非可观察组件参数不刷新；v4 所有参数推送 + `Invalidate()` | — | — | — |
-| `EUI045` | code-behind 与生成代码冲突（声明 `Build()`/`Render()`、基类不是省略/原样 `Component`、与生成/基类成员同名造成隐藏/歧义，包括隐藏 `Invalidate`） | code-behind 声明 | Error | ✅ 2026-11-08（D57/D80，`CodeBehindConflictTests` 23 例；实现口径见 spec/02 §10） |
-| `EUI100` | 纯语法错误（标签不匹配、属性缺值、未闭合注释、非法 `@bind-` 形态等） | 语法位置 | Error | ✅ |
+| `EUI045` | code-behind 与生成代码冲突（声明 `Build()`/`Render()`、基类不是省略/原样 `Component`、与生成/基类成员同名造成隐藏/歧义，包括隐藏 `Invalidate`）；K25 起扩到 `@code` 成员撞生成保留名 | code-behind / `@code` 成员声明 | Error | ✅ 2026-11-08（D57/D80，`CodeBehindConflictTests` 23 例；实现口径见 spec/02 §10） |
+| `EUI046` | 旧绑定语法 `P:bind` / `P:value` 已移除（K27），提示改写为 `@bind-P` / `P=` | 属性名 | Error | ✅ S6（2026-11-08） |
+| `EUI047` | `@switch` 的 case 标签不是编译期常量（K29 ②）：语法层拒绝非常量形态，常量性由探针判定 | case 标签 | Error | ✅ S6（2026-11-08） |
+| `EUI048` | `@using` 别名不合法（K31）：目标不是目录里的已知元素/组件、同一模板重复声明、与已导入命名空间同名 | 指令 / 目标类型名 | Error | ✅ K31（2026-11-09） |
+| `EUI100` | 纯语法错误（标签不匹配、属性缺值、未闭合注释、未闭合 `@code`、`@{}`、（`@switch`）空 section / 缺 `break;`、非法 `@bind-` 形态等） | 语法位置 | Error | ✅ |
 
 停用码的纪律：
 
-- 分析器/生成器不得再发出 `EUI014`/`EUI032`/`EUI034`–`EUI036`/`EUI038`–`EUI039`/`EUI041`–`EUI042`/`EUI044`；
+- 分析器/生成器不得再发出 `EUI014`/`EUI032`/`EUI034`–`EUI036`/`EUI038`–`EUI039`/`EUI041`–`EUI043`/`EUI044`；
   测试必须断言零出现。
 - 停用码保持"停用"，不复用编号；不得用它们表达新语义。
-- 新增诊断从 `EUI046` 起。
+- 新增诊断从 `EUI046` 起（`EUI048` 为 K31 `@using` 别名）。
 
 ### 6.3 建议算法
 
@@ -894,7 +978,7 @@ new cmp0
 - 保留语法必须报 `EUI031`/`EUI029`/`EUI030`，不得退化成 `EUI001`/`EUI002`；
   具名插槽已实现（C6），其非法使用报 `EUI022`（同样不得退化成拼写建议）。
 - `@bind-` 不是保留语法：目标/源非法报 `EUI040`/`EUI037`，不得退化成未知属性。
-- 未实现阶段写 `P:value` 必须报 `EUI002` + 弃用说明，而不是静默当普通属性名。
+- 旧语法 `P:bind`/`P:value` 已移除（K27）：必须报 `EUI046`（Error）+ 改写建议，不得静默当普通属性名。
 - 任何"看似可用、运行时才炸"的降级都不允许；诊断缺失视为实现缺陷。
 
 ## 7. 实现状态与阶段
@@ -903,14 +987,15 @@ new cmp0
 
 | 阶段 | 语法/语义内容 |
 |---|---|
-| **K21 / K22 / K23** | **✅ S6 已实现（2026-11-08）（目标语法见 §1.5）**：`@code` 位置不限且单文件可用（K21/K23 ④）；模板 `@using`、标签按导入命名空间解析（内置控件无豁免）、生成代码保留 `using Ns;`（K22）；流程控制与 Web 指令清单按 K23 ③/②。当前实现仍是 v2，偏差 D85–D88 |
-| **S6 语法对齐** | 新增切片，G3 之后 / G4 之前（K23 ⑦，按 Q8 推荐值登记）；阶段 P0–P6 见 design/16；出口标准 = D85–D88 全部关闭 + 497 例基线全绿 |
-| ✅ 当前可用 | 元素/自闭合；属性字面量（string/bool/double/int 及 C3 扩展类型）；控件 `On*` 事件；`Text`/`TextRuns`/`Children` 文本与内容；`@if`/`@foreach` 与 `Key`；控件与组件 `@bind-P`（含 item 源）与旧 `:bind`/`:value` 弃用告警；组件标签（参数/委托事件/必填/默认内容）、`Ref={field}`、具名插槽 `<Slot>`/`<ContentSlot>`；注释；空白规范化；code-behind 诊断 |
+| **K21 / K22 / K23** | **✅ S6 已实现（2026-11-08）**：`@code` 位置不限且单文件可用（K21/K23 ④）；模板 `@using`、标签按导入命名空间解析（内置控件无豁免）、生成代码保留 `using Ns;`（K22）；流程控制与 Web 指令清单按 K23 ③/②。偏差 D85–D88 已全部关闭 |
+| **S6 语法对齐** | G3 之后 / G4 之前（K23 ⑦）；阶段 P0–P6 见 design/16；出口标准 = D85–D88 关闭 + 样例/golden 迁移 + 全量测试绿（2026-11-08 达成：用例 497 → 548，新增 `S6SyntaxTests` 26 / `ExpressionCaptureTests` 13 / `SwitchBlock` 运行时 6 / 生成器契约 6，全部通过；唯一红为既有像素 golden `PixelGoldens_MatchBaseline`，与 S6 无关） |
+| **K31** | **✅ 已实现（2026-11-09）**：`@using Alias = Ns.Type` 一体两用——生成 `using Alias = global::Ns.Type;`（服务 `@code`/表达式）并把 `<Alias/>` 解析为该类型（优先于目录 tag，绕过命名空间可见性）。`EUI048` 覆盖目标缺失/重复/撞命名空间；词法层把 `@using static`、`(...)`、尾分号、泛型、`A.B =` 从误导性的 `EUI006` 改为专属 `EUI100`。回归见 `UsingAliasTests` 15 例 + 生成器契约 4 例 |
+| ✅ 当前可用 | 元素/自闭合；属性字面量（string/bool/double/int 及 C3 扩展类型）；控件 `On*` 事件；`Text`/`TextRuns`/`Children` 文本与内容；`@if`/`else if`/`@switch`/`@foreach` 与 `Key`；`@using`、`@using Alias = Ns.Type`、`@code`、`@* *@` 与 `<!-- -->`；控件与组件 `@bind-P`（含 item 源）；组件标签（参数/委托事件/必填/默认内容）、`Ref={field}`、具名插槽 `<Slot>`/`<ContentSlot>`；空白规范化；code-behind 诊断 |
 | **S1** ✅ | `Component.Invalidate/ProcessInvalidations/Render/ShouldRender`；失效队列与合并；生成字段与 `U{N}`；根级 `P=`/文本重算；控件事件自动失效（2026-10-30 通过） |
 | **S2** ✅ | 块 v4：`BlockScope.RenderActions`；`@if` 分支刷新；`@foreach` 任意 `IEnumerable<T>`、null=空、Keyed 复用；嵌套块；`EUI007`/`EUI010`/`EUI033`（文本 + 显式目标）（2026-10-30 通过） |
-| **S3** ✅ | `UiBinding` v4；控件 `@bind`；item 绑定；`EUI033`（`P=` 与绑定冲突）/`EUI037`/`EUI040`/`EUI043` —— 控件侧已落地（2026-11-02）；组件 `PChanged` 与组件绑定目标/回调随 C4 落地（2026-11-05，D54/D56 关闭） |
+| **S3** ✅ | `UiBinding` v4；控件 `@bind`；item 绑定；`EUI033`（`P=` 与绑定冲突）/`EUI037`/`EUI040` —— 控件侧已落地（2026-11-02）；组件 `PChanged` 与组件绑定目标/回调随 C4 落地（2026-11-05，D54/D56 关闭）；旧语法 `EUI043` 随 K27 停用、改报 `EUI046` |
 | **S4** | 组件所有权/深度排序；参数推送与相等保护；异步/后台失效；`ShouldRender` |
-| **S5** | 基准/预算；AOT/裁剪；死循环上限；旧语法清理；诊断清理与最终审计 |
+| **S5** | 基准/预算；AOT/裁剪；死循环上限；诊断清理与最终审计（旧语法清理已由 K27 提前完成） |
 | **C1–C6** ✅ | 符号派生目录、控件事件迁移、字面量扩展、组件标签、`Ref`、具名插槽（附加属性实拆留 G4；泛型标签暂缓 K19、不排期） |
 | **G3** | 七个小切片全部收敛：块布局透明（✅ 2026-11-05，D77）、`Ref`（✅ C5）、逐文件增量（✅ 2026-11-08）、`#line` 列映射（✅ 2026-11-08，D79）、`EUI045` code-behind 冲突诊断（✅ 2026-11-08，D57/D80）、诊断出口补全（✅ 2026-11-08，D74 ②/D81：EUI016/017/018/026/028/030）、EUI024 签名匹配（✅ 2026-11-08，D82） |
 | **G4** | 样式/主题、附加属性、组件参数 diff 评估；泛型标签按 K19 暂缓、不排期 |
@@ -1039,8 +1124,8 @@ public partial class TodoList : Component
 | `P="literal"` | 编译期字面量 |
 | `P={expr}` | 每次组件渲染重算的赋值 |
 | `@bind-P={expr}` | 双向绑定（源必须是可写左值） |
-| `P:bind={expr}` | 旧双向（弃用） |
-| `P:value={expr}` | 旧单向（弃用） |
+| `P:bind={expr}` | 已移除（K27，`EUI046`） |
+| `P:value={expr}` | 已移除（K27，`EUI046`） |
 | `OnE={expr}` | 控件事件（build-once，自动失效） |
 | `Key={expr}` | `@foreach` 条目身份 |
 | `Ref={ident}` | 元素/组件引用（✅ C5） |

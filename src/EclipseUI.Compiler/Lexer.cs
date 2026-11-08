@@ -25,6 +25,9 @@ public sealed class Token
     public TokenKind Kind { get; set; }
     public string Text { get; set; } = "";
     public string? Aux { get; set; }
+
+    /// <summary>K31：<c>@using</c> 别名形态的第二参数（目标类型名）；命名空间形态为 null。</summary>
+    public string? Aux2 { get; set; }
     public TextSpan Span { get; set; }
     public TextSpan InnerSpan { get; set; }
 
@@ -232,6 +235,9 @@ public sealed class Lexer
         int end = _s.IndexOf("-->", _i, System.StringComparison.Ordinal);
         if (end < 0)
         {
+            // 必须推进到文件尾：否则调用方的 Error 分支 Advance 后仍停在同一位置，
+            // 解析循环会无限重报同一条 EUI100（文档型死循环，比诊断本身更糟）。
+            _i = _s.Length;
             return new Token
             {
                 Kind = TokenKind.Error,
@@ -329,49 +335,29 @@ public sealed class Lexer
     }
 
     /// <summary>捕获平衡大括号内的原始 C# 表达式（字符串字面量感知）。</summary>
+    /// <summary>
+    /// 捕获 <c>{ csharp-expression }</c>（D11）：配对由 <see cref="CSharpSnippet"/> 完成——
+    /// 字符串（普通/verbatim/raw/插值）、字符字面量与注释里的 <c>{ }</c> 都不计数。
+    /// </summary>
     private Token CaptureExpression()
     {
         int open = _i;
-        _i++; // '{'
-        int innerStart = _i;
-        int depth = 1;
-        while (_i < _s.Length)
+        int close = CSharpSnippet.FindMatchingClose(_s, open);
+        if (close < 0)
         {
-            char c = _s[_i];
-            if (c == '"') { SkipStringInside('"'); continue; }
-            if (c == '\'') { SkipStringInside('\''); continue; }
-            if (c == '{') depth++;
-            else if (c == '}')
-            {
-                depth--;
-                if (depth == 0)
-                {
-                    var inner = new TextSpan(innerStart, _i - innerStart);
-                    var text = _s.Substring(innerStart, _i - innerStart);
-                    _i++;
-                    return new Token
-                    {
-                        Kind = TokenKind.Expression,
-                        Text = text,
-                        Span = new TextSpan(open, _i - open),
-                        InnerSpan = inner,
-                    };
-                }
-            }
-            _i++;
+            _i = _s.Length;
+            return new Token { Kind = TokenKind.Error, Text = "unterminated expression", Span = new TextSpan(open, _s.Length - open) };
         }
-        return new Token { Kind = TokenKind.Error, Text = "unterminated expression", Span = new TextSpan(open, _s.Length - open) };
-    }
-
-    private void SkipStringInside(char quote)
-    {
-        _i++;
-        while (_i < _s.Length)
+        var inner = new TextSpan(open + 1, close - open - 1);
+        var text = _s.Substring(open + 1, close - open - 1);
+        _i = close + 1;
+        return new Token
         {
-            if (_s[_i] == '\\') { _i += 2; continue; }
-            if (_s[_i] == quote) { _i++; return; }
-            _i++;
-        }
+            Kind = TokenKind.Expression,
+            Text = text,
+            Span = new TextSpan(open, _i - open),
+            InnerSpan = inner,
+        };
     }
 
     /// <summary>
@@ -420,11 +406,9 @@ public sealed class Lexer
     {
         token = null!;
         int saved = _i;
-        int wsStart = saved;
         if (!TrySkipTrivia()) { _i = saved; return false; }
         int elseStart = _i;
         if (!MatchWord("else")) { _i = saved; return false; }
-        int afterElse = _i;
         if (!TrySkipTrivia()) { _i = saved; return false; }
 
         if (_i < _s.Length && _s[_i] == '{')
@@ -435,27 +419,17 @@ public sealed class Lexer
                 Text = "else",
                 Span = new TextSpan(elseStart, 4),
             };
-            _ = wsStart;
             return true; // _i 停在 '{' 前，Parser 设 SetNextBraceIsBlock 后 Advance 得 BlockOpen
         }
 
         if (MatchWord("if") && TrySkipTrivia() && _i < _s.Length && _s[_i] == '(')
         {
-            _i++; // '('
-            int innerStart = _i;
-            int depth = 1;
-            while (_i < _s.Length)
-            {
-                char c = _s[_i];
-                if (c == '"') { SkipStringInside('"'); continue; }
-                if (c == '\'') { SkipStringInside('\''); continue; }
-                if (c == '(') depth++;
-                else if (c == ')') { depth--; if (depth == 0) break; }
-                _i++;
-            }
-            if (depth != 0) { _i = saved; return false; }
-            var inner = new TextSpan(innerStart, _i - innerStart);
-            _i++; // ')'
+            int openParen = _i;
+            int innerStart = openParen + 1;
+            int close = CSharpSnippet.FindMatchingClose(_s, openParen);
+            if (close < 0) { _i = saved; return false; }
+            var inner = new TextSpan(innerStart, close - innerStart);
+            _i = close + 1;
             token = new Token
             {
                 Kind = TokenKind.Directive,
@@ -477,6 +451,127 @@ public sealed class Lexer
         return new Token { Kind = TokenKind.Error, Text = _s.Substring(start, System.Math.Max(1, end - start)), Aux = message, Span = new TextSpan(start, end - start) };
     }
 
+    /// <summary>
+    /// K22 / K31：<c>@using</c> 的两种形态。命名空间导入（<c>@using EclipseUI.Elements</c>）
+    /// 只决定标签可见性并原样进生成文件头；别名（<c>@using Btn = ThirdParty.Controls.Button</c>）
+    /// 同时产生一行 C# 别名 using 与本文件内的标签别名（<c>&lt;Btn/&gt;</c>）。
+    /// 失败一律返回携带专属消息的 Error token——绝不把残余字符交回文本模式
+    /// （那会报成与写法无关的「根层不允许文本」）。
+    /// </summary>
+    private Token ParseUsingDirective(int start)
+    {
+        // 只跨行内空白：跳过 '\n' 会把下一行的元素吞进指令（见 UsingError 的整行推进）
+        while (_i < _s.Length && (_s[_i] == ' ' || _s[_i] == '\t')) _i++;
+        if (_i < _s.Length && _s[_i] == '(')
+            return UsingError(start,
+                "'@using (...)' is not supported; write '@using Namespace' or '@using Alias = Namespace.Type'");
+
+        int nameBegin = _i;
+        while (_i < _s.Length && (char.IsLetterOrDigit(_s[_i]) || _s[_i] == '_' || _s[_i] == '.' || _s[_i] == ':'))
+            _i++;
+        var head = _s.Substring(nameBegin, _i - nameBegin);
+
+        if (head == "static")
+            return UsingError(start,
+                "'@using static' is not supported; import the namespace or alias a single control type");
+
+        // 别名形态：@using Alias = Namespace.Type
+        int eq = _i;
+        while (eq < _s.Length && (_s[eq] == ' ' || _s[eq] == '\t')) eq++;
+        if (eq < _s.Length && _s[eq] == '=')
+        {
+            if (!IsIdentifier(head))
+                return UsingError(start,
+                    "'@using' alias must be a single identifier: @using Btn = My.Controls.Button");
+
+            _i = eq + 1;
+            while (_i < _s.Length && (_s[_i] == ' ' || _s[_i] == '\t')) _i++;
+            int targetBegin = _i;
+            while (_i < _s.Length && (char.IsLetterOrDigit(_s[_i]) || _s[_i] == '_' || _s[_i] == '.' || _s[_i] == ':'))
+                _i++;
+            var target = _s.Substring(targetBegin, _i - targetBegin);
+            if (target.Length == 0 || !IsTypeName(target))
+                return UsingError(start,
+                    "'@using' alias requires a type name after '=': @using Btn = My.Controls.Button");
+            if (_i < _s.Length && _s[_i] == '<')
+                return UsingError(start,
+                    "generic type aliases are not supported; alias a non-generic control type");
+
+            return new Token
+            {
+                Kind = TokenKind.Directive,
+                Text = "using",
+                Aux = head,
+                Aux2 = target,
+                Span = new TextSpan(start, _i - start),
+                InnerSpan = new TextSpan(targetBegin, _i - targetBegin),
+            };
+        }
+
+        if (_i < _s.Length && _s[_i] == ';')
+            return UsingError(start,
+                "'@using' takes no trailing ';': write '@using System.Collections.Generic'");
+
+        // 同一行还有残留（如 '@using Foo Bar'）说明写法有误，就地报错而不是留给文本模式
+        int rest = _i;
+        while (rest < _s.Length && (_s[rest] == ' ' || _s[rest] == '\t')) rest++;
+        if (rest < _s.Length && _s[rest] != '\r' && _s[rest] != '\n')
+            return UsingError(start,
+                "'@using' accepts a namespace name or an alias: '@using My.Controls' / '@using Btn = My.Controls.Button'");
+
+        if (!IsDottedName(head))
+            return UsingError(start,
+                "'@using' requires a namespace name: @using System.Collections.Generic");
+
+        return new Token
+        {
+            Kind = TokenKind.Directive,
+            Text = "using",
+            Aux = head,
+            Span = new TextSpan(start, _i - start),
+            InnerSpan = new TextSpan(nameBegin, _i - nameBegin),
+        };
+    }
+
+    /// <summary>
+    /// @using 的错误出口：**先把词法位置推到本行行尾**再报错。否则残余字符
+    /// （<c>static System.Math</c> 的右半、泛型别名的 <c>&lt;string&gt;</c>）会落进文本/标记模式，
+    /// 叠加出 EUI006、「missing &lt;/string&gt;」这类与写法无关的级联错误。
+    /// </summary>
+    private Token UsingError(int start, string message)
+    {
+        while (_i < _s.Length && _s[_i] != '\n') _i++;
+        return ErrorToken(start, message, System.Math.Max(_i, start + 1));
+    }
+
+    /// <summary>K31：单段 C# 标识符（字母/下划线开头，仅字母数字下划线）。</summary>
+    private static bool IsIdentifier(string text)
+    {
+        if (text.Length == 0) return false;
+        if (!(char.IsLetter(text[0]) || text[0] == '_')) return false;
+        foreach (var c in text)
+            if (!(char.IsLetterOrDigit(c) || c == '_')) return false;
+        return true;
+    }
+
+    /// <summary>K31：点分名称，每段都是标识符（命名空间，或非嵌套类型名）。</summary>
+    private static bool IsDottedName(string text)
+    {
+        if (text.Length == 0) return false;
+        foreach (var part in text.Split('.'))
+            if (!IsIdentifier(part)) return false;
+        return true;
+    }
+
+    /// <summary>K31：类型名，允许可选的 <c>global::</c> 前缀；嵌套类型用 <c>Outer.Inner</c>。</summary>
+    private static bool IsTypeName(string text)
+    {
+        const string globalPrefix = "global::";
+        return IsDottedName(text.StartsWith(globalPrefix, System.StringComparison.Ordinal)
+            ? text.Substring(globalPrefix.Length)
+            : text);
+    }
+
     private Token ParseDirective()
     {
         int start = _i;
@@ -495,52 +590,23 @@ public sealed class Lexer
             return ErrorToken(start, aux);
         }
 
-        // @using {Namespace}（K22，D85）：不带分号；不做 @using(...) / @using static / 别名
+        // @using {Namespace}（K22，D85）与 @using Alias = Namespace.Type（K31）：
+        // 都不带分号；不做 @using(...) / @using static / 泛型别名。
         if (name == "using")
-        {
-            while (_i < _s.Length && char.IsWhiteSpace(_s[_i])) _i++;
-            if (_i < _s.Length && _s[_i] == '(')
-                return ErrorToken(start, "'@using (...)' is not supported; write '@using Namespace'");
-            int nsBegin = _i;
-            while (_i < _s.Length && (char.IsLetterOrDigit(_s[_i]) || _s[_i] == '_' || _s[_i] == '.'))
-                _i++;
-            var ns = _s.Substring(nsBegin, _i - nsBegin);
-            if (ns.Length == 0 || ns[0] == '.' || ns[ns.Length - 1] == '.' || ns.Contains(".."))
-                return ErrorToken(start, "'@using' requires a namespace name: @using System.Collections.Generic");
-            return new Token
-            {
-                Kind = TokenKind.Directive,
-                Text = "using",
-                Aux = ns,
-                Span = new TextSpan(start, _i - start),
-                InnerSpan = new TextSpan(nsBegin, _i - nsBegin),
-            };
-        }
+            return ParseUsingDirective(start);
 
-        // @code { ... }（K21，D86）：块体整块捕获（字符串感知），原文透传（K25）
+        // @code { ... }（K21，D86）：块体整块捕获（字符串/注释/插值感知，D11），原文透传（K25）
         if (name == "code")
         {
             int j = _i;
             while (j < _s.Length && char.IsWhiteSpace(_s[j])) j++;
             if (j >= _s.Length || _s[j] != '{')
                 return ErrorToken(start, "expected '{' after @code: @code { ... }");
-            _i = j + 1; // 过 '{'
-            int bodyStart = _i;
-            int depth = 1;
-            while (_i < _s.Length)
+            int bodyStart = j + 1;
+            int close = CSharpSnippet.FindMatchingClose(_s, j);
+            if (close < 0)
             {
-                char bc = _s[_i];
-                if (bc == '"') { SkipStringInside('"'); continue; }
-                if (bc == '\'') { SkipStringInside('\''); continue; }
-                if (bc == '{') depth++;
-                else if (bc == '}')
-                {
-                    depth--;
-                    if (depth == 0) break;
-                }
-                _i++;
-            }
-            if (depth != 0)
+                _i = _s.Length;
                 return new Token
                 {
                     Kind = TokenKind.Error,
@@ -548,9 +614,10 @@ public sealed class Lexer
                     Aux = "unterminated @code block; add the closing '}'",
                     Span = new TextSpan(start, _s.Length - start),
                 };
-            var inner = new TextSpan(bodyStart, _i - bodyStart);
-            var body = _s.Substring(bodyStart, _i - bodyStart);
-            _i++; // 过 '}'
+            }
+            var inner = new TextSpan(bodyStart, close - bodyStart);
+            var body = _s.Substring(bodyStart, close - bodyStart);
+            _i = close + 1;
             return new Token
             {
                 Kind = TokenKind.Directive,
@@ -565,28 +632,16 @@ public sealed class Lexer
         while (j2 < _s.Length && char.IsWhiteSpace(_s[j2])) j2++;
         if (j2 < _s.Length && _s[j2] == '(')
         {
-            _i = j2;
-            _i++; // '('
-            int innerStart = _i;
-            int depth = 1;
-            while (_i < _s.Length)
+            int innerStart = j2 + 1;
+            int close = CSharpSnippet.FindMatchingClose(_s, j2);
+            if (close < 0)
             {
-                char c = _s[_i];
-                if (c == '"') { SkipStringInside('"'); continue; }
-                if (c == '\'') { SkipStringInside('\''); continue; }
-                if (c == '(') depth++;
-                else if (c == ')')
-                {
-                    depth--;
-                    if (depth == 0) break;
-                }
-                _i++;
-            }
-            if (_i >= _s.Length)
+                _i = _s.Length;
                 return new Token { Kind = TokenKind.Error, Text = "unterminated directive", Span = new TextSpan(start, _s.Length - start) };
-            var inner = new TextSpan(innerStart, _i - innerStart);
-            var aux = _s.Substring(innerStart, _i - innerStart);
-            _i++; // ')'
+            }
+            var inner = new TextSpan(innerStart, close - innerStart);
+            var aux = _s.Substring(innerStart, close - innerStart);
+            _i = close + 1;
             return new Token
             {
                 Kind = TokenKind.Directive,

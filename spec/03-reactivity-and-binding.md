@@ -135,7 +135,8 @@ v4 **不采用** Blazor 的虚拟 DOM diff：元素实例保留，静态结构�
 10. **大小写敏感，不做别名**；表达式就是 C# 表达式；不兼容 XAML。
 11. **移除旧状态契约**：`[UiState]`/`[UiObservable]`/`[UiComputed]`、`IUiObservable`、`UiWatch`、依赖分析、
     `EUI014`/`EUI034`–`EUI036`/`EUI038`/`EUI039`/`EUI041`/`EUI042`/`EUI044` 不再是模板契约的一部分。
-12. **未实现的语法必须显式保留并报诊断**（`EUI031`/`EUI029`/`EUI030`/`EUI008`；插槽错误用 `EUI022`，✅ C6 已实现），
+12. **未实现的语法必须显式保留并报诊断**（`EUI031`/`EUI029`/`EUI030`；插槽错误用 `EUI022`，✅ C6 已实现；
+    `EUI008` 随 K23 ③/S6 停用，保持停用），
     不得落进"未知属性/未知标签"的兜底。
 
 任何违反冻结线的提案，必须先在本文登记状态与诊断，再改代码；不接受"先生效、后补文档"。
@@ -365,10 +366,9 @@ public void Adopt(Component child)
 | `@bind` 源/Key/条件/集合 | 与所在位置相同 |
 
 - 模板不声明局部变量、类型参数；类成员与命名空间导入按 **spec/01 §1.5 目标语法**
-  （`@code` / `@using`，K21/K22/K23 ✅ S6 已实现（2026-11-08），偏差 D85/D86）；复杂逻辑放 code-behind 或 `@code`。
-- 当前实现：生成文件不引入 `using`，简单类型名按生成类所在命名空间解析（spec/02 §2.2）。
-  **K22（✅ S6 已实现（2026-11-08））**：生成文件保留模板 `@using` 对应的普通 using，为 `@code` 原文提供命名空间；
-  生成代码自身仍一律 `global::` 全限定。
+  （`@code` / `@using`，K21/K22/K23 ✅ S6 已实现（2026-11-08），偏差 D85/D86 已关闭）；复杂逻辑放 code-behind 或 `@code`。
+- 生成文件保留模板 `@using` 对应的普通 using（按模板顺序、去重），为 `@code` 原文提供命名空间；
+  生成代码自身仍一律 `global::` 全限定（spec/02 §2.2）。
 - 不使用 Roslyn 重写表达式；除文本插值的 `$"..."` 与必要的括号/目标类型转换外，表达式原样输出。
 
 ### 4.5 纯度要求
@@ -653,12 +653,11 @@ private void Cycle()
 - 属性 setter 若做归一化（clamp/格式化），getter 必须返回归一化后的值；否则每次渲染可能反复写目标。
 - 源 getter 有副作用会破坏相等保护；禁止。
 
-### 8.6 旧语法
+### 8.6 旧语法（已移除，K27）
 
-- `P:bind={expr}` ≡ `@bind-P={expr}`；`P:value={expr}` ≡ `P={expr}`。
-- 两者从 S3 起报 `EUI043` Warning，至少保留一个发布周期；S5 评估移除。
-- 旧语法不再接受 `Signal<T>` 对象作为特殊源；信号必须显式写 `.Value`（§4.6）。
-- 迁移：`:bind` → `@bind-P`；`:value` → `P=`；`Signal<T>` 字段 → 普通字段/属性。
+- `P:bind={expr}` 与 `P:value={expr}` 在 **S6/K27** 起被移除：出现即报 `EUI046`（Error）+ 改写建议，
+  **不生成任何代码**；`EUI043` 停用且保持停用（spec/01 §6.2）。
+- 迁移：`P:bind` → `@bind-P`；`P:value` → `P=`；`Signal<T>` 字段 → 普通字段/属性（信号必须显式写 `.Value`，§4.6）。
 
 ## 9. 事件与失效
 
@@ -795,7 +794,7 @@ new cmp
 | `EUI033` | 同一目标重复赋值（文本+显式目标；`P=`+`@bind`；`P=`+`:bind`/`:value`；`@bind`+其它写入） | 属性值/文本 | Error | S2/S3 |
 | `EUI037` | `@bind` 源非法（非可写左值/静态/const/readonly/init/方法/索引器/`?.`/struct 属性中间段/值类型 item 成员/类型不符） | 表达式 | Error | ✅ S3（控件与 item 源；自绑静态不可判定不报） |
 | `EUI040` | `@bind` 目标非法（控件不可写/无 `{Name}Property`；组件参数无 public setter/委托/内容/保留；组件缺少 `{P}Changed` 或类型不符）；组件内容体内出现 `@bind` | 属性名/内容 | Error | ✅ S3（控件与组件侧；自绑静态不可判定不报） |
-| `EUI043` | 旧语法 `:bind`/`:value` 弃用 | 属性名 | Warning | ✅ S3 |
+| `EUI043` | **停用**：旧语法 `P:bind`/`P:value` 弃用告警；K27 起移除，改由 `EUI046` 报错 | — | — | — |
 | `EUI045` | code-behind 与生成成员冲突（`Build`/`Render`/`U{N}`/`__` 字段/基类/隐藏 `Invalidate` 等） | code-behind 声明 | Error | ✅ 2026-11-08（D57/D80；spec/02 §10） |
 | `EUI100` | 纯语法错误（标签不匹配、属性缺值、未闭合注释、非法 `@bind-` 形态） | 语法位置 | Error | ✅ |
 
@@ -877,7 +876,7 @@ O(根级动态绑定数 + 根级块数 + Σ 块刷新成本)
 |---|---|---|
 | **S1** ✅ | `Component.Invalidate/ProcessInvalidations/Render/ShouldRender`；失效队列与合并；生成字段与 `U{N}`；根级 `P=`/文本重算；控件事件自动失效 | 根级动态属性/文本在失效后更新；同帧多次失效只渲染一次；Dispose 后 no-op |
 | **S2** ✅ | `ConditionalBlock`/`ForEachBlock` v4；`BlockScope.RenderActions`；`@if` 分支切换；`@foreach` 重新枚举、null=空、Keyed 复用；嵌套块；`EUI033`（文本 + 显式目标） | 分支切换释放旧作用域；同 Key 同 item 复用、不同 item 重建；列表类型不受限 |
-| **S3** ✅ | `UiBinding` v4；控件 `@bind`；item 绑定；`EUI033`（`P=` 与绑定冲突）/`EUI037`/`EUI040`/`EUI043` —— 控件侧 ✅（2026-11-02）；组件 `PChanged` 与组件 `@bind` 随 C4 ✅（2026-11-05，spec/02 D54/D56 关闭） | 双向绑定源值胜出；目标变化回写+失效；无回环；组件参数向上同步 |
+| **S3** ✅ | `UiBinding` v4；控件 `@bind`；item 绑定；`EUI033`（`P=` 与绑定冲突）/`EUI037`/`EUI040` —— 控件侧 ✅（2026-11-02）；组件 `PChanged` 与组件 `@bind` 随 C4 ✅（2026-11-05，spec/02 D54/D56 关闭）；旧语法 `EUI043` 已随 K27 停用、改报 `EUI046` | 双向绑定源值胜出；目标变化回写+失效；无回环；组件参数向上同步 |
 | **S4** | 组件所有权/深度排序；参数推送与相等保护；异步/后台失效；`ShouldRender` 与异步失效的组合语义 | 父先于子渲染；后台失效合并；异步续体显式失效；无泄漏 |
 | **S5** | 基准/预算；AOT/裁剪；死循环上限；诊断清理与最终审计（旧语法清理已随 S6 提前完成，K27） | 性能预算达标；零停用诊断；样例迁移完成（✅ S6） |
 
@@ -899,7 +898,7 @@ O(根级动态绑定数 + 根级块数 + Σ 块刷新成本)
   `Build` 只跑一次、块 `Refresh` 与 Keyed 复用、参数相等保护、`@bind-P` 读写与推送语义全部原样。
 - 多分支与 `switch` 的结构变化仍由块协调器承担（冻结线 7 的 K23 ③ 扩展），不引入渲染树 diff。
 - 出口标准：spec/02 §12 的 D85–D88 全部关闭、样例与 golden 完成 `@using` 迁移、
-  497 例基线全绿、零停用诊断；阶段 P0–P6 见 design/16。
+  用例基线全绿（497 → 548，K31 后 567）、零停用诊断；阶段 P0–P6 见 design/16。
 
 ## 14. 契约测试矩阵
 
@@ -946,6 +945,10 @@ struct/值类型 item/名字不存在）、`EUI040`（事件与保留名目标�
 T15 见样例迁移到 `@bind-` 后 `CounterApp`/`GalleryApp` 编译 0 error 0 warning。
 202 个测试全绿（Headless 102 / Compiler 39 / Rendering 61）。
 组件 `@bind`、`PChanged` 与 T9 属 C4 依赖项，未在本阶段收敛（spec/02 D54/D56）。
+
+> **历史快照说明**：以上 S2/S3 门禁记录保留当时的用例数与断言原文。其中「`P:bind` 生成文本逐字节相同」
+> 与「`EUI043`（`:bind`/`:value` Warning）」两类用例已随 **K27（S6，2026-11-08）**删除——旧语法现在报
+> `EUI046` Error 且不生成代码；当前基线为 567 例（Headless 274 / Compiler 228 / Rendering 65）。
 
 **S3 门禁（组件侧，随 C4 于 2026-11-05 收敛）**：T9 三项出口全部有据——
 参数在 `Mount()` 前就位（`GeneratorContractTests.SlotFill_AssignsAfterParametersAndContent_BeforeMount`

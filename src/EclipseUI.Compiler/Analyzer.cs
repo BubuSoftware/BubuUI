@@ -25,9 +25,10 @@ public static class TemplateAnalyzer
             // 出现在元素内容/块内时由 Visit 报错（下方 UiCodeBlock/UiUsingDirective case）。
         }
 
-        // K22（D85）：标签只在模板 @using 导入的命名空间内解析。imports 在 Visit 链中
+        // K22（D85）/K31：标签在「@using 导入的命名空间 + @using 别名」内解析。作用域在 Visit 链中
         // 显式传参（目录保持不可变，§14.10.3 值相等不受影响）。
         var imports = CollectImports(doc.Nodes);
+        var scope = new TagScope(imports, CollectAliases(doc.Nodes, imports, catalog, diags));
 
         // 具名插槽宿主（spec/02 §4.12.5）：自身模板中的 <ContentSlot> 按 code-behind 类的
         // [UiSlot] 属性解析。生成器/探针调用带 ownSlots（code-behind 符号扫描，权威——code-behind
@@ -41,10 +42,14 @@ public static class TemplateAnalyzer
             ValidateContentSlot(host, own, doc, diags, placed);
 
         foreach (var node in doc.Nodes)
-            Visit(node, Ctx.Root, catalog, diags, allowKey: false, imports);
+            Visit(node, Ctx.Root, catalog, diags, allowKey: false, scope);
     }
 
-    /// <summary>根层 @using 收集（K22）：位置不限、按文档顺序去重。</summary>
+    /// <summary>
+    /// 根层 @using 收集（K22）：位置不限、按文档顺序去重。**只收命名空间形态**——
+    /// K31 别名若混进来，<see cref="UiCatalog.Resolve(string, IReadOnlyList{string})"/> 会把
+    /// 别名当成命名空间去匹配，导致所有候选静默不可见。
+    /// </summary>
     internal static List<string> CollectImports(IEnumerable<UiNode> nodes)
     {
         var imports = new List<string>();
@@ -52,6 +57,103 @@ public static class TemplateAnalyzer
             if (node is UiUsingDirective u && u.Namespace.Length > 0 && !imports.Contains(u.Namespace))
                 imports.Add(u.Namespace);
         return imports;
+    }
+
+    /// <summary>
+    /// K31：收集 <c>@using Alias = Ns.Type</c>（别名 → <c>global::Ns.Type</c>）。
+    /// 三条校验都在这里一次性报 EUI048：目标不是目录里的已知元素/组件类型、同一模板重复定义、
+    /// 与已导入的命名空间同名（C# 也会拒绝，但 CS0576 指到生成文件、指不回 .ui）。
+    /// 非法别名以 <c>null</c> 入表——使用点据此抑制「未知标签」，避免同一处出两条错。
+    /// </summary>
+    internal static Dictionary<string, string?> CollectAliases(
+        IEnumerable<UiNode> nodes, IReadOnlyList<string> imports, UiCatalog catalog, List<UiDiagnostic> diags)
+    {
+        var aliases = new Dictionary<string, string?>(StringComparer.Ordinal);
+        foreach (var node in nodes)
+        {
+            if (node is not UiUsingDirective { Alias: { Length: > 0 } alias } directive) continue;
+            var target = AliasTargetDisplay(directive.AliasTarget);
+
+            if (aliases.ContainsKey(alias))
+            {
+                diags.Add(UiDiagnostics.Error(UiDiagnostics.UsingAliasInvalid,
+                    $"duplicate '@using' alias '{alias}'; each alias may be declared once per template",
+                    directive.Span));
+                continue;
+            }
+            if (imports.Contains(alias, StringComparer.Ordinal))
+            {
+                aliases[alias] = null;
+                diags.Add(UiDiagnostics.Error(UiDiagnostics.UsingAliasInvalid,
+                    $"'{alias}' is also imported as a namespace; rename the alias: " +
+                    $"'@using {alias} = {directive.AliasTarget}' conflicts with '@using {alias}'",
+                    directive.Span));
+                continue;
+            }
+            if (catalog.FindByTypeDisplayName(target) is null)
+            {
+                aliases[alias] = null;
+                diags.Add(UiDiagnostics.Error(UiDiagnostics.UsingAliasInvalid,
+                    $"alias '{alias}' targets '{directive.AliasTarget}', which is not a UI element or component " +
+                    "exposed to templates; check the full type name (the type must derive Element/Component)",
+                    directive.NamespaceSpan));
+                continue;
+            }
+            aliases[alias] = target;
+        }
+        return aliases;
+    }
+
+    /// <summary>
+    /// K22/K31：生成文件头的 using 子句正文（不含 <c>using</c> 与结尾分号），按模板顺序去重。
+    /// 命名空间原样输出；别名输出 <c>Alias = global::Ns.Type</c>——目标必须全限定，
+    /// 否则被生成类所在命名空间里的同名类型劫持。别名不进 <see cref="CollectImports"/>。
+    /// </summary>
+    internal static List<string> CollectUsingLines(IEnumerable<UiNode> nodes)
+    {
+        var lines = new List<string>();
+        foreach (var node in nodes)
+        {
+            if (node is not UiUsingDirective u) continue;
+            var line = u.Alias is { Length: > 0 } alias
+                ? $"{alias} = {AliasTargetDisplay(u.AliasTarget)}"
+                : u.Namespace;
+            if (line.Length > 0 && !lines.Contains(line)) lines.Add(line);
+        }
+        return lines;
+    }
+
+    /// <summary>K31：别名目标补 <c>global::</c>（已带则原样）。</summary>
+    internal static string AliasTargetDisplay(string target) =>
+        target.StartsWith("global::", StringComparison.Ordinal) ? target : "global::" + target;
+
+    /// <summary>
+    /// K22/K31：单文件的标签解析作用域。别名优先于目录 tag（模板内声明是最具体的选择），
+    /// 未命中别名时退回「只在 @using 导入的命名空间内解析」。
+    /// </summary>
+    internal sealed class TagScope
+    {
+        private readonly IReadOnlyList<string> _imports;
+        private readonly IReadOnlyDictionary<string, string?> _aliases;
+
+        public TagScope(IReadOnlyList<string> imports, IReadOnlyDictionary<string, string?> aliases)
+        {
+            _imports = imports;
+            _aliases = aliases;
+        }
+
+        public UiTagResolution Resolve(UiCatalog catalog, string tag)
+        {
+            if (_aliases.TryGetValue(tag, out var target))
+            {
+                // null = 别名本身不合法（EUI048 已报），不再叠加第二条诊断
+                var def = target is null ? null : catalog.FindByTypeDisplayName(target);
+                return def is null
+                    ? new UiTagResolution(UiTagResolutionKind.AliasUnresolved, null, null, null)
+                    : new UiTagResolution(UiTagResolutionKind.Found, def, null, null);
+            }
+            return catalog.Resolve(tag, _imports);
+        }
     }
 
     private static IEnumerable<UiNode> Nodes(IEnumerable<UiNode> nodes)
@@ -178,7 +280,7 @@ public static class TemplateAnalyzer
     /// 子内容按插槽基数走建立 once 内容上下文（继承 EUI040/@bind、EUI010/Key、EUI006/裸文本）。
     /// </summary>
     private static void ValidateSlotFill(UiElement parent, UiElementDef def, UiSlotNode fill,
-        UiCatalog catalog, List<UiDiagnostic> diags, IReadOnlyList<string> imports)
+        UiCatalog catalog, List<UiDiagnostic> diags, TagScope scope)
     {
         UiAttribute? nameAttr = null;
         foreach (var attr in fill.Attributes)
@@ -255,15 +357,15 @@ public static class TemplateAnalyzer
         fill.ResolvedSlot = slot;
         var childCtx = slot.Cardinality == UiSlotCardinality.Single ? Ctx.ContentSingle : Ctx.ContentMulti;
         foreach (var child in fill.Children)
-            Visit(child, childCtx, catalog, diags, allowKey: false, imports);
+            Visit(child, childCtx, catalog, diags, allowKey: false, scope);
     }
 
-    private static void Visit(UiNode node, Ctx ctx, UiCatalog catalog, List<UiDiagnostic> diags, bool allowKey, IReadOnlyList<string> imports)
+    private static void Visit(UiNode node, Ctx ctx, UiCatalog catalog, List<UiDiagnostic> diags, bool allowKey, TagScope scope)
     {
         switch (node)
         {
             case UiElement element:
-                VisitElement(element, ctx, catalog, diags, allowKey, imports);
+                VisitElement(element, ctx, catalog, diags, allowKey, scope);
                 break;
             case UiText text:
                 VisitText(text, ctx, diags);
@@ -281,17 +383,17 @@ public static class TemplateAnalyzer
                         node.Span));
                 break;
             case UiIf ifNode:
-                VisitBlock(ifNode.ConditionSpan, ifNode.Children, ctx, catalog, diags, allowKeyRoot: false, imports);
+                VisitBlock(ifNode.ConditionSpan, ifNode.Children, ctx, catalog, diags, allowKeyRoot: false, scope);
                 foreach (var elseIf in ifNode.ElseIfs)
-                    VisitBlock(elseIf.ConditionSpan, elseIf.Children, ctx, catalog, diags, allowKeyRoot: false, imports);
+                    VisitBlock(elseIf.ConditionSpan, elseIf.Children, ctx, catalog, diags, allowKeyRoot: false, scope);
                 if (ifNode.ElseChildren is not null)
-                    VisitBlock(ifNode.ConditionSpan, ifNode.ElseChildren, ctx, catalog, diags, allowKeyRoot: false, imports);
+                    VisitBlock(ifNode.ConditionSpan, ifNode.ElseChildren, ctx, catalog, diags, allowKeyRoot: false, scope);
                 break;
             case UiForeach foreachNode:
-                VisitBlock(foreachNode.CollectionSpan, foreachNode.Children, ctx, catalog, diags, allowKeyRoot: true, imports);
+                VisitBlock(foreachNode.CollectionSpan, foreachNode.Children, ctx, catalog, diags, allowKeyRoot: true, scope);
                 break;
             case UiSwitch switchNode:
-                VisitSwitch(switchNode, ctx, catalog, diags, imports);
+                VisitSwitch(switchNode, ctx, catalog, diags, scope);
                 break;
             case UiCodeBlock:
                 // K21：文档顶层合法（与单根元素任意交错，Analyze 已放行）；块内/内容中报错
@@ -315,7 +417,7 @@ public static class TemplateAnalyzer
     /// 这里做位置与内容模型校验。分支体是完整内容模板（元素/文本/嵌套块）。
     /// </summary>
     private static void VisitSwitch(UiSwitch switchNode, Ctx ctx, UiCatalog catalog,
-        List<UiDiagnostic> diags, IReadOnlyList<string> imports)
+        List<UiDiagnostic> diags, TagScope scope)
     {
         if (ctx == Ctx.TextRuns || ctx == Ctx.Label)
             diags.Add(UiDiagnostics.Error(UiDiagnostics.TextNotAllowed,
@@ -337,13 +439,13 @@ public static class TemplateAnalyzer
                         child.Span));
                     continue;
                 }
-                Visit(child, childCtx, catalog, diags, allowKey: false, imports);
+                Visit(child, childCtx, catalog, diags, allowKey: false, scope);
             }
         }
     }
 
     private static void VisitBlock(TextSpan exprSpan, List<UiNode> children, Ctx ctx, UiCatalog catalog,
-        List<UiDiagnostic> diags, bool allowKeyRoot, IReadOnlyList<string> imports)
+        List<UiDiagnostic> diags, bool allowKeyRoot, TagScope scope)
     {
         if (ctx == Ctx.TextRuns || ctx == Ctx.Label)
             diags.Add(UiDiagnostics.Error(UiDiagnostics.TextNotAllowed,
@@ -368,7 +470,7 @@ public static class TemplateAnalyzer
             }
             bool isKeyAllowed = allowKeyRoot && firstRoot && child is UiElement;
             firstRoot = false;
-            Visit(child, childCtx, catalog, diags, isKeyAllowed, imports);
+            Visit(child, childCtx, catalog, diags, isKeyAllowed, scope);
         }
     }
 
@@ -414,7 +516,8 @@ public static class TemplateAnalyzer
         {
             UiTagResolutionKind.Ambiguous =>
                 $"tag '{tag}' is ambiguous between {string.Join(" or ", resolution.Candidates!)}; " +
-                "disambiguate with [UiTag] on one of them",
+                $"pick one with a template alias, e.g. '@using {tag}Alt = {WithoutGlobalPrefix(resolution.Candidates![0])}' " +
+                $"then use <{tag}Alt/>",
             UiTagResolutionKind.Unavailable =>
                 $"tag '{tag}' is not usable: {resolution.Hidden!.Reason}",
             // K22（D85）：目录里有同名标签但其命名空间未 @using 导入——给出缺失 @using 建议
@@ -435,22 +538,33 @@ public static class TemplateAnalyzer
         return dot < 0 ? null : rest.Substring(0, dot);
     }
 
-    private static void VisitElement(UiElement element, Ctx ctx, UiCatalog catalog, List<UiDiagnostic> diags, bool allowKey, IReadOnlyList<string> imports)
+    /// <summary>目录 CLR 类型显示名（<c>global::Ns.Type</c>）→ 可直接写进 <c>@using Alias = …</c> 的类型名。</summary>
+    private static string WithoutGlobalPrefix(string clrTypeDisplayName)
+        => clrTypeDisplayName.StartsWith("global::", StringComparison.Ordinal)
+            ? clrTypeDisplayName.Substring("global::".Length)
+            : clrTypeDisplayName;
+
+    private static void VisitElement(UiElement element, Ctx ctx, UiCatalog catalog, List<UiDiagnostic> diags, bool allowKey, TagScope scope)
     {
-        var resolution = catalog.Resolve(element.Tag, imports);
+        var resolution = scope.Resolve(catalog, element.Tag);
         if (resolution.Kind != UiTagResolutionKind.Found)
         {
-            // D74 ②：标签解析失败的专属出口（design/14 §14.9.1）。冲突报 EUI016；
-            // 不可用标签按目录给出的 ReasonCode 报 EUI017/EUI018/EUI030/EUI031；
-            // 只有真正未知的标签才落 EUI001，消息与 span 保持原样。
-            var code = resolution.Kind switch
+            // K31：别名命中但目标不在目录——EUI048 已在 CollectAliases 报过且是 Error，
+            // 这里不再叠加「未知标签」，否则用户会看到两条错、其中一条还指向 tag 本身。
+            if (resolution.Kind != UiTagResolutionKind.AliasUnresolved)
             {
-                UiTagResolutionKind.Ambiguous => UiDiagnostics.TagConflict,
-                UiTagResolutionKind.Unavailable => resolution.Hidden!.ReasonCode,
-                _ => UiDiagnostics.UnknownTag,
-            };
-            diags.Add(UiDiagnostics.Error(code,
-                UnknownTagMessage(element.Tag, resolution, catalog), element.TagSpan));
+                // D74 ②：标签解析失败的专属出口（design/14 §14.9.1）。冲突报 EUI016；
+                // 不可用标签按目录给出的 ReasonCode 报 EUI017/EUI018/EUI030/EUI031；
+                // 只有真正未知的标签才落 EUI001，消息与 span 保持原样。
+                var code = resolution.Kind switch
+                {
+                    UiTagResolutionKind.Ambiguous => UiDiagnostics.TagConflict,
+                    UiTagResolutionKind.Unavailable => resolution.Hidden!.ReasonCode,
+                    _ => UiDiagnostics.UnknownTag,
+                };
+                diags.Add(UiDiagnostics.Error(code,
+                    UnknownTagMessage(element.Tag, resolution, catalog), element.TagSpan));
+            }
             element.ResolvedDef = null;
             foreach (var child in element.Children)
             {
@@ -459,7 +573,7 @@ public static class TemplateAnalyzer
                     diags.Add(UiDiagnostics.Error(UiDiagnostics.SlotInvalid,
                         "named slot fills are only allowed as direct children of a resolved component tag", child.Span));
                 else
-                    Visit(child, Ctx.Container, catalog, diags, allowKey: false, imports);
+                    Visit(child, Ctx.Container, catalog, diags, allowKey: false, scope);
             }
             return;
         }
@@ -744,7 +858,7 @@ public static class TemplateAnalyzer
             // 槽填充不参与默认内容的根计数与内容模型。
             if (child is UiSlotNode fill)
             {
-                ValidateSlotFill(element, def, fill, catalog, diags, imports);
+                ValidateSlotFill(element, def, fill, catalog, diags, scope);
                 continue;
             }
             if (child is UiContentSlotNode && isComponent)
@@ -780,7 +894,7 @@ public static class TemplateAnalyzer
             if ((contentCtx == Ctx.TextRuns || contentCtx == Ctx.Label) && child is UiElement)
                 diags.Add(UiDiagnostics.Error(UiDiagnostics.TextNotAllowed,
                     $"element children are not allowed inside '{element.Tag}' ({def.Content})", child.Span));
-            Visit(child, contentCtx, catalog, diags, allowKey: false, imports);
+            Visit(child, contentCtx, catalog, diags, allowKey: false, scope);
         }
     }
 }

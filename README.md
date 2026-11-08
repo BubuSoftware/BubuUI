@@ -18,10 +18,10 @@
 > 控件事件自动失效；规范正本 [spec/01–03](./spec/README.md)（v4）。
 > **S2 块 v4 切片已通过**：`@if`/`@foreach` 协调器 + `R{N}`、任意 `IEnumerable<T>` item 推断、
 > Keyed 复用、`UiBinding` 原语与 `EUI033`。
-> **S3 绑定切片已通过（控件侧）**：`@bind-P` 新语法 + 旧 `:bind`/`:value` 弃用告警、
-> item 绑定与条目释放、`EUI037`/`EUI040`/`EUI043`。
-> **C1 目录派生切片已通过**：运行时六个声明特性（`[UiTag]`/`[UiContent]`/`[UiIgnore]`/`[UiParameter]`/
-> `[UiSlot]` + `UiContentKind`）、`Compiler.Metadata` Roslyn 符号扫描器；派生目录 ⊇ 手写目录
+> **S3 绑定切片已通过（控件侧）**：`@bind-P` 新语法、item 绑定与条目释放、`EUI037`/`EUI040`
+> （旧 `:bind`/`:value` 已于 S6/K27 移除，现报 `EUI046`）。
+> **C1 目录派生切片已通过**：运行时五个声明特性（`[UiContent]`/`[UiIgnore]`/`[UiParameter]`/
+> `[UiSlot]` + `UiContentKind`；`[UiTag]` 已于 K32 退役，标签恒为类型短名）、`Compiler.Metadata` Roslyn 符号扫描器；派生目录 ⊇ 手写目录
 > （模板属性项 6→17，差集逐条评审见 [14 §14.12.1](./design/14-control-template-contract.md)）。
 > **C2 模板表面切片已通过（2026-11-02）**：分析器/生成器切到派生目录、手写目录删除（`CreateDefault()` 不存在）；
 > `InputEvents` 7 个事件迁入 `Element`（模板事件 1 → 9 个事件名，任何标签可写输入/焦点处理器）、
@@ -65,7 +65,8 @@
 > 符号上下文，仅「表达式自身语义干净 + 对目标委托的转换确定失败」时报 Error 于 `.ui` 属性值并
 > 短路生成输出，符号未解析/重载失败/`dynamic`/表达式内部错误静默交回生成代码经 `#line` 由 C# 报错；
 > `EventHandlerSignatureTests` 16 例，G3 至此全部收敛。
-> **497 个测试全绿（Headless 214 / Compiler 218 / Rendering 65）**。
+> **567 个用例（Headless 274 / Compiler 228 / Rendering 65），566 绿**——唯一红是既有像素 golden
+> `PixelGoldens_MatchBaseline`（`solid-primitives`/`transform-clip` 整图 hash 不符，探针 ±2 全过，与 S6 无关）。
 >
 > **S4/S5 运行时硬化与 G2 CPU 侧部分落地（2026-11-08，D83/D84）**：运行时 `IValueBox`/`ValueBox<T>`
 > 让重复赋值只改泛型字段、消除值类型装箱，`Component.Dispose` 锁内清 pending 队列（`RuntimeHardeningTests` 7 例）；
@@ -80,14 +81,15 @@
 > 帧预算/分配预算门槛、CI）、G2（GPU retained layer/真正局部重绘、目标机稳定 60fps 结论、
 > 像素探针 DSL、CPU/GPU 交叉一致性门禁）、G4（样式/主题/附加属性；泛型标签暂缓 K19）、IDE/DevTools。
 
-> **S6 语法对齐（✅ 已实现 2026-11-08，K23 + K24–K29）**：`.ui` 语法表面向 Blazor/Razor 对齐——
-> 模板 `@using`（内置控件也须导入、生成代码保留 using，K22）、`@code` 单文件「代码 + 模板」（位置不限，K21）、
+> **S6 语法对齐（✅ 已实现 2026-11-08，K23 + K24–K31）**：`.ui` 语法表面向 Blazor/Razor 对齐——
+> 模板 `@using`（内置控件也须导入、生成代码保留 using，K22）、`@using Alias = Ns.Type` 类型别名
+> （同时可当标签用，用于解决第三方控件与内置控件的 tag 重名，K31）、`@code` 单文件「代码 + 模板」（位置不限，K21）、
 > `else`/`else if`/`@switch` 流程控制、`@* *@` 注释；**不做** `@page`/`@rendermode`/`@inject` 等 Web 指令，
 > **不复用 Razor 编译器与 Blazor 运行时**，K1–K18 保留元素树 + 失效重算模型不变。
 > 目标语法见 [spec/01 §1.5](./spec/01-template-syntax.md)，权威决策见 [spec/02 §14](./spec/02-generated-code-contract.md)，
 > 偏差 D85–D88 已收敛（见 [spec/02 §12](./spec/02-generated-code-contract.md#12-实现偏差台账-d42d88)），
 > 计划见 [design/16](./design/16-blazor-alignment-plan.md)。全部样例与约 94 例 golden 已补 `@using` 迁移，
-> `dotnet test EclipseUI.slnx` 497 例全绿。
+> `dotnet test EclipseUI.slnx` 用例 548 → 567（K31 别名新增 19 例：前端 15 / 生成器契约 4）。
 
 ## 核心理念
 
@@ -103,7 +105,7 @@ src/
   EclipseUI.Runtime/             运行时：失效队列与所有权、StyledProperty 属性引擎、
                                  元素树、measure/arrange 布局、块协调器（v4：`Refresh`/`BlockScope`）、
                                  路由事件、InputRouter 输入/焦点、Panel.Padding/ClipToBounds、无头宿主、
-                                 控件契约声明特性（`UiAttributes.cs`：`[UiTag]`/`[UiContent]`/`[UiIgnore]`/
+                                 控件契约声明特性（`UiAttributes.cs`：`[UiContent]`/`[UiIgnore]`/
                                  `[UiParameter]`/`[UiSlot]` + `UiContentKind`）
   EclipseUI.Text.Shaping/        HarfBuzz shaping（HarfBuzzSharp）：先 shaping 再测量，
                                  HarfBuzzTextPainter 让布局与绘制共用同一 shaping 缓存
@@ -206,7 +208,7 @@ public partial class Counter
 - **双向绑定**：`@bind-Checked={showButton}` 生成 `UiBinding.TwoWay`；构造时源→目标，
   目标变化回写源并 `Invalidate`，相等短路防回环；源必须是可写左值，非法源/非法目标分别报
   `EUI037`/`EUI040`（编译期，含值类型 item 成员与属性返回的 struct 中间段）；旧语法
-  `:bind`/`:value` 仍可用但报 `EUI043` 弃用告警；组件级 `@bind-P` 已随 C4 落地
+  `:bind`/`:value` 已移除（S6/K27，报 `EUI046`），迁移到 `@bind-P`/`P=`；组件级 `@bind-P` 已随 C4 落地
   （`{P}Changed` 回调 + 父推送 `U{N}`/`R{N}`）。
 - **输入与焦点**：`InputRouter` 统一 hit test、按下捕获、指针移动/释放与键盘路由；
   无头宿主（`HeadlessRoot`）与 Win32 窗口宿主共用同一条路径。点击保持最深层命中、
@@ -220,7 +222,7 @@ public partial class Counter
   同时实现 `ITextPainter` 与 `ITextMeasurer`，布局与绘制共用同一个 shaping 缓存。
 - **诊断即生命线**：未知标签/属性给最近似名建议；字面量按目标类型编译期转换，
   格式错=编译错误（EUI001–EUI015），`@foreach` 集合不可枚举报 EUI007，同一目标重复写入报 EUI033，
-  绑定源/目标非法报 EUI037/EUI040，旧 `:bind`/`:value` 报 EUI043 弃用告警；
+  绑定源/目标非法报 EUI037/EUI040，旧 `P:bind`/`P:value` 报 EUI046（已移除）；
   表达式经 `#line` 映射，Roslyn 报错直接落在 `.ui` 上。
 - **无头测试**：不开窗口断言元素树、布局结果、失效重算、块生命周期、事件冒泡、命中与焦点（设计文档 07 的落地）。
 - **GPU 上屏（G2）**：`DisplayList` → `VelloSurfaceBackend` → wgpu(Dx12) surface → 窗口像素；
@@ -240,7 +242,8 @@ public partial class Counter
   **`Ref={field}` 已随 C5 落地（2026-11-05）**：元素/组件实例赋给 code-behind 字段，
   `EUI029` 分层（分析器语法级 + 生成器探针语义级）；`EUI019`/`EUI020`/`EUI021` 使用点诊断
   仅对引用程序集控件生效（源项目控件落 `EUI002`/`EUI006`，声明处 `EUI026` 暂无编译期出口，D74② 开放）；
-  **具名插槽（`<Slot>`/`<ContentSlot>`）已随 C6 落地（2026-11-05）**；`@switch` 仍未支持。
+  **具名插槽（`<Slot>`/`<ContentSlot>`）已随 C6 落地（2026-11-05）**；**`@switch` 已随 S6 落地（2026-11-08，K29/K30）**：
+  多 section + `default`、常量标签（否则 `EUI047`）、无贯穿语义（`break;` 单独结束该行，多标签形态 `EUI100`）。
 - 文本：无头测试默认用确定性 naive 测量；窗口样例接入 HarfBuzz。多行断行、bidi 混排、字体 fallback 未实现。
 - 输入：无头注入与 Win32 鼠标/键盘已共用 `InputRouter` 并路由进元素树；字符输入（`WM_CHAR`）、
   IME、Shift+Tab 未接（暂无文本编辑控件）。
@@ -289,6 +292,6 @@ G4（样式/主题/附加属性；泛型标签暂缓 K19）、IDE/DevTools 随�
    ~~组件标签与组件级绑定（C4）~~ ✅（2026-11-05）、
    ~~`Ref` 与剩余使用点诊断收敛（C5）~~ ✅（2026-11-05）。
 3. **S6 语法对齐**（K23，✅ 已实现 2026-11-08）：`@using` / `@code` 单文件 / `else`+`@switch` / `@* *@`，
-   出口标准 = D85–D88 关闭 + 样例与 golden 迁移 + 497 例基线全绿；计划见 [16](./design/16-blazor-alignment-plan.md)。
+   出口标准 = D85–D88 关闭 + 样例与 golden 迁移 + 用例基线全绿（497 → 548）；计划见 [16](./design/16-blazor-alignment-plan.md)。
 4. **G4 样式/控件/虚拟化**：选择器编译、亮暗主题、基础控件集、`VirtualizingPanel`。
 5. **G5 IDE P0–P1**：TextMate grammar + LSP server（表达式投影进 Roslyn）+ VS Code/Rider 壳。

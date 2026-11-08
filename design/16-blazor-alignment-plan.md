@@ -1,17 +1,19 @@
 # 计划：`.ui` 语法向 Blazor/Razor 对齐（S6 语法对齐切片）
 
-> **状态：✅ S6 已实现（2026-11-08）——K23 整波与 K24–K29 实施细项全部落地，D85–D88 收敛，497 例回归全绿**
+> **状态：✅ S6 已实现（2026-11-08）——K23 整波与 K24–K30 实施细项全部落地，D85–D88 收敛，497 例回归全绿**
 > 已落地的决策：**K21**（`@code` 位置与成员可见性，§5.2）、**K22**（`@using` 与标签作用域，§5.3）、
 > **K23**（整波方向与范围：对齐方向 / 不做 Web 指令 / 流程控制 / 单文件 / 表达式记号 / S6 排期）、
-> **K24–K29**（Q3 循环范围 / Q4 `@code` 内容 / Q6 注释口径 / Q7 旧语法清理 / `@{}` 不采纳 / `@switch` 细节），
+> **K24–K30**（Q3 循环范围 / Q4 `@code` 内容 / Q6 注释口径 / Q7 旧语法清理 / `@{}` 不采纳 / `@switch` 细节），
 > 权威登记在 [`spec/02` §14](../spec/02-generated-code-contract.md)，目标语法正本在 [`spec/01` §1.5](../spec/01-template-syntax.md)。
 > 提出：2026-11-08 用户需求「目前的语法我不满意，请列一个计划和 Blazor 对齐；取其精华去其 HTML 相关的糟粕；`@page`/`@rendermode` 之类的不需要；流程控制也要对齐；支持单个页面同时写代码和模板」。
 > 依据：Microsoft Learn · ASP.NET Core 10.0 Razor 语法参考、Blazor 组件文档、渲染模式文档；本仓 `spec/01`–`03`、`design/01`–`15`、`design/09`。
 > 按 K20 与 `spec/01` §8 规则 1/7/8：**P0 决策冻结闸门已完成（2026-11-08）**——K23 已登记、
 > `spec/01` §1.5 / `spec/02` §2/§12/§14 / `spec/03` §13.3 / `design/01`/`02`/`03`/`08`/`09` / 三份 README 已同步、
 > 规范先行偏差 D85–D88 已进双台账。~~本文剩余内容是实施计划与待拍板细项~~
-> **2026-11-08：细项已拍板（K24–K29）并全部实施，本文保留为实施过程记录。**
-> 实施细节从 **K24** 起登记；`src/` 一行未动，进入 P1 前须先拍板 Q3/Q4/Q6/Q7。
+> **2026-11-08：细项已拍板（K24–K30）并全部实施，本文保留为实施过程记录。**
+> 实施顺序 P1→P6 已全部走完（见 §4 各阶段 ✅）；本轮追加两项：**K30**（section 边界口径：
+> `break;` 单独结束该行、空 section 必须显式 `break;`、`case 1:` 紧跟 `case 2:` 报 `EUI100`）
+> 与 **D11 关账**（表达式捕获改按 C# 词法扫描，见 §4 P1）。
 
 ---
 
@@ -63,7 +65,7 @@
 | 路由 / 外壳 | `@page`、`@layout`、`@attribute [Route]`、`@namespace`、`@model`、`@section` |
 | 渲染位置 / 交互 | `@rendermode`（Static SSR / InteractiveServer / InteractiveWebAssembly / InteractiveAuto）、`@attribute [RenderMode*]` |
 | 组件类形状 | `@inherits`、`@implements`、`@attribute`、`@typeparam`（`@typeparam` 同时与 K19 泛型暂缓一致） |
-| 服务 / 编译开关 | `@inject`、`@preservewhitespace`、compound `@using (...)`、`@using static` / 别名 using、`@functions` 别名 |
+| 服务 / 编译开关 | `@inject`、`@preservewhitespace`、compound `@using (...)`、`@using static`、`@functions` 别名（**注**：类型别名 `@using Alias = Ns.Type` 已由 K31 放开，并额外具备标签别名效果） |
 | HTML 语法债 | `<!-- -->` 作为模板注释、HTML 标签兜底、`@("xxx")` 字面量、属性大小写不敏感、最小化属性、XML 实体 / CDATA、`@attributes` 展开、CSS `class`/`style` 语义 |
 | 运行时 | 渲染树 diff、`RenderFragment`、`EventCallback`、DI、SSR/WASM、CSS isolation |
 
@@ -90,21 +92,24 @@
   §8 规则 1「先登记状态与诊断，再改 Parser/Analyzer/Emitter」已满足；`src/` 仍一行未动。
 - **遗留**：Q3/Q4/Q6/Q7 待拍板细项须在进入 P1 前登记 K24+，不影响已定项。
 
-### P1 · 词法层
+### P1 · 词法层 — ✅ 已完成 2026-11-08
 
 - `Lexer.ParseDirective`（L303–349）扩展指令表与续接形态：`else`/`else if` 无 `@` 前缀的续接、`@code`/`@{}` 块体捕获、`@switch` 的 `case`/`default` 头、`@* *@` 注释；**`@code` 的识别不得依赖文件开头，token 流任意位置都要进入块体捕获（K21）**；**`@using` 进指令表、从 `EUI009` 拒绝清单移除，解析为 `UiUsingDirective`（K22）**。
 - 关闭 **D12**：未闭合注释报 `EUI100`，不再吞到 EOF（`SkipComment` L188–192）。
-- 处理 **D11**：`CaptureExpression`（L258–290）要么换 Roslyn tokenizer，要么把 `spec/01` §2.6 L204–208 改为「长期限制」并关账；`@code` 块不得再被误吞成 `Expression`。
+- ✅ **D11 已关账（S6）**：`CaptureExpression` 改为 `CSharpSnippet.FindMatchingClose`——按 C# 词法跳过注释、
+  字符字面量、普通/verbatim/插值/raw 字符串（含插值洞递归、`{{`/`}}`、`""` 转义、`:F2` 格式符）；
+  `@code` 块体与指令参数复用同一扫描器。**不引入 Roslyn**（前端保持可独立测试），
+  口径写进 `spec/01` §2.6 与 `design/03` §3.5.4 D11 行，回归见 `ExpressionCaptureTests` 13 例。
 - **验收**：词法 golden、`TokenizerTests` 扩展、D12 关闭；`@code { }` 不再级联产生 `EUI009` + `EUI006`。
 
-### P2 · AST 与分析器
+### P2 · AST 与分析器 — ✅ 已完成 2026-11-08
 
 - `Ast.cs` 新增 `UiCodeBlock`、`UiUsingDirective`、分支续接节点、`UiSwitch`、`UiLoop`（视 Q3）；**`UiDocument.Roots` 允许 `@code`/`@using` 与单根元素任意交错**，`EUI006`/`EUI012` 改为「元素根节点恰好 1 个 + 顶层非元素节点仅限 `@code`/`@using`/注释」（K21/K22）。
 - `Parser.ParseDirectiveInto`（L268–291）分派表重写；`Analyzer.Analyze`（L15–24）放宽根层 `EUI006` 例外；保留「块内容只允许元素与嵌套块」边界。
 - 诊断：`EUI008` 停用、`EUI009` 收窄到明确拒绝清单；新增诊断从 **EUI046** 起。
 - **验收**：解析/诊断快照；补齐当前缺失的 `EUI008`/`EUI009`/注释/`@code` 专门用例（全仓目前 `EUI008` 零断言、`EUI009` 仅一处）。
 
-### P3 · 生成器 · 单文件代码（风险最高）
+### P3 · 生成器 · 单文件代码（风险最高）— ✅ 已完成 2026-11-08
 
 - `Emitter.Emit`（L77–128）类壳增加 `@code` 成员透传，并让 `Mapped`（L146–162）为 `@code` 内成员/语句建立 `.ui` span 映射。
 - `TemplateGenerator.ExtractFacts`（L62–120）放宽 `EUI005`；`ProbeCodeBehindConflicts`（L215）扩展到 `@code` 成员；`IsGeneratedMemberName`（L254）白名单不变。
@@ -112,25 +117,25 @@
 - 增量管道 `WithTrackingName("PerFileGeneration")` 保持；`spec/02` §2.4 `#line` 契约「必须映射 / 不映射」清单重写。
 - **验收**：`GeneratorContractTests`（约 94 例 golden）、`LineSpanMappingTests`、`CodeBehindConflictTests`（23 例）、`EventHandlerSignatureTests`（16 例）、`MetadataOutletTests`（14 例）全绿；新增「无 `.cs`、纯 `@code` 单文件」端到端用例。
 
-### P4 · 流程控制 · 运行时语义
+### P4 · 流程控制 · 运行时语义 — ✅ 已完成 2026-11-08
 
 - `ConditionalBlock` 扩为多分支（`else if`/`else`）；新增 `SwitchBlock`；按 Q3 决定是否扩到 `@for`/`@while`/`@do while`。
 - 定义分支切换时的销毁/重建、循环次数变化时的 Keyed 复用边界；K4/K6（块 setter 只保存、显式 `Refresh()`）不变。
 - `Emitter.EmitIf`（L783–833）/ `EmitForeach`（L835–894）与 `EmitContentRoots`（L896–917）同步；组件内容区仍按 K10 build-once 静态展开。
 - **验收**：`BlockTests`/`BlockLayoutTests`/`EndToEndTests` 扩展分支切换与循环变化用例，验证无元素泄漏、无重复失效。
 
-### P5 · 诊断与错误恢复
+### P5 · 诊断与错误恢复 — ✅ 已完成 2026-11-08
 
 - `EUI008` 停用后保持停用（§8 规则 4）；新诊断码从 `EUI046` 起分配：`@code` 成员冲突、`switch` 缺 `default`、无界循环提示、未知 `@` 指令清单提示。
 - 非法输入仍走 K16 最小 `Build` 回退，不抛异常。
 - 按 Q7 决定是否同步清掉 `P:bind`/`P:value`（`EUI043` → Error/移除），顺带收 S5 旧语法清理。
 - **验收**：诊断快照、零停用诊断出现、`spec/01` §6.2 出口表与 `spec/02` §12 台账一致。
 
-### P6 · 收口与迁移
+### P6 · 收口与迁移 — ✅ 已完成 2026-11-08
 
 - 样例：`CounterApp`/`TaskList` 至少一个改为单文件 `@code` 形态，其余保留 code-behind 以验证并存；**至少一个样例把 `@code` 放在模板下方**，验证「上引用下」与多块合并（K21）；**全部 `.ui` 样例、约 94 例 golden 与块/诊断测试模板统一补 `@using`（K22，一次性迁移 + 回归）**。
 - 文档双向同步（spec ↔ design ↔ README）、`design/09` 里程碑进度、`spec/README`/`design/README` 边界声明。
-- 台账关账：D85+ 关闭条件、D12 关闭、D11 口径确定、K21/K22/K23 落地状态。
+- ✅ 台账关账（2026-11-08）：D85–D88 全部 ✅、D12 ✅ S6、D11 ✅ S6、K21/K22/K23 ✅ S6；`EUI043`/`EUI008` 停用码零出现。
 - **验收**：`dotnet test EclipseUI.slnx` 全绿（基线 497 例：Headless 214 / Compiler 218 / Rendering 65）；golden 生成文本、诊断快照、样本项目编译与运行（`spec/01` §8 规则 5）。
 
 ## 5. 决策状态与待拍板细项（Q1–Q8）
@@ -148,7 +153,7 @@
 | **Q8** | 排期归属 | ✅ **K23 ⑦ 已定**：新增 S6「语法对齐」，插在 G3 之后、G4 之前（design/09 §9.5/§9.6） | 若要调整位置须修订 K23 |
 
 > 口径：✅ 已定项以 `spec/02` §14（K21–K29）与 `spec/01` §1.5 为准。
-> **2026-11-08 更新**：Q3/Q4/Q6/Q7 与 case 内嵌细项已全部拍板（**K24–K29**）并随 S6 实施完成——
+> **2026-11-08 更新**：Q3/Q4/Q6/Q7 与 case 内嵌细项已全部拍板（**K24–K30**）并随 S6 实施完成——
 > `@switch` 细节另见 K29（分支体 = 完整内容模板、case 标签常量校验 `EUI047`、无贯穿但要求 `break`、`default` 至多一个、`EqualityComparer<T>.Default` 匹配）；`@{}` 代码块不采纳（K28）。
 
 ### 5.1 Q1 论证：为什么推荐保留 `{expr}`
@@ -253,7 +258,7 @@
 
 | 项 | 决定 |
 |---|---|
-| 指令形态 | `@using {Namespace}`（不带分号，与 Razor 一致），支持多条；**不做** compound `@using (...)`、`@using static`、别名 using |
+| 指令形态 | `@using {Namespace}`（不带分号，与 Razor 一致），支持多条；**不做** compound `@using (...)`、`@using static`。类型别名 `@using Alias = Ns.Type` 在 S6 之后由 **K31** 放开（原文「不做别名 using」仅指当时范围） |
 | 生成代码 | 全部 `@using` 在 `#nullable enable` 之后、`namespace` 之前输出为普通 `using {Ns};`；**不生成 `global using`、不生成模板未声明的 using**；其余生成代码的 `global::` 全限定规则不变 |
 | 标签解析 | `UiCatalog.Resolve(tag)` 改为按导入命名空间过滤；只有导入命名空间中的控件/组件可被短名解析 |
 | 内置控件 | **无豁免**：内置控件在 `EclipseUI.Elements`（`Controls.cs` / `Panels.cs` / `TextBlock.cs`），必须 `@using EclipseUI.Elements` |
@@ -300,8 +305,9 @@
 
 ---
 
-**状态**：方向已由 **K23** 确认并全仓落地（K1–K23 / D42–D88 / S6）；本文余下内容是**实施计划与待拍板细项**，
-不再是待确认提案。**下一步**：拍板 Q3/Q4/Q6/Q7 → 登记 K24+ → 从 P1 词法层开工（P0 闸门已通过）。
+**状态**：方向已由 **K23** 确认并全仓落地（K1–K31 / D42–D88 / S6 ✅ 2026-11-08）；本文余下内容是**实施过程记录**，
+P1–P6 全部走完，Q3/Q4/Q6/Q7 已拍板为 K24–K28、`@switch` 细项为 K29/K30；
+后续增量 **K31**（`@using Alias = Ns.Type` 一体两用，2026-11-09）见 spec/02 §14 与 §4.18。
 按 K20，权威决策在 `spec/02` §14、目标语法在 `spec/01` §1.5；`.workbuddy/memory/` 只作会话留痕。
 
 ---
@@ -310,9 +316,9 @@
 
 > **2026-11-08 重写说明**：由「`@code` 置顶」改为「模板在上、`@code` 收尾」，与 Blazor 标准 `Counter`
 > 模板一致。K21 同时允许置顶、置底或前后各一块，这里取最常见的一种；§5.2 有简版与多块变体。
-> **本例是 K23 目标语法形态，当前编译器（v2）不支持**（`@code` / `else` / `@switch` / `@* *@` / `@using`
-> 分别会撞 `EUI009` / `EUI100` / `EUI008` / `EUI009`），对应偏差 **D85–D88**，排期 **S6**。
-> 不得放进 `samples/` 等会被 Source Generator 扫描的目录，只以 Markdown 代码块留档。
+> **本例所用语法自 2026-11-08 起全部可用**（S6 落地：`@code` / `else` / `@switch` / `@* *@` / `@using`），
+> 对应偏差 **D85–D88 已关闭**。但它是文档示例、不随 `samples/` 同步验证（曾出现与实现细节不同步的情况），
+> 因此仍不得放进会被 Source Generator 扫描的目录，只以 Markdown 代码块留档。
 > 按 **K22**，模板头两条 `@using` 分别让内置控件与 `List<string>` 可见，且会原样保留到生成文件。
 
 ```razor

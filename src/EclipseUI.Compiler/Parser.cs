@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 
 namespace EclipseUI.Compiler;
 
@@ -147,7 +146,6 @@ public sealed class Parser
 
     private static UiNode CreateSlotNode(UiElement element)
     {
-        var nameAttr = element.Attributes.FirstOrDefault(a => a.Name == "Name" && !a.IsBind && !a.IsLegacy);
         if (element.Tag == "Slot")
         {
             var fill = new UiSlotNode { Span = element.Span, Children = element.Children };
@@ -292,7 +290,18 @@ public sealed class Parser
                 break;
             case "using":
                 Advance();
-                if (string.IsNullOrWhiteSpace(directive.Aux))
+                if (directive.Aux2 is { } target)
+                {
+                    // K31：别名形态——Namespace 留空，避免混进 CollectImports 的可见性集合
+                    list.Add(new UiUsingDirective
+                    {
+                        Alias = directive.Aux!.Trim(),
+                        AliasTarget = target,
+                        NamespaceSpan = directive.InnerSpan,
+                        Span = directive.Span,
+                    });
+                }
+                else if (string.IsNullOrWhiteSpace(directive.Aux))
                     Diag(UiDiagnostics.Syntax,
                         "'@using' requires a namespace name: @using System.Collections.Generic", directive.Span);
                 else
@@ -470,9 +479,10 @@ public sealed class Parser
 
     /// <summary>
     /// <c>@switch (value) { case CONST: … break; default: … break; }</c>（K23 ③/K29，D87）。
-    /// case/default 头以裸文本形态出现在词法流里（文本模式累积到 '&lt;'/'@'/'}' 停），
-    /// 由 <see cref="TrySplitSectionHeader"/> 从 Text token 中字符串感知地拆出；
-    /// break 以独立文本段识别（K29 ③：非空 section 必须以 break; 结尾，无贯穿语义）。
+    /// case/default 头、<c>break;</c> 与 case 体文本都以裸文本形态出现在词法流里
+    /// （文本模式累积到 '&lt;'/'@'/'}' 停），由 <see cref="SplitSwitchText"/> 按片段拆开；
+    /// 一个 Text token 可能同时含「break; + 下一个 case 头」，不能按整段比对
+    /// （K29 ③：非空 section 必须以 break; 结尾，无贯穿语义）。
     /// </summary>
     private void ParseSwitchInto(List<UiNode> list, Token directive)
     {
@@ -515,72 +525,78 @@ public sealed class Parser
                     break;
                 }
 
-                // section 头：从 Text token 拆出全部 case/default 头（连续空 section 支持多标签形态）
+                // case 体顶层的裸文本：拆成「section 头 / 独立 break; / 普通文本」三类片段。
+                // 词法层把 `break;` 与后面紧跟的 `case 2:` 累成同一个 Text token，
+                // 所以不能要求整段 trim 后恰好是 `break;`（K29 ③，否则多分支必然落成文本节点）。
                 if (_tok.Kind == TokenKind.Text)
                 {
-                    var text = _tok.Text;
-                    var baseStart = _tok.Span.Start;
-                    int pos = 0;
-                    var heads = new List<(bool IsDefault, string Label, int LabelOffset, int HeadEnd)>();
-                    while (TrySplitSectionHeader(text, pos, out var isDefault, out var label, out var labelOffset, out var headEnd))
-                    {
-                        heads.Add((isDefault, label, labelOffset, headEnd));
-                        pos = headEnd;
-                    }
+                    var pieces = SplitSwitchText(_tok.Text);
+                    int baseStart = _tok.Span.Start;
+                    Advance();
 
-                    if (heads.Count > 0)
+                    foreach (var piece in pieces)
                     {
-                        foreach (var head in heads)
+                        var span = new TextSpan(baseStart + piece.Offset, piece.Length);
+                        switch (piece.Kind)
                         {
-                            var section = new UiSwitchSection
-                            {
-                                IsDefault = head.IsDefault,
-                                Label = head.Label,
-                                LabelSpan = new TextSpan(baseStart + head.LabelOffset, head.Label.Length),
-                                HeaderSpan = new TextSpan(baseStart, head.HeadEnd),
-                            };
-                            if (head.IsDefault)
-                            {
-                                if (sawDefault)
+                            case SwitchPieceKind.Case:
+                            case SwitchPieceKind.Default:
+                                {
+                                    var section = new UiSwitchSection
+                                    {
+                                        IsDefault = piece.Kind == SwitchPieceKind.Default,
+                                        Label = piece.Text,
+                                        LabelSpan = span,
+                                        HeaderSpan = new TextSpan(baseStart + piece.HeaderOffset, piece.HeaderLength),
+                                    };
+                                    if (section.IsDefault)
+                                    {
+                                        if (sawDefault)
+                                            Diag(UiDiagnostics.Syntax,
+                                                "duplicate 'default' section; a @switch allows at most one",
+                                                section.HeaderSpan);
+                                        sawDefault = true;
+                                    }
+                                    else
+                                    {
+                                        ValidateCaseLabelShape(section.Label, section.LabelSpan);
+                                    }
+                                    switchNode.Sections.Add(section);
+                                    current = section;
+                                    break;
+                                }
+
+                            case SwitchPieceKind.Break:
+                                if (current is null)
                                     Diag(UiDiagnostics.Syntax,
-                                        "duplicate 'default' section; a @switch allows at most one", section.HeaderSpan);
-                                sawDefault = true;
-                            }
-                            else
-                            {
-                                ValidateCaseLabelShape(section.Label, section.LabelSpan);
-                            }
-                            switchNode.Sections.Add(section);
-                            current = section;
-                        }
+                                        "'break;' must be inside a case or default section", span);
+                                else
+                                {
+                                    current.HasBreak = true;
+                                    current = null;
+                                }
+                                break;
 
-                        var rest = text.Substring(pos);
-                        var restStartAbs = baseStart + pos;
-                        Advance();
-                        // 头后同 token 的剩余文本：空白丢弃（Normalize 口径），非空白作为文本节点
-                        if (rest.Trim().Length > 0 && current is not null)
-                        {
-                            var tail = new UiText();
-                            tail.Segments.Add(TextSegment.Static(rest, new TextSpan(restStartAbs, rest.Length)));
-                            current.Children.Add(tail);
+                            default:
+                                if (current is null)
+                                    Diag(UiDiagnostics.Syntax,
+                                        "expected 'case', 'default' or '}' in @switch body", span);
+                                else
+                                {
+                                    var textNode = new UiText();
+                                    textNode.Segments.Add(TextSegment.Static(piece.Text, span));
+                                    current.Children.Add(textNode);
+                                }
+                                break;
                         }
-                        continue;
                     }
+                    continue;
                 }
 
                 if (current is null)
                 {
                     Diag(UiDiagnostics.Syntax,
                         "expected 'case', 'default' or '}' in @switch body", _tok.Span);
-                    Advance();
-                    continue;
-                }
-
-                // break; 以独立文本段结束本 section（K29 ③：无贯穿语义）
-                if (_tok.Kind == TokenKind.Text && _tok.Text.Trim() == "break;")
-                {
-                    current.HasBreak = true;
-                    current = null;
                     Advance();
                     continue;
                 }
@@ -620,6 +636,13 @@ public sealed class Parser
                         ? "the 'default' section must end with a 'break;' statement (write it on its own line)"
                         : $"case '{section.Label}' must end with a 'break;' statement (write it on its own line)",
                     section.HeaderSpan);
+            else if (section.Children.Count == 0 && !section.HasBreak && !section.IsDefault)
+                // 无贯穿语义（K29 ③）下，`case 1:` 紧跟 `case 2:` 不是 C# 的标签组，而是两个独立分支：
+                // case 1 的分支体为空。静默渲染空内容属于"看似可用、运行时才炸"，显式拒绝。
+                Diag(UiDiagnostics.Syntax,
+                    $"case '{section.Label}' has no body and no 'break;'; a case section always starts its own body " +
+                    "(multi-label sections are not supported)",
+                    section.LabelSpan);
         }
 
         if (!closed && switchNode.Sections.Count == 0)
@@ -715,11 +738,12 @@ public sealed class Parser
     /// 返回标签在 text 内的偏移（用于 span 回映）与头结束位置（':' 之后）。
     /// </summary>
     private static bool TrySplitSectionHeader(string text, int start,
-        out bool isDefault, out string label, out int labelOffset, out int headEnd)
+        out bool isDefault, out string label, out int labelOffset, out int headStart, out int headEnd)
     {
         isDefault = false;
         label = "";
         labelOffset = -1;
+        headStart = -1;
         headEnd = -1;
 
         int i = start;
@@ -728,6 +752,7 @@ public sealed class Parser
 
         if (MatchWordAt(text, i, "case"))
         {
+            headStart = i;
             i += 4;
             while (i < text.Length && char.IsWhiteSpace(text[i])) i++;
             int labelStart = i;
@@ -764,12 +789,13 @@ public sealed class Parser
 
         if (MatchWordAt(text, i, "default"))
         {
+            headStart = i;
             i += 7;
             while (i < text.Length && char.IsWhiteSpace(text[i])) i++;
             if (i < text.Length && text[i] == ':')
             {
                 isDefault = true;
-                labelOffset = start; // default 无标签；span 校验用 HeaderSpan
+                labelOffset = i; // default 无标签；span 校验用 HeaderSpan
                 headEnd = i + 1;
                 return true;
             }
@@ -785,6 +811,124 @@ public sealed class Parser
         if (string.CompareOrdinal(text, i, word, 0, word.Length) != 0) return false;
         int after = i + word.Length;
         return after >= text.Length || !(char.IsLetterOrDigit(text[after]) || text[after] == '_');
+    }
+
+    private enum SwitchPieceKind { Case, Default, Break, Text }
+
+    /// <summary>@switch 块内裸文本的一个片段（section 头 / 独立 break; / 普通文本），偏移相对该 Text token。</summary>
+    private readonly struct SwitchPiece
+    {
+        public SwitchPieceKind Kind { get; init; }
+        public string Text { get; init; }
+        public int Offset { get; init; }
+        public int Length { get; init; }
+        public int HeaderOffset { get; init; }
+        public int HeaderLength { get; init; }
+    }
+
+    /// <summary>
+    /// 把 @switch 块内的裸文本拆成 section 头 / 独立 <c>break;</c> / 普通文本三类片段（K29 ③）。
+    /// 词法层会把 <c>break; case 2:</c> 这类连续内容累成**同一个** Text token，
+    /// 因此必须按片段解析——只认「整段等于 break;」会让多分支 switch 必然落成文本节点（EUI006）。
+    /// </summary>
+    private static List<SwitchPiece> SplitSwitchText(string text)
+    {
+        var pieces = new List<SwitchPiece>();
+        int pos = 0;
+        while (pos < text.Length)
+        {
+            if (IsLineStart(text, pos)
+                && TrySplitSectionHeader(text, pos, out var isDefault, out var label,
+                    out var labelOffset, out var headStart, out var headEnd))
+            {
+                pieces.Add(new SwitchPiece
+                {
+                    Kind = isDefault ? SwitchPieceKind.Default : SwitchPieceKind.Case,
+                    Text = label,
+                    Offset = labelOffset,
+                    Length = label.Length,
+                    HeaderOffset = headStart,
+                    HeaderLength = headEnd - headStart,
+                });
+                pos = headEnd;
+                continue;
+            }
+
+            if (TryConsumeBreak(text, pos, out var breakStart, out var breakEnd))
+            {
+                pieces.Add(new SwitchPiece
+                {
+                    Kind = SwitchPieceKind.Break,
+                    Text = "break;",
+                    Offset = breakStart,
+                    Length = breakEnd - breakStart,
+                });
+                pos = breakEnd;
+                continue;
+            }
+
+            int next = FindNextSwitchMarker(text, pos + 1);
+            var chunk = text.Substring(pos, next - pos);
+            if (chunk.Trim().Length > 0)
+            {
+                pieces.Add(new SwitchPiece
+                {
+                    Kind = SwitchPieceKind.Text,
+                    Text = chunk,
+                    Offset = pos,
+                    Length = chunk.Length,
+                });
+            }
+            pos = next;
+        }
+        return pieces;
+    }
+
+    /// <summary>
+    /// 识别独立成行的 <c>break;</c>：前导空白后是 <c>break</c> 词、可选空白、<c>;</c>，
+    /// 且该行其余部分只有空白。要求「本行无后续内容」是为了不把正文里的 "break" 当语句。
+    /// </summary>
+    private static bool TryConsumeBreak(string text, int start, out int breakStart, out int breakEnd)
+    {
+        breakStart = -1;
+        breakEnd = -1;
+        int i = start;
+        while (i < text.Length && char.IsWhiteSpace(text[i])) i++;
+        if (!MatchWordAt(text, i, "break")) return false;
+        int j = i + 5;
+        while (j < text.Length && (text[j] == ' ' || text[j] == '\t')) j++;
+        if (j >= text.Length || text[j] != ';') return false;
+        j++;
+        for (int k = j; k < text.Length && text[k] != '\n'; k++)
+        {
+            if (!char.IsWhiteSpace(text[k])) return false;
+        }
+        breakStart = i;
+        breakEnd = j;
+        return true;
+    }
+
+    /// <summary>下一个可能的 section 头 / break 起点（必须位于行首）；找不到返回文本长度。</summary>
+    private static int FindNextSwitchMarker(string text, int from)
+    {
+        for (int i = from < 0 ? 0 : from; i < text.Length; i++)
+        {
+            if (!IsLineStart(text, i)) continue;
+            if (TrySplitSectionHeader(text, i, out _, out _, out _, out _, out _)) return i;
+            if (TryConsumeBreak(text, i, out _, out _)) return i;
+        }
+        return text.Length;
+    }
+
+    /// <summary>位置 i 之前直到上一个换行只有空白（token 起点也算行首）。</summary>
+    private static bool IsLineStart(string text, int i)
+    {
+        for (int k = i - 1; k >= 0; k--)
+        {
+            if (text[k] == '\n') return true;
+            if (!char.IsWhiteSpace(text[k])) return false;
+        }
+        return true;
     }
 
     private readonly struct ForeachHeader
@@ -863,12 +1007,6 @@ public sealed class Parser
             i++;
         }
         return new ForeachHeader { Ok = false, Reason = generic };
-    }
-
-    private static bool PeekParen(string text, int i)
-    {
-        while (i < text.Length && char.IsWhiteSpace(text[i])) i++;
-        return i < text.Length && text[i] == '(';
     }
 
     private static bool IsWordChar(char c) => char.IsLetterOrDigit(c) || c == '_';

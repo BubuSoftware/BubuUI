@@ -102,16 +102,19 @@ public class CatalogScannerTests
     }
 
     [Fact]
-    public void UiTagAttribute_RenamesTheTag()
+    public void UiTagAttribute_IsRetired_TagIsAlwaysTheTypeName()
     {
+        // `[UiTag]` 已退役（design/14 §14.4.1 / K32）：即使作者自己定义同名特性，目录也只按类型短名登记。
         var catalog = Scan("""
+            using System;
             using EclipseUI;
             namespace Probe;
+            public sealed class UiTagAttribute : Attribute { public UiTagAttribute(string name) { } }
             [UiTag("RenamedBox")]
             public sealed class ProbePanel : StackPanel { }
             """);
-        Assert.Contains(catalog.Elements, e => e.Tag == "RenamedBox");
-        Assert.DoesNotContain(catalog.Elements, e => e.Tag == "ProbePanel");
+        Assert.Contains(catalog.Elements, e => e.Tag == "ProbePanel");
+        Assert.DoesNotContain(catalog.Elements, e => e.Tag == "RenamedBox");
     }
 
     [Fact]
@@ -1064,19 +1067,6 @@ public class CatalogScannerTests
         Assert.Equal(UiDiagnostics.ReservedSyntax, hidden.ReasonCode);
         Assert.Contains("reserved template tag", hidden.Reason);
         Assert.Contains(catalog.Problems, p => p.Code == UiDiagnostics.ReservedSyntax &&
-            p.Message.Contains("rename the type or its [UiTag]"));
-    }
-
-    [Fact]
-    public void ControlWithUiTagSlot_IsHidden_EvenWhenTypeNameIsNotSlot()
-    {
-        var catalog = Scan("""
-            using EclipseUI;
-
-            [UiTag("Slot")]
-            public class SlotBox : StackPanel { }
-            """);
-        Assert.DoesNotContain(catalog.Elements, e => e.Tag == "Slot");
-        Assert.Contains(catalog.HiddenTags, h => h.Tag == "Slot" && h.ReasonCode == UiDiagnostics.ReservedSyntax);
+            p.Message.Contains("rename the type"));
     }
 }

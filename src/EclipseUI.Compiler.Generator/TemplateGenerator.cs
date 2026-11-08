@@ -78,7 +78,7 @@ public sealed class TemplateGenerator : IIncrementalGenerator
         // 与 @code 成员收集（K21）都以 AST 为准。
         var parseDiags = new List<UiDiagnostic>();
         var doc = FrontEnd.Parse(input.Text, input.Path, parseDiags);
-        var usings = CollectUsings(doc.Nodes);
+        var usings = CollectUsingLines(doc.Nodes);
         var codeBlocks = doc.Nodes.OfType<UiCodeBlock>().ToList();
 
         var type = validName ? FindCodeBehind(compilation, className) : null;
@@ -160,9 +160,9 @@ public sealed class TemplateGenerator : IIncrementalGenerator
             ImmutableArray<SwitchTypeFact>.Empty);
     }
 
-    /// <summary>K22：根层 @using 收集（按文档顺序去重）。</summary>
-    private static ImmutableArray<string> CollectUsings(IEnumerable<UiNode> nodes) =>
-        TemplateAnalyzer.CollectImports(nodes).ToImmutableArray();
+    /// <summary>K22/K31：根层 @using 的 using 子句正文（命名空间 + 别名，按文档顺序去重）。</summary>
+    private static ImmutableArray<string> CollectUsingLines(IEnumerable<UiNode> nodes) =>
+        TemplateAnalyzer.CollectUsingLines(nodes).ToImmutableArray();
 
     /// <summary>
     /// K21/K25：@code 成员与生成保留名的冲突（EUI045）。对块体原文做轻量成员名提取
@@ -294,7 +294,7 @@ public sealed class TemplateGenerator : IIncrementalGenerator
             facts.ItemTypes.ToDictionary(fact => fact.SpanStart, fact => fact.Type),
             input.Path, ownSlots,
             facts.SwitchTypes.ToDictionary(fact => fact.SpanStart, fact => fact.Type),
-            TemplateAnalyzer.CollectImports(doc.Nodes),
+            TemplateAnalyzer.CollectUsingLines(doc.Nodes),
             doc.Nodes.OfType<UiCodeBlock>().ToList()).Emit();
 
         spc.AddSource($"{className}.{StableHash(input.Path)}.g.cs", code);

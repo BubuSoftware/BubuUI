@@ -101,9 +101,10 @@ R7–R9 的 v3 出处是 [15 §15.5.7](./15-state-and-reactivity.md#1557-新增�
 
 标签名规则：
 
-- 默认 = 类型短名（`EclipseUI.Elements.Button` → `Button`）。
-- `[UiTag("Name")]` 覆盖；名字必须是合法 C# 标识符，不含 `.` 与泛型参数。
-- **不做命名空间优先级**。同一标签映射到 ≥2 个类型时，使用点报 EUI016 并列出候选全名；作者用 `[UiTag]` 消歧。
+- **恒等于类型短名**（`EclipseUI.Elements.Button` → `Button`）。没有改名手段：`[UiTag]` 已于 2026-11-09 退役（K32）。
+- **不做命名空间优先级**。同一标签映射到 ≥2 个类型时，使用点报 EUI016 并列出候选全名，
+  同时给出可直接粘贴的消歧建议 `@using <Tag>Alt = <Ns>.<Tag>`（模板别名，见 K31 / spec/01 §4.17）。
+  消费端拿别名解决，**不需要、也无法**让控件作者改标签名。
 - 例外：框架内部/基础设施元素必须标 `[UiIgnore]`，避免意外成为标签。当前需要标注的有
   `TextRun`、`ConditionalBlock`、`ForEachBlock<T>`（泛型本就不暴露，仍显式标注）。
 
@@ -238,13 +239,6 @@ public sealed class TextBlock : Panel, ITextContentHost
 ```csharp
 namespace EclipseUI;
 
-[AttributeUsage(AttributeTargets.Class)]
-public sealed class UiTagAttribute : Attribute
-{
-    public UiTagAttribute(string name);
-    public string Name { get; }
-}
-
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Property)]
 public sealed class UiContentAttribute : Attribute
 {
@@ -272,7 +266,7 @@ public sealed class UiSlotAttribute : Attribute          // 具名插槽，✅ C
 
 - 特性定义在 `src/EclipseUI.Runtime`：**程序集名是 `EclipseUI.Runtime`，命名空间是 `EclipseUI`**
   （csproj 只设了 `RootNamespace`，未覆写 `AssemblyName`，实测反射得到 `EclipseUI.Runtime`）。
-- 编译器/生成器按 **全 metadata 名**识别特性（`EclipseUI.UiTagAttribute`、`EclipseUI.UiContentAttribute`…），
+- 编译器/生成器按 **全 metadata 名**识别特性（`EclipseUI.UiContentAttribute`、`EclipseUI.UiIgnoreAttribute`…），
   **不得按程序集名匹配**；不引用运行时程序集，避免生成器加载用户程序集。
 - `UiContentKind` 与编译器内部 `UiContentModel` 的数值必须一一对应；测试断言两者一致（14.11）。
 
@@ -282,7 +276,7 @@ public sealed class UiSlotAttribute : Attribute          // 具名插槽，✅ C
 2. 每个模板可设属性：`XProperty` 注册 + CLR 包装属性 + 正确的 `Invalidate`。
 3. 需要从模板触发的事件：`public static readonly RoutedEvent YEvent` **声明在本类型上**，不放静态宿主类。
 4. 声明 `[UiContent]`；不参与模板的公共属性/字段/类型加 `[UiIgnore]`。
-5. 与已有标签重名时加 `[UiTag]`。
+5. 类型短名即标签名；与已有标签重名时**不要改名妥协**——消费端用 `@using XxxAlt = Ns.Xxx` 别名消歧（K31/K32）。
 6. 写一个使用该控件的 `.ui` 集成测试（14.11）。
 7. 确认属性在无父元素时 set 不会抛异常；重复 set 幂等。
 
@@ -903,7 +897,7 @@ Build(Compilation c):                       // 纯函数：同样的 Compilation
 
 | 类别 | 用例 | 期望 |
 |---|---|---|
-| 发现 | 内置控件快照；`[UiTag]`；`[UiIgnore]`；internal/抽象/嵌套/泛型 | 入目录/不入目录符合规则 |
+| 发现 | 内置控件快照；标签=类型短名；`[UiIgnore]`；internal/抽象/嵌套/泛型 | 入目录/不入目录符合规则 |
 | 属性 | 继承的 `Padding`；普通 CLR 属性；只读属性；类型不符的 `PProperty` | 正确暴露/忽略/元数据问题 |
 | 事件 | `ClickEvent`；字段缺失；字段类型错；**静态宿主类上的 `RoutedEvent` 字段**；`InputEvents` 迁入 `Element` 后 8 事件全员可见；`:bind` | `OnClick` 可用/EUI020/EUI026/EUI004 |
 | 事件签名（EUI024） | ✅ 2026-11-08/D82 契约：可静态判定（表达式自身语义干净 + 对目标委托转换确定失败）→ EUI024 报在 `.ui` 属性值并短路生成输出；符号未解析/重载失败/`dynamic`/表达式内部错误静默交回生成代码经 `#line` 由 C# 报错（不重复报告）；控件事件复用 `Emitter.EventHandlerType`、组件委托参数用 `UiParameterDef.ClrTypeDisplayName`；`EventHandlerSignatureTests` 16 例 | EUI024/零误报/C# 兜底分工 |
@@ -1077,7 +1071,7 @@ Roslyn 4.9.2 的公开 API 没有这个成员（公开的是 `IModuleSymbol.Refe
 
 | 工作项 | 结果 |
 |---|---|
-| 句法保留名 | `<Slot>`/`<ContentSlot>` 由**解析器特判**成槽节点（`Parser.CreateSlotNode` → `UiSlotNode`/`UiContentSlotNode`），不再依赖 C3 的「目录无同名真实控件才拦截」口径；目录把注册这两个标签名的类型（类名或 `[UiTag]`）挡进 `HiddenTags` 并记 **EUI031** 保留冲突（`UiCatalogFactory`） |
+| 句法保留名 | `<Slot>`/`<ContentSlot>` 由**解析器特判**成槽节点（`Parser.CreateSlotNode` → `UiSlotNode`/`UiContentSlotNode`），不再依赖 C3 的「目录无同名真实控件才拦截」口径；目录把注册这两个标签名的类型（类名）挡进 `HiddenTags` 并记 **EUI031** 保留冲突（`UiCatalogFactory`） |
 | 声明侧 | `UiSlotDef(名字, 属性名, 类型显示名, 基数)`；`Element?`/`Element` → Single、`IReadOnlyList<Element>` → Multiple（严格匹配 OriginalDefinition，`List<Element>` 不算）、其余类型 → **EUI021** 且槽不进表面；重复槽名 / `[UiParameter]+[UiSlot]`（参数胜出，槽退出）/ `[UiIgnore]+[UiSlot]`（忽略胜出）/ `[UiSlot]` 空名 → **EUI028** |
 | 基链胜出规则 | 成员基链自己走（Roslyn 不把特性带进 override），但同名成员**只在派生侧显式声明模板特性或 `[UiIgnore]` 时才算覆盖**：否则基类声明继续生效（override 不写特性 = 继承，写 `[UiIgnore]` = 显式退出）。契约原文未定此规则，登记 **D76** |
 | 消费侧分析 | 位置（只允许已解析组件标签的直属子级；控件容器、`@if`/`@foreach`、文档根、未知标签下 → EUI022）/ `Name` 形状（缺失、非字面量、重复、多余属性）/ 未知槽名含建议 / Single 的重复填充与多根填充 → **EUI022** 家族；解析成功按基数进 `ContentSingle`/`ContentMulti`，继承 build-once 内容规则（`@bind` → EUI040、`Key` → EUI010、裸文本 → EUI006）；单根多根报错仍保留首根解析（与 §4.12.3 同口径） |
@@ -1103,7 +1097,7 @@ EUI026 声明处诊断（D74 ②）已落地（2026-11-08，D81）；EUI024 处�
 | 组件参数无 diff | 用户误以为参数变化会重建组件 | 参数推送 + 子 `Invalidate()`（14.6.1）；子模板结构不重建；G4 评估参数 diff |
 | 组件 `required` 参数 | 与生成形态互斥（实测 CS9035） | 必填改用 `[UiParameter(Required = true)]`；`required`/`init` 报 EUI028（D12） |
 | 默认值/失效级别编译期不可知 | 悬停少两项、失效契约无法静态校验 | 划为运行期事实（D13）；由 14.11.1 运行期快照 + 白名单兜底 |
-| 标签冲突（不同包同名控件） | 第三方生态冲突 | 默认报错 + `[UiTag]`；**注意冲突只在消费端编译时可见**，包作者本地编译无感；未来评估命名空间限定标签 `<Acme.Badge>` |
+| 标签冲突（不同包同名控件） | 第三方生态冲突 | 默认报错 EUI016（列出候选全名 + 可直接粘贴的 `@using XxxAlt = Ns.Xxx` 建议）；消费端用模板别名消歧（K31/K32）；**注意冲突只在消费端编译时可见**，包作者本地编译无感 |
 | 生成器/运行时版本错配 | 元数据解析错误 | 0.x 同版本发布；未知枚举值降级不崩溃 |
 | `ITextContentHost` 引入改动 TextBlock | 小范围破坏 | 保留旧 `AddRun(TextRun)`；新增重载 |
 | Roslyn 版本耦合（生成器 4.9.2，LSP 版本） | 扫描器/驱动不兼容 | Metadata 项目锁定与生成器一致的 Roslyn 版本；LSP 侧做版本适配层 |
@@ -1169,8 +1163,9 @@ EUI026 声明处诊断（D74 ②）已落地（2026-11-08，D81）；EUI024 处�
 | C6 | 暴露属性可占用 `On{事件}` 名被静默吃掉 | 14.4.2 禁止 + EUI026 |
 | C7 | 未实现的保留语法（`Class`/`Style`/`:value`/`<Slot>`）会报"未知" | 新增 EUI031 |
 | C8 | 组件参数一次性赋值引用信号无提示 | 新增 Warning EUI032（C4 落地） |
-| C9 | 14.4.6 写「程序集 `EclipseUI`」——实际程序集名是 `EclipseUI.Runtime` | 修正为按全 metadata 名 `EclipseUI.UiTagAttribute` 识别，禁止按程序集名匹配 |
+| C9 | 14.4.6 写「程序集 `EclipseUI`」——实际程序集名是 `EclipseUI.Runtime` | 修正为按全 metadata 名（`EclipseUI.UiContentAttribute`…）识别，禁止按程序集名匹配 |
 | C10 | 14.5.3 未区分控件/组件的属性解析分支 | 按 `Origin` 分支写明 |
+| K32 | `[UiTag]` 与模板别名（K31）职责重叠：改名只能改自家库，改不了第三方库，且给目录引入第二事实源（类型名 ≠ 标签名） | **退役 `[UiTag]`**（2026-11-09）：标签恒为类型短名；重名一律在消费端用 `@using XxxAlt = Ns.Xxx` 消歧；EUI016 消息直接给出该建议；`UiCatalogFactory.TagOf/IsValidTag` 删除，`UiTagAttribute` 从 `EclipseUI.Runtime` 移除 |
 | — | 已验证为**可行**、无需改动：跨程序集组件发现（元数据 `BaseType` 可解析）、`IsRequired`/`IsInitOnly` 判定、扫描性能、HiddenTags 建议机制、诊断码续号（EUI016+ 空闲） | 保持 |
 
 ## 14.16 与 03 语言规范对齐（v2.1）

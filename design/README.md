@@ -7,12 +7,14 @@
 > 不做依赖订阅）：[spec/01](../spec/01-template-syntax.md) v2、[spec/02](../spec/02-generated-code-contract.md) v2、
 > [spec/03](../spec/03-reactivity-and-binding.md) v1；反应式 **S1–S3 已落地**、控件/组件契约 **C1–C6 已落地**、
 > G3 七个小切片（含 EUI024 事件处理器签名匹配 ✅ 2026-11-08/D82）全部收敛、
-> S4/S5 运行时硬化与 G2 CPU 侧部分收敛（2026-11-08/D83/D84）；**497 个测试全绿（214/218/65）**；
+> S4/S5 运行时硬化与 G2 CPU 侧部分收敛（2026-11-08/D83/D84）；**567 个用例（274/228/65）、566 绿**
+> （唯一红为既有像素 golden `PixelGoldens_MatchBaseline`，与 S6 无关）；
 > 余项：S4/S5（Element.Unmount 属 G4、AOT/裁剪、旧语法清理、最终审计、帧预算/分配预算门槛、CI）、
 > G2（GPU retained layer/真正局部重绘、目标机稳定 60fps 结论、像素探针 DSL、CPU/GPU 交叉一致性门禁）、
 > G4（样式/主题/附加属性；泛型标签暂缓 K19、不排期）、IDE/DevTools；
-> **S6 语法对齐已实现（K23 + K24–K29，✅ 2026-11-08）**：`@using`/`@code` 单文件/`else`/`@switch`/`@* *@`，
-> 目标语法见 [spec/01 §1.5](../spec/01-template-syntax.md)，偏差 D85–D88，计划见 [16](./16-blazor-alignment-plan.md)；
+> **S6 语法对齐已实现（K23 + K24–K31，✅ 2026-11-08）**：`@using`/`@code` 单文件/`else`/`@switch`/`@* *@`，
+> **K31（2026-11-09）** 追加 `@using Alias = Ns.Type` 一体两用（C# 别名 + 标签别名，`EUI048`）；
+> 目标语法见 [spec/01 §1.5](../spec/01-template-syntax.md)，偏差 D85–D88 已收敛（D11/D12 同期关闭），计划见 [16](./16-blazor-alignment-plan.md)；
 > 控件/模板元数据见 14（v4 换轨），15 已停止 · 日期：2026-11-08
 >
 > **规范正本已迁至 [spec/](../spec/README.md)**：`.ui` 语法以 [spec/01](../spec/01-template-syntax.md) 为准，
@@ -38,7 +40,7 @@
 | 13 | [G2 第三切片：damage v0](./13-g2-damage-v0.md) | RenderVersion 失效模型、脏矩形快照 diff、空闲跳帧、覆盖率与跟踪开销 |
 | 14 | [控件与模板契约（详细设计）](./14-control-template-contract.md) | 标签/属性/事件/内容模型声明规则、符号派生目录、字面量转换、组件参数与插槽、生成代码与诊断契约；v4 换轨（14.18）：参数为普通 CLR 属性 + `{P}Changed`，反应式/生成形态由 spec/02、spec/03 取代；**C1–C6 已落地（2026-11-05）**，表面实测、差集评审与各切片落地记录见 §14.12.1–§14.12.6 |
 | 15 | [状态与反应式契约（详细设计）](./15-state-and-reactivity.md) | **已停止（v3 历史）**：`[UiState]`/`UiObservable`/`UiComputed`、依赖分析、`UiWatch`/`Signal<T>` 订阅、EUI034–EUI044；v4 反应式见 [spec/03](../spec/03-reactivity-and-binding.md) |
-| 16 | [`.ui` 语法对齐 Blazor 计划](./16-blazor-alignment-plan.md) | **✅ S6 已实现（K23 + K24–K29，2026-11-08）**：对齐矩阵、P0–P6、Q1–Q8（已全部拍板）、风险 R1–R8、单文件示例（附录 A）与生成契约草案（附录 B）；目标语法正本在 spec/01 §1.5 |
+| 16 | [`.ui` 语法对齐 Blazor 计划](./16-blazor-alignment-plan.md) | **✅ S6 已实现（K23 + K24–K30，2026-11-08）**：对齐矩阵、P0–P6、Q1–Q8（已全部拍板）、风险 R1–R8、单文件示例（附录 A）与生成契约草案（附录 B）；目标语法正本在 spec/01 §1.5；后续增量 K31（`@using` 别名）见 spec/02 §14/§4.18 |
 
 ## 报告
 

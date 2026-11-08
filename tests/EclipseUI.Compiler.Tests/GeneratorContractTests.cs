@@ -73,14 +73,6 @@ public class GeneratorContractTests
     }
 
     /// <summary>
-    /// G3 列映射后 #line 携带源 span：旧语法别名与规范语法的 value span 起点本就不同，
-    /// 因此「生成文本相同」的等价口径改为剥离 #line 指令后比较（spec/02 §4.12.3 规则 8 之后）。
-    /// </summary>
-    private static string WithoutLineDirectives(string code) =>
-        string.Join("\n", code.Replace("\r\n", "\n").Split('\n')
-            .Where(line => !line.StartsWith("#line", StringComparison.Ordinal)));
-
-    /// <summary>
     /// D74 ② 后生成器有两个 SourceOutput：逐文件生成与目录级诊断出口（后者不产出生成文件）。
     /// 逐文件管道用 WithTrackingName("PerFileGeneration") 命名，增量断言只读这个命名节点，
     /// 不再把所有 "SourceOutput" 混成一组（§14.10.3）。
@@ -174,8 +166,6 @@ public class GeneratorContractTests
         var errors = output.GetDiagnostics()
             .Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
             .ToList();
-        var details = string.Join(Environment.NewLine,
-            errors.Select(e => $"{e.Id} {e.Location.GetMappedLineSpan()} :: {e.GetMessage()}"));
         var typeError = Assert.Single(errors, d => d.Id == "CS0029");
         var lineSpan = typeError.Location.GetMappedLineSpan();
         Assert.Equal(uiPath, lineSpan.Path);
@@ -1358,8 +1348,7 @@ public class GeneratorContractTests
         GeneratorDriver driver = CSharpGeneratorDriver.Create(
             new[] { new TemplateGenerator().AsSourceGenerator() },
             new AdditionalText[] { new UiAdditionalText(uiPath, ui) });
-        var updated = driver.RunGeneratorsAndUpdateCompilation(
-            CreateCompilation(codeBehind), out var output, out _);
+        driver.RunGeneratorsAndUpdateCompilation(CreateCompilation(codeBehind), out var output, out _);
         return output.GetDiagnostics()
             .Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
             .Select(d => $"{d.Id} {d.Location.GetMappedLineSpan().Path}:{d.Location.GetMappedLineSpan().StartLinePosition.Line} :: {d.GetMessage()}")
@@ -1560,5 +1549,248 @@ public class GeneratorContractTests
         Assert.True(parameter < content, "插槽切片不得改变参数先于内容的顺序");
         Assert.True(content < slot, "子组件首次 Build() 在 Mount() 内读取插槽属性，赋值必须先于 Mount");
         Assert.True(slot < mount, "插槽赋值必须先于 Mount()");
+    }
+
+    // ------------------------------------------------------------------
+    // S6 语法对齐的生成形态（K21/K22/K23 ③，D85–D87）
+    // ------------------------------------------------------------------
+
+    private const string SwitchFixtures =
+        "public partial class Probe { public int mode = 1; public int Mode => 3; }";
+
+    [Fact]
+    public void Switch_MultiSection_GeneratesSwitchBlockWithEveryCaseAndDefault()
+    {
+        const string ui = """
+            @using EclipseUI.Elements
+            <StackPanel>
+                @switch (mode) {
+                    case 1:
+                        <TextBlock>A</TextBlock>
+                        break;
+                    case 2:
+                        <TextBlock>B</TextBlock>
+                        break;
+                    default:
+                        <TextBlock>D</TextBlock>
+                        break;
+                }
+            </StackPanel>
+            """;
+
+        var result = Run("C:\\templates\\Probe.ui", ui, SwitchFixtures);
+
+        Assert.DoesNotContain(result.Diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+        var code = Generated(result);
+
+        Assert.Contains("new global::EclipseUI.SwitchBlock<int>()", code);
+        Assert.Contains(".SetSelector(() => mode);", code);
+        Assert.Contains(".AddCase(1, ", code);
+        Assert.Contains(".AddCase(2, ", code);
+        Assert.Contains(".SetDefault(", code);
+        // 每个 case 的分支体各自 AddRoot（2 个 case + default = 3 次）
+        Assert.Equal(3, CountOccurrences(code, ".AddRoot("));
+    }
+
+    [Fact]
+    public void Switch_NonConstantMemberLabel_ReportsEUI047_AndGeneratesNothing()
+    {
+        const string ui = """
+            @using EclipseUI.Elements
+            <StackPanel>
+                @switch (mode) {
+                    case Mode:
+                        <TextBlock>A</TextBlock>
+                        break;
+                }
+            </StackPanel>
+            """;
+
+        var result = Run("C:\\templates\\Probe.ui", ui, SwitchFixtures);
+
+        var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI047");
+        Assert.Equal(Microsoft.CodeAnalysis.DiagnosticSeverity.Error, diag.Severity);
+        Assert.Empty(result.GeneratedSources);
+    }
+
+    [Fact]
+    public void Using_Directives_AreEmittedInTemplateOrder_BetweenNullableAndNamespace()
+    {
+        const string ui = """
+            @using System.Text
+            @using EclipseUI.Elements
+            @using System.Text
+
+            <StackPanel>
+                <TextBlock>x</TextBlock>
+            </StackPanel>
+            """;
+
+        var code = Generated(Run("C:\\templates\\Probe.ui", ui, "namespace Demo;\npublic partial class Probe { }"));
+
+        var nullable = code.IndexOf("#nullable enable", StringComparison.Ordinal);
+        var first = code.IndexOf("using System.Text;", StringComparison.Ordinal);
+        var second = code.IndexOf("using EclipseUI.Elements;", StringComparison.Ordinal);
+        var ns = code.IndexOf("namespace ", StringComparison.Ordinal);
+
+        Assert.True(nullable >= 0 && first > nullable, "using 组必须紧跟在 #nullable 之后");
+        Assert.True(second > first, "using 按模板顺序输出");
+        Assert.True(ns > second, "using 组必须在 namespace 之前");
+        Assert.Equal(1, CountOccurrences(code, "using System.Text;")); // 去重（K22）
+    }
+
+    [Fact]
+    public void Using_OnlyTemplateDeclaredNamespaces_AreEmitted()
+    {
+        const string ui = """
+            @using EclipseUI.Elements
+            <StackPanel><TextBlock>x</TextBlock></StackPanel>
+            """;
+
+        var code = Generated(Run("C:\\templates\\Probe.ui", ui));
+
+        Assert.Contains("using EclipseUI.Elements;", code);
+        Assert.DoesNotContain("using System;", code);
+        Assert.DoesNotContain("global using", code);
+        Assert.DoesNotContain("using static", code);
+    }
+
+    // ------------------------------------------------------------------
+    // K31：@using Alias = Ns.Type（C# 别名 + 模板标签别名）
+    // ------------------------------------------------------------------
+
+    private const string AltButtonCodeBehind = """
+        namespace Alt.Controls { public class Button : EclipseUI.Elements.StackPanel { } }
+        public partial class Probe { }
+        """;
+
+    [Fact]
+    public void UsingAlias_EmitsFullyQualifiedAlias_AndResolvesTagToTargetType()
+    {
+        const string ui = """
+            @using EclipseUI.Elements
+            @using Btn = Alt.Controls.Button
+
+            <StackPanel><Btn /></StackPanel>
+            """;
+
+        var code = Generated(Run("C:\\templates\\Probe.ui", ui, AltButtonCodeBehind));
+
+        // 别名目标必须全限定：否则被生成类所在命名空间的同名类型劫持
+        Assert.Contains("using Btn = global::Alt.Controls.Button;", code);
+        Assert.Contains("new global::Alt.Controls.Button()", code);
+        // Alt.Controls 未被 @using 导入，<Btn> 只可能来自别名
+        Assert.DoesNotContain("using Alt.Controls;", code);
+    }
+
+    [Fact]
+    public void UsingAlias_OverridesCatalogTag()
+    {
+        const string ui = """
+            @using EclipseUI.Elements
+            @using Button = Alt.Controls.Button
+
+            <StackPanel><Button /></StackPanel>
+            """;
+
+        var code = Generated(Run("C:\\templates\\Probe.ui", ui, AltButtonCodeBehind));
+
+        Assert.Contains("new global::Alt.Controls.Button()", code);
+        Assert.DoesNotContain("new global::EclipseUI.Elements.Button()", code);
+    }
+
+    [Fact]
+    public void UsingAlias_IsVisibleToExpressionProbe()
+    {
+        // spec/02 §4.18 规则 5：探针树必须写入别名行，否则表达式里的别名类型被判「不可判定」
+        const string ui = """
+            @using EclipseUI.Elements
+            @using Btn = Alt.Controls.Button
+
+            <StackPanel>
+                <TextBlock>{(Btn?)null is null ? "none" : "some"}</TextBlock>
+            </StackPanel>
+            """;
+
+        var result = Run("C:\\templates\\Probe.ui", ui, AltButtonCodeBehind);
+
+        Assert.DoesNotContain(result.Diagnostics,
+            d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+        Assert.Contains("using Btn = global::Alt.Controls.Button;", Generated(result));
+    }
+
+    [Fact]
+    public void UsingAlias_UnknownTarget_ReportsEUI048_AndGeneratesNothing()
+    {
+        const string ui = """
+            @using EclipseUI.Elements
+            @using Btn = Alt.Controls.Missing
+
+            <StackPanel><Btn /></StackPanel>
+            """;
+
+        var result = Run("C:\\templates\\Probe.ui", ui, AltButtonCodeBehind);
+
+        Assert.Contains(result.Diagnostics, d => d.Id == "EUI048");
+        Assert.Empty(result.GeneratedSources); // Error 阻断生成，与其它诊断口径一致
+    }
+
+    /// <summary>K21/R1：模板在上、<c>@code</c> 在下时，前置表达式必须能看见后置成员（单文件形态）。</summary>
+    [Fact]
+    public void CodeBlock_BelowTemplate_MembersAreVisibleToLeadingExpressions()
+    {
+        const string ui = """
+            @using EclipseUI.Elements
+
+            <StackPanel Gap={gap}>
+                <TextBlock>{message}</TextBlock>
+            </StackPanel>
+
+            @code {
+                public string message = "hi";
+                public double gap = 4;
+            }
+            """;
+
+        var result = Run("C:\\templates\\Probe.ui", ui, codeBehind: "");
+
+        Assert.DoesNotContain(result.Diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+        var code = Generated(result);
+
+        // @code 原文透传进同一个 partial 类（K25）
+        Assert.Contains("public string message = \"hi\";", code);
+        Assert.Contains("public double gap = 4;", code);
+        Assert.Contains("__el0.Gap = gap;", code);
+        Assert.Contains("{(message)}", code);
+    }
+
+    [Fact]
+    public void CodeBlock_MemberCollidingWithGeneratedName_ReportsEUI045_ButStillGenerates()
+    {
+        const string ui = """
+            @using EclipseUI.Elements
+            <StackPanel><TextBlock>x</TextBlock></StackPanel>
+
+            @code {
+                public void Build() { }
+            }
+            """;
+
+        var result = Run("C:\\templates\\Probe.ui", ui, codeBehind: "");
+
+        Assert.Contains(result.Diagnostics, d => d.Id == "EUI045");
+        Assert.Single(result.GeneratedSources); // EUI045 不阻断输出（spec/02 §10）
+    }
+
+    private static int CountOccurrences(string text, string value)
+    {
+        int count = 0;
+        int index = 0;
+        while ((index = text.IndexOf(value, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += value.Length;
+        }
+        return count;
     }
 }

@@ -90,7 +90,7 @@ public class SignalTests
         var signal = new Signal<int>(0);
         int firstCount = 0, secondCount = 0;
         IDisposable? second = null;
-        var first = signal.Subscribe(() =>
+        signal.Subscribe(() =>
         {
             firstCount++;
             second?.Dispose(); // 通知期间退订下一个处理器

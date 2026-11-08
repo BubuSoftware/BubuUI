@@ -41,8 +41,7 @@ public static class UiDiagnostics
     public const string CodeBehindMissing = "EUI005";
     public const string TextNotAllowed = "EUI006";
     public const string ForEachItemTypeUnknown = "EUI007";
-    // EUI008（@switch 不支持）已随 K23 ③ 停用——@switch 转正后不再发出，编号不复用。
-    public const string SwitchNotSupported = "EUI008";
+    // EUI008（@switch 不支持）已随 K23 ③ 停用：@switch 转正后不再发出，编号不复用，故无对应常量。
     public const string UnknownDirective = "EUI009";
     public const string KeyMisuse = "EUI010";
     public const string CodeBehindNotPartial = "EUI011";
@@ -81,6 +80,9 @@ public static class UiDiagnostics
     public const string LegacySyntaxRemoved = "EUI046";
     // S6（K29 ②）：@switch 的 case 标签必须是编译期常量。
     public const string CaseLabelNotConstant = "EUI047";
+    // K31：@using 别名（@using Btn = My.Controls.Button）不合法——目标不在控件目录、
+    // 同一模板重复定义、或与 @using 命名空间同名。
+    public const string UsingAliasInvalid = "EUI048";
 
     // 语法诊断
     public const string Syntax = "EUI100";

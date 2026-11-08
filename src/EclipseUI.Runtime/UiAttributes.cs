@@ -21,15 +21,6 @@ public enum UiContentKind
     TextRuns = 3,
 }
 
-/// <summary>覆盖标签名（默认取类型短名）。名字必须是合法标识符，不含 <c>.</c> 与泛型参数。</summary>
-[AttributeUsage(AttributeTargets.Class)]
-public sealed class UiTagAttribute : Attribute
-{
-    public UiTagAttribute(string name) => Name = name;
-
-    public string Name { get; }
-}
-
 /// <summary>
 /// 声明内容模型。默认无特性 = <see cref="UiContentKind.None"/>，不猜测。
 /// <c>Target</c> 省略时按模型默认（<see cref="UiContentKind.Children"/> → <c>"Children"</c>，其余必须显式）。

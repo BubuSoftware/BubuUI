@@ -31,9 +31,10 @@
   组件标签（参数/委托事件/必填/`{P}Changed`/默认内容/生命周期）、`Ref={field}`、具名插槽
   `<Slot>` + `<ContentSlot>`（见 [14 §14.12](./14-control-template-contract.md)）。
 - 反应式 S1–S3 ✅：`Invalidate`/`Render`/`U{N}`/`R{N}`、块 `Refresh` 与 Key 复用、`UiBinding` 双向
-  （控件侧与组件侧），旧语法 `:bind`/`:value` 报 EUI043 Warning。
-- 测试：**497 个测试全绿（Headless 214 / Compiler 218 / Rendering 65）**；编译器测试用快照钉住 C2 变宽后的
-  模板表面（17 属性项 / 9 个事件名），样例 `.ui` 已用 `@bind-P` 新语法。
+  （控件侧与组件侧）；旧语法 `:bind`/`:value` 已按 K27 移除并报 `EUI046`（`EUI043` 停用）。
+- 测试：**567 个用例（Headless 274 / Compiler 228 / Rendering 65），566 绿**——唯一红是既有像素 golden
+  `PixelGoldens_MatchBaseline`（`solid-primitives`/`transform-clip` 整图 hash 不符，探针 ±2 全过，与 S6 无关）；
+  编译器测试用快照钉住 C2 变宽后的模板表面（17 属性项 / 9 个事件名），样例 `.ui` 已用 `@bind-P` 新语法。
 
 **尚不具备**
 
@@ -58,7 +59,7 @@
 | 0.1 alpha（可交付的 2D 桌面框架） | **55–60%** | 渲染与 Win32 宿主已打通到窗口像素，元素树→display list→上屏、输入路由与 damage v0 可用（G1 门「有条件 Go」，GPU 200 元素 @1280×800 实测 6.36 ms/帧）；仍缺样式/主题、TextBox/ListBox/Grid/ScrollViewer 控件集、layer/合成器。 |
 | 完整设计愿景（含 IDE、3D、多平台、DevTools、1.0 硬化） | **12–17%** | IDE、3D、平台扩展、无障碍与稳定性尚未开始；编译器线的完成度是本次上调的唯一来源。 |
 
-> **2026-11-08（K23）**：S6 语法对齐已实现（D85–D88 关闭，497 例全绿），上述托管核心口径已含
+> **2026-11-08（K23）**：S6 语法对齐已实现（D85–D88 关闭，用例 497 → 548），上述托管核心口径已含
 > 本次收敛；百分比维持 85–90% / 55–60% / 12–17% 不变，避免估算通胀（上调留待 S4/S5、G2 余项收敛时重估）。
 
 ### 分领域状态
@@ -232,7 +233,8 @@ CPU 侧部分收敛（2026-11-08/D84）：CPU 像素 golden（`PixelGoldenTests`
   Generator 事件形态 4 例；**358 例全绿（167/130/61）**。
 - 组件注册表：从 Compilation 收集元素/属性/事件/内容模型（契约、数据模型与阶段 C1–C6 见
   [14 控件与模板契约](./14-control-template-contract.md)）。
-  **进度（2026-11-05）：C1 ✅ / C2 ✅ / C3 ✅ / C4 ✅ / C5 ✅ / C6 ✅** —— `Runtime/UiAttributes.cs` 六个声明特性 + 内置控件标注、
+  **进度（2026-11-05）：C1 ✅ / C2 ✅ / C3 ✅ / C4 ✅ / C5 ✅ / C6 ✅** —— `Runtime/UiAttributes.cs` 五个声明特性
+  （`[UiTag]` 已于 K32 退役，标签恒为类型短名）+ 内置控件标注、
   `Compiler.Metadata` 目录模型与 Roslyn 符号扫描器、42 例一致性/快照测试全部落地；
   派生目录 **⊇** 手写目录（属性项 6→17，差集 12 项逐条评审见 [14 §14.12.1](./14-control-template-contract.md)）。
   **C2 切换完成**：分析器与生成器改读派生目录、手写目录删除；`InputEvents` 7 个事件迁入 `Element`
@@ -372,17 +374,24 @@ CPU 侧部分收敛（2026-11-08/D84）：CPU 像素 golden（`PixelGoldenTests`
 - `@using`：模板导入命名空间、生成文件保留 `using Ns;`、标签按导入过滤且内置控件无豁免（K22 / D85）。
 - `@code`：单文件「模板 + 代码」，位置不限、可多个块、书写顺序不影响可见性，与同名 `.cs` partial 并存（K21 / D86）。
 - 流程控制：`else`/`else if`（不带 `@`）与 `@switch`（`case`/`break`/`default`）；`EUI008` 停用、新诊断从 `EUI046` 起（D87）。
-- 注释：`@* *@`，未闭合报 `EUI100`（顺带关闭 D12）；`<!-- -->` 弃用期形态待 Q6（D88）。
+- 注释：`@* *@` 与 `<!-- -->` **两套等价并存**（K26 拍板：`<!-- -->` 不设弃用期、不发告警），
+  未闭合都报 `EUI100` 并推进到文件尾（顺带关闭 D12 / D88）。
 - 保持不动：`{expr}`、目录驱动标签/属性、`@bind-P`、`Key`/`Ref`、具名插槽、span 型 `#line`、逐文件增量、EUI 诊断体系。
 - 明确不做（K23 ②）：`@page`/`@layout`/`@rendermode`/`@inject`/`@typeparam`/`@attributes` 等 Web 指令、
   HTML 语法债、渲染树 diff；泛型标签仍按 K19 暂缓、不排期。
 
 **出口标准**
 
-- spec/02 §12 的 **D85–D88 全部关闭**，design/03 §3.5.4 双向同步。
+- spec/02 §12 的 **D85–D88 全部关闭**，design/03 §3.5.4 双向同步；顺带关闭 **D11**（表达式捕获改按 C# 词法扫描）
+  与 **D12**（未闭合注释）。
 - 样例与约 94 例 golden 完成 `@using` 一次性迁移；至少一个样例为底部 `@code` 的单文件形态。
-- `dotnet test EclipseUI.slnx` 497 例基线全绿、零停用诊断、样本项目编译与运行。
-- Q3/Q4/Q6/Q7 与 case 细项已按 **K24–K29** 登记（2026-11-08 拍板）并随 S6 实施 ✅。
+- `dotnet test EclipseUI.slnx` 零停用诊断、样本项目编译与运行；用例基线 497 → **548**（K31 后 **567**）
+  （新增 `S6SyntaxTests` 26、`ExpressionCaptureTests` 13、`SwitchBlock` 运行时 6、生成器契约 6）。
+  既有例外：`PixelGoldens_MatchBaseline` 的 `solid-primitives`/`transform-clip` 两幅整图 hash 仍不符
+  （探针 ±2 全过，与 S6 无关，另立 G2 项）。
+- Q3/Q4/Q6/Q7 与 case 细项已按 **K24–K30** 登记（2026-11-08 拍板）并随 S6 实施 ✅。
+- **K31**（2026-11-09）：`@using Alias = Ns.Type` 一体两用（C# 别名 + 模板标签别名，优先于目录 tag），
+  用于第三方控件与内置控件 tag 重名；`EUI048`；回归 `UsingAliasTests` 15 / 生成器契约 4。
 
 ### G4：样式、控件与虚拟化（8–10 周）
 

@@ -170,12 +170,23 @@ public sealed class UiCodeBlock : UiNode
 }
 
 /// <summary>
-/// <c>@using {Namespace}</c>（K22，D85）：文档顶层指令，多条、位置不限；
-/// 生成文件头按模板顺序去重输出普通 <c>using Ns;</c>，标签只在导入命名空间内解析。
+/// <c>@using</c>（K22，D85）：文档顶层指令，多条、位置不限；生成文件头按模板顺序去重输出
+/// 普通 <c>using Ns;</c>，标签只在导入命名空间内解析。
+/// K31：另有别名形态 <c>@using Btn = Ns.Type</c>——生成 <c>using Btn = global::Ns.Type;</c>，
+/// 并让 <c>&lt;Btn/&gt;</c> 在本模板内解析为该类型（别名优先于目录 tag）。
 /// </summary>
 public sealed class UiUsingDirective : UiNode
 {
+    /// <summary>命名空间形态的导入名；别名形态为空（别名不肯进 imports，见 TemplateAnalyzer.CollectImports）。</summary>
     public string Namespace { get; set; } = "";
+
+    /// <summary>K31：别名标识符（如 <c>Btn</c>）；命名空间形态为 null。</summary>
+    public string? Alias { get; set; }
+
+    /// <summary>K31：别名的目标类型名原文（如 <c>ThirdParty.Controls.Button</c>，可带 <c>global::</c>）。</summary>
+    public string AliasTarget { get; set; } = "";
+
+    /// <summary>命名空间名或别名目标的 span（含别名目标类型时指向类型名）。</summary>
     public TextSpan NamespaceSpan { get; set; }
 }
 

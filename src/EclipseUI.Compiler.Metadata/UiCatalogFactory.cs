@@ -24,7 +24,6 @@ public static class UiCatalogFactory
     private const string TextContentHostMetadataName = "EclipseUI.ITextContentHost";
     private const string SignalGenericMetadataName = "EclipseUI.Signal`1";
 
-    private const string UiTagAttributeName = "EclipseUI.UiTagAttribute";
     private const string UiContentAttributeName = "EclipseUI.UiContentAttribute";
     private const string UiIgnoreAttributeName = "EclipseUI.UiIgnoreAttribute";
     private const string UiParameterAttributeName = "EclipseUI.UiParameterAttribute";
@@ -119,21 +118,21 @@ public static class UiCatalogFactory
                     if (HasIgnore(type)) continue;                       // 完全退出模板表面
                     if (!CanExpose(type, out var reasonCode, out var reason))
                     {
-                        hidden.Add(new UiHiddenTag(TagOf(type), Display(type), reasonCode, reason));
+                        hidden.Add(new UiHiddenTag(type.Name, Display(type), reasonCode, reason));
                         continue;
                     }
 
                     // C6：`<Slot>`/`<ContentSlot>` 是解析器特判的保留标签名（spec/01 §3.1）——
                     // 目录不再「同名控件让位」，而是把占用者挡在面板外并记声明问题。
-                    var exposedTag = TagOf(type);
+                    var exposedTag = type.Name;
                     if (exposedTag is "Slot" or "ContentSlot")
                     {
                         hidden.Add(new UiHiddenTag(exposedTag, Display(type), UiDiagnostics.ReservedSyntax,
                             $"'{exposedTag}' is a reserved template tag (named slots, spec/01 §4.15); " +
-                            $"rename the type or its [UiTag]"));
+                            "rename the type"));
                         problems.Add(Problem(UiDiagnostics.ReservedSyntax, type, null,
                             $"'{Display(type)}' registers the reserved template tag '{exposedTag}' (named slots); " +
-                            "rename the type or its [UiTag]"));
+                            "rename the type"));
                         continue;
                     }
 
@@ -298,7 +297,7 @@ public static class UiCatalogFactory
             }
 
             return new UiElementDef(
-                TagOf(type),
+                type.Name,
                 Display(type),
                 origin,
                 content.Item1,
@@ -698,22 +697,10 @@ public static class UiCatalogFactory
             return (UiContentModel.None, null);
         }
 
-        // ---- 名字与查找 ----
+        // ---- 成员查找 ----
 
-        private string TagOf(INamedTypeSymbol type)
-        {
-            var attribute = FindAttribute(type, UiTagAttributeName);
-            if (attribute is null) return type.Name;
-            var name = attribute.ConstructorArguments.Length == 1 ? attribute.ConstructorArguments[0].Value as string : null;
-            return IsValidTag(name) ? name! : type.Name;
-        }
-
-        private static bool IsValidTag(string? name)
-            => !string.IsNullOrEmpty(name)
-               && name!.IndexOf('.') < 0
-               && name.IndexOf('`') < 0
-               && name.IndexOf('<') < 0
-               && char.IsLetter(name![0]);
+        // 标签名恒等于类型短名（`[UiTag]` 已于 2026-11-09 退役，见 design/14 §14.4.1 与 K32）：
+        // 重名消歧改由模板侧 `@using Alias = Ns.Type` 完成，控件作者无需也无法在类型上改名。
 
         private static string EventAttributeName(string propertyName) => "On" + propertyName;
 

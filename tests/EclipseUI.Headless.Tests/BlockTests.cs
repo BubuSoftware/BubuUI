@@ -364,4 +364,158 @@ public class BlockTests
         Assert.Same(first, block.Children[1]);
     }
 
+    // ------------------------------------------------------------------
+    // SwitchBlock<T>（K29 / D87）
+    // ------------------------------------------------------------------
+
+    [Fact]
+    public void SwitchBlock_SettersOnlyRegister_RefreshMountsMatchingCase()
+    {
+        int mode = 1;
+        int builds = 0;
+        var block = new SwitchBlock<int>();
+        block.SetSelector(() => mode);
+        block.AddCase(1, scope => { builds++; scope.AddRoot(new Button { Label = "one" }); });
+        block.AddCase(2, scope => { builds++; scope.AddRoot(new Button { Label = "two" }); });
+        block.SetDefault(scope => { builds++; scope.AddRoot(new Button { Label = "other" }); });
+
+        Assert.Empty(block.Children); // setter 只登记（K6 口径）
+        Assert.Equal(0, builds);
+
+        block.Refresh();
+        Assert.Equal(1, builds);
+        Assert.Equal("one", Assert.IsType<Button>(block.Children.Single()).Label);
+
+        mode = 2;
+        block.Refresh();
+        Assert.Equal(2, builds);
+        Assert.Equal("two", Assert.IsType<Button>(block.Children.Single()).Label);
+
+        mode = 99; // 无匹配 → default
+        block.Refresh();
+        Assert.Equal(3, builds);
+        Assert.Equal("other", Assert.IsType<Button>(block.Children.Single()).Label);
+
+        mode = 1; // 回到已释放过的作用域：重建
+        block.Refresh();
+        Assert.Equal(4, builds);
+        Assert.Equal("one", Assert.IsType<Button>(block.Children.Single()).Label);
+    }
+
+    [Fact]
+    public void SwitchBlock_NoMatchWithoutDefault_IsEmpty()
+    {
+        int mode = 5;
+        var block = new SwitchBlock<int>();
+        block.SetSelector(() => mode);
+        block.AddCase(1, scope => scope.AddRoot(new Button { Label = "one" }));
+
+        block.Refresh();
+        Assert.Empty(block.Children);
+
+        mode = 1;
+        block.Refresh();
+        Assert.Single(block.Children);
+    }
+
+    [Fact]
+    public void SwitchBlock_SameCase_RerunsRenderActions_WithoutRebuilding()
+    {
+        int mode = 1;
+        int value = 0;
+        int builds = 0;
+        int updates = 0;
+        var block = new SwitchBlock<int>();
+        block.SetSelector(() => mode);
+        block.AddCase(1, scope =>
+        {
+            builds++;
+            var run = new TextRun("");
+            void R()
+            {
+                updates++;
+                run.Text = value.ToString();
+            }
+            R();
+            scope.AddRenderAction(R);
+            scope.AddRoot(run);
+        });
+
+        block.Refresh();
+        Assert.Equal(1, builds);
+        Assert.Equal(1, updates);
+
+        value = 7;
+        block.Refresh(); // 同一 case：只跑渲染动作
+        Assert.Equal(1, builds);
+        Assert.Equal(2, updates);
+        Assert.Equal("7", ((TextRun)block.Children.Single()).Text);
+    }
+
+    [Fact]
+    public void SwitchBlock_SwitchAway_DisposesPreviousScope()
+    {
+        int mode = 1;
+        var first = new DisposeProbe();
+        var second = new DisposeProbe();
+        var block = new SwitchBlock<int>();
+        block.SetSelector(() => mode);
+        block.AddCase(1, scope => { scope.AddDisposable(first); scope.AddRoot(new Button()); });
+        block.AddCase(2, scope => { scope.AddDisposable(second); scope.AddRoot(new Button()); });
+
+        block.Refresh();
+        Assert.Equal(0, first.Count);
+
+        mode = 2;
+        block.Refresh();
+        Assert.Equal(1, first.Count);
+        Assert.Equal(0, second.Count);
+
+        block.Dispose();
+        Assert.Equal(1, second.Count);
+        Assert.Equal(1, first.Count); // 只释放一次
+        Assert.Empty(block.Children);
+
+        block.Refresh(); // 已卸载：no-op
+        Assert.Empty(block.Children);
+    }
+
+    [Fact]
+    public void SwitchBlock_ContentFailure_DisposesPartialScope_AndRethrows()
+    {
+        var probe = new DisposeProbe();
+        var block = new SwitchBlock<int>();
+        block.SetSelector(() => 1);
+        block.AddCase(1, scope =>
+        {
+            scope.AddDisposable(probe);
+            throw new InvalidOperationException("template failed");
+        });
+
+        Assert.Throws<InvalidOperationException>(() => block.Refresh());
+        Assert.Empty(block.Children);
+        Assert.Equal(1, probe.Count);
+    }
+
+    [Fact]
+    public void SwitchBlock_MatchesWithEqualityComparer_ForStringsAndEnums()
+    {
+        var block = new SwitchBlock<string>();
+        block.SetSelector(() => "list");
+        block.AddCase("list", scope => scope.AddRoot(new Button { Label = "list" }));
+        block.AddCase("grid", scope => scope.AddRoot(new Button { Label = "grid" }));
+
+        block.Refresh();
+        Assert.Equal("list", Assert.IsType<Button>(block.Children.Single()).Label);
+
+        var enumBlock = new SwitchBlock<Mode>();
+        enumBlock.SetSelector(() => Mode.Second);
+        enumBlock.AddCase(Mode.First, scope => scope.AddRoot(new Button { Label = "first" }));
+        enumBlock.AddCase(Mode.Second, scope => scope.AddRoot(new Button { Label = "second" }));
+
+        enumBlock.Refresh();
+        Assert.Equal("second", Assert.IsType<Button>(enumBlock.Children.Single()).Label);
+    }
+
+    private enum Mode { First, Second }
 }

@@ -26,7 +26,16 @@ public enum UiContentModel
 public enum UiTypeShapeKind { Primitive, Enum, Delegate, Signal, Other }
 
 /// <summary>标签解析结果（design/14 §14.5.1）。不可用标签带原因，避免把拼错的名字指向抽象类型。</summary>
-public enum UiTagResolutionKind { Found, NotFound, Ambiguous, Unavailable }
+public enum UiTagResolutionKind
+{
+    Found,
+    NotFound,
+    Ambiguous,
+    Unavailable,
+
+    /// <summary>K31：标签命中本文件的 <c>@using</c> 别名，但别名目标不在目录里（已报 EUI048）。</summary>
+    AliasUnresolved,
+}
 
 /// <param name="CanonicalKey">转换器与泛型匹配的唯一查表键：内置类型用 C# 关键字名（<c>double</c>/<c>string</c>/…），
 /// 其余用不含 <c>global::</c> 前缀的命名空间限定全名。</param>
@@ -176,6 +185,7 @@ public readonly record struct UiTagResolution(
 public sealed class UiCatalog : IEquatable<UiCatalog>
 {
     private readonly Dictionary<string, UiElementDef[]> _byTag;
+    private readonly Dictionary<string, UiElementDef> _byType;
     private readonly Dictionary<string, UiHiddenTag> _hidden;
 
     public UiCatalog(
@@ -190,6 +200,10 @@ public sealed class UiCatalog : IEquatable<UiCatalog>
                 g => g.OrderBy(e => e.ClrTypeDisplayName, StringComparer.Ordinal).ToArray(),
                 StringComparer.Ordinal);
         Elements = _byTag.Values.SelectMany(a => a).OrderBy(e => e.Tag, StringComparer.Ordinal).ToList();
+        // K31：@using 别名按 CLR 全名精确查找（别名是显式选择，不受命名空间可见性约束）
+        _byType = Elements
+            .GroupBy(e => e.ClrTypeDisplayName, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
         _hidden = hiddenTags
             .GroupBy(h => h.Tag, StringComparer.Ordinal)
             .ToDictionary(
@@ -231,6 +245,13 @@ public sealed class UiCatalog : IEquatable<UiCatalog>
     }
 
     /// <summary>
+    /// K31：按 CLR 显示名（<c>global::Ns.Type</c>）精确解析，供 <c>@using</c> 别名使用。
+    /// 别名是模板里的显式选择，因此**不做** @using 命名空间可见性过滤——这正是它解决重名的方式。
+    /// </summary>
+    public UiElementDef? FindByTypeDisplayName(string clrTypeDisplayName) =>
+        _byType.TryGetValue(clrTypeDisplayName, out var def) ? def : null;
+
+    /// <summary>
     /// K22（D85）：按模板 <c>@using</c> 导入的命名空间过滤标签解析。内置控件（EclipseUI.Elements）
     /// 无豁免；只有导入命名空间（或全局命名空间）中的候选可见。目录里有同名标签但全部未导入时
     /// 返回 NotFound 并携带完整类型名列表（供「缺失 @using」建议）；导入后同名多类型仍是 Ambiguous。
@@ -242,7 +263,9 @@ public sealed class UiCatalog : IEquatable<UiCatalog>
         {
             // 可见性统一由 NamespaceVisible 决定：global 命名空间类型不写 @using 也可见，
             // 具名命名空间类型必须已导入（K22）。imports 为空时具名类型自然全部不可见。
-            var visible = defs.Where(d => NamespaceVisible(d.ClrTypeDisplayName, imports)).ToArray();
+            var visible = defs
+                .Where(d => NamespaceVisible(d.ClrTypeDisplayName, imports ?? Array.Empty<string>()))
+                .ToArray();
             if (visible.Length == 1)
                 return new UiTagResolution(UiTagResolutionKind.Found, visible[0], null, null);
             if (visible.Length > 1)
