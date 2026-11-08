@@ -1,8 +1,11 @@
 # 9. 开发计划（2026-10 基线）
 
-> 本文是 `design/01`–`15` 的执行计划，不改变已定架构决策，只把“做什么、先做什么、何时算完成”落到可检查的里程碑。
+> 本文是 `design/01`–`16` 的执行计划，不改变已定架构决策，只把“做什么、先做什么、何时算完成”落到可检查的里程碑。
 > 状态与反应式的实现级规范见 [spec/03](../spec/03-reactivity-and-binding.md)，其 S1–S5 分阶段分别落在本文 G3（S1–S3）、G4（S4）与 G8（S5）。
 > 模板语法与生成形态分别以 [spec/01](../spec/01-template-syntax.md)、[spec/02](../spec/02-generated-code-contract.md) 为准；v4 差距台账见 design/03 §3.5.4。
+> **S6「语法对齐」（K23，2026-11-08 ✅ 已实现）**：插在 G3 之后、G4 之前；
+> **S6 是本文切片编号，不是 spec/03 反应式阶段 S1–S5 的延续**，也不改变反应式语义。
+> 目标语法见 spec/01 §1.5，偏差见 spec/02 §12 D85–D88，阶段 P0–P6 见 design/16。
 >
 > **排期假设**：1–2 名全职工程师、Windows 优先、2 周一个迭代。若增至 3–4 人且能并行拆分，整体时间可压缩约 30–40%；若只有 1 人且同时承担 IDE/平台适配，按区间上限估算。
 
@@ -17,7 +20,7 @@
   `EclipseUI.Compiler.Metadata` 的目录构建另产出 EUI017/018/019/021/026/028/030 的**元数据问题**
   （`UiMetadataProblem`，不是 `.ui` 上的诊断）；✅ 2026-11-08（D74 ②/D81）：源项目问题在 C# 声明处报出、
   标签使用点分流 EUI016/017/018/030，引用程序集仍只在使用点暴露。
-  EUI024（委托签名匹配）未实现，是 G3 唯一剩余的诊断出口。
+  EUI024（委托签名匹配）已落地（✅ 2026-11-08/D82，`EventHandlerSignatureTests` 16 例），G3 七个小切片至此全部收敛；口径见台账 D82。
 - Roslyn 增量源生成器：code-behind 发现、模板解析与动态点生成、`@foreach` item 类型推断、代码发射、`#line` 映射。
 - 运行时：`Signal<T>`（遗留原语，不参与模板反应式）、`StyledProperty<T>`、元素树、measure/arrange、路由事件、`@if`/`@foreach` 协调器、`Component`、无头宿主。
 - 输入/焦点：HitTest、指针冒泡、按下捕获、Tab 遍历、空格/回车激活；`InputRouter` 无头/窗口共用。
@@ -29,7 +32,7 @@
   `<Slot>` + `<ContentSlot>`（见 [14 §14.12](./14-control-template-contract.md)）。
 - 反应式 S1–S3 ✅：`Invalidate`/`Render`/`U{N}`/`R{N}`、块 `Refresh` 与 Key 复用、`UiBinding` 双向
   （控件侧与组件侧），旧语法 `:bind`/`:value` 报 EUI043 Warning。
-- 测试：470 个测试全绿（207 无头 + 202 编译器 + 61 渲染）；编译器测试用快照钉住 C2 变宽后的
+- 测试：**497 个测试全绿（Headless 214 / Compiler 218 / Rendering 65）**；编译器测试用快照钉住 C2 变宽后的
   模板表面（17 属性项 / 9 个事件名），样例 `.ui` 已用 `@bind-P` 新语法。
 
 **尚不具备**
@@ -51,16 +54,19 @@
 
 | 视角 | 完成度 | 说明 |
 |---|---:|---|
-| 托管核心（编译器前端 + 生成器 + 运行时 + 无头测试） | **85–90%** | 主链路与组件契约已通（S1–S3、C1–C6、块布局透明、按文件增量、`#line` 列映射、`EUI045` 冲突诊断、D74 ② 诊断出口，470 例全绿）；剩 S4/S5、EUI024 签名匹配、属性存储去装箱、性能基准。 |
+| 托管核心（编译器前端 + 生成器 + 运行时 + 无头测试） | **85–90%** | 主链路与组件契约已通（S1–S3、C1–C6、G3 七个小切片含 EUI024 签名匹配 ✅ D82、`#line` 列映射、`EUI045` 冲突诊断、D74 ② 诊断出口，497 例全绿）；S4/S5 运行时硬化与 G2 CPU 侧部分收敛（D83/D84：属性存储去装箱、CPU 像素 golden、retained 合成原型、60fps 测量程序）。剩 S4/S5（Element.Unmount 属 G4、AOT/裁剪、旧语法清理、最终审计、帧预算/分配预算门槛、CI）、G2（GPU retained layer/真正局部重绘、目标机稳定 60fps 结论、像素探针 DSL、CPU/GPU 交叉一致性门禁）与性能基准。 |
 | 0.1 alpha（可交付的 2D 桌面框架） | **55–60%** | 渲染与 Win32 宿主已打通到窗口像素，元素树→display list→上屏、输入路由与 damage v0 可用（G1 门「有条件 Go」，GPU 200 元素 @1280×800 实测 6.36 ms/帧）；仍缺样式/主题、TextBox/ListBox/Grid/ScrollViewer 控件集、layer/合成器。 |
 | 完整设计愿景（含 IDE、3D、多平台、DevTools、1.0 硬化） | **12–17%** | IDE、3D、平台扩展、无障碍与稳定性尚未开始；编译器线的完成度是本次上调的唯一来源。 |
+
+> **2026-11-08（K23）**：S6 语法对齐只完成**决策与规范登记**，代码尚未实施，
+> **不计入上述完成度上调**；百分比仍按 85–90% / 55–60% / 12–17% 口径，避免估算通胀。
 
 ### 分领域状态
 
 | 领域 | 状态 | 到 0.1 还差什么 |
 |---|---|---|
-| 模板前端 | 🟢 可用 MVP | `@switch`、附加属性、泛型标签、trivia/pretty-printer、表达式全量 Roslyn 语义分析 |
-| 源生成器 | 🟢 可用 MVP | EUI024 签名匹配、组件作者面样例（按文件增量 ✅ 2026-11-08、`#line` 列映射 ✅ 2026-11-08/D79、`EUI045` ✅ 2026-11-08/D57、诊断出口 ✅ 2026-11-08/D74 ②） |
+| 模板前端 | 🟢 可用 MVP（v2） | **S6 语法对齐已实现（K23 / D85–D88 ✅ 2026-11-08）**：`@using`、`@code` 单文件、`else`/`@switch`、`@* *@`；其余待办：附加属性、trivia/pretty-printer、表达式全量 Roslyn 语义分析；泛型标签暂缓（K19，不排期） |
+| 源生成器 | 🟢 可用 MVP | 组件作者面样例；EUI024 签名匹配 ✅ 2026-11-08/D82（按文件增量 ✅ 2026-11-08、`#line` 列映射 ✅ 2026-11-08/D79、`EUI045` ✅ 2026-11-08/D57、诊断出口 ✅ 2026-11-08/D74 ② 均已落地） |
 | 运行时/属性 | 🟢 可用基础 | 属性存储去装箱、生命周期 Unmount、样式优先级、性能基准 |
 | 布局 | 🟡 部分 | Grid/Wrap/Scroll、约束与裁剪、虚拟化（块布局透明化 ✅ 2026-11-05，D77） |
 | 文本 | 🟡 单行 shaping 已接入 | 断行、bidi、fallback、emoji、glyph 缓存、display list 集成 |
@@ -155,7 +161,7 @@
 （[11 G2 第一切片](./11-g2-surface-slice.md)）；元素树→display list、输入路由、文本 shaping 接入、
 Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-slice.md)）；
 元素级脏区检测、空闲跳帧与覆盖率统计（[13 G2 第三切片](./13-g2-damage-v0.md)）。
-剩余：retained layer / 局部重绘、像素 golden、目标机 60fps 复测。
+CPU 侧部分收敛（2026-11-08/D84）：CPU 像素 golden（`PixelGoldenTests` 4 例 + `PixelGolden.baseline.txt`）、retained 合成原型（`RetainedFrameCompositor.cs`，只 blit 脏区、不减少光栅化）、`tools/bench-60fps.ps1` + 目标机报告模板。剩余：GPU retained layer / 真正局部重绘（需 `IRenderBackend.Render` 脏区/scissor 重载，VelloSharp 0.5.0-alpha.3 无公开 API）、目标机稳定 60fps 结论（本机 29Hz 虚拟显示，只能给可复现测量程序）、像素探针 DSL、CPU/GPU 交叉一致性门禁。
 
 | 子项 | 状态 |
 |---|---|
@@ -163,8 +169,8 @@ Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-s
 | Win32 窗口宿主（窗口、resize、DPI、鼠标/键盘桥接） | ✅ 事件 → InputRouter → 元素树 |
 | Scene graph / paint 遍历 / display list 构建 | ✅ `ElementPainter` 全量遍历 |
 | 文本整段 shaping 接入布局与绘制 | ✅ `ITextPainter` + `ITextMeasurer` 共用 shaping 缓存 |
-| damage/layer v0 | ✅ `RenderVersion` + 快照 diff + 空闲跳帧；retained layer/局部重绘待后续（[13](./13-g2-damage-v0.md)） |
-| 像素探针与 golden 测试 | ⏳ 截图工具已就绪（`tools/capture-window.ps1`） |
+| damage/layer v0 | ✅ `RenderVersion` + 快照 diff + 空闲跳帧；CPU 侧 retained 合成原型 ✅ D84（只 blit 脏区、不减少光栅化），GPU retained layer/真正局部重绘仍待后续（[13](./13-g2-damage-v0.md)） |
+| 像素探针与 golden 测试 | 🟡 CPU 侧已落地（`PixelGoldenTests` + 文本基线，2026-11-08/D84）；缺探针 DSL 与窗口/CPU-GPU 交叉门禁（`tools/capture-window.ps1` 已就绪） |
 
 **范围**
 
@@ -261,10 +267,10 @@ Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-s
   保留标签名 `Slot`/`ContentSlot` 冲突走 EUI031 + HiddenTags。本切片 54 例（C6SlotTests 26 +
   GeneratorContract C6 13 + CatalogScanner C6 15），**409 例全绿（158/190/61）**；
   台账新增 D75（解析两级口径）/D76（基链同名成员胜出规则）；
-  落地记录见 [14 §14.12.6](./14-control-template-contract.md)。附加属性与泛型标签实拆留 G4。
+  落地记录见 [14 §14.12.6](./14-control-template-contract.md)。附加属性实拆留 G4；泛型标签暂缓实现（K19，不排期）。
 - 按文件增量生成（✅ 2026-11-08）；`#line` 列映射（✅ 2026-11-08，D79）；`EUI045` code-behind
-  冲突诊断（✅ 2026-11-08，D57/D80）；诊断出口补全（✅ 2026-11-08，D74 ②/D81；
-  余 EUI024 事件处理器签名匹配，另片）。
+  冲突诊断（✅ 2026-11-08，D57/D80）；诊断出口补全（✅ 2026-11-08，D74 ②/D81）；
+  EUI024 事件处理器签名匹配（✅ 2026-11-08，D82）——G3 七个小切片至此全部收敛。
   —— ✅ **诊断出口补全切片（2026-11-08，G3 小片，D74 ②/D81）**：`UiMetadataProblem` 增加
   纯数据 `UiSourceLocation`（成员符号声明优先、类型声明兜底），生成器注册目录级
   `RegisterSourceOutput(catalogProvider)` 消费 `catalog.Problems`（类型级）与
@@ -273,7 +279,7 @@ Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-s
   EUI026/EUI028/EUI031 保持原码。标签使用点按类别分流 EUI016（冲突）/EUI017/EUI018/EUI030/EUI031
   （不可用）/EUI001（未知）。诊断不阻断生成输出；逐文件管道 `WithTrackingName("PerFileGeneration")`
   让增量断言只读逐文件 step。`MetadataOutletTests` 14 例。
-  **470 例全绿（207/202/61）**；台账 D74 ② 关闭 / 新增 D81，余 EUI024。
+  该切片全绿；台账 D74 ② 关闭 / 新增 D81（EUI024 随后由 D82 落地，2026-11-08）。
   —— ✅ **`EUI045` 冲突诊断切片（2026-11-08，G3 小片，D57/D80）**：常量分配 +
   `TemplateGenerator.ProbeCodeBehindConflicts` 覆盖 spec/02 §10 五类触发（`Build`/`Render`、
   生成保留名 `__el/__cmp/__blk/__run/__bind/U/R` + 数字、非 `Component` 基类、隐藏
@@ -303,7 +309,35 @@ Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-s
   HarfBuzz 测量器时与布局测试类并行会污染 naive 高度断言，改为程序集级禁用测试并行。
   —— EUI005/008/009/011/012/013/015 **已实现**（`TemplateGenerator` 的 code-behind 发现与 `Parser` 的指令判定），
   本项原文把它们列为待办是 stale，2026-11-05 按代码核对后更正。
-- 属性存储去装箱、失效队列分配预算、benchmark 基线。
+  —— ✅ **三片落地记录（2026-11-08，D82/D83/D84）**：G3 收尾 + S4/S5 运行时硬化 + G2 CPU 侧，
+  全量 **497 例全绿（214/218/65）**。
+  ① EUI024 事件处理器签名匹配（D82）：常量 `UiDiagnostics.EventHandlerSignature` 早已分配；
+  `TemplateGenerator.ValidateEventHandlerSignature` + `TemplateProbe.IsHandlerCompatible`
+  （复用 `ProbeTree` 合成 partial 方法体）借 Roslyn 把处理器表达式放进 code-behind 符号上下文，
+  仅「表达式自身语义干净 + 对目标委托的转换确定失败」时报 Error 于 `.ui` 属性值并短路生成输出
+  （与 EUI004 一致）；符号未解析/重载失败/`dynamic`/表达式内部错误静默，交回生成代码经 `#line`
+  由 C# 报错（spec/02 §2.4 规则 8 不重复报告）。控件事件复用 `Emitter.EventHandlerType`
+  （`internal static`）、组件委托参数用 `UiParameterDef.ClrTypeDisplayName`，保证诊断与生成代码
+  类型判定一致；`EventHandlerSignatureTests` 16 例。G3 七个小切片至此全部收敛。
+  ② S4/S5 运行时硬化部分收敛（D83）：`PropertySystem.cs` 新增 `IValueBox`/`ValueBox<T>`，
+  `Element._localValues` 改 `Dictionary<StyledProperty, IValueBox>`、重复赋值只改泛型字段消除值类型装箱；
+  `Component.Dispose` 锁内清 `_pendingRenders`/`_pendingSet`；`RuntimeHardeningTests` 7 例
+  （分配预算、继承/绑定/通知语义、泄漏回归）。明确未做：`Element.Unmount/Detach`（design/14
+  明确 v1 不提供、G4 才补）、AOT/裁剪配置、旧语法清理、最终审计清单、帧预算/分配预算门槛、
+  CI 配置、S5 基准门槛。
+  ③ G2 CPU 侧部分收敛（D84）：`PixelGoldenTests` 4 例 + `TestData/PixelGolden.baseline.txt`
+  （纯图元、无字体依赖的 CPU 像素 golden：`ContentHash` 全图门禁 + 探针 ±2 容差 +
+  `ECLIPSEUI_UPDATE_GOLDEN=1` 生成开关 + 失败输出实际 PNG 到 TestResults）；
+  `SceneGraph/RetainedFrameCompositor.cs`（CPU retained 合成原型，持有上一帧 `RenderTarget`、
+  按 `FrameDamage` 只 blit 脏区，断言脏区外逐字节不变、与整帧重绘等价）；
+  `tools/bench-60fps.ps1` + `design/reports/target-machine-60fps-template.md`。
+  边界：原型只是合成层、不减少光栅化工作量，真正局部重绘需 `IRenderBackend.Render` 增加
+  脏区/scissor 重载且 VelloSharp 0.5.0-alpha.3 未提供公开 API；GPU surface 的 retained layer
+  依赖 HWND + wgpu device，本机无法验证；「稳定 60fps」结论依赖目标机真实显示器
+  （本机 29Hz 虚拟显示），只能给可复现测量程序与报告模板；像素探针 DSL
+  （render-gate-2026-11 backlog #7）仍缺。
+- 属性存储去装箱（`IValueBox`/`ValueBox<T>`，✅ 2026-11-08/D83）；剩失效队列分配预算门槛、
+  benchmark 基线、帧预算门槛、CI 配置。
 
 **出口标准**
 
@@ -320,11 +354,35 @@ Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-s
   元数据错误在声明处或使用点报 EUI016–EUI031、EUI033/EUI037/EUI040/EUI043/EUI045（停用码零出现）。
   —— ✅ **已达成**：C1–C6 切片收敛，`EUI045` 已实现（✅ D57/D80，`CodeBehindConflictTests` 23 例），
   D74 ② 把 EUI016/017/018/026/028/030 接上编译期出口（✅ D81，`MetadataOutletTests` 14 例）；
-  仅 EUI024 事件处理器签名匹配仍留后续切片，不影响本条的码表覆盖口径。
+  EUI024 事件处理器签名匹配已落地（✅ 2026-11-08/D82，`EventHandlerSignatureTests` 16 例），码表覆盖口径完整。
 - 状态与反应式 S1–S3 出口按 [spec/03 §13.1](../spec/03-reactivity-and-binding.md#131-阶段定义) 执行：`dotnet test` 全绿、
   失效合并、无泄漏、普通状态驱动的 Gallery/TaskList、无 `SetValue` 生成。
 - 生成器增量口径按 14.10.3 实测确立：目录每轮重建（14 程序集 / 688 类型全扫 45.1 ms），
   但无关改动后每个生成文件的 `IncrementalStepRunReason` 必须是 `Cached`/`Unchanged`。
+
+### S6：语法对齐（K23，2026-11-08 ✅ 已实现）
+
+**定位**：语法表面对齐 Blazor/Razor 的独立切片，插在 **G3 之后、G4 之前**。
+**S6 是本文的切片编号，不是 spec/03 反应式阶段 S1–S5 的延续**；不改变 K1–K18 运行时模型。
+权威决策见 [spec/02 §14 K23](../spec/02-generated-code-contract.md)，目标语法见 [spec/01 §1.5](../spec/01-template-syntax.md)，
+阶段 P0–P6 与风险 R1–R8 见 [design/16](./16-blazor-alignment-plan.md)。
+
+**范围**
+
+- `@using`：模板导入命名空间、生成文件保留 `using Ns;`、标签按导入过滤且内置控件无豁免（K22 / D85）。
+- `@code`：单文件「模板 + 代码」，位置不限、可多个块、书写顺序不影响可见性，与同名 `.cs` partial 并存（K21 / D86）。
+- 流程控制：`else`/`else if`（不带 `@`）与 `@switch`（`case`/`break`/`default`）；`EUI008` 停用、新诊断从 `EUI046` 起（D87）。
+- 注释：`@* *@`，未闭合报 `EUI100`（顺带关闭 D12）；`<!-- -->` 弃用期形态待 Q6（D88）。
+- 保持不动：`{expr}`、目录驱动标签/属性、`@bind-P`、`Key`/`Ref`、具名插槽、span 型 `#line`、逐文件增量、EUI 诊断体系。
+- 明确不做（K23 ②）：`@page`/`@layout`/`@rendermode`/`@inject`/`@typeparam`/`@attributes` 等 Web 指令、
+  HTML 语法债、渲染树 diff；泛型标签仍按 K19 暂缓、不排期。
+
+**出口标准**
+
+- spec/02 §12 的 **D85–D88 全部关闭**，design/03 §3.5.4 双向同步。
+- 样例与约 94 例 golden 完成 `@using` 一次性迁移；至少一个样例为底部 `@code` 的单文件形态。
+- `dotnet test EclipseUI.slnx` 497 例基线全绿、零停用诊断、样本项目编译与运行。
+- Q3/Q4/Q6/Q7 与 case 细项已按 **K24–K29** 登记（2026-11-08 拍板）并随 S6 实施 ✅。
 
 ### G4：样式、控件与虚拟化（8–10 周）
 
@@ -335,7 +393,7 @@ Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-s
 - `VirtualizingPanel` 与 item 模板的容器复用。
 - 状态与反应式 S4：组件所有权/深度排序、参数推送与相等保护、异步/后台失效、`ShouldRender`（[spec/03 §13.1](../spec/03-reactivity-and-binding.md#131-阶段定义)）。
 - 控件契约 C6：具名插槽 + `ContentSlot` 宿主（✅ 2026-11-05，14 §14.12.6）；
-  附加属性、泛型标签实拆留 G4（14 §14.12.6 范围说明）。
+  附加属性实拆留 G4；泛型标签按 K19 暂缓实现、不排期（14 §14.12.6 范围说明）。
 - 键盘/焦点/IME 接口预留。
 
 **出口标准**
@@ -418,7 +476,7 @@ Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-s
 - 无障碍（UIA/屏幕阅读器）、IME 完整链路、DPI/多显示器。
 - 本地化/RTL、剪贴板/拖放、多窗口/对话框。
 - 性能预算、内存/启动、AOT/裁剪、API 稳定性与兼容策略。
-- 状态与反应式 S5：基准/预算、AOT 样例、线程断言、`:bind`/`:value` 清理与最终审计（[spec/03 §13.1](../spec/03-reactivity-and-binding.md#131-阶段定义)）。
+- 状态与反应式 S5：基准/预算、AOT 样例、线程断言、`:bind`/`:value` 清理与最终审计（[spec/03 §13.1](../spec/03-reactivity-and-binding.md#131-阶段定义)）；运行时硬化已部分收敛（2026-11-08/D83：`IValueBox`/`ValueBox<T>` 去装箱、`Component.Dispose` 锁内清 pending 队列、`RuntimeHardeningTests` 7 例），`Element.Unmount/Detach` 属 G4 才补，AOT/裁剪配置与门槛仍未做。
 - 文档、示例、迁移指南、发布流程。
 
 **出口标准**
@@ -431,16 +489,18 @@ Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-s
 
 ```
 G1 渲染 gate
-  └─ G2 2D 垂直切片 ── G4 样式/控件/虚拟化 ── G8 1.0 硬化
+  └─ G2 2D 垂直切片 ── S6 语法对齐(K23) ── G4 样式/控件/虚拟化 ── G8 1.0 硬化
         │                      │
         │                      └─ G5 IDE P0–P1 ── G6 工具链
         │
         └─ G7 WebGPU 控件 + 平台扩展
 
-G3 语义/编译器硬化：从 G1 结束后并行，最迟在 G4 前完成关键项
+G3 语义/编译器硬化：从 G1 结束后并行，最迟在 S6 前完成关键项
+S6 语法对齐：G3 之后 / G4 之前；偏差 D85–D88；不改变 K1–K18 运行时模型
 ```
 
-- **关键路径**：G1 → G2 → G4 → G8。
+- **关键路径**：G1 → G2 → **S6** → G4 → G8（K23 ⑦）。
+- **S6 必须在 G4 前完成**：`@using` 改变标签解析与全部样例 / golden，G4 的样式与控件工作若先落地会叠加迁移成本。
 - **G3 必须并行**：它修的是会污染 demo 的语义问题，不能等渲染做完再补。
 - **G5 依赖 G3 的组件注册表**：没有符号元数据，LSP 补全只能靠硬编码。
 - **G7 依赖 G2 的帧循环/display list**：不要在渲染契约稳定前做 WebGPU 控件。

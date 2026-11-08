@@ -85,7 +85,7 @@ public class C4ComponentTests
     public void Component_LiteralAndExpressionParameters_ResolveWithoutDiagnostics()
     {
         var catalog = CatalogWithComponent();
-        var (doc, diags) = ParseAnalyze(catalog, """<ProbeCard Title="Hi" Count={Value} />""");
+        var (doc, diags) = ParseAnalyze(catalog, "@using Probe\n" + """<ProbeCard Title="Hi" Count={Value} />""");
         Assert.Empty(diags);
         var element = doc.Nodes.OfType<UiElement>().Single();
         Assert.NotNull(element.Attributes[0].ParamDef);
@@ -96,7 +96,7 @@ public class C4ComponentTests
     public void Component_UnknownParameter_IsEUI002()
     {
         var catalog = CatalogWithComponent();
-        var (_, diags) = ParseAnalyze(catalog, """<ProbeCard Count="42" Ttile="x" />""");
+        var (_, diags) = ParseAnalyze(catalog, "@using Probe\n" + """<ProbeCard Count="42" Ttile="x" />""");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.UnknownProperty, diag.Code);
         Assert.Contains("unknown parameter", diag.Message);
@@ -107,7 +107,7 @@ public class C4ComponentTests
     public void RequiredParameterMissing_IsEUI027()
     {
         var catalog = CatalogWithComponent();
-        var (_, diags) = ParseAnalyze(catalog, """<ProbeCard Title="Hi" />""");
+        var (_, diags) = ParseAnalyze(catalog, "@using Probe\n" + """<ProbeCard Title="Hi" />""");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.RequiredParameterMissing, diag.Code);
         Assert.Contains("Count", diag.Message);
@@ -118,7 +118,7 @@ public class C4ComponentTests
     public void DelegateParameterLiteral_IsEUI004()
     {
         var catalog = CatalogWithComponent();
-        var (_, diags) = ParseAnalyze(catalog, """<ProbeCard Count="1" OnClose="HandleClose" />""");
+        var (_, diags) = ParseAnalyze(catalog, "@using Probe\n" + """<ProbeCard Count="1" OnClose="HandleClose" />""");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.EventNeedsExpression, diag.Code);
         Assert.Contains("delegate", diag.Message);
@@ -129,7 +129,7 @@ public class C4ComponentTests
     public void DelegateParameterExpression_IsAccepted()
     {
         var catalog = CatalogWithComponent();
-        var (_, diags) = ParseAnalyze(catalog, """<ProbeCard Count="1" OnClose={() => Close()} />""");
+        var (_, diags) = ParseAnalyze(catalog, "@using Probe\n" + """<ProbeCard Count="1" OnClose={() => Close()} />""");
         Assert.Empty(diags);
     }
 
@@ -137,7 +137,7 @@ public class C4ComponentTests
     public void BindWithoutChangedCallback_IsEUI040()
     {
         var catalog = CatalogWithComponent();
-        var (_, diags) = ParseAnalyze(catalog, """<ProbeCard Count="1" @bind-Plain={Name} />""");
+        var (_, diags) = ParseAnalyze(catalog, "@using Probe\n" + """<ProbeCard Count="1" @bind-Plain={Name} />""");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.BindTargetInvalid, diag.Code);
         Assert.Contains("PlainChanged", diag.Message);
@@ -147,7 +147,7 @@ public class C4ComponentTests
     public void BindOnDelegateParameter_IsEUI040()
     {
         var catalog = CatalogWithComponent();
-        var (_, diags) = ParseAnalyze(catalog, """<ProbeCard Count="1" @bind-OnClose={Name} />""");
+        var (_, diags) = ParseAnalyze(catalog, "@using Probe\n" + """<ProbeCard Count="1" @bind-OnClose={Name} />""");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.BindTargetInvalid, diag.Code);
         Assert.Contains("OnClose", diag.Message);
@@ -157,7 +157,7 @@ public class C4ComponentTests
     public void ContentParameterViaAttribute_IsEUI021()
     {
         var catalog = CatalogWithComponent();
-        var (_, diags) = ParseAnalyze(catalog, """<ProbeCard Count="1" Body={content} />""");
+        var (_, diags) = ParseAnalyze(catalog, "@using Probe\n" + """<ProbeCard Count="1" Body={content} />""");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.ContentTargetInvalid, diag.Code);
         Assert.Contains("content parameter", diag.Message);
@@ -169,6 +169,8 @@ public class C4ComponentTests
         var catalog = CatalogWithComponent();
         var (_, diags) = ParseAnalyze(catalog,
             """
+            @using Probe
+            @using EclipseUI.Elements
             <ProbeCard Count="1">
                 <StackPanel />
                 <StackPanel />
@@ -185,6 +187,8 @@ public class C4ComponentTests
         var catalog = CatalogWithComponent();
         var (_, diags) = ParseAnalyze(catalog,
             """
+            @using Probe
+            @using EclipseUI.Elements
             <ProbeList Count="1">
                 <StackPanel />
                 <StackPanel />
@@ -201,7 +205,7 @@ public class C4ComponentTests
     public void SingleRootContent_OneRootAccepted()
     {
         var catalog = CatalogWithComponent();
-        var (_, diags) = ParseAnalyze(catalog, """<ProbeCard Count="1"><TextBlock /></ProbeCard>""");
+        var (_, diags) = ParseAnalyze(catalog, "@using Probe\n@using EclipseUI.Elements\n" + """<ProbeCard Count="1"><TextBlock /></ProbeCard>""");
         Assert.Empty(diags);
     }
 
@@ -211,6 +215,8 @@ public class C4ComponentTests
         var catalog = CatalogWithComponent();
         var (_, diags) = ParseAnalyze(catalog,
             """
+            @using Probe
+            @using EclipseUI.Elements
             <ProbeCard Count="1">
                 <CheckBox @bind-Checked={Flag} />
             </ProbeCard>
@@ -224,7 +230,7 @@ public class C4ComponentTests
     public void TextInsideContent_IsEUI006()
     {
         var catalog = CatalogWithComponent();
-        var (_, diags) = ParseAnalyze(catalog, """<ProbeCard Count="1">hello</ProbeCard>""");
+        var (_, diags) = ParseAnalyze(catalog, "@using Probe\n" + """<ProbeCard Count="1">hello</ProbeCard>""");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.TextNotAllowed, diag.Code);
     }
@@ -233,7 +239,7 @@ public class C4ComponentTests
     public void ComponentsWithoutContentModel_ChildrenRejected()
     {
         var catalog = CatalogWithComponent();
-        var (_, diags) = ParseAnalyze(catalog, """<StackPanel><ProbeCard Count="1" /></StackPanel>""");
+        var (_, diags) = ParseAnalyze(catalog, "@using Probe\n@using EclipseUI.Elements\n" + """<StackPanel><ProbeCard Count="1" /></StackPanel>""");
         Assert.Empty(diags);
     }
 
@@ -243,7 +249,7 @@ public class C4ComponentTests
         // 组件不解析自身事件：OnClose 是委托参数，按参数名赋值（不做 On* 推断）
 
         var catalog = CatalogWithComponent();
-        var (_, diags) = ParseAnalyze(catalog, """<StackPanel><ProbeCard Count="1" OnClose={Close} /></StackPanel>""");
+        var (_, diags) = ParseAnalyze(catalog, "@using Probe\n@using EclipseUI.Elements\n" + """<StackPanel><ProbeCard Count="1" OnClose={Close} /></StackPanel>""");
         Assert.Empty(diags);
     }
 
@@ -251,7 +257,7 @@ public class C4ComponentTests
     public void Component_ClassAndStyleStillReserved()
     {
         var catalog = CatalogWithComponent();
-        var (_, diags) = ParseAnalyze(catalog, """<ProbeCard Count="1" Class="big" />""");
+        var (_, diags) = ParseAnalyze(catalog, "@using Probe\n" + """<ProbeCard Count="1" Class="big" />""");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.ReservedSyntax, diag.Code);
     }
@@ -260,7 +266,7 @@ public class C4ComponentTests
     public void DuplicateComponentParameter_IsEUI025()
     {
         var catalog = CatalogWithComponent();
-        var (_, diags) = ParseAnalyze(catalog, """<ProbeCard Count="1" Title="a" Title="b" />""");
+        var (_, diags) = ParseAnalyze(catalog, "@using Probe\n" + """<ProbeCard Count="1" Title="a" Title="b" />""");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.DuplicateAttribute, diag.Code);
     }
@@ -269,7 +275,7 @@ public class C4ComponentTests
     public void DuplicateBoundComponentParameter_IsEUI033()
     {
         var catalog = CatalogWithComponent();
-        var (_, diags) = ParseAnalyze(catalog, """<ProbeCard Count="1" Title="a" @bind-Title={Name} />""");
+        var (_, diags) = ParseAnalyze(catalog, "@using Probe\n" + """<ProbeCard Count="1" Title="a" @bind-Title={Name} />""");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.SameTargetDuplicate, diag.Code);
     }

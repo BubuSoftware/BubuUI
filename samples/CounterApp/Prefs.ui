@@ -1,3 +1,5 @@
+@using EclipseUI.Elements
+
 <StackPanel Gap="4">
     @if (showExtra) {
         <CheckBox @bind-Checked={extra}>Extra enabled</CheckBox>

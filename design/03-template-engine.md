@@ -5,7 +5,7 @@
 > 模板状态是普通 CLR 成员，无 `[UiState]`/`Signal<T>`/依赖分析。
 > 规范正本：[spec/01](../spec/01-template-syntax.md) 语法、[spec/02](../spec/02-generated-code-contract.md) 生成形态、
 > [spec/03](../spec/03-reactivity-and-binding.md) 反应式。本文 §3.1–§3.6（§3.5.4 除外）、附录 A 为 v3 历史；
-> §3.5.3 的 D1–D41 是 v3 代码差距台账，v4 新增差距见 [§3.5.4](#354-v4-实现偏差台账d42d81)。与 spec 冲突时以 spec 为准。
+> §3.5.3 的 D1–D41 是 v3 代码差距台账，v4 新增差距见 [§3.5.4](#354-v4-实现偏差台账d42d88)。与 spec 冲突时以 spec 为准。
 >
 > 状态：v3 定稿（2026-10-29；v4 换轨后转为历史记录）。
 > 本文定义 `.ui` 语言的**词法、句法、语义、字面量与编译管线**，是模板作者、分析器与生成器共同遵守的语法规范。
@@ -18,7 +18,7 @@
 > 本文 §3.1–§3.6（§3.5.4 除外）转为历史/架构说明；与 `spec/` 冲突时以 `spec/` 为准。
 >
 > **偏差规则**：规范与当前代码的差异只允许出现在 [§3.5.3](#353-当前实现偏差s1s5-收敛清单)（v3 台账）与
-> [§3.5.4](#354-v4-实现偏差台账d42d81)（v4 台账）；两表之外一律以 `spec/` 为准，代码按表中映射的阶段收敛。
+> [§3.5.4](#354-v4-实现偏差台账d42d88)（v4 台账）；两表之外一律以 `spec/` 为准，代码按表中映射的阶段收敛。
 > 不允许"文档写一套、代码静默另一套"。
 >
 > **规范迁移（2026-10-29）**：词法/句法/语义/诊断触发点的规范正本已迁至 [spec/01](../spec/01-template-syntax.md)，
@@ -206,7 +206,7 @@ bind-attr  ::= "@bind-" attr-base
 
 - `<!-- ... -->` 只在文本模式识别；不能写在标签内部。
 - 注释不嵌套；内容丢弃，不进入 AST，不是 trivia；相邻文本会拼成同一文本节点（`a<!--c-->b` → `ab`）。
-- 规范要求未闭合注释报 `EUI100`；当前实现会静默消费到文件尾（§3.5.3 D12）。
+- 未闭合注释报 `EUI100`（✅ S6：`Lexer` 的 `SkipComment`/`SkipHtmlComment` 不再静默吞 EOF，D12 关闭）；`@* ... *@` 为等价合法注释（K26）。
 - 注释不参与 pretty-printer（当前没有 pretty-printer，见 §3.6）。
 
 ### 3.1.10 空白与规范化
@@ -254,6 +254,7 @@ string        ::= '"' raw-char* '"'
   0 个或多个元素根是 `EUI012`。
 - `node*` 的合法组合由内容模型进一步限制（§3.3.5），句法层先接受再语义拒绝。
 - 没有 `else`、`else if`、`@switch`、`@code`、`@inherits`、`@using`、`@model`；未知 `@` 指令是 `EUI009`。
+  （v3 历史结论，按 `spec/README` 第 5 条保留原文；`@using` 已由 K22 定为合法指令，其余由整波 K23 取代，偏差见 D85–D88。）
 - 泛型标签（`DataGrid<Order>`）、附加属性（`Grid.Row`）、插槽标签（`<Slot>`）不在当前句法内；
   分别按 G4 / G4 / G4 保留（§3.3.9）。
 
@@ -308,6 +309,7 @@ string        ::= '"' raw-char* '"'
 | `Key={expr}` | item 变量 + 常量/静态/普通成员 | 不订阅；不得引用可观察状态/`Signal<T>`（`EUI039`） | 无 |
 
 - 模板不声明局部变量、方法、类型参数；复杂逻辑放 code-behind 方法/属性，模板只写表达式。
+  （v3 历史结论，按 `spec/README` 第 5 条保留原文；K23 ④ 已定 `@code` 可声明类成员，见 spec/01 §1.5 / D86。）
 - 依赖分析按**符号**解析（S2，15 §15.5），不再依赖"本类型信号名表"；基类/状态属性/可观察路径都按语义模型分类。
   旧的正则重写限制（D10/D31）在 S2 前仍适用。
 - item 变量遮蔽遵循 C#：item 变量遮蔽同名 code-behind 成员；规范建议不要制造这种遮蔽。
@@ -499,6 +501,7 @@ string        ::= '"' raw-char* '"'
 #### 3.3.6.1 `@if`
 
 - 形式：`@if (condition) { ... }`；条件必须是 C# `bool` 表达式；没有 `else`/`else if`（用两个 `@if` 或取反）。
+  （v3 历史结论，按 `spec/README` 第 5 条保留原文；K23 ③ 已定 `else`/`else if`/`@switch`，见 spec/01 §1.5 / D87。）
 - 首次求值在 Build 时；条件依赖可观察时，依赖变化会重新求值并切分支；否则为静态条件（一次求值）。
 - 生成：`SetCondition(Func<bool>, Func<Action, IDisposable>?)`（15 §15.4.6）；订阅工厂存入块依赖表，旧订阅先释放；
   兼容旧 `params ISignal[]` 重载（Obsolete）。
@@ -577,7 +580,10 @@ string        ::= '"' raw-char* '"'
 
 - 控件事件：属性名 `On{EventName}`，对应 `{Name}Event` 的 `public static readonly RoutedEvent` 字段（14.4.3）。
   - 只接受 `{expression}`；字面量或 `:bind`/`@bind-` → `EUI004`/`EUI040`。
-  - 处理器必须能转换为 `Action` 或 `Action<RoutedEventArgs>`；签名不匹配由 C# 报错（`EUI024` 为可静态判定项，C5）。
+  - 处理器必须能转换为 `Action` 或 `Action<RoutedEventArgs>`；签名不匹配在**可静态判定**时由分析器
+    报 `EUI024`（Error，✅ 2026-11-08/D82，落 `.ui` 属性值并短路生成输出），无法静态判定时静默、
+    交回生成代码经 `#line` 由 C# 报错（spec/02 §2.4 规则 8 不重复报告）。判定口径见 spec/02 §4.6.1 规则 7
+    与 §12 D82。
   - 生成：`el.AddHandler(global::...Event, handlerExpr);`；事件按源码顺序在 Build 时订阅，元素挂载前完成。
 - 组件事件（C4）：组件当前没有路由事件；委托类型参数即事件，属性名就是参数名（如 `OnClose`），
   不做 `On*` 前缀推断；同样只接受 `{expression}`。
@@ -778,14 +784,14 @@ parent0.Children.Add(c0.Root);   // 最后挂到父级
 | D2 | ✅ C3：`Class`/`Style` 在使用点报 `EUI031`（G4 实现样式后语义不变） | 已修复（2026-11-03，[Analyzer.cs](../src/EclipseUI.Compiler/Analyzer.cs)） | ✅ C3 |
 | D3 | ✅ C3：`<Slot>`/`<ContentSlot>` 在使用点报 `EUI031`（仅当目录无同名真实控件；G4 实现后有插槽错误从 `EUI022` 报） | 已修复（2026-11-03） | ✅ C3 |
 | D4 | `Ref` G3，当前应报保留/`EUI029` | 未知属性 → `EUI002` | 同上 | C5 |
-| D5 | 泛型标签 G4，报 `EUI030` | `<DataGrid<Order>>` 在标记模式遇到 `<` → `EUI100` | 诊断不准确 | C6 |
+| D5 | 泛型标签**暂缓**（K19，不排期），精确诊断 `EUI030` 随之暂缓 | `<DataGrid<Order>>` 在标记模式遇到 `<` → `EUI100`（保持现状）；目录侧「泛型类型标签不可用 → EUI030」使用点分流不变 | 非当前阻塞；暂缓 ≠ 取消，D5 仍是开放项 | 暂缓（K19，2026-11-08 用户决策） |
 | D6 | ✅ C3：完全重复普值属性在属性级报 `EUI025`；同名且任一侧是绑定（`@bind-P`/`:bind`）仍走目标级 `EUI033`（与 S2 语义一致） | 已修复（2026-11-03，`Analyzer` 带 `attrSeen` 字典） | ✅ C3 |
 | D7 | 文本内容与显式目标属性互斥 `EUI033` | ✅ S2：Analyzer 检测文本 + 显式目标、同目标重复绑定并报 `EUI033`（[Analyzer.cs](../src/EclipseUI.Compiler/Analyzer.cs)） | 已消除静默双写 | ✅ S2 |
 | D8 | `Key` 只允许 `@foreach` item 根 | ✅ S2：`VisitBlock` 仅对 `@foreach` 的第一个元素根放行 `Key`，`@if` 报 `EUI010`（[Analyzer.cs](../src/EclipseUI.Compiler/Analyzer.cs)） | 误放行已修复 | ✅ S2 |
 | D9 | item 模板禁止组件级状态（`EUI014`）；item 自己的可观察属性与 item `@bind` 允许；`Key` 不得依赖可观察状态（`EUI039`） | 只检查根层元素属性/根层文本并豁免 `Key`（[TemplateGenerator.cs:196](../src/EclipseUI.Compiler.Generator/TemplateGenerator.cs#L196)）；嵌套元素、条件/嵌套块与 `Key` 未查 | 可能生成无订阅/陈旧更新 | S2/S3 |
 | D10 | 重写按符号与目标类型：状态属性直接读、`Signal<T>` 取 `.Value`、item 成员不重写 | 正则盲替换（[Emitter.cs:125](../src/EclipseUI.Compiler.Generator/Emitter.cs#L125)） | 字符串/同名 item/`Signal<T>` 参数误改 | S2（语义模型，同 D31） |
 | D11 | 表达式由 Roslyn tokenizer 捕获 | 手写大括号/字符串扫描（[Lexer.cs:228](../src/EclipseUI.Compiler/Lexer.cs#L228)） | verbatim/raw string、注释内大括号、格式说明符不支持 | C5 |
-| D12 | 未闭合注释报 `EUI100` | `SkipComment` 无 `-->` 时静默到 EOF（[Lexer.cs:187](../src/EclipseUI.Compiler/Lexer.cs#L187)） | 模板后半段"消失"无提示 | C3 |
+| D12 | 未闭合注释报 `EUI100` | ✅ S6：`SkipComment`/`SkipHtmlComment` 未闭合报 `EUI100`（K26，2026-11-08），静默吞 EOF 行为废止 | 已修复 | ✅ S6 |
 | D13 | 依赖分析按符号解析，可见成员范围由 C# 语义决定（含基类成员；`[UiState]` 基类的 `IUiObservable` 覆盖基类属性） | `GetMembers()` 不扫描基类，基类信号既不被发现也不报错（[TemplateGenerator.cs:81](../src/EclipseUI.Compiler.Generator/TemplateGenerator.cs#L81)） | 基类信号按普通成员生成，值陈旧且无订阅 | S2 |
 | D14 | ✅ C3：无转换器报 `EUI023`（`HasConverter` 区分），格式/范围/成员错仍 `EUI003` | 已修复（2026-11-03，[Analyzer.cs](../src/EclipseUI.Compiler/Analyzer.cs)） | ✅ C3 |
 | D15 | 每个 `.ui` 独立增量、稳定输出名 | `Collect()` 全部文件 + `Compilation`（[TemplateGenerator.cs:29](../src/EclipseUI.Compiler.Generator/TemplateGenerator.cs#L29)） | 任一模板变化重跑全部；输出名随文件序号漂移 | S2（spec/02 §2.1/§8.2；§3.6.3 同） |
@@ -824,11 +830,10 @@ parent0.Children.Add(c0.Root);   // 最后挂到父级
 D 表只记录"规范已定、代码未对齐"的差异，收敛阶段见末列；落地这些差异不改变本文的冻结语义。
 D37–D41 描述的生成文本偏差已随 v4 S2 收敛，形态以 spec/02 为准。
 
-### 3.5.4 v4 实现偏差台账（D42–D81）
+### 3.5.4 v4 实现偏差台账（D42–D88）
 
-v4 换轨后，**S1 已收敛（2026-10-30）、S2 已收敛（2026-10-30）、S3 已收敛（控件侧 2026-11-02、组件侧随 C4 2026-11-05）、C1 已收敛（2026-11-02，目录派生）、C3 已收敛（2026-11-03，字面量转换器/使用点诊断/保留语法）、C4 已收敛（2026-11-05，组件标签）、C5 已收敛（2026-11-05，Ref/使用点诊断）、C6 已收敛（2026-11-05，具名插槽）、G3 块布局透明已收敛（2026-11-05，D77；§3.5.3 的 D16 随之关闭）、G3 失效迁移已收敛（2026-11-07，D78）、G3 按文件增量已收敛（2026-11-08）、G3 `#line` 列映射已收敛（2026-11-08，D79）、G3 EUI045 code-behind 冲突诊断已收敛（2026-11-08，D57/D80）、G3 诊断出口补全已收敛（2026-11-08，D74 ②/D81）**；
-其余偏差按 [spec/03 §13](../spec/03-reactivity-and-binding.md#13-阶段-s1s5) 的 S4
-与 G3 余项（EUI024 事件处理器签名匹配）/G4 收敛。本表与 [spec/02 §12](../spec/02-generated-code-contract.md#12-实现偏差台账-d42d81) 是同一张台账，
+v4 换轨后，**S1 已收敛（2026-10-30）、S2 已收敛（2026-10-30）、S3 已收敛（控件侧 2026-11-02、组件侧随 C4 2026-11-05）、C1 已收敛（2026-11-02，目录派生）、C3 已收敛（2026-11-03，字面量转换器/使用点诊断/保留语法）、C4 已收敛（2026-11-05，组件标签）、C5 已收敛（2026-11-05，Ref/使用点诊断）、C6 已收敛（2026-11-05，具名插槽）、G3 七个小切片全部收敛（块布局透明 2026-11-05/D77；§3.5.3 的 D16 随之关闭、失效迁移 2026-11-07/D78、按文件增量 2026-11-08、`#line` 列映射 2026-11-08/D79、EUI045 code-behind 冲突诊断 2026-11-08/D57/D80、诊断出口补全 2026-11-08/D74 ②/D81、EUI024 事件处理器签名匹配 2026-11-08/D82）、S4/S5 运行时硬化部分收敛（2026-11-08/D83）、G2 CPU 侧部分收敛（2026-11-08/D84）、**S6 语法对齐已收敛（2026-11-08/D85–D88 关闭：`@using`（K22/D85）、`@code` 单文件（K21/K23④/D86）、`else`/`else if`/`@switch`（K23③/K29/D87）、`@* *@` 与未闭合注释（K23/K26/D88，D12 随之关闭）、`EUI046`/`EUI047` 新诊断（K27/K29）、样例与约 94 例 golden 补 `@using` 一次性迁移，`dotnet test EclipseUI.slnx` 497 例全绿）**；
+其余偏差按下列余项收敛：S4/S5（[spec/03 §13](../spec/03-reactivity-and-binding.md#13-阶段-s1s5) 的 S4；Element.Unmount 属 G4、AOT/裁剪、最终审计、帧预算/分配预算门槛、CI——旧语法清理已随 S6 提前完成（K27/D85–D88 ✅ 2026-11-08））、G2（GPU retained layer/真正局部重绘、目标机稳定 60fps 结论、像素探针 DSL、CPU/GPU 交叉一致性门禁）、G4（样式/主题/附加属性；泛型标签暂缓 K19、不排期）、IDE/DevTools。本表与 [spec/02 §12](../spec/02-generated-code-contract.md#12-实现偏差台账-d42d88) 是同一张台账，
 任一侧更新必须同步另一侧；台账之外的差异视为实现缺陷。
 
 | # | 偏差 | 目标（spec） | 阶段 |
@@ -865,7 +870,7 @@ v4 换轨后，**S1 已收敛（2026-10-30）、S2 已收敛（2026-10-30）、S
 | D71 | `[UiIgnore]` 与 `[UiParameter]`/`[UiSlot]` 同时出现时，扫描器让 `[UiIgnore]` 生效并按 **EUI028** 记问题；design/14 §14.6.1 只写「不得」，没为这条分配诊断码，EUI028 原文只覆盖「参数声明非法」。C4 未处理（沿用 EUI028，不复用新码）；需要细化时另起新码并先记台账 | design/14 §14.6.1/§14.9.1 | 开放 |
 | D72 | ✅ C2（语义修订）：golden 快照落成仓库内文件 `TestData/BuiltInSurface.golden.txt`（`ECLIPSEUI_UPDATE_SURFACE_GOLDEN=1` 再生）。§14.11.1 原文的「固定目录从快照反序列化」不采纳：快照改为**扫描结果的渲染评审门**（显式再生成 + diff 强制评审），纯结构测试各自现扫 `Compilation`（实测全扫 45 ms，反序列化反而多一道漂移源） | design/14 §14.11.1/§14.12.2 | ✅ C2 |
 | D73 | ✅ C4（残余风险登记）：组件 `@bind-P` 只静态校验「存在 `{P}Changed` 委托参数」（EUI040），不校验其实参类型与 `P` 匹配——恰与 spec/01 §4.14 「缺失/类型不符 → EUI040」中的「类型不符」不可严格一致。类型不匹配由生成代码的 C# 编译错误兜底（经 `#line` 指回 `.ui`）；不要在运行时静默吞掉。若未来 Roslyn 类型推断下放到扫描期，可再收紧 | spec/02 §4.4.3 规则 1 / spec/01 §4.14 | ✅ C4 |
-| D74 | ✅ G3（2026-11-08，② 收敛）：① 使用点 EUI019/EUI020/EUI021 落地（C5）——`UiElementDef.IsFromReferencedAssembly` 区分来源，只有引用程序集控件的 `def.Problems` 在用点暴露（`PropertyNotBindable`→EUI019、`EventFieldMissing`→EUI020、`ContentTargetInvalid` 接管 EUI006→EUI021）；源项目控件仍落 EUI002/EUI006。`Ref`（EUI029）同切片落地。② 声明处出口落地：`UiMetadataProblem` 携带纯数据 `UiSourceLocation`，生成器注册目录级 `SourceOutput` 把源项目 problem 报在 C# 声明处（成员级取 `def.Problems`、类型级取 `catalog.Problems`），与逐文件管道解耦、每条只报一次；标签解析失败按类别分流 EUI016/EUI017/EUI018/EUI030/EUI031，只有真正未知落 EUI001。EUI024 仍留后续切片。实现口径见 [spec/02 §12 D81](../spec/02-generated-code-contract.md#12-实现偏差台账-d42d81)，`MetadataOutletTests` 14 例 | design/14 §14.5.4/§14.9.1/§14.12.5、spec/02 §4.14/§12 | ✅ C5 ① / ✅ G3 ② |
+| D74 | ✅ G3（2026-11-08，② 收敛）：① 使用点 EUI019/EUI020/EUI021 落地（C5）——`UiElementDef.IsFromReferencedAssembly` 区分来源，只有引用程序集控件的 `def.Problems` 在用点暴露（`PropertyNotBindable`→EUI019、`EventFieldMissing`→EUI020、`ContentTargetInvalid` 接管 EUI006→EUI021）；源项目控件仍落 EUI002/EUI006。`Ref`（EUI029）同切片落地。② 声明处出口落地：`UiMetadataProblem` 携带纯数据 `UiSourceLocation`，生成器注册目录级 `SourceOutput` 把源项目 problem 报在 C# 声明处（成员级取 `def.Problems`、类型级取 `catalog.Problems`），与逐文件管道解耦、每条只报一次；标签解析失败按类别分流 EUI016/EUI017/EUI018/EUI030/EUI031，只有真正未知落 EUI001。EUI024 已落地（2026-11-08，D82）。实现口径见 [spec/02 §12 D81](../spec/02-generated-code-contract.md#12-实现偏差台账-d42d88)，`MetadataOutletTests` 14 例 | design/14 §14.5.4/§14.9.1/§14.12.5、spec/02 §4.14/§12 | ✅ C5 ① / ✅ G3 ② |
 | D75 | ✅ C6（解析口径两级）：自身插槽的解析——分析器按「目录显示名与 `.ui` 文件名短名匹配」投影自身 def（静态前端无符号信息）；生成器用 code-behind **符号**沿基类链读 `[UiSlot]` 传给分析器/发射器作权威（code-behind 类在源码里不派生 `Component`，目录不会有它的 def）。两级在正常房间结构下指向同一组插槽；目录匹配失败而符号可用时生成侧仍有效 | design/14 §14.12.6、spec/02 §4.12.5 | ✅ C6 |
 | D76 | ✅ C6（契约补写）：基链同名**成员**的胜出规则原文未定。Roslyn 的 `GetAttributes()` 不把特性带进 override，一律按名字去重会让 `public override Element? Header`（不写特性）静默丢掉基类的 `[UiSlot]`/`[UiParameter]`，不去重又把同一 override 误报成重复插槽（EUI028）。实现定为：派生侧显式写了模板特性或 `[UiIgnore]` 才算覆盖，否则基类声明继续生效；已回写 design/14 §14.10.2 与 spec/01 §4.15 | design/14 §14.10.2/§14.6.1 | ✅ C6 |
 | D77 | ✅ G3（契约补写 + 实现口径）：块布局透明落地为「保留块节点 + 采用祖先排布参数」，不是把条目摊平进父容器子序列——摊平会让块 `FinalRect` 与子元素坐标系脱钩，绘制偏移/`PointFromRoot`/命中/脏区四条路径都要改；保留节点则一行不动且排布等价。新增 `Element.IsLayoutTransparent`，`StackPanelBase` 对透明节点取零内边距 + 最近非透明布局祖先的 `Gap`，零尺寸透明块退出间距计数但仍 arrange 到零矩形。补写三条原文未定规则：块自身 `Gap`/`Padding` 不参与布局、空块（含嵌套空块）不占间距槽、空块 `FinalRect` 必须刷新。实测条目间距 19.6 → 27.6（根 `Gap=8`）、空块两侧 35.6 → 27.6；`BlockLayoutTests` 10 例 + `TaskListEndToEndTests` 2 例，421 例全绿。D16 关闭；G4 的 Grid/WrapPanel 另定透明口径 | spec/01 §4.10/§4.11、spec/02 §12 D77、本文 D16 | ✅ G3 |
@@ -873,9 +878,17 @@ v4 换轨后，**S1 已收敛（2026-10-30）、S2 已收敛（2026-10-30）、S
 | D79 | ✅ G3（契约补写 + 实现）：`#line` 由行型 `#line N "path"` 换成 span 型 `#line (sl, sc) - (el, ec) "path"`。实测 Roslyn 4.9.2：列平移 `sc−1` 只作用于紧接的一行、end 不参与单行诊断换算、start 必须严格早于 end（否则 `CS8939` 让整段映射失效）。`Emitter.Mapped` 按「生成缩进 + 用户 token 偏移」左移 `sc` 并钳制 ≥ 1（前缀过长时列退化为生成列、行号仍精确），空 span/钳制后给 end 补 1 列；`MappedToken` 自动定位表达式偏移，35 个调用点由行号改传 `TextSpan`。补写 spec/02 §2.4 规则 9/10 与 §11 等价口径（旧/新语法别名改为剥离 `#line` 后比对）。`LineSpanMappingTests` 5 例 + `GeneratorContractTests` 3 处断言同步 | spec/02 §2.4/§12 D79 | ✅ G3 |
 | D80 | ✅ G3（实现口径补写）：EUI045 的「诊断位置在 code-behind 声明」原文未定载体。实现用纯数据 `UiSourceLocation`（路径 + span + 0 基行列）走逐文件 facts，`Report` 以 `Location.Create(path, span, lineSpan)` 重建外部文件位置（不把 `SyntaxTree`/`Location` 带进增量缓存）；保留名 = `__el/__cmp/__blk/__run/__bind/U/R` + 数字后缀，生成依赖成员白名单 = `Invalidate/Mount/Track/TrackContent/AddDisposable`，基类白名单 = 省略/`Component`/`EclipseUI.Component`/`global::EclipseUI.Component`；EUI045 报 Error 但不阻止生成输出，其它错误诊断仍短路。`CodeBehindConflictTests` 23 例 | spec/02 §10/§12 D80 | ✅ G3 |
 | D81 | ✅ G3（实现口径补写）：D74 ② 原文未定位置载体/去重/码映射。实现：① `UiMetadataProblem` 增加可选纯数据 `UiSourceLocation`（成员符号 `Locations` 优先、类型声明兜底；引用程序集无源位置 → null），进 record 值相等/哈希；② 目录级 `RegisterSourceOutput(catalogProvider)` 与逐文件管道解耦，同一 problem 只报一次，`Distinct()` 去重 catalog/def 两处重复项；③ 源项目控件的 EUI019/EUI020/EUI021 problem 按 §14.9.2 折叠为 EUI026，EUI026/EUI028/EUI031 保持原码；④ 诊断不阻断生成输出，`Report` 对无 path 的内存语法树退化为 `Location.None`；⑤ 逐文件管道 `WithTrackingName("PerFileGeneration")`，增量断言不再混读所有 `SourceOutput` step；⑥ 标签码分流只改 `Analyzer.VisitElement` 的 code，消息与 span 不变。`MetadataOutletTests` 14 例。口径正本在 spec/02 §12 D81 | spec/02 §12 D81、design/14 §14.9.1/§14.9.2 | ✅ G3 |
+| D82 | ✅ G3（2026-11-08，实现口径）：EUI024 事件处理器签名匹配落地——常量 `UiDiagnostics.EventHandlerSignature` 早已分配；`TemplateGenerator.ValidateEventHandlerSignature` + `TemplateProbe.IsHandlerCompatible`（复用 `ProbeTree` 合成 partial 方法体）借 Roslyn 把处理器表达式放进 code-behind 符号上下文，仅当「表达式自身语义干净 + 对目标委托的转换确定失败」时在 `.ui` 属性值报 Error 并短路生成输出（与 EUI004 一致）；符号未解析/重载失败/`dynamic`/表达式内部错误静默，交回生成代码经 `#line` 由 C# 报错（spec/02 §2.4 规则 8 不重复报告）。控件事件复用 `Emitter.EventHandlerType`（`internal static`）、组件委托参数用 `UiParameterDef.ClrTypeDisplayName`，保证诊断与生成代码类型判定一致。`EventHandlerSignatureTests` 16 例 | spec/02 §4.6.1 规则 7、§9 T20、design/14 §14.11.2 | ✅ G3 |
+| D83 | 部分收敛（S4/S5，2026-11-08）：`PropertySystem.cs` 新增 `IValueBox`/`ValueBox<T>`，`Element._localValues` 由 `Dictionary<StyledProperty, object?>` 改为 `Dictionary<StyledProperty, IValueBox>`，重复赋值只改泛型字段、消除值类型装箱；`Component.Dispose` 在锁内清 `_pendingRenders`/`_pendingSet`。`RuntimeHardeningTests` 7 例（分配预算、继承/绑定/通知语义、泄漏回归）。**明确未做**：`Element.Unmount/Detach`（design/14 明确 v1 不提供、G4 才补）、AOT/裁剪配置、旧语法清理、最终审计清单、帧预算/分配预算门槛、CI 配置、S5 基准门槛 | spec/03 §13.1、design/09 §9.3 G8/S5 | 部分收敛（S4/S5） |
+| D84 | 部分收敛（G2 CPU 侧，2026-11-08）：`PixelGoldenTests` 4 例 + `TestData/PixelGolden.baseline.txt`（纯图元、无字体依赖的 CPU 像素 golden：`ContentHash` 全图门禁 + 探针 ±2 容差 + `ECLIPSEUI_UPDATE_GOLDEN=1` 生成开关 + 失败输出实际 PNG 到 TestResults）；`SceneGraph/RetainedFrameCompositor.cs`（CPU 侧 retained 合成原型：持有上一帧 `RenderTarget`，按 `FrameDamage` 只 blit 脏区，断言脏区外逐字节不变、与整帧重绘等价）；`tools/bench-60fps.ps1` 与 `design/reports/target-machine-60fps-template.md`。**明确未做/边界**：原型只是合成层、不减少光栅化工作量，真正局部重绘需 `IRenderBackend.Render` 增加脏区/scissor 重载且 VelloSharp 0.5.0-alpha.3 未提供公开 API；GPU surface 的 retained layer 依赖 HWND + wgpu device 本机无法验证；「稳定 60fps」结论依赖目标机真实显示器（本机 29Hz 虚拟显示），只给可复现测量程序与报告模板；像素探针 DSL（render-gate-2026-11 backlog #7）仍缺 | design/09 §9.3 G2、design/reports/render-gate-2026-11.md | 部分收敛（G2 CPU 侧） |
+| D85 | 规范先行（K22，2026-11-08）：模板 `@using {Ns}` 已定为合法指令、生成文件须按模板顺序输出普通 `using {Ns};`、标签只在导入命名空间内解析且内置控件无豁免（未导入报 `EUI001` + 缺 using 建议）。**当前实现**：`Lexer.ParseDirective` 仍把 `@using` 归 `EUI009`，`Emitter` 不输出任何 using，`UiCatalog.Resolve` 仍是全局短名字典、与命名空间无关；spec/02 §2.2/§2.5 旧口径已加注取代关系。收敛条件：P1 指令表、P2 `UiUsingDirective`、P3 文件头与目录过滤、P6 全部样例 / 约 94 例 golden 一次性迁移补 `@using` 并回归 | K22、spec/01 §1.5、design/16 §5.3 | ✅ S6（2026-11-08 收敛） |
+| D86 | 规范先行（K21/K23 ④，2026-11-08）：`@code { }` 为合法顶层节点，位置不限、可多个块、书写顺序不影响成员可见性，成员合并进同一 partial 类并与 code-behind 并存，`EUI005` 放宽。**当前实现**：`@code` 撞 `EUI009`，`EUI005` 仍强制同名 `.cs`，`TemplateProbe.ProbeTree` 只注入 code-behind 声明。收敛条件：P1 块体捕获、P2 `UiCodeBlock` + 根层例外、P3 成员透传 + **先全量收集再建探针 Compilation**（否则前置 `{expr}` 误报 `EUI007`/`EUI024`）+ `EUI045` 扩到 `@code` 成员、P6 单文件端到端用例与底部 `@code` 样例 | K21、K23、spec/01 §1.5、design/16 §5.2/附录 B | ✅ S6（2026-11-08 收敛） |
+| D87 | 规范先行（K23 ③，2026-11-08）：`else`/`else if`（不带 `@`）与 `@switch`（`case`/`break`/`default`）纳入目标语法，`EUI008` 停用、新码从 `EUI046` 起。**当前实现**：只有单分支 `@if`，分支续接撞 `EUI100`，`@switch` 报 `EUI008`。收敛条件：P1 续接与 case 头、P2 分支/switch 节点、P4 `ConditionalBlock` 多分支（`AddBranch`/`SetDefault`）与 `SwitchBlock<T>`（草案见 design/16 附录 B）、P5 停用码零出现 + 诊断快照；`case` 内嵌 `@foreach` 与 `@for`/`@while` 属 Q3/P4 待定 | K23、spec/01 §1.5、design/16 §3.1/附录 A | ✅ S6（2026-11-08 收敛） |
+| D88 | 规范先行（K23 / design/16 §3.1，2026-11-08）：新增 `@* ... *@` 编译器丢弃注释，未闭合报 `EUI100`（顺带关闭 **D12**）；`<!-- -->` 按 spec/01 §8 规则 2 给弃用期，具体形态待 Q6。**当前实现**：只识别 `<!-- -->`，且 `Lexer.SkipComment` 未闭合时静默吞到文件尾（D12 开放）。收敛条件：P1 词法、`TokenizerTests` 与未闭合注释用例、P6 样例迁移；Q6 未拍板前不删除 `<!-- -->` 支持 | K23、D12、design/16 §3.1 | ✅ S6（2026-11-08 收敛） |
 
 - 每项收敛必须同时删除对应的 v3 路径；不得两套模型并存。
-- 新增偏差必须登记编号（从 D82 起）并注明目标阶段；不得只改代码不改台账。
+- 新增偏差必须登记编号（从 D89 起）并注明目标阶段；不得只改代码不改台账。
+- **2026-11-08 补充（K23）**：D85–D88 是「决策已进规范正文、代码仍是 v2」的规范先行偏差，目标阶段统一为 **S6 语法对齐**（design/09 §9.5/§9.6），与 [spec/02 §12](../spec/02-generated-code-contract.md#12-实现偏差台账-d42d88) 双向同步；未拍板的 Q3/Q4/Q6/Q7 细项不登记偏差。
 - §3.5.3 是 v3 台账：以 `[UiState]`/`Signal<T>`/`UiWatch`/依赖分析/可观察路径为目标的条目（D9/D10/D13/D23–D29/D31–D36/D39）
   随 v4 换轨作废，不再按原阶段实现；其中代码差距已在 v4 语义下重新登记并按阶段收敛
   （D23→D42/D45、D24→D53/D54、D26→D50 ✅ S2、D18/D27→D51 ✅ S2、D32→D53、D36→spec/03 §11 诊断表；D33/D35 无替代项）。

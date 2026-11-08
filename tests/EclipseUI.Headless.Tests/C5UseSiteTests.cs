@@ -79,14 +79,14 @@ public class C5UseSiteTests
     [Fact]
     public void Ref_SimpleIdentifier_IsAccepted()
     {
-        var (_, diags) = ParseAnalyze(UiTestCatalogs.BuiltIn(), """<StackPanel Ref={savePanel} />""");
+        var (_, diags) = ParseAnalyze(UiTestCatalogs.BuiltIn(), "@using EclipseUI.Elements\n" + """<StackPanel Ref={savePanel} />""");
         Assert.Empty(diags);
     }
 
     [Fact]
     public void Ref_SimpleIdentifier_SetsRefTargetOnAttribute()
     {
-        var (doc, _) = ParseAnalyze(UiTestCatalogs.BuiltIn(), """<StackPanel Ref={savePanel} />""");
+        var (doc, _) = ParseAnalyze(UiTestCatalogs.BuiltIn(), "@using EclipseUI.Elements\n" + """<StackPanel Ref={savePanel} />""");
         var attr = doc.Nodes.OfType<UiElement>().Single().Attributes.Single();
         Assert.Equal("savePanel", attr.RefTarget);
     }
@@ -94,7 +94,7 @@ public class C5UseSiteTests
     [Fact]
     public void Ref_QuotedLiteral_IsEUI029()
     {
-        var (_, diags) = ParseAnalyze(UiTestCatalogs.BuiltIn(), """<StackPanel Ref="savePanel" />""");
+        var (_, diags) = ParseAnalyze(UiTestCatalogs.BuiltIn(), "@using EclipseUI.Elements\n" + """<StackPanel Ref="savePanel" />""");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.RefTargetInvalid, diag.Code);
         Assert.Contains("simple identifier", diag.Message);
@@ -104,7 +104,7 @@ public class C5UseSiteTests
     [Fact]
     public void Ref_MemberAccess_IsEUI029()
     {
-        var (_, diags) = ParseAnalyze(UiTestCatalogs.BuiltIn(), """<StackPanel Ref={user.Name} />""");
+        var (_, diags) = ParseAnalyze(UiTestCatalogs.BuiltIn(), "@using EclipseUI.Elements\n" + """<StackPanel Ref={user.Name} />""");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.RefTargetInvalid, diag.Code);
         Assert.Contains("simple identifier", diag.Message);
@@ -113,7 +113,7 @@ public class C5UseSiteTests
     [Fact]
     public void Ref_BareToken_IsEUI100PlusEUI029()
     {
-        var (_, diags) = ParseAnalyze(UiTestCatalogs.BuiltIn(), "<StackPanel Ref=panel />");
+        var (_, diags) = ParseAnalyze(UiTestCatalogs.BuiltIn(), "@using EclipseUI.Elements\n<StackPanel Ref=panel />");
         // 解析层把裸 token 报 EUI100（"expected attribute value" + "expected '='"），分析器补 EUI029。
         Assert.Equal(3, diags.Count);
         Assert.Equal(2, diags.Count(d => d.Code == UiDiagnostics.Syntax));
@@ -123,7 +123,7 @@ public class C5UseSiteTests
     [Fact]
     public void Ref_DupAssignment_IsEUI025()
     {
-        var (_, diags) = ParseAnalyze(UiTestCatalogs.BuiltIn(), """<StackPanel Ref={a} Ref={b} />""");
+        var (_, diags) = ParseAnalyze(UiTestCatalogs.BuiltIn(), "@using EclipseUI.Elements\n" + """<StackPanel Ref={a} Ref={b} />""");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.DuplicateAttribute, diag.Code);
         Assert.Equal("Ref", diag.Message.Split('\'')[1]);
@@ -132,7 +132,7 @@ public class C5UseSiteTests
     [Fact]
     public void Ref_WithBindForm_KeepsReservedBindDiagnostic()
     {
-        var (_, diags) = ParseAnalyze(UiTestCatalogs.BuiltIn(), """<StackPanel @bind-Ref={x} />""");
+        var (_, diags) = ParseAnalyze(UiTestCatalogs.BuiltIn(), "@using EclipseUI.Elements\n" + """<StackPanel @bind-Ref={x} />""");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.BindTargetInvalid, diag.Code);
         Assert.Contains("reserved", diag.Message);
@@ -143,7 +143,7 @@ public class C5UseSiteTests
     [Fact]
     public void ReferencedControl_BrokenProperty_IsEUI019AtUseSite()
     {
-        var (_, diags) = ParseAnalyze(CatalogWithReferencedDefs(), """<Broken Gap="8" />""");
+        var (_, diags) = ParseAnalyze(CatalogWithReferencedDefs(), "@using Probe\n" + """<Broken Gap="8" />""");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.PropertyNotBindable, diag.Code);
         Assert.Contains("property 'Gap' on 'Broken'", diag.Message);
@@ -155,7 +155,7 @@ public class C5UseSiteTests
     [Fact]
     public void ReferencedControl_BrokenEvent_IsEUI020AtUseSite()
     {
-        var (_, diags) = ParseAnalyze(CatalogWithReferencedDefs(), """<Broken OnClick={HandleClick} />""");
+        var (_, diags) = ParseAnalyze(CatalogWithReferencedDefs(), "@using Probe\n" + """<Broken OnClick={HandleClick} />""");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.EventFieldMissing, diag.Code);
         Assert.Contains("event 'OnClick' on 'Broken'", diag.Message);
@@ -166,7 +166,7 @@ public class C5UseSiteTests
     [Fact]
     public void ReferencedControl_UnknownName_StillEUI002()
     {
-        var (_, diags) = ParseAnalyze(CatalogWithReferencedDefs(), """<Broken Gappp="8" />""");
+        var (_, diags) = ParseAnalyze(CatalogWithReferencedDefs(), "@using Probe\n" + """<Broken Gappp="8" />""");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.UnknownProperty, diag.Code);
     }
@@ -174,7 +174,7 @@ public class C5UseSiteTests
     [Fact]
     public void SourceControl_BrokenProperty_StaysEUI002()
     {
-        var (_, diags) = ParseAnalyze(CatalogWithSourceDefs(), """<Broken Gap="8" />""");
+        var (_, diags) = ParseAnalyze(CatalogWithSourceDefs(), "@using Probe\n" + """<Broken Gap="8" />""");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.UnknownProperty, diag.Code);
         Assert.Contains("unknown property 'Gap'", diag.Message);
@@ -183,7 +183,7 @@ public class C5UseSiteTests
     [Fact]
     public void SourceControl_BrokenEvent_StaysEUI002()
     {
-        var (_, diags) = ParseAnalyze(CatalogWithSourceDefs(), """<Broken OnClick={HandleClick} />""");
+        var (_, diags) = ParseAnalyze(CatalogWithSourceDefs(), "@using Probe\n" + """<Broken OnClick={HandleClick} />""");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.UnknownProperty, diag.Code);
         Assert.Contains("unknown property 'OnClick'", diag.Message);
@@ -194,7 +194,7 @@ public class C5UseSiteTests
     [Fact]
     public void ReferencedComponent_BrokenContentTarget_IsEUI021AtUseSite()
     {
-        var (_, diags) = ParseAnalyze(CatalogWithReferencedDefs(), "<FaultyCard><StackPanel /></FaultyCard>");
+        var (_, diags) = ParseAnalyze(CatalogWithReferencedDefs(), "@using Probe\n<FaultyCard><StackPanel /></FaultyCard>");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.ContentTargetInvalid, diag.Code);
         Assert.Contains("'FaultyCard' does not accept children", diag.Message);
@@ -206,7 +206,7 @@ public class C5UseSiteTests
     [Fact]
     public void SourceComponent_BrokenContentTarget_KeepsEUI006Guidance()
     {
-        var (_, diags) = ParseAnalyze(CatalogWithSourceDefs(), "<FaultyCard><StackPanel /></FaultyCard>");
+        var (_, diags) = ParseAnalyze(CatalogWithSourceDefs(), "@using Probe\n<FaultyCard><StackPanel /></FaultyCard>");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.TextNotAllowed, diag.Code);
         Assert.Contains("declares no content model", diag.Message);
@@ -215,7 +215,7 @@ public class C5UseSiteTests
     [Fact]
     public void ReferencedComponent_SelfClosingWithoutContent_IsClean()
     {
-        var (_, diags) = ParseAnalyze(CatalogWithReferencedDefs(), """<FaultyCard />""");
+        var (_, diags) = ParseAnalyze(CatalogWithReferencedDefs(), "@using Probe\n" + """<FaultyCard />""");
         Assert.Empty(diags);                                             // 只有真正传内容才触发 EUI021
     }
 }

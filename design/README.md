@@ -6,8 +6,13 @@
 > 模板语义已切换为 **v4 失效重算模型**（普通 CLR 状态 + 组件级 `Invalidate`/`Render` + 保留元素树 + 块 `Refresh`，
 > 不做依赖订阅）：[spec/01](../spec/01-template-syntax.md) v2、[spec/02](../spec/02-generated-code-contract.md) v2、
 > [spec/03](../spec/03-reactivity-and-binding.md) v1；反应式 **S1–S3 已落地**、控件/组件契约 **C1–C6 已落地**、
-> G3 块布局透明、接管失效迁移、按文件增量、`#line` 列映射、`EUI045` code-behind 冲突诊断、
-> 诊断出口补全均已落地（470 个测试全绿；余 EUI024 签名匹配）；
+> G3 七个小切片（含 EUI024 事件处理器签名匹配 ✅ 2026-11-08/D82）全部收敛、
+> S4/S5 运行时硬化与 G2 CPU 侧部分收敛（2026-11-08/D83/D84）；**497 个测试全绿（214/218/65）**；
+> 余项：S4/S5（Element.Unmount 属 G4、AOT/裁剪、旧语法清理、最终审计、帧预算/分配预算门槛、CI）、
+> G2（GPU retained layer/真正局部重绘、目标机稳定 60fps 结论、像素探针 DSL、CPU/GPU 交叉一致性门禁）、
+> G4（样式/主题/附加属性；泛型标签暂缓 K19、不排期）、IDE/DevTools；
+> **S6 语法对齐已实现（K23 + K24–K29，✅ 2026-11-08）**：`@using`/`@code` 单文件/`else`/`@switch`/`@* *@`，
+> 目标语法见 [spec/01 §1.5](../spec/01-template-syntax.md)，偏差 D85–D88，计划见 [16](./16-blazor-alignment-plan.md)；
 > 控件/模板元数据见 14（v4 换轨），15 已停止 · 日期：2026-11-08
 >
 > **规范正本已迁至 [spec/](../spec/README.md)**：`.ui` 语法以 [spec/01](../spec/01-template-syntax.md) 为准，
@@ -20,7 +25,7 @@
 |---|------|------|
 | 1 | [Blazonia 痛点分析](./01-pain-points.md) | 现状架构概述与 8 条痛点（含代码位置证据） |
 | 2 | [总体架构](./02-architecture.md) | 分层架构、单向管线、与 Blazor 的根本分岔 |
-| 3 | [模板引擎（语言规范）](./03-template-engine.md) | 词法/句法/语义、字面量、诊断映射、编译管线与逃生舱；v3 历史，含实现偏差台账 D1–D41（§3.5.3）、v4 台账 D42–D81（§3.5.4）与附录 A |
+| 3 | [模板引擎（语言规范）](./03-template-engine.md) | 词法/句法/语义、字面量、诊断映射、编译管线与逃生舱；v3 历史，含实现偏差台账 D1–D41（§3.5.3）、v4 台账 D42–D88（§3.5.4）与附录 A |
 | 4 | [运行时与元素系统](./04-runtime-and-elements.md) | 组件实例模型、元素树、属性引擎、事件、组件注册表 |
 | 5 | [布局、渲染与输入](./05-layout-rendering-input.md) | measure/arrange、合成器、hit test / 焦点 / IME |
 | 6 | [IDE 支持](./06-ide-support.md) | VS Code + Rider 第一优先；LSP + Roslyn 投影 |
@@ -33,12 +38,14 @@
 | 13 | [G2 第三切片：damage v0](./13-g2-damage-v0.md) | RenderVersion 失效模型、脏矩形快照 diff、空闲跳帧、覆盖率与跟踪开销 |
 | 14 | [控件与模板契约（详细设计）](./14-control-template-contract.md) | 标签/属性/事件/内容模型声明规则、符号派生目录、字面量转换、组件参数与插槽、生成代码与诊断契约；v4 换轨（14.18）：参数为普通 CLR 属性 + `{P}Changed`，反应式/生成形态由 spec/02、spec/03 取代；**C1–C6 已落地（2026-11-05）**，表面实测、差集评审与各切片落地记录见 §14.12.1–§14.12.6 |
 | 15 | [状态与反应式契约（详细设计）](./15-state-and-reactivity.md) | **已停止（v3 历史）**：`[UiState]`/`UiObservable`/`UiComputed`、依赖分析、`UiWatch`/`Signal<T>` 订阅、EUI034–EUI044；v4 反应式见 [spec/03](../spec/03-reactivity-and-binding.md) |
+| 16 | [`.ui` 语法对齐 Blazor 计划](./16-blazor-alignment-plan.md) | **✅ S6 已实现（K23 + K24–K29，2026-11-08）**：对齐矩阵、P0–P6、Q1–Q8（已全部拍板）、风险 R1–R8、单文件示例（附录 A）与生成契约草案（附录 B）；目标语法正本在 spec/01 §1.5 |
 
 ## 报告
 
 | 报告 | 内容 |
 |---|---|
 | [G1 渲染 Gate 报告（2026-11）](./reports/render-gate-2026-11.md) | Vello 功能矩阵、文本质量、性能基线、Go/No-Go 结论 |
+| [Blazor 与 EclipseUI 语法对比表](./reports/blazor-vs-eclipseui-syntax.html) | 参考资料（非决策）：5 组 21 项分组对比 + Razor 11 个指令速查；状态徽标随 K21/K22/K23 同步 |
 
 ## 核心理念一句话
 
@@ -49,4 +56,6 @@
 
 - **自持**：`.ui` 语法、编译器、运行时、元素系统、布局、渲染管线、LSP。
 - **复用**：仅 Roslyn 作为基础设施（解析器、语义模型、增量生成框架、Workspace）。
-- **不复用**：Blazor 运行时与 Razor 语法层（HTML 语法债，详见 [决策记录](./08-milestones-and-risks.md#决策记录汇总)）。
+- **不复用**：Blazor 运行时与 **Razor 编译器 / HTML 语法层**（HTML 语法债，详见 [决策记录](./08-milestones-and-risks.md#决策记录汇总)）。
+  **K23 修订（2026-11-08）**：不复用的是 Razor 编译器与 HTML 过渡机制，**组织形态可对齐 Blazor**；
+  「不复用 Blazor 运行时」不变。目标语法见 spec/01 §1.5。

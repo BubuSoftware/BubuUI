@@ -60,7 +60,7 @@
 **非目标（本期不做，但冻结语法/元数据形状）**
 
 - 样式、主题、ControlTemplate/选择器（G4）。
-- 附加属性、泛型标签的**实现**（G4；形状见 14.5.5）。
+- 附加属性的**实现**（G4；形状见 14.5.5）；泛型标签按 K19 暂缓实现、不排期（形状仍冻结）。
 - 组件参数 diff / 结构重渲染（14.6.6）；参数推送只改属性并失效子组件，不重建组件模板。
 - 运行时反射发现控件（明确禁止，见 R1）。
 - XAML 兼容。
@@ -428,13 +428,13 @@ public sealed class UiCatalog
 - 已进入目录但声明非法的三类（v2 补充）：事件字段声明在非元素类型/静态宿主类上、
   暴露属性名占用 `On{事件}` 或保留属性名、`[UiContent]` 目标成员不存在或类型不符。
 
-### 14.5.5 附加属性与泛型标签（形状冻结，G4 实现）
+### 14.5.5 附加属性与泛型标签（形状冻结；附加属性 G4，泛型标签暂缓 K19）
 
 - 附加属性声明：`public static readonly AttachedProperty<T> RowProperty` + `public static GetRow/SetRow`。
 - 模板语法：`Owner.Prop="..."`（如 `Grid.Row="1"`）。目录增加 `UiAttachedPropDef(OwnerTag, Name, ClrTypeDisplayName, SetterMethod)`。
 - 生成：`global::Ns.Grid.SetRow(el, 1);`。
 - 泛型标签：`<DataGrid<Order>>`，要求类型 public、非抽象、有对应元数据；标签名带元数（`DataGrid\`1`），
-  模板侧写实参。元数据模型预留 `Arity`，实现排 G4。
+  模板侧写实参。元数据模型预留 `Arity`；附加属性实现排 G4，泛型标签按 K19 暂缓、不排期（形状保留冻结）。
 
 ## 14.6 组件契约（`.ui` + code-behind 作为标签）
 
@@ -692,7 +692,7 @@ v3 的 EUI014/EUI032/EUI034–EUI036/EUI038–EUI039/EUI041–EUI042/EUI044 已�
 | EUI021 | 内容目标缺失或类型不匹配（✅ C5 使用点：引用程序集控件内容被降级为 None 时，在使用点接管 children 诊断） | 子内容 | Error |
 | EUI022 | 插槽非法（✅ C6）：消费侧 `<Slot>` 未知插槽（含建议）/重复填充/位置非法（只允许组件标签直属子级）/缺 `Name` /非字面量 `Name` /多余属性/单根槽多根填充；宿主侧 `<ContentSlot>` 未知/重复放置/位置（元素容器内才合法；块、根非法）/缺 `Name` /带内容/多余属性（错误明细见 spec/01 §6.2） | 标签/属性 | Error |
 | EUI023 | 属性类型没有字面量转换器 | 属性值 | Error |
-| EUI024 | 事件处理器签名不匹配（可静态判定时） | 属性值 | Error |
+| EUI024 | 事件处理器签名不匹配（可静态判定时；✅ 2026-11-08/D82 已落地，见 §14.11.2 与 spec/02 §12 D82） | 属性值 | Error |
 | EUI025 | 同一标签重复属性 | 属性名 | Error |
 | EUI026 | 控件元数据声明非法（源项目） | 声明处 | Error/Warning |
 | EUI027 | 组件必填参数缺失 | 标签 | Error |
@@ -719,7 +719,7 @@ v3 的 EUI014/EUI032/EUI034–EUI036/EUI038–EUI039/EUI041–EUI042/EUI044 已�
 spec/02 §10 五类触发，诊断用纯数据 `UiSourceLocation` 定位到 code-behind 源声明，
 生成器不改名也不跳过输出；`CodeBehindConflictTests` 23 例。口径正本在
 [spec/02 §10](../spec/02-generated-code-contract.md#10-eui045-与-code-behind-边界)，
-台账见 [spec/02 §12 D80](../spec/02-generated-code-contract.md#12-实现偏差台账-d42d81)。
+台账见 [spec/02 §12 D80](../spec/02-generated-code-contract.md#12-实现偏差台账-d42d88)。
 **D74 ② 已落地（2026-11-08，D81）**：`UiMetadataProblem` 携带纯数据 `UiSourceLocation`
 （成员符号声明优先、类型声明兜底；引用程序集无源位置 → null），生成器注册目录级
 `RegisterSourceOutput(catalogProvider)` 把源项目 problem 报在 C# 声明处，成员级取
@@ -727,8 +727,14 @@ spec/02 §10 五类触发，诊断用纯数据 `UiSourceLocation` 定位到 code
 源项目控件的 EUI019/EUI020/EUI021 problem 按 §14.9.2 折叠为 EUI026，EUI026/EUI028/EUI031 保持原码。
 标签使用点按类别分流：冲突 → EUI016，不可用按 `HiddenTag.ReasonCode` → EUI017/EUI018/EUI030/EUI031，
 只有真正未知才落 EUI001。`MetadataOutletTests` 14 例；口径正本见
-[spec/02 §12 D81](../spec/02-generated-code-contract.md#12-实现偏差台账-d42d81)。
-EUI024 事件处理器签名匹配仍开放（后续切片）。
+[spec/02 §12 D81](../spec/02-generated-code-contract.md#12-实现偏差台账-d42d88)。
+EUI024 事件处理器签名匹配已落地（✅ 2026-11-08/D82）：`TemplateGenerator.ValidateEventHandlerSignature` +
+`TemplateProbe.IsHandlerCompatible` 复用 `ProbeTree` 合成 partial 方法体，借 Roslyn 把处理器表达式放进
+code-behind 符号上下文，仅当「表达式自身语义干净 + 对目标委托的转换确定失败」时在 `.ui` 属性值报
+Error（短路生成输出，与 EUI004 一致）；符号未解析/重载失败/`dynamic`/表达式内部错误静默，交回生成代码
+经 `#line` 由 C# 报错（spec/02 §2.4 规则 8 不重复报告）。控件事件复用 `Emitter.EventHandlerType`
+（`internal static`）、组件委托参数用 `UiParameterDef.ClrTypeDisplayName`，保证诊断与生成代码类型判定一致。
+`EventHandlerSignatureTests` 16 例；口径正本见 [spec/02 §12 D82](../spec/02-generated-code-contract.md#12-实现偏差台账-d42d88)。
 
 ### 14.9.2 责任划分
 
@@ -900,6 +906,7 @@ Build(Compilation c):                       // 纯函数：同样的 Compilation
 | 发现 | 内置控件快照；`[UiTag]`；`[UiIgnore]`；internal/抽象/嵌套/泛型 | 入目录/不入目录符合规则 |
 | 属性 | 继承的 `Padding`；普通 CLR 属性；只读属性；类型不符的 `PProperty` | 正确暴露/忽略/元数据问题 |
 | 事件 | `ClickEvent`；字段缺失；字段类型错；**静态宿主类上的 `RoutedEvent` 字段**；`InputEvents` 迁入 `Element` 后 8 事件全员可见；`:bind` | `OnClick` 可用/EUI020/EUI026/EUI004 |
+| 事件签名（EUI024） | ✅ 2026-11-08/D82 契约：可静态判定（表达式自身语义干净 + 对目标委托转换确定失败）→ EUI024 报在 `.ui` 属性值并短路生成输出；符号未解析/重载失败/`dynamic`/表达式内部错误静默交回生成代码经 `#line` 由 C# 报错（不重复报告）；控件事件复用 `Emitter.EventHandlerType`、组件委托参数用 `UiParameterDef.ClrTypeDisplayName`；`EventHandlerSignatureTests` 16 例 | EUI024/零误报/C# 兜底分工 |
 | 内容 | Text/Label、TextRuns、Children、None；空白文本；控制流 | 生成/EUI006 |
 | 字面量 | double/int/bool/string/enum/TimeSpan；格式错；无转换器；**`CanonicalKey` 与 `global::` 显示名不串键** | 转换/EUI003/EUI023 |
 | 组件 | 参数、`[UiParameter(Required=true)]` 缺参、委托参数、`{P}Changed`、C# `required`/`init` 拒绝、默认内容/单根、✅ C6 插槽：`<Slot>` 填充解析/重复/多根拼接、`<ContentSlot>` 宿主解析/重复放置/块内非法、各自未知名带建议 | 生成/EUI027/EUI028/EUI040/EUI021/EUI022 |
@@ -922,7 +929,7 @@ Build(Compilation c):                       // 纯函数：同样的 Compilation
 | **C3** ✅（2026-11-03） | 转换器扩展（float/decimal/long/short/byte/char/枚举/TimeSpan；Color 预留 G4）；使用点诊断 **EUI023**（无转换器）/ **EUI025**（纯普值重复属性）/ **EUI031**（Class/Style/点号附加属性/`<Slot>`/`<ContentSlot>`）落地；属性暴露一致性测试 | 诊断表前半可用；无转换器类型正确报 EUI023 —— ✅ 全部落地（落地记录见 §14.12.3） | `Catalog.cs`、`Analyzer.cs`、`Metadata/UiCatalogFactory.cs` |
 | **C4** ✅（2026-11-05） | 组件标签：参数元数据（`[UiParameter(Required=true)]`、`{P}Changed`）、委托事件、默认内容、生命周期与作用域释放；生成器集成测试 | 第三方/自定义组件可写入 `.ui`；参数/内容生成与 spec/02 §4.12 一致 —— ✅ 全部落地（落地记录见 §14.12.4） | `TemplateGenerator.cs`、`Emitter.cs`、`Component.cs`、`Metadata/UiCatalogFactory.cs`、`Analyzer.cs` |
 | **C5** ✅ | `Ref`（G3）；保留语法诊断与剩余分析器收敛（**EUI019/EUI020/EUI021** 使用点与 **EUI029**；EUI025/EUI031 已由 C3 落地，EUI033 为 S2 既有） | G3 非反应式缺口收敛；诊断不再落"未知" | `Analyzer.cs`、`Emitter.cs` |
-| **C6** | 具名插槽 + `ContentSlot` 宿主（✅ 2026-11-05，§14.12.6）；附加属性、泛型标签实拆留 G4 | 与 03 语法表对齐 | 编译器/运行时/样式 |
+| **C6** | 具名插槽 + `ContentSlot` 宿主（✅ 2026-11-05，§14.12.6）；附加属性实拆留 G4，泛型标签暂缓（K19） | 与 03 语法表对齐 | 编译器/运行时/样式 |
 
 状态/反应式不在 C1–C6 内重复排期：失效队列/`U{N}`/根级重算属
 [spec/03 §13](../spec/03-reactivity-and-binding.md) 的 **S1**；块 v4/键控复用属 **S2**；
@@ -1062,7 +1069,7 @@ Roslyn 4.9.2 的公开 API 没有这个成员（公开的是 `IModuleSymbol.Refe
 | EUI021 使用点 | 内容被降级为 None 且 def 带 `ContentTargetInvalid` 问题（引用程序集）时，用点 children 接管既有 EUI006 指引 → **EUI021**；源项目控件保留 EUI006 指引不变 |
 | 测试 | `C5UseSiteTests`（Headless 15 例：Ref 合成标识符/字面量/成员访问/裸 token（EUI100×2+EUI029）/重复/`@bind-Ref`；引用程序集 EUI019/EUI020/EUI021 + 源项目对照（仍 EUI002/EUI006）+ 自闭合不触发）+ `GeneratorContractTests` 12 例（Ref 控件/组件生成形态、缺失/类型/readonly/静态探针、非标识符/字面量 EUI029、**真实 Emit 引用程序集**端到端 EUI019/EUI020/EUI021 与干净不触发）|
 
-**范围说明（C5 后仍开放）**：EUI026 声明处诊断在 D74 ② 之前确实未消费（目录 problem 只进 `HiddenTags`/`def.Problems`/`catalog.Problems`），**2026-11-08 已由 D74 ②/D81 消费**（见 §14.9.1 后说明）；Roslyn tokenizer 已落地（2026-11-05：`@foreach` 头与事件委托形态判定从正则换成解析/深度感知扫描；EUI024 签名匹配另片）；EUI024 处理器签名匹配、G4 样式不变（插槽项已由 §14.12.6 的 C6 关闭）。
+**范围说明（C5 后仍开放）**：EUI026 声明处诊断在 D74 ② 之前确实未消费（目录 problem 只进 `HiddenTags`/`def.Problems`/`catalog.Problems`），**2026-11-08 已由 D74 ②/D81 消费**（见 §14.9.1 后说明）；Roslyn tokenizer 已落地（2026-11-05：`@foreach` 头与事件委托形态判定从正则换成解析/深度感知扫描）；**EUI024 处理器签名匹配已落地（2026-11-08，D82）**，契约用例见 §14.11.2；G4 样式不变（插槽项已由 §14.12.6 的 C6 关闭）。
 
 ### 14.12.6 C6 落地记录（2026-11-05）
 
@@ -1079,10 +1086,11 @@ Roslyn 4.9.2 的公开 API 没有这个成员（公开的是 `IModuleSymbol.Refe
 | 测试 | `C6SlotTests`（Headless 26 例：消费侧解析/形状/未知含建议/重复填充/多根拼接/位置三态/`@bind`与`Key`继承；宿主侧单多根解析/未知/缺名/多余属性/带内容/块内/根位/重复放置/使用点/自身 def 不可解析/`Text` 模型）+ `CatalogScannerTests` 15 例（基数、EUI021 三形态、EUI028 重复/空名/参数胜出/忽略胜出、继承/override/`[UiIgnore]` 覆盖、保留标签名冲突 EUI031 + HiddenTags）+ `GeneratorContractTests` 13 例（单/多根发射形态、多填充拼接一次赋值、宿主 Single/Multiple 内联拼接、EUI022 阻断生成、**真实编译生成代码零 C# 错误**、赋值先于 `Mount()` 的顺序契约） |
 
 **范围说明（C6 后仍开放）**：C6 只落地具名插槽——design/09 原文把「附加属性、泛型标签」与插槽并列，实拆为插槽单独成片，
-附加属性（`Grid.Row`，EUI031）与泛型标签（`DataGrid<Order>`，契约 EUI030、当前 `EUI100`，D5）仍留 G4；
+附加属性（`Grid.Row`，EUI031）仍留 G4；泛型标签（`DataGrid<Order>`，契约 EUI030、当前 `EUI100`，D5）
+按 K19 暂缓实现、不排期（暂缓 ≠ 取消，D5 仍是开放项），保留位诊断维持现状；
 插槽转发（把收到的槽再传给下一层，`<Slot>` 内 `<ContentSlot>`）不支持 → EUI022；
 槽内容随接收方 `TrackContent` 释放、build-once 不随父渲染重算（§14.6.6 口径不变）；
-EUI026 声明处诊断（D74 ②）已落地（2026-11-08，D81）；EUI024 处理器签名匹配仍开放。
+EUI026 声明处诊断（D74 ②）已落地（2026-11-08，D81）；EUI024 处理器签名匹配已落地（2026-11-08，D82）。
 
 ## 14.13 风险与开放问题
 

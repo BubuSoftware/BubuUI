@@ -95,6 +95,7 @@ public class GeneratorContractTests
     public void Generation_IsDeterministic_WithStableHint()
     {
         const string ui = """
+            @using EclipseUI.Elements
             <StackPanel Gap={gap}>
                 <TextBlock>{message}</TextBlock>
             </StackPanel>
@@ -114,6 +115,7 @@ public class GeneratorContractTests
     public void RootDynamic_PromotesFields_AndEmitsRenderWithLineMapping()
     {
         const string ui = """
+            @using EclipseUI.Elements
             <StackPanel Gap={gap}>
                 <TextBlock>{message}</TextBlock>
             </StackPanel>
@@ -126,8 +128,8 @@ public class GeneratorContractTests
         Assert.Contains("protected override void Render()", code);
         Assert.Contains("private void U0()", code);
         Assert.Contains("private void U1()", code);
-        Assert.Matches(@"#line \(1, \d+\) - \(\d+, \d+\) ""C:\\templates\\Probe\.ui""", code);
         Assert.Matches(@"#line \(2, \d+\) - \(\d+, \d+\) ""C:\\templates\\Probe\.ui""", code);
+        Assert.Matches(@"#line \(3, \d+\) - \(\d+, \d+\) ""C:\\templates\\Probe\.ui""", code);
         Assert.Contains("__el0.Gap = gap;", code);
         Assert.Contains("__run2.Text = $\"{(message)}\";", code);
     }
@@ -137,6 +139,7 @@ public class GeneratorContractTests
     {
         const string uiPath = "C:\\templates\\Probe.ui";
         const string ui = """
+            @using EclipseUI.Elements
             <StackPanel Gap={gap}>
                 <TextBlock>{message}</TextBlock>
             </StackPanel>
@@ -176,13 +179,13 @@ public class GeneratorContractTests
         var typeError = Assert.Single(errors, d => d.Id == "CS0029");
         var lineSpan = typeError.Location.GetMappedLineSpan();
         Assert.Equal(uiPath, lineSpan.Path);
-        Assert.Equal(0, lineSpan.StartLinePosition.Line);
+        Assert.Equal(1, lineSpan.StartLinePosition.Line);   // 第 0 行是 @using 前缀（K22 迁移）
     }
 
     [Fact]
     public void ControlEvent_EmitsHandlerLocal_AndInvalidateWrapper()
     {
-        const string ui = "<StackPanel><Button OnClick={() => Bump()}>go</Button></StackPanel>";
+        const string ui = "@using EclipseUI.Elements\n<StackPanel><Button OnClick={() => Bump()}>go</Button></StackPanel>";
         const string codeBehind = "public partial class Probe { private void Bump() { } }";
 
         var code = Generated(Run("C:\\templates\\Probe.ui", ui, codeBehind));
@@ -199,6 +202,7 @@ public class GeneratorContractTests
     public void TextRuns_UseContentHost_AndPromoteDynamicRun()
     {
         const string ui = """
+            @using EclipseUI.Elements
             <StackPanel Gap="8">
                 <TextBlock>Hi {message}</TextBlock>
             </StackPanel>
@@ -218,6 +222,7 @@ public class GeneratorContractTests
     public void IfBlock_EmitsCoordinatorShape_WithLocalRenderAction()
     {
         const string ui = """
+            @using EclipseUI.Elements
             <StackPanel>
                 @if (show) {
                     <TextBlock>{message}</TextBlock>
@@ -251,7 +256,7 @@ public class GeneratorContractTests
     [Fact]
     public void IfBlock_EmptyBranch_OmitsSetContent()
     {
-        const string ui = "<StackPanel>@if (show) { }</StackPanel>";
+        const string ui = "@using EclipseUI.Elements\n<StackPanel>@if (show) { }</StackPanel>";
         const string codeBehind = """
             public partial class Probe : global::EclipseUI.Component
             {
@@ -271,6 +276,7 @@ public class GeneratorContractTests
     public void ForeachBlock_InfersItemType_AndEmitsKeyedTemplate()
     {
         const string ui = """
+            @using EclipseUI.Elements
             <StackPanel>
                 @foreach (var t in items) {
                     <TextBlock Key={t.Id}>{t.Name}</TextBlock>
@@ -310,6 +316,7 @@ public class GeneratorContractTests
     public void ForeachBlock_WithoutKey_OmitsKeySelector()
     {
         const string ui = """
+            @using EclipseUI.Elements
             <StackPanel>
                 @foreach (var t in items) {
                     <TextBlock>{t.Name}</TextBlock>
@@ -335,6 +342,7 @@ public class GeneratorContractTests
     public void ForeachBlock_InfersItemType_FromArrayDictionaryValuesAndLinq()
     {
         const string ui = """
+            @using EclipseUI.Elements
             <StackPanel>
                 @foreach (var t in items) {
                     <TextBlock>{t.Name}</TextBlock>
@@ -373,6 +381,7 @@ public class GeneratorContractTests
     public void NestedForeach_InjectsOuterItemIntoInferenceEnvironment()
     {
         const string ui = """
+            @using EclipseUI.Elements
             <StackPanel>
                 @foreach (var group in groups) {
                     @foreach (var t in group.Items) {
@@ -408,7 +417,7 @@ public class GeneratorContractTests
     [Fact]
     public void Binding_EmitsUiBinding_WithNamedDelegates()
     {
-        const string ui = "<StackPanel><CheckBox Checked:bind={flag}>x</CheckBox></StackPanel>";
+        const string ui = "@using EclipseUI.Elements\n<StackPanel><CheckBox @bind-Checked={flag}>x</CheckBox></StackPanel>";
         const string codeBehind = """
             public partial class Probe : global::EclipseUI.Component
             {
@@ -437,9 +446,10 @@ public class GeneratorContractTests
     public void Binding_InBlock_UsesScopeDisposable_AndRenderAction()
     {
         const string ui = """
+            @using EclipseUI.Elements
             <StackPanel>
                 @if (show) {
-                    <CheckBox Checked:bind={flag}>x</CheckBox>
+                    <CheckBox @bind-Checked={flag}>x</CheckBox>
                 }
             </StackPanel>
             """;
@@ -466,7 +476,7 @@ public class GeneratorContractTests
     [Fact]
     public void Foreach_NonEnumerableCollection_ReportsEUI007()
     {
-        const string ui = "<StackPanel>@foreach (var x in count) { <TextBlock>{message}</TextBlock> }</StackPanel>";
+        const string ui = "@using EclipseUI.Elements\n<StackPanel>@foreach (var x in count) { <TextBlock>{message}</TextBlock> }</StackPanel>";
         const string codeBehind = """
             public partial class Probe : global::EclipseUI.Component
             {
@@ -505,7 +515,7 @@ public class GeneratorContractTests
 
     private static void AssertBindRejected(string expression)
     {
-        var ui = $"<StackPanel><CheckBox @bind-Checked={{{expression}}}>x</CheckBox></StackPanel>";
+        var ui = "@using EclipseUI.Elements\n" + $"<StackPanel><CheckBox @bind-Checked={{{expression}}}>x</CheckBox></StackPanel>";
         var result = RunWithReferences("C:\\templates\\Probe.ui", ui, BindFixtures);
 
         Assert.Empty(result.GeneratedSources);
@@ -538,58 +548,52 @@ public class GeneratorContractTests
     [InlineData("StructCell.Done")] // 中间段是 struct 字段：合法
     public void Bind_WritableSource_GeneratesBinding(string expression)
     {
-        var ui = $"<StackPanel><CheckBox @bind-Checked={{{expression}}}>x</CheckBox></StackPanel>";
+        var ui = "@using EclipseUI.Elements\n" + $"<StackPanel><CheckBox @bind-Checked={{{expression}}}>x</CheckBox></StackPanel>";
         var code = Generated(RunWithReferences("C:\\templates\\Probe.ui", ui, BindFixtures));
 
         Assert.Contains($"writeSource: v => {expression} = v", code);
     }
 
     [Fact]
-    public void BindNewSyntax_EmitsIdenticalCodeToLegacy_AndIsDiagnosticFree()
+    public void BindNewSyntax_IsDiagnosticFree()
     {
-        var legacy = RunWithReferences("C:\\templates\\Probe.ui",
-            "<StackPanel><CheckBox Checked:bind={flag}>x</CheckBox></StackPanel>", BindFixtures);
         var modern = RunWithReferences("C:\\templates\\Probe.ui",
-            "<StackPanel><CheckBox @bind-Checked={flag}>x</CheckBox></StackPanel>", BindFixtures);
+            "@using EclipseUI.Elements\n<StackPanel><CheckBox @bind-Checked={flag}>x</CheckBox></StackPanel>", BindFixtures);
 
-        Assert.Equal(WithoutLineDirectives(Generated(legacy)), WithoutLineDirectives(Generated(modern)));
         Assert.Matches(@"#line \(\d+, \d+\) - \(\d+, \d+\)", Generated(modern));
         Assert.Empty(modern.Diagnostics);
     }
 
     [Fact]
-    public void LegacyBind_ReportsEUI043Warning_AndStillGenerates()
+    public void LegacyBind_ReportsEUI046Error_AndGeneratesNothing()
     {
+        // K27（Q7-B）：P:bind 本波移除——EUI046 Error，且错误诊断阻断生成输出。
         var result = RunWithReferences("C:\\templates\\Probe.ui",
-            "<StackPanel><CheckBox Checked:bind={flag}>x</CheckBox></StackPanel>", BindFixtures);
+            "@using EclipseUI.Elements\n<StackPanel><CheckBox Checked:bind={flag}>x</CheckBox></StackPanel>", BindFixtures);
 
-        var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI043");
-        Assert.Equal(Microsoft.CodeAnalysis.DiagnosticSeverity.Warning, diag.Severity);
+        var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI046");
+        Assert.Equal(Microsoft.CodeAnalysis.DiagnosticSeverity.Error, diag.Severity);
         Assert.Contains("@bind-Checked", diag.GetMessage());
-        Assert.Contains("UiBinding.TwoWay", Generated(result));
+        Assert.Empty(result.GeneratedSources);
     }
 
     [Fact]
-    public void LegacyValue_ReportsEUI043Warning_AndEmitsPlainAssignment()
+    public void LegacyValue_ReportsEUI046Error_AndGeneratesNothing()
     {
         var result = RunWithReferences("C:\\templates\\Probe.ui",
-            "<StackPanel Gap:value=\"8\" />", BindFixtures);
+            "@using EclipseUI.Elements\n<StackPanel Gap:value=\"8\" />", BindFixtures);
 
-        var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI043");
-        Assert.Equal(Microsoft.CodeAnalysis.DiagnosticSeverity.Warning, diag.Severity);
-        Assert.Contains("Gap=", diag.GetMessage());
-
-        var plain = RunWithReferences("C:\\templates\\Probe.ui", "<StackPanel Gap=\"8\" />", BindFixtures);
-        Assert.Empty(plain.Diagnostics);
-        // 旧别名与新形态生成文本相同（#line 携带源 span，别名更短故指令不同，剥离后比对）。
-        Assert.Equal(WithoutLineDirectives(Generated(result)), WithoutLineDirectives(Generated(plain)));
+        var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI046");
+        Assert.Equal(Microsoft.CodeAnalysis.DiagnosticSeverity.Error, diag.Severity);
+        Assert.Contains(":value", diag.GetMessage());
+        Assert.Empty(result.GeneratedSources);
     }
 
     [Fact]
     public void Bind_InvalidTarget_ReportsEUI040_AndGeneratesNothing()
     {
         var result = RunWithReferences("C:\\templates\\Probe.ui",
-            "<StackPanel><Button @bind-OnClick={() => flag}>x</Button></StackPanel>", BindFixtures);
+            "@using EclipseUI.Elements\n<StackPanel><Button @bind-OnClick={() => flag}>x</Button></StackPanel>", BindFixtures);
 
         Assert.Empty(result.GeneratedSources);
         var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI040");
@@ -600,6 +604,7 @@ public class GeneratorContractTests
     public void Bind_OnItemMember_IsEntryScopedAndWritesThroughItem()
     {
         const string ui = """
+            @using EclipseUI.Elements
             <StackPanel>
                 @foreach (var t in rows) {
                     <CheckBox @bind-Checked={t.Done}>x</CheckBox>
@@ -628,6 +633,7 @@ public class GeneratorContractTests
     public void Bind_OnValueTypeItemMember_ReportsEUI037()
     {
         const string ui = """
+            @using EclipseUI.Elements
             <StackPanel>
                 @foreach (var t in cells) {
                     <CheckBox @bind-Checked={t.Done}>x</CheckBox>
@@ -652,6 +658,7 @@ public class GeneratorContractTests
     public void InheritedStyledProperties_AreTemplateUsable_LiteralAndExpression()
     {
         const string ui = """
+            @using EclipseUI.Elements
             <StackPanel Padding="12" ClipToBounds={clip}>
                 <TextBlock Padding={pad} IsHitTestVisible="false" />
             </StackPanel>
@@ -691,7 +698,7 @@ public class GeneratorContractTests
     public void EventAttribute_EmitsAddHandlerAgainstTheDeclaringType(
         string tag, string attribute, string fieldReference)
     {
-        var ui = $"<{tag} {attribute}={{() => Bump()}} />";
+        var ui = "@using EclipseUI.Elements\n" + $"<{tag} {attribute}={{() => Bump()}} />";
         const string codeBehind = "public partial class Probe { private void Bump() { } }";
 
         var result = RunWithReferences("C:\\templates\\Probe.ui", ui, codeBehind);
@@ -723,7 +730,7 @@ public class GeneratorContractTests
     public void Incremental_TemplateOnlyChange_KeepsCatalogInput_AndUpdatesSource()
     {
         var uiPath = Path.Combine(AppContext.BaseDirectory, "Probe.ui");
-        var initial = new UiAdditionalText(uiPath, "<StackPanel Gap=\"4\" />");
+        var initial = new UiAdditionalText(uiPath, "@using EclipseUI.Elements\n<StackPanel Gap=\"4\" />");
         GeneratorDriver driver = CSharpGeneratorDriver.Create(
             new[] { new TemplateGenerator().AsSourceGenerator() },
             new AdditionalText[] { initial },
@@ -731,7 +738,7 @@ public class GeneratorContractTests
         var compilation = CreateCompilation("public partial class Probe { public int a = 1; }");
 
         var first = driver.RunGenerators(compilation).GetRunResult().Results.Single();
-        driver = driver.ReplaceAdditionalText(initial, new UiAdditionalText(uiPath, "<StackPanel Gap=\"9\" />"));
+        driver = driver.ReplaceAdditionalText(initial, new UiAdditionalText(uiPath, "@using EclipseUI.Elements\n<StackPanel Gap=\"9\" />"));
         var second = driver.RunGenerators(compilation).GetRunResult().Results.Single();
 
         Assert.Empty(first.Diagnostics);
@@ -754,8 +761,8 @@ public class GeneratorContractTests
     [Fact]
     public void Incremental_UnrelatedSourceChange_KeepsPerFileOutputsCached()
     {
-        var uiA = new UiAdditionalText(Path.Combine(AppContext.BaseDirectory, "A.ui"), "<StackPanel Gap=\"4\" />");
-        var uiB = new UiAdditionalText(Path.Combine(AppContext.BaseDirectory, "B.ui"), "<StackPanel Gap=\"7\" />");
+        var uiA = new UiAdditionalText(Path.Combine(AppContext.BaseDirectory, "A.ui"), "@using EclipseUI.Elements\n<StackPanel Gap=\"4\" />");
+        var uiB = new UiAdditionalText(Path.Combine(AppContext.BaseDirectory, "B.ui"), "@using EclipseUI.Elements\n<StackPanel Gap=\"7\" />");
         GeneratorDriver driver = CSharpGeneratorDriver.Create(
             new[] { new TemplateGenerator().AsSourceGenerator() },
             new AdditionalText[] { uiA, uiB },
@@ -787,8 +794,8 @@ public class GeneratorContractTests
     {
         var pathA = Path.Combine(AppContext.BaseDirectory, "A.ui");
         var pathB = Path.Combine(AppContext.BaseDirectory, "B.ui");
-        var uiA = new UiAdditionalText(pathA, "<StackPanel Gap=\"4\" />");
-        var uiB = new UiAdditionalText(pathB, "<StackPanel Gap=\"7\" />");
+        var uiA = new UiAdditionalText(pathA, "@using EclipseUI.Elements\n<StackPanel Gap=\"4\" />");
+        var uiB = new UiAdditionalText(pathB, "@using EclipseUI.Elements\n<StackPanel Gap=\"7\" />");
         GeneratorDriver driver = CSharpGeneratorDriver.Create(
             new[] { new TemplateGenerator().AsSourceGenerator() },
             new AdditionalText[] { uiA, uiB },
@@ -798,7 +805,7 @@ public class GeneratorContractTests
 
         driver = driver.RunGenerators(compilation);
         var first = driver.GetRunResult().Results.Single();
-        driver = driver.ReplaceAdditionalText(uiA, new UiAdditionalText(pathA, "<StackPanel Gap=\"9\" />"));
+        driver = driver.ReplaceAdditionalText(uiA, new UiAdditionalText(pathA, "@using EclipseUI.Elements\n<StackPanel Gap=\"9\" />"));
         var second = driver.RunGenerators(compilation).GetRunResult().Results.Single();
 
         Assert.Empty(second.Diagnostics);
@@ -869,6 +876,7 @@ public class GeneratorContractTests
     public void ComponentRoot_Lifecycle_UnderTheFrozenOrder()
     {
         const string ui = """
+            @using EclipseUI.Elements
             <Probe Count={gap} Title="Hi" Picked={i => Store(i)} @bind-Color={color}>
                 <StackPanel />
             </Probe>
@@ -896,7 +904,7 @@ public class GeneratorContractTests
     [Fact]
     public void ComponentRoot_DynamicParameterPush_UsesEqualityComparerGuard()
     {
-        const string ui = "<Probe Count={gap} Title=\"Hi\" />";
+        const string ui = "@using EclipseUI.Elements\n<Probe Count={gap} Title=\"Hi\" />";
 
         var code = Generated(RunWithReferences("C:\\templates\\Probe.ui", ui, ComponentFixtures));
 
@@ -912,7 +920,7 @@ public class GeneratorContractTests
     [Fact]
     public void ComponentRoot_BindParameter_EmitsChangedCallbackThenPush()
     {
-        const string ui = "<Probe Count={gap} @bind-Color={color} />";
+        const string ui = "@using EclipseUI.Elements\n<Probe Count={gap} @bind-Color={color} />";
 
         var code = Generated(RunWithReferences("C:\\templates\\Probe.ui", ui, ComponentFixtures));
 
@@ -931,6 +939,7 @@ public class GeneratorContractTests
     public void ComponentInBlockScope_AdoptsAndPushesWithLocalR()
     {
         const string ui = """
+            @using EclipseUI.Elements
             <StackPanel Gap="4">
                 @foreach (var t in items)
                 {
@@ -970,6 +979,7 @@ public class GeneratorContractTests
     public void ComponentContent_TracksChildComponentsOnReceiver()
     {
         const string ui = """
+            @using EclipseUI.Elements
             <StackPanel>
                 <Group Count="1">
                     <StackPanel />
@@ -991,7 +1001,7 @@ public class GeneratorContractTests
     [Fact]
     public void ComponentDelegateParameter_WrapsHandlerAndInvalidatesParent()
     {
-        const string ui = "<Probe Count={gap} Closed={() => Close()} />";
+        const string ui = "@using EclipseUI.Elements\n<Probe Count={gap} Closed={() => Close()} />";
 
         var code = Generated(RunWithReferences("C:\\templates\\Probe.ui", ui, ComponentFixtures));
 
@@ -1003,7 +1013,7 @@ public class GeneratorContractTests
     public void ComponentBindWithoutChanged_EUI040_BlocksGeneration()
     {
         var result = RunWithReferences("C:\\templates\\Probe.ui",
-            "<StackPanel><Probe Count={gap} @bind-Title={color} /></StackPanel>", ComponentFixtures);
+            "@using EclipseUI.Elements\n<StackPanel><Probe Count={gap} @bind-Title={color} /></StackPanel>", ComponentFixtures);
 
         Assert.Empty(result.GeneratedSources);
         var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI040");
@@ -1014,7 +1024,7 @@ public class GeneratorContractTests
     public void ComponentRequiredParameterMissing_EUI027_BlocksGeneration()
     {
         var result = RunWithReferences("C:\\templates\\Probe.ui",
-            "<StackPanel><Probe Title=\"x\" /></StackPanel>", ComponentFixtures);
+            "@using EclipseUI.Elements\n<StackPanel><Probe Title=\"x\" /></StackPanel>", ComponentFixtures);
 
         Assert.Empty(result.GeneratedSources);
         var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI027");
@@ -1025,7 +1035,7 @@ public class GeneratorContractTests
     public void ComponentContentViaAttribute_EUI021_BlocksGeneration()
     {
         var result = RunWithReferences("C:\\templates\\Probe.ui",
-            "<StackPanel><Probe Count={gap} Body={color} /></StackPanel>", ComponentFixtures);
+            "@using EclipseUI.Elements\n<StackPanel><Probe Count={gap} Body={color} /></StackPanel>", ComponentFixtures);
 
         Assert.Empty(result.GeneratedSources);
         Assert.Contains(result.Diagnostics, d => d.Id == "EUI021");
@@ -1045,6 +1055,7 @@ public class GeneratorContractTests
     public void ComponentDynamicParameterContentContext_IsBuildOnceSnapshot()
     {
         const string ui = """
+            @using EclipseUI.Elements
             <StackPanel>
                 <Probe Count={gap}>
                     <StackPanel Gap={color} />
@@ -1077,7 +1088,7 @@ public class GeneratorContractTests
     [Fact]
     public void Ref_OnElement_AssignsCodeBehindFieldAtBuildTime()
     {
-        const string ui = "<StackPanel Ref={savePanel} />";
+        const string ui = "@using EclipseUI.Elements\n<StackPanel Ref={savePanel} />";
         var result = Run("C:\\templates\\Probe.ui", ui,
             "public partial class Probe { public global::EclipseUI.Elements.StackPanel savePanel = null!; }");
 
@@ -1091,7 +1102,7 @@ public class GeneratorContractTests
     [Fact]
     public void Ref_OnComponent_AssignsComponentInstance()
     {
-        const string ui = "<ProbeCard Count=\"1\" Ref={card} />";
+        const string ui = "@using EclipseUI.Elements\n<ProbeCard Count=\"1\" Ref={card} />";
         const string codeBehind = """
             using EclipseUI;
             public partial class Probe { public ProbeCard card = null!; }
@@ -1112,7 +1123,7 @@ public class GeneratorContractTests
     [Fact]
     public void Ref_MissingField_EUI029_BlocksGeneration()
     {
-        var result = Run("C:\\templates\\Probe.ui", "<StackPanel Ref={nowhere} />");
+        var result = Run("C:\\templates\\Probe.ui", "@using EclipseUI.Elements\n<StackPanel Ref={nowhere} />");
 
         Assert.Empty(result.GeneratedSources);
         var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI029");
@@ -1123,7 +1134,7 @@ public class GeneratorContractTests
     [Fact]
     public void Ref_TypeMismatch_EUI029_BlocksGeneration()
     {
-        var result = Run("C:\\templates\\Probe.ui", "<StackPanel Ref={size} />",
+        var result = Run("C:\\templates\\Probe.ui", "@using EclipseUI.Elements\n<StackPanel Ref={size} />",
             "public partial class Probe { public int size = 4; }");
 
         Assert.Empty(result.GeneratedSources);
@@ -1134,7 +1145,7 @@ public class GeneratorContractTests
     [Fact]
     public void Ref_ReadonlyField_EUI029_BlocksGeneration()
     {
-        var result = Run("C:\\templates\\Probe.ui", "<StackPanel Ref={locked} />",
+        var result = Run("C:\\templates\\Probe.ui", "@using EclipseUI.Elements\n<StackPanel Ref={locked} />",
             "public partial class Probe { public readonly global::EclipseUI.Elements.StackPanel locked = null!; }");
 
         Assert.Empty(result.GeneratedSources);
@@ -1145,7 +1156,7 @@ public class GeneratorContractTests
     [Fact]
     public void Ref_StaticField_EUI029_BlocksGeneration()
     {
-        var result = Run("C:\\templates\\Probe.ui", "<StackPanel Ref={shared} />",
+        var result = Run("C:\\templates\\Probe.ui", "@using EclipseUI.Elements\n<StackPanel Ref={shared} />",
             "public partial class Probe { public static global::EclipseUI.Elements.StackPanel shared = null!; }");
 
         Assert.Empty(result.GeneratedSources);
@@ -1154,7 +1165,7 @@ public class GeneratorContractTests
     }    [Fact]
     public void Ref_NonIdentifier_EUI029_AnalyzerLevel()
     {
-        var result = Run("C:\\templates\\Probe.ui", "<StackPanel Ref={handler.Do} />");
+        var result = Run("C:\\templates\\Probe.ui", "@using EclipseUI.Elements\n<StackPanel Ref={handler.Do} />");
 
         Assert.Empty(result.GeneratedSources);
         var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI029");
@@ -1164,7 +1175,7 @@ public class GeneratorContractTests
     [Fact]
     public void Ref_QuotedLiteral_EUI029_AnalyzerLevel()
     {
-        var result = Run("C:\\templates\\Probe.ui", "<StackPanel Ref=\"savePanel\" />");
+        var result = Run("C:\\templates\\Probe.ui", "@using EclipseUI.Elements\n<StackPanel Ref=\"savePanel\" />");
 
         Assert.Empty(result.GeneratedSources);
         var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI029");
@@ -1186,7 +1197,7 @@ public class GeneratorContractTests
             }
             """);
 
-        var result = Run("C:\\templates\\Probe.ui", "<BrokenBox Size=\"4\" />",
+        var result = Run("C:\\templates\\Probe.ui", "@using ProbeLib\n@using EclipseUI.Elements\n<BrokenBox Size=\"4\" />",
             referencedLibrary: lib);
 
         Assert.Empty(result.GeneratedSources);
@@ -1207,7 +1218,7 @@ public class GeneratorContractTests
             }
             """);
 
-        var result = Run("C:\\templates\\Probe.ui", "<FaultyBox OnClick={Handle} />",
+        var result = Run("C:\\templates\\Probe.ui", "@using ProbeLib\n@using EclipseUI.Elements\n<FaultyBox OnClick={Handle} />",
             referencedLibrary: lib);
 
         Assert.Empty(result.GeneratedSources);
@@ -1230,7 +1241,7 @@ public class GeneratorContractTests
             """);
 
         var result = Run("C:\\templates\\Probe.ui",
-            "<StackPanel><BrokenCard><StackPanel /></BrokenCard></StackPanel>",
+            "@using ProbeLib\n@using EclipseUI.Elements\n<StackPanel><BrokenCard><StackPanel /></BrokenCard></StackPanel>",
             referencedLibrary: lib);
 
         Assert.Empty(result.GeneratedSources);
@@ -1253,7 +1264,7 @@ public class GeneratorContractTests
             """);
 
         var result = Run("C:\\templates\\Probe.ui",
-            "<StackPanel><BrokenCard /></StackPanel>",
+            "@using ProbeLib\n@using EclipseUI.Elements\n<StackPanel><BrokenCard /></StackPanel>",
             referencedLibrary: lib);
 
         Assert.NotEmpty(result.GeneratedSources);            // 无内容 → 不触发 EUI021
@@ -1268,7 +1279,7 @@ public class GeneratorContractTests
     [Fact]
     public void Event_ParenthesizedAsyncLambda_NoParams_IsAction()
     {
-        const string ui = "<StackPanel><Button OnClick={(async () => Say())} /></StackPanel>";
+        const string ui = "@using EclipseUI.Elements\n<StackPanel><Button OnClick={(async () => Say())} /></StackPanel>";
 
         var code = Generated(Run("C:\\templates\\Probe.ui", ui, TokenizerCodeBehind));
 
@@ -1280,7 +1291,7 @@ public class GeneratorContractTests
     [Fact]
     public void Event_ParenthesizedLambda_SingleParam_IsRouteArgs()
     {
-        const string ui = "<StackPanel><Button OnClick={(e => Say())} /></StackPanel>";
+        const string ui = "@using EclipseUI.Elements\n<StackPanel><Button OnClick={(e => Say())} /></StackPanel>";
 
         var code = Generated(Run("C:\\templates\\Probe.ui", ui, TokenizerCodeBehind));
 
@@ -1292,12 +1303,12 @@ public class GeneratorContractTests
     [Fact]
     public void Event_AnonymousMethod_ParamsDecideHandlerType()
     {
-        const string withoutParams = "<StackPanel><Button OnClick={delegate { Say(); }} /></StackPanel>";
+        const string withoutParams = "@using EclipseUI.Elements\n<StackPanel><Button OnClick={delegate { Say(); }} /></StackPanel>";
         var code = Generated(Run("C:\\templates\\Probe.ui", withoutParams, TokenizerCodeBehind));
         Assert.Contains("(global::System.Action)", code);
         Assert.DoesNotContain("RoutedEventArgs>", code);
 
-        const string withParams = "<StackPanel><Button OnClick={delegate (global::EclipseUI.RoutedEventArgs e) { Say(); }} /></StackPanel>";
+        const string withParams = "@using EclipseUI.Elements\n<StackPanel><Button OnClick={delegate (global::EclipseUI.RoutedEventArgs e) { Say(); }} /></StackPanel>";
         var code2 = Generated(Run("C:\\templates\\Probe.ui", withParams, TokenizerCodeBehind));
         Assert.Contains("(global::System.Action<global::EclipseUI.RoutedEventArgs>)", code2);
     }
@@ -1306,7 +1317,7 @@ public class GeneratorContractTests
     [Fact]
     public void Event_NestedLambdaInsideObjectCreation_FallsBackToAction()
     {
-        const string ui = "<StackPanel><Button OnClick={new global::System.Action(() => Say())} /></StackPanel>";
+        const string ui = "@using EclipseUI.Elements\n<StackPanel><Button OnClick={new global::System.Action(() => Say())} /></StackPanel>";
 
         var code = Generated(Run("C:\\templates\\Probe.ui", ui, TokenizerCodeBehind));
 
@@ -1360,6 +1371,7 @@ public class GeneratorContractTests
     public void SlotFill_SingleSlot_EmitsListAndAssignsFirstRoot()
     {
         const string ui = """
+            @using EclipseUI.Elements
             <StackPanel>
               <SlotChip>
                 <Slot Name="Header"><TextBlock FontSize="10">a</TextBlock></Slot>
@@ -1380,6 +1392,7 @@ public class GeneratorContractTests
     public void SlotFill_MultipleSlot_ConcatenatesFills()
     {
         const string ui = """
+            @using EclipseUI.Elements
             <StackPanel>
               <SlotChip>
                 <Slot Name="Rows"><TextBlock FontSize="10">r1</TextBlock></Slot>
@@ -1399,7 +1412,7 @@ public class GeneratorContractTests
     [Fact]
     public void ContentSlot_HostTemplate_SplicesSingleProperty()
     {
-        const string ui = """<StackPanel><ContentSlot Name="Header" /></StackPanel>""";
+        const string ui = "@using EclipseUI.Elements\n" + """<StackPanel><ContentSlot Name="Header" /></StackPanel>""";
 
         var code = Generated(Run("C:\\templates\\Probe.ui", ui, SlotFixtures));
 
@@ -1413,7 +1426,7 @@ public class GeneratorContractTests
     [Fact]
     public void ContentSlot_HostTemplate_SplicesMultipleProperty()
     {
-        const string ui = """<StackPanel><ContentSlot Name="Rows" /></StackPanel>""";
+        const string ui = "@using EclipseUI.Elements\n" + """<StackPanel><ContentSlot Name="Rows" /></StackPanel>""";
 
         var code = Generated(Run("C:\\templates\\Probe.ui", ui, SlotFixtures));
 
@@ -1426,6 +1439,7 @@ public class GeneratorContractTests
     public void SlotFill_UnknownSlot_ReportsEUI022_AndGeneratesNothing()
     {
         const string ui = """
+            @using EclipseUI.Elements
             <StackPanel>
               <SlotChip>
                 <Slot Name="Heade"><TextBlock FontSize="10">a</TextBlock></Slot>
@@ -1445,7 +1459,7 @@ public class GeneratorContractTests
     [Fact]
     public void ContentSlot_UnknownSlot_ReportsEUI022_AndGeneratesNothing()
     {
-        const string ui = """<StackPanel><ContentSlot Name="Heade" /></StackPanel>""";
+        const string ui = "@using EclipseUI.Elements\n" + """<StackPanel><ContentSlot Name="Heade" /></StackPanel>""";
 
         var result = Run("C:\\templates\\Probe.ui", ui, SlotFixtures);
 
@@ -1459,7 +1473,7 @@ public class GeneratorContractTests
     [Fact]
     public void ContentSlot_MissingName_ReportsEUI022()
     {
-        const string ui = """<StackPanel><ContentSlot /></StackPanel>""";
+        const string ui = "@using EclipseUI.Elements\n" + """<StackPanel><ContentSlot /></StackPanel>""";
 
         var result = Run("C:\\templates\\Probe.ui", ui, SlotFixtures);
 
@@ -1472,6 +1486,7 @@ public class GeneratorContractTests
 
     [Theory]
     [InlineData("""
+        @using EclipseUI.Elements
         <StackPanel>
           <SlotChip>
             <Slot Name="Header"><TextBlock FontSize="10">a</TextBlock></Slot>
@@ -1480,9 +1495,10 @@ public class GeneratorContractTests
           </SlotChip>
         </StackPanel>
         """)]
-    [InlineData("<StackPanel><ContentSlot Name=\"Header\" /></StackPanel>")]
-    [InlineData("<StackPanel><ContentSlot Name=\"Rows\" /></StackPanel>")]
+    [InlineData("@using EclipseUI.Elements\n<StackPanel><ContentSlot Name=\"Header\" /></StackPanel>")]
+    [InlineData("@using EclipseUI.Elements\n<StackPanel><ContentSlot Name=\"Rows\" /></StackPanel>")]
     [InlineData("""
+        @using EclipseUI.Elements
         <StackPanel>
           <ContentSlot Name="Header" />
           <ContentSlot Name="Rows" />
@@ -1502,6 +1518,7 @@ public class GeneratorContractTests
     public void SlotFill_ContentSlotInsideFill_IsEUI022_AndGeneratesNothing()
     {
         const string ui = """
+            @using EclipseUI.Elements
             <StackPanel>
               <SlotChip Title="t">
                 <Slot Name="Rows"><ContentSlot Name="Rows" /></Slot>
@@ -1520,6 +1537,7 @@ public class GeneratorContractTests
     public void SlotFill_AssignsAfterParametersAndContent_BeforeMount()
     {
         const string ui = """
+            @using EclipseUI.Elements
             <StackPanel>
               <SlotChip Title="t">
                 <Button Label="body" />

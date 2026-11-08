@@ -58,7 +58,7 @@ public class MetadataOutletTests
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
     }
 
-    private static GeneratorRunResult Run(string codeBehind, string ui = "<StackPanel />",
+    private static GeneratorRunResult Run(string codeBehind, string ui = "@using EclipseUI.Elements\n<StackPanel />",
         string? referencedLibrary = null, string[]? extraUiPaths = null)
     {
         var files = new List<AdditionalText> { new UiAdditionalText(UiPath, ui) };
@@ -228,7 +228,7 @@ public static readonly StyledProperty<int> SizeProperty = StyledProperty<int>.Re
 }
 """);
 
-        var result = Run(CleanCodeBehind, "<BrokenBox Size=\"4\" />", referencedLibrary: lib);
+        var result = Run(CleanCodeBehind, "@using ProbeLib\n@using EclipseUI.Elements\n<BrokenBox Size=\"4\" />", referencedLibrary: lib);
 
         Assert.Contains(result.Diagnostics, d => d.Id == "EUI019");       // D74 ① 使用点
         Assert.DoesNotContain(result.Diagnostics, d => d.Id == "EUI026"); // 无源声明可定位
@@ -268,7 +268,7 @@ public partial class Probe { }
 [UiTag("Dup")] public class SecondBox : StackPanel { }
 """;
 
-        var result = Run(source, "<Dup />");
+        var result = Run(source, "@using EclipseUI.Elements\n<Dup />");
 
         var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI016");
         Assert.Contains("FirstBox", diag.GetMessage());
@@ -292,7 +292,7 @@ public partial class Probe { }
     [Fact]
     public void UnknownTag_StillReportsEUI001()
     {
-        var result = Run(CleanCodeBehind, "<NoSuchTag />");
+        var result = Run(CleanCodeBehind, "@using EclipseUI.Elements\n<NoSuchTag />");
 
         var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI001");
         Assert.Contains("NoSuchTag", diag.GetMessage());

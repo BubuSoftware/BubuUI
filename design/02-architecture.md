@@ -48,5 +48,9 @@
 
 - **自持**：`.ui` 语法、编译器、运行时、元素系统、布局、渲染管线、LSP。
 - **复用**：仅 Roslyn 作为基础设施。
-- **不复用**：Blazor 运行时与 Razor 语法层——一旦模板编译器成为自有资产，
-  Blazor 运行时（组件 diff、RenderTree 序列、EventCallback）就是中间商。
+- **不复用**：Blazor 运行时（组件 diff、RenderTree 序列、EventCallback）与 **Razor 编译器 / HTML 语法层**——
+  一旦模板编译器成为自有资产，Blazor 运行时就是中间商。
+  **K23 修订（2026-11-08，✅ S6 已实现（2026-11-08））**：「不用 Razor 语法层」细化为「不复用 Razor 编译器与其
+  HTML 语法债，但**组织形态可向 Blazor 对齐**」（流程控制 / `@code` 单文件 / `@using` / Razor 注释）；
+  「自持 `.ui` 语法与编译器」「不复用 Blazor 运行时」「仅复用 Roslyn 基础设施」三条不变。
+  见 spec/02 §14 K23、spec/01 §1.5、design/16。

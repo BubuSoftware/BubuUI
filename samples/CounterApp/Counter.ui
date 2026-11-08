@@ -1,3 +1,5 @@
+@using EclipseUI.Elements
+
 <StackPanel Gap="8">
     <TextBlock FontSize="30">You pressed {count} times</TextBlock>
 
@@ -7,3 +9,8 @@
         <Button OnClick={() => count++}>+1</Button>
     }
 </StackPanel>
+
+@code {
+    public int count;
+    public bool showButton;
+}

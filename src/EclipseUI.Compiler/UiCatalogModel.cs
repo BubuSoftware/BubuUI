@@ -230,6 +230,46 @@ public sealed class UiCatalog : IEquatable<UiCatalog>
         return new UiTagResolution(UiTagResolutionKind.NotFound, null, null, null);
     }
 
+    /// <summary>
+    /// K22（D85）：按模板 <c>@using</c> 导入的命名空间过滤标签解析。内置控件（EclipseUI.Elements）
+    /// 无豁免；只有导入命名空间（或全局命名空间）中的候选可见。目录里有同名标签但全部未导入时
+    /// 返回 NotFound 并携带完整类型名列表（供「缺失 @using」建议）；导入后同名多类型仍是 Ambiguous。
+    /// </summary>
+    public UiTagResolution Resolve(string tag, IReadOnlyList<string>? imports)
+    {
+        if (tag is null) return new UiTagResolution(UiTagResolutionKind.NotFound, null, null, null);
+        if (_byTag.TryGetValue(tag, out var defs))
+        {
+            // 可见性统一由 NamespaceVisible 决定：global 命名空间类型不写 @using 也可见，
+            // 具名命名空间类型必须已导入（K22）。imports 为空时具名类型自然全部不可见。
+            var visible = defs.Where(d => NamespaceVisible(d.ClrTypeDisplayName, imports)).ToArray();
+            if (visible.Length == 1)
+                return new UiTagResolution(UiTagResolutionKind.Found, visible[0], null, null);
+            if (visible.Length > 1)
+                return new UiTagResolution(
+                    UiTagResolutionKind.Ambiguous,
+                    null,
+                    visible.Select(d => d.ClrTypeDisplayName).ToList(),
+                    null);
+            // 全部未导入：NotFound + 候选类型名（缺 @using 建议），不静默降级成别的状态
+            return new UiTagResolution(
+                UiTagResolutionKind.NotFound,
+                null,
+                defs.Select(d => d.ClrTypeDisplayName).ToList(),
+                null);
+        }
+        if (_hidden.TryGetValue(tag, out var hiddenTag))
+            return new UiTagResolution(UiTagResolutionKind.Unavailable, null, null, hiddenTag);
+        return new UiTagResolution(UiTagResolutionKind.NotFound, null, null, null);
+    }
+
+    private static bool NamespaceVisible(string clrTypeDisplayName, IReadOnlyList<string> imports)
+    {
+        var ns = TemplateAnalyzer.NamespaceOfClrType(clrTypeDisplayName);
+        // 全局命名空间类型没有 @using 可写：始终可见
+        return ns is null || imports.Contains(ns, StringComparer.Ordinal);
+    }
+
     public bool Equals(UiCatalog? other) =>
         other is not null
         && CatalogValueEq.Sequence(Elements, other.Elements)

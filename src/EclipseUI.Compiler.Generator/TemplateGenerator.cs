@@ -47,11 +47,19 @@ public sealed class TemplateGenerator : IIncrementalGenerator
         // 逐文件语义事实（code-behind 表面 + 探针）：输入挂 Compilation 故每轮重建，但输出是值相等
         // record——无关改动下值不变，下游逐文件 SourceOutput 按值命中 Cached/Unchanged
         // （design/14 §14.10.3/§14.11.2 的验收口径）。不再 Collect 成批：单文件变化只重跑该文件。
+        // K23 ④ 单文件形态（无 .cs）的命名空间归属对齐 Razor：取项目根命名空间
+        // （MSBuild 标准管道 build_property.rootnamespace；测试桩等拿不到时落 global）。
+        var rootNamespace = context.AnalyzerConfigOptionsProvider
+            .Select(static (provider, _) =>
+                provider.GlobalOptions.TryGetValue("build_property.rootnamespace", out var value)
+                    ? value ?? "" : "");
         var perFile = uiFiles.Combine(catalogProvider).Combine(context.CompilationProvider)
+            .Combine(rootNamespace)
             .Select(static (pair, _) => (
-                Input: pair.Left.Left,
-                Catalog: pair.Left.Right,
-                Facts: ExtractFacts(pair.Left.Left, pair.Left.Right, pair.Right)))
+                Input: pair.Left.Left.Left,
+                Catalog: pair.Left.Left.Right,
+                RootNamespace: pair.Right,
+                Facts: ExtractFacts(pair.Left.Left.Left, pair.Left.Left.Right, pair.Left.Right, pair.Right)))
             // 命名节点让逐文件生成在 TrackedSteps 里可独立观测：D74 ② 的目录级诊断出口
             // 是第二个 SourceOutput，不能把所有 "SourceOutput" 混成一组断言（§14.10.3）。
             .WithTrackingName("PerFileGeneration");
@@ -59,25 +67,36 @@ public sealed class TemplateGenerator : IIncrementalGenerator
             ExecuteFile(spc, data.Input, data.Catalog, data.Facts));
     }
 
-    private static UiFileFacts ExtractFacts(UiFileInput input, UiCatalog catalog, Compilation compilation)
+    private static UiFileFacts ExtractFacts(UiFileInput input, UiCatalog catalog, Compilation compilation,
+        string rootNamespace)
     {
         var className = Path.GetFileNameWithoutExtension(input.Path);
         var validName = SyntaxFacts.IsValidIdentifier(className);
         var codeBehindDiags = new List<UiDiagnostic>();
+
+        // S6：先解析文档——EUI005 放宽（K23 ④：@code 或同名 partial 至少其一）、@using 收集（K22）
+        // 与 @code 成员收集（K21）都以 AST 为准。
+        var parseDiags = new List<UiDiagnostic>();
+        var doc = FrontEnd.Parse(input.Text, input.Path, parseDiags);
+        var usings = CollectUsings(doc.Nodes);
+        var codeBlocks = doc.Nodes.OfType<UiCodeBlock>().ToList();
+
         var type = validName ? FindCodeBehind(compilation, className) : null;
         if (validName)
         {
-            if (type is null)
+            if (type is null && codeBlocks.Count == 0)
             {
+                // K23 ④ / K25：EUI005 放宽为「@code 或同名 partial 至少其一」
                 codeBehindDiags.Add(UiDiagnostics.Error(UiDiagnostics.CodeBehindMissing,
-                    $"no code-behind class '{className}' found; add a partial class with that name", UiSpan.Zero));
+                    $"no code-behind class '{className}' found and the template has no @code block; " +
+                    "add a partial class with that name or declare members in @code", UiSpan.Zero));
             }
-            else if (type.ContainingType is not null)
+            else if (type is not null && type.ContainingType is not null)
             {
                 codeBehindDiags.Add(UiDiagnostics.Error(UiDiagnostics.CodeBehindNested,
                     $"code-behind class '{className}' must be top-level", UiSpan.Zero));
             }
-            else if (!IsPartial(type))
+            else if (type is not null && !IsPartial(type))
             {
                 codeBehindDiags.Add(UiDiagnostics.Error(UiDiagnostics.CodeBehindNotPartial,
                     $"code-behind class '{className}' must be declared partial", UiSpan.Zero));
@@ -88,6 +107,11 @@ public sealed class TemplateGenerator : IIncrementalGenerator
         if (type is not null)
             ProbeCodeBehindConflicts(type, codeBehindDiags);
 
+        // K25：EUI045 扩展到 @code 成员——撞生成保留名（Build/Render/U{N}/R{N}/__el{N}/…）
+        // 报在 .ui 的 @code 块内成员位置。@code ↔ 同名 .cs 的冲突由 C# partial 规则兜底，不在这里报。
+        if (codeBlocks.Count > 0)
+            ProbeCodeMemberConflicts(codeBlocks, codeBehindDiags);
+
         // 自身组件（spec/02 §4.12.5）：code-behind 符号直接派生插槽表——目录里没有
         // code-behind 类的 def（基类由生成注入，源码不派生 Component），这是唯一权威来源。
         var own = ResolveOwnComponent(type, compilation);
@@ -95,28 +119,139 @@ public sealed class TemplateGenerator : IIncrementalGenerator
             ? ImmutableArray<UiSlotDef>.Empty
             : own.Value.Slots.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => kv.Value).ToImmutableArray();
 
-        // AST 不可值相等、不能跨缓存边界：这里解析只为喂探针，发射阶段再解析一次（前端纯函数，同文同果）。
-        var doc = FrontEnd.Parse(input.Text, input.Path, new List<UiDiagnostic>());
         // 探针读 Analyze 回写在 AST 上的 PropDef/ParamDef/ResolvedDef，必须先分析一遍（诊断丢弃，发射阶段重报）。
         FrontEnd.Analyze(doc, catalog, new List<UiDiagnostic>(),
             own is null ? null : slots.ToDictionary(slot => slot.Name, StringComparer.Ordinal),
             own?.DisplayName);
+
+        // R1/K21：先全量收集全部 @code 成员，合成 partial 类语法树加入探针 Compilation——
+        // 否则「模板在上、@code 在下」会让前置 {expr} 集体误报 EUI007/EUI024/EUI029/EUI037。
+        // K23 ④：无 code-behind 时类壳归属项目根命名空间（Razor 口径），探针树与成员树必须
+        // 用同一命名空间，否则 partial 类合并不了、探针看不到 @code 成员。
+        var effectiveNamespace = type is null ? SanitizeNamespace(rootNamespace) : NamespaceName(type);
+        var accessibility = type is null ? "public" : AccessibilityOf(type);
+        var memberTrees = BuildCodeMemberTrees(codeBlocks, type, className, effectiveNamespace, usings, compilation);
+        var probe = new TemplateProbe(compilation, type, className, effectiveNamespace, memberTrees, usings);
         var probeDiags = new List<UiDiagnostic>();
-        var itemTypes = type is null
-            ? ImmutableArray<ItemTypeFact>.Empty
-            : ProbeSemantics(doc, type, compilation, probeDiags)
+        var switchTypes = new List<SwitchTypeFact>();
+        if (type is not null || codeBlocks.Count > 0)
+        {
+            var itemTypes = ProbeSemantics(doc, probe, compilation, probeDiags, switchTypes)
                 .Select(kv => new ItemTypeFact(kv.Key.CollectionSpan.Start, kv.Value))
                 .OrderBy(fact => fact.SpanStart)
                 .ToImmutableArray();
 
+            return new UiFileFacts(
+                accessibility,
+                effectiveNamespace,
+                own?.DisplayName ?? "",
+                slots,
+                codeBehindDiags.ToImmutableArray(),
+                probeDiags.ToImmutableArray(),
+                itemTypes,
+                switchTypes.OrderBy(fact => fact.SpanStart).ToImmutableArray());
+        }
+
         return new UiFileFacts(
-            type is null ? "internal" : AccessibilityOf(type),
-            type is null ? "" : NamespaceName(type),
-            own?.DisplayName ?? "",
-            slots,
+            "internal", "", "", slots,
             codeBehindDiags.ToImmutableArray(),
             probeDiags.ToImmutableArray(),
-            itemTypes);
+            ImmutableArray<ItemTypeFact>.Empty,
+            ImmutableArray<SwitchTypeFact>.Empty);
+    }
+
+    /// <summary>K22：根层 @using 收集（按文档顺序去重）。</summary>
+    private static ImmutableArray<string> CollectUsings(IEnumerable<UiNode> nodes) =>
+        TemplateAnalyzer.CollectImports(nodes).ToImmutableArray();
+
+    /// <summary>
+    /// K21/K25：@code 成员与生成保留名的冲突（EUI045）。对块体原文做轻量成员名提取
+    /// （字段/属性/方法/嵌套类型声明的标识符），撞保留名报在 .ui 的成员 span；
+    /// 内容粒度的其余校验（语句合法性、与 .cs 的重复）由探针 Compilation 与 C# 兜底。
+    /// </summary>
+    private static void ProbeCodeMemberConflicts(IReadOnlyList<UiCodeBlock> blocks, List<UiDiagnostic> diags)
+    {
+        foreach (var block in blocks)
+        {
+            foreach (var (name, nameOffset, nameLength) in ExtractMemberNames(block.Code))
+            {
+                string? reason = name is "Build" or "Render"
+                    ? $"@code must not declare '{name}()'; the generator emits it"
+                    : IsGeneratedMemberName(name)
+                        ? $"@code member '{name}' collides with a generated member name"
+                        : null;
+                if (reason is null) continue;
+                var span = new UiSpan(block.CodeSpan.Start + nameOffset, nameLength);
+                diags.Add(UiDiagnostics.Error(UiDiagnostics.CodeBehindConflict, reason, span));
+            }
+        }
+    }
+
+    /// <summary>
+    /// 提取 @code 块体内的成员名（语法级扫描，不完整代码也尽力）：字段/属性/方法/嵌套类型
+    /// 声明位的标识符。返回 (名字, 在块体原文内的偏移, 长度)。
+    /// </summary>
+    private static IEnumerable<(string Name, int Offset, int Length)> ExtractMemberNames(string code)
+    {
+        var tree = CSharpSyntaxTree.ParseText(
+            "class __EuiProbe\n{\n" + code + "\n}");
+        var root = tree.GetCompilationUnitRoot();
+        var container = root.DescendantNodes().OfType<TypeDeclarationSyntax>().First();
+        foreach (var member in container.Members)
+        {
+            string? name = member switch
+            {
+                FieldDeclarationSyntax field => field.Declaration.Variables.FirstOrDefault()?.Identifier.ValueText,
+                PropertyDeclarationSyntax property => property.Identifier.ValueText,
+                MethodDeclarationSyntax method => method.Identifier.ValueText,
+                TypeDeclarationSyntax nested => nested.Identifier.ValueText,
+                EventDeclarationSyntax or EventFieldDeclarationSyntax => null,
+                _ => null,
+            };
+            if (string.IsNullOrEmpty(name)) continue;
+            MsTextSpan? csSpan = member switch
+            {
+                FieldDeclarationSyntax field => field.Declaration.Variables.FirstOrDefault()?.Identifier.GetLocation().SourceSpan,
+                PropertyDeclarationSyntax property => property.Identifier.GetLocation().SourceSpan,
+                MethodDeclarationSyntax method => method.Identifier.GetLocation().SourceSpan,
+                TypeDeclarationSyntax nested => nested.Identifier.GetLocation().SourceSpan,
+                _ => null,
+            };
+            if (csSpan is null) continue;
+            // 合成前缀 "class __EuiProbe\n{\n" 的长度
+            const int prefixLength = 20;
+            var offset = csSpan.Value.Start - prefixLength;
+            if (offset < 0 || offset + csSpan.Value.Length > code.Length) continue;
+            yield return (name!, offset, csSpan.Value.Length);
+        }
+    }
+
+    /// <summary>
+    /// R1/K21：把全部 @code 块合成一棵 partial 类语法树（含模板 @using 的 using 行），
+    /// 供探针 Compilation 注入——保证后置块成员对前置表达式同样可见。
+    /// 命名空间由调用方给定（code-behind 的命名空间，或单文件形态的项目根命名空间）。
+    /// </summary>
+    private static ImmutableArray<SyntaxTree> BuildCodeMemberTrees(
+        IReadOnlyList<UiCodeBlock> blocks, INamedTypeSymbol? type, string className,
+        string namespaceName, ImmutableArray<string> usings, Compilation compilation)
+    {
+        if (blocks.Count == 0) return ImmutableArray<SyntaxTree>.Empty;
+        var sb = new StringBuilder();
+        sb.AppendLine("#nullable enable");
+        foreach (var ns in usings)
+            sb.AppendLine($"using {ns};");
+        if (namespaceName.Length > 0)
+            sb.Append("namespace ").AppendLine(namespaceName + ";");
+        var accessibility = type is null || type.DeclaredAccessibility == Accessibility.Public ? "public" : "internal";
+        sb.Append(accessibility).Append(" partial class ").AppendLine(type?.Name ?? className);
+        sb.AppendLine("{");
+        foreach (var block in blocks)
+            sb.AppendLine(block.Code);
+        sb.AppendLine("}");
+
+        var parseOptions = compilation.SyntaxTrees.FirstOrDefault()?.Options as CSharpParseOptions
+            ?? CSharpParseOptions.Default;
+        return ImmutableArray.Create<SyntaxTree>(CSharpSyntaxTree.ParseText(sb.ToString(), parseOptions));
     }
 
     private static void ExecuteFile(SourceProductionContext spc, UiFileInput input,
@@ -152,10 +287,15 @@ public sealed class TemplateGenerator : IIncrementalGenerator
         }
         if (hasErrors) return;
 
+        // K22/K21/K29：@using、@code 块与 @switch 值类型随发射交给 Emitter
+        // （doc 在这里重解析，与 ExtractFacts 的解析同输入同结果）。
         var code = new Emitter(doc,
             facts.Accessibility, facts.Namespace, className,
             facts.ItemTypes.ToDictionary(fact => fact.SpanStart, fact => fact.Type),
-            input.Path, ownSlots).Emit();
+            input.Path, ownSlots,
+            facts.SwitchTypes.ToDictionary(fact => fact.SpanStart, fact => fact.Type),
+            TemplateAnalyzer.CollectImports(doc.Nodes),
+            doc.Nodes.OfType<UiCodeBlock>().ToList()).Emit();
 
         spc.AddSource($"{className}.{StableHash(input.Path)}.g.cs", code);
     }
@@ -349,6 +489,14 @@ public sealed class TemplateGenerator : IIncrementalGenerator
     private static string NamespaceName(INamedTypeSymbol type) =>
         type.ContainingNamespace.IsGlobalNamespace ? "" : type.ContainingNamespace.ToDisplayString();
 
+    /// <summary>
+    /// K23 ④：项目根命名空间仅在每段都是合法标识符时采用（MSBuild 可能给出空串或
+    /// 带点的占位值）；不合法落 global 命名空间，交由生成代码的可见性自然成立。
+    /// </summary>
+    private static string SanitizeNamespace(string rootNamespace) =>
+        string.IsNullOrWhiteSpace(rootNamespace) ? "" :
+        rootNamespace.Split('.').All(SyntaxFacts.IsValidIdentifier) ? rootNamespace : "";
+
     private static ITypeSymbol? ElementTypeOf(ITypeSymbol type, Compilation compilation)
     {
         if (type is IArrayTypeSymbol array) return array.ElementType;
@@ -364,14 +512,15 @@ public sealed class TemplateGenerator : IIncrementalGenerator
     }
 
     /// <summary>
-    /// 逐块推断 item 类型，并校验每个 <c>@bind</c> 源：两者都把表达式放进合成 partial 方法体，
-    /// 借 code-behind 的符号上下文让 Roslyn 回答；外层 item 以局部变量注入，支持嵌套作用域。
+    /// 逐块推断 item 类型与 @switch selector 类型，并校验每个 <c>@bind</c> 源：都把表达式放进
+    /// 合成 partial 方法体，借探针 Compilation（含 @code 成员合成树，R1）的符号上下文让 Roslyn 回答；
+    /// 外层 item 以局部变量注入，支持嵌套作用域。
     /// </summary>
     private static Dictionary<UiForeach, string> ProbeSemantics(
-        UiDocument doc, INamedTypeSymbol type, Compilation compilation, List<UiDiagnostic> diags)
+        UiDocument doc, TemplateProbe probe, Compilation compilation, List<UiDiagnostic> diags,
+        List<SwitchTypeFact> switchTypes)
     {
         var itemTypes = new Dictionary<UiForeach, string>();
-        var probe = new TemplateProbe(compilation, type);
         var env = new List<(ITypeSymbol Type, string Name)>();
         Walk(doc.Nodes, env);
         return itemTypes;
@@ -387,6 +536,7 @@ public sealed class TemplateGenerator : IIncrementalGenerator
                         {
                             ValidateBindSource(attr, probe, scope, diags);
                             ValidateRefTarget(element, attr, probe, scope, diags);
+                            ValidateEventHandlerSignature(attr, probe, scope, diags);
                         }
                         Walk(element.Children, scope);
                         break;
@@ -397,6 +547,11 @@ public sealed class TemplateGenerator : IIncrementalGenerator
                         break;
                     case UiIf ifNode:
                         Walk(ifNode.Children, scope);
+                        foreach (var elseIf in ifNode.ElseIfs) Walk(elseIf.Children, scope);
+                        if (ifNode.ElseChildren is not null) Walk(ifNode.ElseChildren, scope);
+                        break;
+                    case UiSwitch switchNode:
+                        ProbeSwitch(switchNode, probe, compilation, scope, diags, switchTypes);
                         break;
                     case UiForeach foreachNode:
                         var collectionType = probe.InferType(foreachNode.Collection, scope);
@@ -418,6 +573,32 @@ public sealed class TemplateGenerator : IIncrementalGenerator
                         Walk(foreachNode.Children, inner);
                         break;
                 }
+            }
+        }
+    }
+
+    /// <summary>
+    /// @switch 的探针（K29）：推断 selector 类型（SwitchBlock&lt;T&gt; 的 T，失败静默交 C#）；
+    /// 对每个 case 标签做编译期常量校验（EUI047 语义级——const 声明探针；语法层形态校验已在
+    /// Parser 完成）。符号未解析/表达式内部错误静默，交 C# 经 #line 兜底。
+    /// </summary>
+    private static void ProbeSwitch(UiSwitch switchNode, TemplateProbe probe, Compilation compilation,
+        IReadOnlyList<(ITypeSymbol Type, string Name)> scope, List<UiDiagnostic> diags,
+        List<SwitchTypeFact> switchTypes)
+    {
+        var valueType = probe.InferType(switchNode.Value, scope);
+        if (valueType is not null && valueType.TypeKind != TypeKind.Error && valueType is not IDynamicTypeSymbol)
+            switchTypes.Add(new SwitchTypeFact(
+                switchNode.ValueSpan.Start, valueType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)));
+
+        foreach (var section in switchNode.Sections)
+        {
+            if (section.IsDefault || valueType is null) continue;
+            if (!probe.IsConstant(section.Label, valueType, scope, out var reason))
+            {
+                diags.Add(UiDiagnostics.Error(UiDiagnostics.CaseLabelNotConstant,
+                    $"case label '{section.Label}' is not a compile-time constant: {reason}",
+                    section.LabelSpan));
             }
         }
     }
@@ -457,22 +638,73 @@ public sealed class TemplateGenerator : IIncrementalGenerator
                 $"Ref target '{attr.RefTarget}' is invalid: {reason}", attr.ValueSpan));
     }
 
+    /// <summary>
+    /// EUI024（spec/02 §4.6.1 规则 7、spec/01 §6.2）：把处理器表达式放进 code-behind 的
+    /// 符号上下文，让 Roslyn 判定它能否转换为生成代码将要 cast 的目标委托类型。
+    /// 触发面刻意收窄：只有「表达式自身语义干净 + 委托转换确定失败」才报；符号未解析、
+    /// 方法重载失败、dynamic、以及其它表达式内错误一律返回「静态不可判定」，交给 C#
+    /// 经 #line 兜底（§2.4 规则 8：生成器不得重复报告 C# 类型错误）。
+    /// 字面量/@bind 由 EUI004/EUI040 负责，这里不重复报。
+    /// </summary>
+    private static void ValidateEventHandlerSignature(UiAttribute attr, TemplateProbe probe,
+        IReadOnlyList<(ITypeSymbol Type, string Name)> env, List<UiDiagnostic> diags)
+    {
+        string? delegateType = null;
+        if (attr.EventDef is not null)
+            delegateType = Emitter.EventHandlerType(attr.Value);   // 与生成代码同一结论
+        else if (attr.ParamDef is { IsDelegate: true } p)
+            delegateType = p.ClrTypeDisplayName;                   // 组件委托目标类型来自目录
+        if (delegateType is null) return;
+        if (attr.IsBind || attr.Kind != AttrValueKind.Expression || string.IsNullOrWhiteSpace(attr.Value)) return;
+
+        var compatible = probe.IsHandlerCompatible(attr.Value, delegateType, env, out var reason);
+        if (compatible is not false) return;   // true = 兼容；null = 不可静态判定，C# 兜底
+
+        diags.Add(UiDiagnostics.Error(UiDiagnostics.EventHandlerSignature,
+            $"event handler '{attr.Value.Trim()}' does not match the delegate '{delegateType}': {reason}",
+            attr.ValueSpan));
+    }
+
+    /// <summary>
+    /// 探针：把表达式放进合成 partial 方法体，借 Roslyn 的符号上下文回答类型/可写性/
+    /// 委托转换/常量性。R1/K21：构造时注入全部 @code 成员合成树（含模板 using 行），
+    /// 每次 Augment 时一并加入派生 Compilation——保证后置 @code 成员对前置 {expr} 同样可见。
+    /// </summary>
     private sealed class TemplateProbe
     {
         private readonly Compilation _compilation;
-        private readonly INamedTypeSymbol _type;
+        private readonly INamedTypeSymbol? _type;
+        private readonly string _className;
+        private readonly string _namespace;
+        private readonly ImmutableArray<SyntaxTree> _memberTrees;
+        private readonly ImmutableArray<string> _usings;
         private int _counter;
 
-        public TemplateProbe(Compilation compilation, INamedTypeSymbol type)
+        public TemplateProbe(Compilation compilation, INamedTypeSymbol? type, string className,
+            string namespaceName, ImmutableArray<SyntaxTree> memberTrees, ImmutableArray<string> usings)
         {
             _compilation = compilation;
             _type = type;
+            _className = className;
+            _namespace = namespaceName;
+            _memberTrees = memberTrees;
+            _usings = usings;
+        }
+
+        /// <summary>
+        /// 派生 Compilation：@code 成员合成树（K21，通常为空——多数模板没有 @code）+ 探针树。
+        /// 同一棵 memberTree 实例加入多次派生 Compilation 是安全的（树不可变）。
+        /// </summary>
+        private Compilation Augment(SyntaxTree tree)
+        {
+            var result = _memberTrees.IsEmpty ? _compilation : _compilation.AddSyntaxTrees(_memberTrees);
+            return result.AddSyntaxTrees(tree);
         }
 
         public ITypeSymbol? InferType(string expression, IReadOnlyList<(ITypeSymbol Type, string Name)> env)
         {
             var tree = ProbeTree("var __value = (" + expression + ");", env);
-            var augmented = _compilation.AddSyntaxTrees(tree);
+            var augmented = Augment(tree);
             var model = augmented.GetSemanticModel(tree);
             var method = tree.GetRoot().DescendantNodes().OfType<MethodDeclarationSyntax>().LastOrDefault();
             if (method is null) return null;
@@ -508,7 +740,7 @@ public sealed class TemplateGenerator : IIncrementalGenerator
 
             var tree = ProbeTree($"{expression} = __bindValue;", env,
                 $"        {ClrTypeOf(targetClrType)} __bindValue = default!;");
-            var augmented = _compilation.AddSyntaxTrees(tree);
+            var augmented = Augment(tree);
             var model = augmented.GetSemanticModel(tree);
             var assignment = tree.GetRoot().DescendantNodes().OfType<AssignmentExpressionSyntax>().FirstOrDefault();
             if (assignment is null)
@@ -568,7 +800,7 @@ public sealed class TemplateGenerator : IIncrementalGenerator
 
             var tree = ProbeTree($"{target} = __refValue;", env,
                 $"        {ClrTypeOf(valueClrType)} __refValue = default!;");
-            var augmented = _compilation.AddSyntaxTrees(tree);
+            var augmented = Augment(tree);
             var model = augmented.GetSemanticModel(tree);
             var assignment = tree.GetRoot().DescendantNodes().OfType<AssignmentExpressionSyntax>().FirstOrDefault();
             if (assignment is null)
@@ -609,6 +841,89 @@ public sealed class TemplateGenerator : IIncrementalGenerator
             }
 
             reason = null;
+            return true;
+        }
+
+        /// <summary>
+        /// 「委托转换」类 C# 错误：这些说明表达式本身可解析，但签/形态与目标委托不匹配。
+        /// 其它错误（CS0103 未解析、CS1501/CS1503 表达式内部调用失败等）一律视为
+        /// 静态不可判定，交回生成代码经 #line 由 C# 报告。
+        /// </summary>
+        private static readonly HashSet<string> DelegateConversionErrors = new(StringComparer.Ordinal)
+        {
+            "CS0029", "CS0030", "CS0123", "CS1593",
+            "CS1660", "CS1661", "CS1678", "CS0411", "CS0428", "CS0119",
+        };
+
+        /// <summary>
+        /// true = 可转换为目标委托；false = 确定不匹配（可报 EUI024）；
+        /// null = 静态不可判定（符号/上下文不足），由 C# 经 #line 兜底。
+        /// 复用 <see cref="ProbeTree"/>：与 EUI037/EUI029 同一套合成 partial 方法体机制。
+        /// </summary>
+        public bool? IsHandlerCompatible(string expression, string delegateType,
+            IReadOnlyList<(ITypeSymbol Type, string Name)> env, out string? reason)
+        {
+            reason = null;
+            expression = expression.Trim();
+            if (expression.Length == 0) return null;
+
+            var target = ClrTypeOf(delegateType);
+            var tree = ProbeTree("var __handler = (" + target + ")(" + expression + ")", env);
+            var model = Augment(tree).GetSemanticModel(tree);
+            var initializer = tree.GetRoot().DescendantNodes().OfType<VariableDeclaratorSyntax>()
+                .FirstOrDefault(v => v.Identifier.ValueText == "__handler")?.Initializer?.Value;
+            if (initializer is not CastExpressionSyntax cast) return null;
+            var inner = cast.Expression;
+
+            // (1) 表达式自身必须语义干净。方法组转换失败时 Symbol 可能为 null 但候选非空，
+            //     因此只把「零候选」当作未解析；歧义/重载失败留给下面的错误分类处理。
+            foreach (var name in inner.DescendantNodesAndSelf().OfType<SimpleNameSyntax>())
+            {
+                var info = model.GetSymbolInfo(name);
+                if (info.Symbol is null && info.CandidateSymbols.Length == 0) return null;
+                if (info.Symbol is IErrorTypeSymbol) return null;
+            }
+            if (model.GetTypeInfo(inner).Type is IErrorTypeSymbol or IDynamicTypeSymbol) return null;
+
+            // (2) 落在 cast 内的 Error 必须全部是委托转换类；否则说明表达式本身有问题。
+            string? failure = null;
+            foreach (var diagnostic in model.GetDiagnostics())
+            {
+                if (diagnostic.Severity != RoslynSeverity.Error) continue;
+                if (!cast.Span.Contains(diagnostic.Location.SourceSpan)) continue;
+                if (!DelegateConversionErrors.Contains(diagnostic.Id)) return null;
+                failure ??= $"{diagnostic.GetMessage()} ({diagnostic.Id})";
+            }
+
+            if (failure is null) return true;
+            reason = failure;
+            return false;
+        }
+
+        /// <summary>
+        /// K29/EUI047：case 标签编译期常量校验——把 <c>const T __caseKey = expr</c> 放进探针，
+        /// 只有 CS0133（"must be constant"）落在声明上才判非常量；类型不匹配、符号未解析等
+        /// 其它错误静默返回 true，交生成代码经 #line 由 C# 兜底（§2.4 规则 8：不重复报 C# 错）。
+        /// </summary>
+        public bool IsConstant(string expression, ITypeSymbol targetType,
+            IReadOnlyList<(ITypeSymbol Type, string Name)> env, out string? reason)
+        {
+            reason = null;
+            var tree = ProbeTree(
+                "const " + ClrTypeOf(targetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)) +
+                " __caseKey = " + expression, env);
+            var model = Augment(tree).GetSemanticModel(tree);
+            var declarator = tree.GetRoot().DescendantNodes().OfType<VariableDeclaratorSyntax>()
+                .FirstOrDefault(v => v.Identifier.ValueText == "__caseKey");
+            if (declarator?.Initializer is null) return true;
+            foreach (var diagnostic in model.GetDiagnostics())
+            {
+                if (diagnostic.Id != "CS0133" ||
+                    diagnostic.Severity != RoslynSeverity.Error ||
+                    !declarator.Span.Contains(diagnostic.Location.SourceSpan)) continue;
+                reason = "use a literal, a const field, an enum member or a constant expression";
+                return false;
+            }
             return true;
         }
 
@@ -654,19 +969,25 @@ public sealed class TemplateGenerator : IIncrementalGenerator
             _ => clrType.StartsWith("global::", StringComparison.Ordinal) ? clrType : "global::" + clrType,
         };
 
-        /// <summary>合成探针方法：与 code-behind 同命名空间的 partial 类，item 以局部变量注入。</summary>
+        /// <summary>
+        /// 合成探针方法：与 code-behind（或 @code 类壳，K23 ④）同命名空间的 partial 类，
+        /// item 以局部变量注入。模板 @using 逐行输出——using 是语法树局部的，成员合成树里的
+        /// using 行帮不到本树的表达式，两边都要有。
+        /// </summary>
         private SyntaxTree ProbeTree(string statement, IReadOnlyList<(ITypeSymbol Type, string Name)> env,
             string? preamble = null)
         {
             var sb = new StringBuilder();
             sb.AppendLine("#nullable enable");
-            if (!_type.ContainingNamespace.IsGlobalNamespace)
+            foreach (var ns in _usings)
+                sb.AppendLine($"using {ns};");
+            if (_namespace.Length > 0)
             {
-                sb.Append("namespace ").Append(_type.ContainingNamespace.ToDisplayString()).AppendLine(";");
+                sb.Append("namespace ").Append(_namespace).AppendLine(";");
                 sb.AppendLine();
             }
-            sb.Append(_type.DeclaredAccessibility == Accessibility.Public ? "public" : "internal")
-                .Append(" partial class ").Append(_type.Name).AppendLine();
+            sb.Append(_type is null || _type.DeclaredAccessibility != Accessibility.Public ? "internal" : "public")
+                .Append(" partial class ").Append(_type?.Name ?? _className).AppendLine();
             sb.AppendLine("{");
             sb.Append("    private void __EclipseUiProbe").Append(_counter++).AppendLine("()");
             sb.AppendLine("    {");
@@ -722,6 +1043,9 @@ internal sealed record UiFileInput(string Path, string Text);
 
 internal sealed record ItemTypeFact(int SpanStart, string Type);
 
+/// <summary>@switch selector 的值类型事实（K29）：ValueSpan.Start → 全限定类型名。</summary>
+internal sealed record SwitchTypeFact(int SpanStart, string Type);
+
 /// <summary>逐文件语义事实：值相等是增量缓存的前提（ImmutableArray 默认引用相等，必须逐元素比）。</summary>
 internal sealed record UiFileFacts(
     string Accessibility,
@@ -730,7 +1054,8 @@ internal sealed record UiFileFacts(
     ImmutableArray<UiSlotDef> Slots,
     ImmutableArray<UiDiagnostic> CodeBehindDiags,
     ImmutableArray<UiDiagnostic> ProbeDiags,
-    ImmutableArray<ItemTypeFact> ItemTypes)
+    ImmutableArray<ItemTypeFact> ItemTypes,
+    ImmutableArray<SwitchTypeFact> SwitchTypes)
 {
     public bool Equals(UiFileFacts? other) =>
         other is not null &&
@@ -740,7 +1065,8 @@ internal sealed record UiFileFacts(
         Slots.SequenceEqual(other.Slots) &&
         CodeBehindDiags.SequenceEqual(other.CodeBehindDiags) &&
         ProbeDiags.SequenceEqual(other.ProbeDiags) &&
-        ItemTypes.SequenceEqual(other.ItemTypes);
+        ItemTypes.SequenceEqual(other.ItemTypes) &&
+        SwitchTypes.SequenceEqual(other.SwitchTypes);
 
     public override int GetHashCode()
     {
@@ -752,6 +1078,7 @@ internal sealed record UiFileFacts(
         foreach (var diag in CodeBehindDiags) hash = Add(hash, diag);
         foreach (var diag in ProbeDiags) hash = Add(hash, diag);
         foreach (var fact in ItemTypes) hash = Add(hash, fact);
+        foreach (var fact in SwitchTypes) hash = Add(hash, fact);
         return hash;
 
         // netstandard2.0 没有 System.HashCode，与 CatalogValueEq 同口径累加。

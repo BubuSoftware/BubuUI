@@ -106,6 +106,7 @@ public class LineSpanMappingTests
     {
         const string uiPath = "C:\\templates\\Probe.ui";
         const string ui = """
+            @using EclipseUI.Elements
             <StackPanel Gap={gap}>
                 <TextBlock>{message}</TextBlock>
                 @if (flag) {
@@ -151,7 +152,7 @@ public class LineSpanMappingTests
         const string uiPath = "C:\\templates\\Probe.ui";
         const string pad = "                                        "; // 40 空格
         const string prefix = "<StackPanel Gap={";
-        var ui = pad + prefix + "gap}>\n" + pad + "    <TextBlock>{message}</TextBlock>\n" + pad + "</StackPanel>";
+        var ui = "@using EclipseUI.Elements\n" + pad + prefix + "gap}>\n" + pad + "    <TextBlock>{message}</TextBlock>\n" + pad + "</StackPanel>";
         const string codeBehind = """
             public partial class Probe
             {
@@ -165,7 +166,7 @@ public class LineSpanMappingTests
         var error = Assert.Single(output.GetDiagnostics(), d => d.Id == "CS0029");
         var mapped = error.Location.GetMappedLineSpan();
         Assert.Equal(uiPath, mapped.Path);
-        Assert.Equal(0, mapped.StartLinePosition.Line);
+        Assert.Equal(1, mapped.StartLinePosition.Line);   // 第 0 行是 @using 前缀（K22 迁移）
         Assert.Equal(pad.Length + prefix.Length, mapped.StartLinePosition.Character);
     }
 }

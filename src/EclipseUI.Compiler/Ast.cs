@@ -130,6 +130,22 @@ public sealed class UiIf : UiNode
     public string Condition { get; set; } = "";
     public TextSpan ConditionSpan { get; set; }
     public List<UiNode> Children { get; set; } = new();
+
+    // 多分支（K23 ③ / D87）：else if 链与 else 体。单分支（两者皆空）保持
+    // SetCondition/SetContent 生成形态不变（golden 稳定）；多分支生成 AddBranch/SetDefault。
+    public List<UiElseIf> ElseIfs { get; } = new();
+    public List<UiNode>? ElseChildren { get; set; }
+
+    public bool HasElseChain => ElseIfs.Count > 0 || ElseChildren is not null;
+}
+
+/// <summary><c>else if (cond) { … }</c> 续接分支（不带 @，K23 ③）。</summary>
+public sealed class UiElseIf
+{
+    public string Condition { get; set; } = "";
+    public TextSpan ConditionSpan { get; set; }
+    public TextSpan Span { get; set; }
+    public List<UiNode> Children { get; set; } = new();
 }
 
 public sealed class UiForeach : UiNode
@@ -138,6 +154,58 @@ public sealed class UiForeach : UiNode
     public string Collection { get; set; } = "";
     public TextSpan CollectionSpan { get; set; }
     public List<UiNode> Children { get; set; } = new();
+}
+
+/// <summary>
+/// <c>@code { … }</c>（K21/K23 ④，D86）：文档顶层的类成员区域，原文透传进 partial 类。
+/// 位置不限、可多个块、书写顺序不影响成员可见性（生成器先全量收集再建探针 Compilation）。
+/// </summary>
+public sealed class UiCodeBlock : UiNode
+{
+    /// <summary>块体原文（不含定界大括号）。</summary>
+    public string Code { get; set; } = "";
+
+    /// <summary>块体原文在 .ui 中的 span（#line 映射与 EUI045 位置回映用）。</summary>
+    public TextSpan CodeSpan { get; set; }
+}
+
+/// <summary>
+/// <c>@using {Namespace}</c>（K22，D85）：文档顶层指令，多条、位置不限；
+/// 生成文件头按模板顺序去重输出普通 <c>using Ns;</c>，标签只在导入命名空间内解析。
+/// </summary>
+public sealed class UiUsingDirective : UiNode
+{
+    public string Namespace { get; set; } = "";
+    public TextSpan NamespaceSpan { get; set; }
+}
+
+/// <summary>
+/// <c>@switch (value) { case CONST: … break; default: … break; }</c>（K23 ③/K29，D87）。
+/// 无贯穿语义：每个 section 是独立分支，但非空 section 仍要求 <c>break;</c>（K29 ③）。
+/// </summary>
+public sealed class UiSwitch : UiNode
+{
+    public string Value { get; set; } = "";
+    public TextSpan ValueSpan { get; set; }
+    public List<UiSwitchSection> Sections { get; } = new();
+}
+
+/// <summary>@switch 的单个 case/default 分支（K29：分支体为完整内容模板）。</summary>
+public sealed class UiSwitchSection
+{
+    public bool IsDefault { get; set; }
+
+    /// <summary>case 标签原文（编译期常量表达式；default 分支为空）。</summary>
+    public string Label { get; set; } = "";
+
+    /// <summary>标签原文 span（AddCase 调用行的 #line 映射目标）。</summary>
+    public TextSpan LabelSpan { get; set; }
+
+    /// <summary>section 头（case/default 行）的 span（诊断位置）。</summary>
+    public TextSpan HeaderSpan { get; set; }
+
+    public List<UiNode> Children { get; } = new();
+    public bool HasBreak { get; set; }
 }
 
 public sealed class UiDocument

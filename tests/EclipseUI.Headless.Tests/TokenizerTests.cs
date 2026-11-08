@@ -29,7 +29,7 @@ public class TokenizerTests
     [Fact]
     public void Header_StandardForm_ParsesNameAndCollection()
     {
-        var (doc, diags) = Parse("""<StackPanel>@foreach (var item in items) { <TextBlock /> }</StackPanel>""");
+        var (doc, diags) = Parse("@using EclipseUI.Elements\n" + """<StackPanel>@foreach (var item in items) { <TextBlock /> }</StackPanel>""");
         Assert.Empty(diags);
         var node = SingleForeach(doc);
         Assert.Equal("item", node.VarName);
@@ -41,7 +41,7 @@ public class TokenizerTests
     {
         // 旧正则把带引号的 " in " 当分隔符，集合被切成 `" in "))` 后必然报 EUI007。
         var (doc, diags) = Parse(
-            """<StackPanel>@foreach (var t in names.Where(n => n.Contains(" in "))) { <TextBlock /> }</StackPanel>""");
+            "@using EclipseUI.Elements\n" + """<StackPanel>@foreach (var t in names.Where(n => n.Contains(" in "))) { <TextBlock /> }</StackPanel>""");
         Assert.Empty(diags);
         var node = SingleForeach(doc);
         Assert.Equal("t", node.VarName);
@@ -52,7 +52,7 @@ public class TokenizerTests
     public void Header_InInsideParens_KeepsCollectionIntact()
     {
         // `M(in x)` 的实参修饰符在深度内，不得当分隔符（词边界+深度判定）。
-        var (doc, diags) = Parse("""<StackPanel>@foreach (var t in Store.Get(in key)) { <TextBlock /> }</StackPanel>""");
+        var (doc, diags) = Parse("@using EclipseUI.Elements\n" + """<StackPanel>@foreach (var t in Store.Get(in key)) { <TextBlock /> }</StackPanel>""");
         Assert.Empty(diags);
         var node = SingleForeach(doc);
         Assert.Equal("Store.Get(in key)", node.Collection);
@@ -61,7 +61,7 @@ public class TokenizerTests
     [Fact]
     public void Header_TypedItem_IsSyntaxWithTypedMessage()
     {
-        var (_, diags) = Parse("""<StackPanel>@foreach (Name t in ts) { <TextBlock /> }</StackPanel>""");
+        var (_, diags) = Parse("@using EclipseUI.Elements\n" + """<StackPanel>@foreach (Name t in ts) { <TextBlock /> }</StackPanel>""");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.Syntax, diag.Code);
         Assert.Contains("typed item", diag.Message);
@@ -71,12 +71,12 @@ public class TokenizerTests
     [Fact]
     public void Header_Deconstruction_IsSyntaxWithDeconstructionMessage()
     {
-        var (_, diags) = Parse("""<StackPanel>@foreach ((a, b) in pairs) { <TextBlock /> }</StackPanel>""");
+        var (_, diags) = Parse("@using EclipseUI.Elements\n" + """<StackPanel>@foreach ((a, b) in pairs) { <TextBlock /> }</StackPanel>""");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.Syntax, diag.Code);
         Assert.Contains("deconstruction", diag.Message);
 
-        var (_, diags2) = Parse("""<StackPanel>@foreach (var (a, b) in kvs) { <TextBlock /> }</StackPanel>""");
+        var (_, diags2) = Parse("@using EclipseUI.Elements\n" + """<StackPanel>@foreach (var (a, b) in kvs) { <TextBlock /> }</StackPanel>""");
         var diag2 = Assert.Single(diags2);
         Assert.Equal(UiDiagnostics.Syntax, diag2.Code);
         Assert.Contains("deconstruction", diag2.Message);
@@ -85,7 +85,7 @@ public class TokenizerTests
     [Fact]
     public void Header_MissingIn_IsGenericSyntax()
     {
-        var (_, diags) = Parse("""<StackPanel>@foreach (var t ts) { <TextBlock /> }</StackPanel>""");
+        var (_, diags) = Parse("@using EclipseUI.Elements\n" + """<StackPanel>@foreach (var t ts) { <TextBlock /> }</StackPanel>""");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.Syntax, diag.Code);
         Assert.Contains("@foreach requires", diag.Message);
@@ -94,7 +94,7 @@ public class TokenizerTests
     [Fact]
     public void Header_MissingCollection_IsGenericSyntax()
     {
-        var (_, diags) = Parse("""<StackPanel>@foreach (var t in) { <TextBlock /> }</StackPanel>""");
+        var (_, diags) = Parse("@using EclipseUI.Elements\n" + """<StackPanel>@foreach (var t in) { <TextBlock /> }</StackPanel>""");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.Syntax, diag.Code);
         Assert.Contains("@foreach requires", diag.Message);

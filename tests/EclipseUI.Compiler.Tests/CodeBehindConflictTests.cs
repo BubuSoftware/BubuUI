@@ -16,7 +16,7 @@ namespace EclipseUI.Compiler.Tests;
 public class CodeBehindConflictTests
 {
     private const string UiPath = "C:\\templates\\Probe.ui";
-    private const string Ui = "<StackPanel><TextBlock>hi</TextBlock></StackPanel>";
+    private const string Ui = "@using EclipseUI.Elements\n<StackPanel><TextBlock>hi</TextBlock></StackPanel>";
 
     private sealed class UiAdditionalText : AdditionalText
     {
@@ -168,7 +168,7 @@ public class CodeBehindConflictTests
     [Fact]
     public void OtherErrorsStillSuppressGeneratedSource()
     {
-        var result = Run("public partial class Probe { private void Build() { } }", "<UnknownTag />");
+        var result = Run("public partial class Probe { private void Build() { } }", "@using EclipseUI.Elements\n<UnknownTag />");
 
         Assert.Contains(result.Diagnostics, d => d.Id == "EUI001");
         Assert.Contains(result.Diagnostics, d => d.Id == "EUI045");

@@ -1,3 +1,5 @@
+@using EclipseUI.Elements
+
 <StackPanel Gap="4">
     <TextBlock FontSize="20">Tasks</TextBlock>
     @foreach (var t in tasks) {

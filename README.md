@@ -55,14 +55,37 @@
 > 358 个测试全绿（Headless 167 / Compiler 130 / Rendering 61）。
 > **C6 具名插槽切片已通过（2026-11-05）**：消费侧 `<Slot>` 与宿主侧 `<ContentSlot>`、
 > EUI022 家族、两级插槽解析与基链同名成员胜出规则（D75/D76），落地记录
-> [14 §14.12.6](./design/14-control-template-contract.md)；附加属性与泛型标签实拆留 G4。
-> **G3 六个小切片已通过（2026-11-05 – 11-08）**：块布局透明（D77，条目按最近布局祖先的 `Gap` 落位）、
+> [14 §14.12.6](./design/14-control-template-contract.md)；附加属性实拆留 G4，泛型标签暂缓实现（K19，不排期）。
+> **G3 七个小切片已通过（2026-11-05 – 11-08）**：块布局透明（D77，条目按最近布局祖先的 `Gap` 落位）、
 > `Adopt` 接管失效迁移（D78，修掉 GalleryApp 空 Tasks 卡）、按文件增量生成（单 `.ui` 变化只重跑该文件）、
 > `#line` 列映射（D79，span 型指令 + `CS8939` 防护，类型错误可落回 `.ui` 行列）、
 > `EUI045` code-behind 冲突诊断（D57/D80，诊断落在 C# 声明处，生成器不改名也不跳过输出）、
-> 诊断出口补全（D74 ②/D81，元数据问题落在 C# 声明处；标签冲突/不可用分流 EUI016/017/018/030）。
-> 470 个测试全绿（Headless 207 / Compiler 202 / Rendering 61）。
-> EUI024 签名匹配、样式主题与 IDE 支持为后续工作。
+> 诊断出口补全（D74 ②/D81，元数据问题落在 C# 声明处；标签冲突/不可用分流 EUI016/017/018/030）、
+> **EUI024 事件处理器签名匹配（D82，2026-11-08）**——借 Roslyn 把处理器表达式放进 code-behind
+> 符号上下文，仅「表达式自身语义干净 + 对目标委托的转换确定失败」时报 Error 于 `.ui` 属性值并
+> 短路生成输出，符号未解析/重载失败/`dynamic`/表达式内部错误静默交回生成代码经 `#line` 由 C# 报错；
+> `EventHandlerSignatureTests` 16 例，G3 至此全部收敛。
+> **497 个测试全绿（Headless 214 / Compiler 218 / Rendering 65）**。
+>
+> **S4/S5 运行时硬化与 G2 CPU 侧部分落地（2026-11-08，D83/D84）**：运行时 `IValueBox`/`ValueBox<T>`
+> 让重复赋值只改泛型字段、消除值类型装箱，`Component.Dispose` 锁内清 pending 队列（`RuntimeHardeningTests` 7 例）；
+> CPU 侧新增 `PixelGoldenTests` 4 例（纯图元、无字体依赖的像素 golden）+ `RetainedFrameCompositor.cs`
+> （按 `FrameDamage` 只 blit 脏区的 retained 合成原型）+ `tools/bench-60fps.ps1` 与目标机报告模板。
+> **边界**：合成原型不减少光栅化，真正局部重绘需 `IRenderBackend.Render` 脏区/scissor 重载
+> （VelloSharp 0.5.0-alpha.3 无公开 API）；GPU retained layer 依赖 HWND + wgpu device，本机无法验证；
+> 「稳定 60fps」结论依赖目标机真实显示器（本机 29Hz 虚拟显示），只能给可复现测量程序与报告模板；
+> 像素探针 DSL 仍缺。余项：S4/S5（Element.Unmount 属 G4、AOT/裁剪、旧语法清理、最终审计、
+> 帧预算/分配预算门槛、CI）、G2（GPU retained layer/真正局部重绘、目标机稳定 60fps 结论、
+> 像素探针 DSL、CPU/GPU 交叉一致性门禁）、G4（样式/主题/附加属性；泛型标签暂缓 K19）、IDE/DevTools。
+
+> **S6 语法对齐（✅ 已实现 2026-11-08，K23 + K24–K29）**：`.ui` 语法表面向 Blazor/Razor 对齐——
+> 模板 `@using`（内置控件也须导入、生成代码保留 using，K22）、`@code` 单文件「代码 + 模板」（位置不限，K21）、
+> `else`/`else if`/`@switch` 流程控制、`@* *@` 注释；**不做** `@page`/`@rendermode`/`@inject` 等 Web 指令，
+> **不复用 Razor 编译器与 Blazor 运行时**，K1–K18 保留元素树 + 失效重算模型不变。
+> 目标语法见 [spec/01 §1.5](./spec/01-template-syntax.md)，权威决策见 [spec/02 §14](./spec/02-generated-code-contract.md)，
+> 偏差 D85–D88 已收敛（见 [spec/02 §12](./spec/02-generated-code-contract.md#12-实现偏差台账-d42d88)），
+> 计划见 [design/16](./design/16-blazor-alignment-plan.md)。全部样例与约 94 例 golden 已补 `@using` 迁移，
+> `dotnet test EclipseUI.slnx` 497 例全绿。
 
 ## 核心理念
 
@@ -93,18 +116,20 @@ samples/CounterApp/              三个样例组件：Counter（计数器/条件
                                  生成的 C# 落盘在 Generated/ 供检视
 samples/GalleryApp/              G2 验收样例：Counter + TaskList 真窗口交互、--selfcheck、
                                  CPU/窗口截图与帧时间统计
-tests/EclipseUI.Headless.Tests/  207 个无头测试：属性引擎、布局（含 padding 与块布局透明）、块协调、
+tests/EclipseUI.Headless.Tests/  214 个无头测试：属性引擎、布局（含 padding 与块布局透明）、块协调、
                                  输入/焦点路由、shaping、编译器、字面量转换与使用点诊断（C3）、
-                                 失效队列/所有权（含接管迁移）、具名插槽、端到端（含泄漏回归）
-tests/EclipseUI.Compiler.Tests/  202 个测试：生成器契约（确定性 hint、U/R 形态与 Render、
+                                 失效队列/所有权（含接管迁移）、具名插槽、端到端（含泄漏回归）、
+                                 运行时硬化（`RuntimeHardeningTests`：分配预算/去装箱/泄漏回归）
+tests/EclipseUI.Compiler.Tests/  218 个测试：生成器契约（确定性 hint、U/R 形态与 Render、
                                  块/绑定生成、@bind 源与目标诊断、集合与嵌套 item 类型推断、
                                  `#line` span 映射、按文件增量、`EUI045` code-behind 冲突、
-                                 元数据声明处与标签码分流出口）
+                                 元数据声明处与标签码分流出口、`EventHandlerSignatureTests`
+                                 EUI024 签名匹配 16 例）
                                  与目录扫描（发现规则、属性/事件/
                                  内容/参数/插槽派生、`StyledPropertyRegistry` 交叉一致、
                                  失效级别守卫、跨程序集标签冲突、表面快照与差集）
-tests/EclipseUI.Rendering.Tests/ 61 个渲染测试：图元/作用域/文本/功能矩阵/确定性/CPU-GPU 交叉一致、
-                                 场景图绘制语义、damage 脏区检测
+tests/EclipseUI.Rendering.Tests/ 65 个渲染测试：图元/作用域/文本/功能矩阵/确定性/CPU-GPU 交叉一致、
+                                 场景图绘制语义、damage 脏区检测、`PixelGoldenTests` CPU 像素 golden
 src/EclipseUI.Rendering/         渲染契约：DisplayList、DrawCommand、Brush、Transform、PngEncoder、
                                  SceneGraph/ElementPainter（元素树→display list）、FrameDamage/DamageTracker、
                                  IRenderBackend、ISurfacePresenter（上屏目标）
@@ -235,22 +260,30 @@ damage v0 让空闲帧不再提交 GPU。G3 的 C1/C2 目录派生切片、C3 �
 9 个事件名；转换器补齐到 spec/01 §5.2 全表；自定义组件可写入 `.ui`；`Ref={field}` 与
 EUI019–021/EUI029 使用点收敛，落地记录见
 [14 §14.12.2–§14.12.5](./design/14-control-template-contract.md)）与 **tokenizer 切片**（事件委托形态与
-`@foreach` 头的正则判定换 Roslyn 解析/深度感知扫描）。**C6 具名插槽与 G3 六个小切片
-（块布局透明 / 接管失效迁移 / 按文件增量 / `#line` 列映射 / `EUI045` 冲突诊断 / 诊断出口补全）也已全部通过**，落地记录见
+`@foreach` 头的正则判定换 Roslyn 解析/深度感知扫描）。**C6 具名插槽与 G3 七个小切片
+（块布局透明 / 接管失效迁移 / 按文件增量 / `#line` 列映射 / `EUI045` 冲突诊断 / 诊断出口补全 /
+EUI024 事件处理器签名匹配 ✅ D82）也已全部通过**，落地记录见
 [14 §14.12.6](./design/14-control-template-contract.md) 与 [09 开发计划](./design/09-development-plan.md)。
-当前优先级是 **G2 剩余部分**：像素 golden、retained layer、目标机 60fps 复测；
-G3 并行推进 EUI024 签名匹配。
+当前优先级是 **G2 剩余部分**：GPU retained layer / 真正局部重绘、目标机稳定 60fps 结论、
+像素探针 DSL、CPU/GPU 交叉一致性门禁（CPU 侧像素 golden 与 retained 合成原型已由 D84 部分落地）；
+S4/S5 余项（Element.Unmount 属 G4、AOT/裁剪、旧语法清理、最终审计、帧预算/分配预算门槛、CI）与
+**S6 语法对齐（K23，✅ 已实现 2026-11-08）** 按排期插在 G3 之后、G4 之前；
+G4（样式/主题/附加属性；泛型标签暂缓 K19）、IDE/DevTools 随后。
 完整路线图见 [09 开发计划](./design/09-development-plan.md)，G1 数据见
 [render-gate-2026-11](./design/reports/render-gate-2026-11.md)，G2 进度见
 [11 G2 第一切片](./design/11-g2-surface-slice.md)、[12 G2 第二切片](./design/12-g2-interactive-slice.md)
 与 [13 G2 第三切片](./design/13-g2-damage-v0.md)。
 
-1. **G2 剩余**：像素 golden + retained layer / 局部重绘 + 目标机 60fps。
-2. **G3 语义/编译器硬化**（与 G2 并行）：~~块布局透明化~~ ✅ D77（2026-11-05）、
-   ~~表达式形态判定的正则替代（tokenizer）~~ ✅（2026-11-05）、~~按文件增量~~ ✅（2026-11-08）、
-   ~~`#line` 列映射~~ ✅ D79（2026-11-08）、~~`EUI045` code-behind 冲突诊断~~ ✅ D57/D80（2026-11-08）、
-   ~~诊断出口补全~~ ✅ D74 ②/D81（2026-11-08）、
+1. **G2 剩余**：GPU retained layer / 真正局部重绘、目标机稳定 60fps 结论、像素探针 DSL、
+   CPU/GPU 交叉一致性门禁（CPU 侧像素 golden + retained 合成原型 + 60fps 测量程序已由 D84 部分落地）。
+2. **G3 语义/编译器硬化**（与 G2 并行）——七个小切片全部收敛：~~块布局透明化~~ ✅ D77（2026-11-05）、
+   ~~接管失效迁移~~ ✅ D78（2026-11-07）、~~表达式形态判定的正则替代（tokenizer）~~ ✅（2026-11-05）、
+   ~~按文件增量~~ ✅（2026-11-08）、~~`#line` 列映射~~ ✅ D79（2026-11-08）、
+   ~~`EUI045` code-behind 冲突诊断~~ ✅ D57/D80（2026-11-08）、
+   ~~诊断出口补全~~ ✅ D74 ②/D81（2026-11-08）、~~EUI024 事件处理器签名匹配~~ ✅ D82（2026-11-08）、
    ~~组件标签与组件级绑定（C4）~~ ✅（2026-11-05）、
-   ~~`Ref` 与剩余使用点诊断收敛（C5）~~ ✅（2026-11-05）；剩余 EUI024 事件处理器签名匹配。
-3. **G4 样式/控件/虚拟化**：选择器编译、亮暗主题、基础控件集、`VirtualizingPanel`。
-4. **G5 IDE P0–P1**：TextMate grammar + LSP server（表达式投影进 Roslyn）+ VS Code/Rider 壳。
+   ~~`Ref` 与剩余使用点诊断收敛（C5）~~ ✅（2026-11-05）。
+3. **S6 语法对齐**（K23，✅ 已实现 2026-11-08）：`@using` / `@code` 单文件 / `else`+`@switch` / `@* *@`，
+   出口标准 = D85–D88 关闭 + 样例与 golden 迁移 + 497 例基线全绿；计划见 [16](./design/16-blazor-alignment-plan.md)。
+4. **G4 样式/控件/虚拟化**：选择器编译、亮暗主题、基础控件集、`VirtualizingPanel`。
+5. **G5 IDE P0–P1**：TextMate grammar + LSP server（表达式投影进 Roslyn）+ VS Code/Rider 壳。

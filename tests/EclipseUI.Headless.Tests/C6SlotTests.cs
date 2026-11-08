@@ -106,6 +106,8 @@ public class C6SlotTests
     public void SlotFill_SingleRoot_SucceedsAndResolvesDef()
     {
         var (doc, diags, _) = ParseAnalyze(CatalogWithComponent(), """
+            @using Probe
+            @using EclipseUI.Elements
             <ProbeCard Title="Hi">
               <Slot Name="Header"><TextBlock FontSize="12">a</TextBlock></Slot>
             </ProbeCard>
@@ -124,6 +126,8 @@ public class C6SlotTests
     {
         // 未包 <Slot> 的子内容进默认内容（spec/01 §4.14 语义不变）；槽填充独立处理。
         var (doc, diags, _) = ParseAnalyze(CatalogWithComponent(), """
+            @using Probe
+            @using EclipseUI.Elements
             <ProbeCard Title="Hi">
               <Button />
               <Slot Name="Rows"><TextBlock FontSize="12">r1</TextBlock></Slot>
@@ -140,6 +144,8 @@ public class C6SlotTests
     public void SlotFill_MissingName_IsEUI022()
     {
         var (_, diags, _) = ParseAnalyze(CatalogWithComponent(), """
+            @using Probe
+            @using EclipseUI.Elements
             <ProbeCard Title="Hi"><Slot><TextBlock /></Slot></ProbeCard>
             """);
         var diag = Assert.Single(diags);
@@ -151,6 +157,8 @@ public class C6SlotTests
     public void SlotFill_ExpressionName_IsEUI022()
     {
         var (_, diags, _) = ParseAnalyze(CatalogWithComponent(), """
+            @using Probe
+            @using EclipseUI.Elements
             <ProbeCard Title="Hi"><Slot Name={slotName}><TextBlock /></Slot></ProbeCard>
             """);
         var diag = Assert.Single(diags);
@@ -162,6 +170,8 @@ public class C6SlotTests
     public void SlotFill_UnexpectedAttribute_IsEUI022()
     {
         var (_, diags, _) = ParseAnalyze(CatalogWithComponent(), """
+            @using Probe
+            @using EclipseUI.Elements
             <ProbeCard Title="Hi"><Slot Name="Header" Gap="4"><TextBlock /></Slot></ProbeCard>
             """);
         var diag = Assert.Single(diags);
@@ -173,6 +183,8 @@ public class C6SlotTests
     public void SlotFill_UnknownName_GetsSuggestion()
     {
         var (_, diags, _) = ParseAnalyze(CatalogWithComponent(), """
+            @using Probe
+            @using EclipseUI.Elements
             <ProbeCard Title="Hi"><Slot Name="Heade"><TextBlock /></Slot></ProbeCard>
             """);
         var diag = Assert.Single(diags);
@@ -185,6 +197,8 @@ public class C6SlotTests
     public void SlotFill_SingleSlotMultipleRoots_IsEUI022_ButStillResolvesFirstRoot()
     {
         var (doc, diags, _) = ParseAnalyze(CatalogWithComponent(), """
+            @using Probe
+            @using EclipseUI.Elements
             <ProbeCard Title="Hi">
               <Slot Name="Header"><TextBlock /><Button /></Slot>
             </ProbeCard>
@@ -201,6 +215,8 @@ public class C6SlotTests
     public void SlotFill_DuplicateSingleFill_IsEUI022()
     {
         var (_, diags, _) = ParseAnalyze(CatalogWithComponent(), """
+            @using Probe
+            @using EclipseUI.Elements
             <ProbeCard Title="Hi">
               <Slot Name="Header"><TextBlock /></Slot>
               <Slot Name="Header"><Button /></Slot>
@@ -215,6 +231,8 @@ public class C6SlotTests
     public void SlotFill_MultipleSlot_AcceptsSeveralFills_AsConcatenation()
     {
         var (doc, diags, _) = ParseAnalyze(CatalogWithComponent(), """
+            @using Probe
+            @using EclipseUI.Elements
             <ProbeCard Title="Hi">
               <Slot Name="Rows"><TextBlock /></Slot>
               <Slot Name="Rows"><Button /></Slot>
@@ -231,6 +249,7 @@ public class C6SlotTests
     public void SlotFill_InsideControl_IsEUI022()
     {
         var (_, diags, _) = ParseAnalyze(CatalogWithComponent(), """
+            @using EclipseUI.Elements
             <StackPanel><Slot Name="Header" /></StackPanel>
             """);
         var diag = Assert.Single(diags);
@@ -242,6 +261,8 @@ public class C6SlotTests
     public void SlotFill_InsideBlock_IsEUI022()
     {
         var (_, diags, _) = ParseAnalyze(CatalogWithComponent(), """
+            @using Probe
+            @using EclipseUI.Elements
             <ProbeCard Title="Hi">@if (true) { <Slot Name="Header" /> }</ProbeCard>
             """);
         var diag = Assert.Single(diags);
@@ -251,7 +272,7 @@ public class C6SlotTests
     [Fact]
     public void SlotFill_AtDocumentRoot_IsEUI022()
     {
-        var (_, diags, _) = ParseAnalyze(CatalogWithComponent(), """<Slot Name="Header" />""");
+        var (_, diags, _) = ParseAnalyze(CatalogWithComponent(), "@using EclipseUI.Elements\n" + """<Slot Name="Header" />""");
         Assert.Contains(diags, d => d.Code == UiDiagnostics.SlotInvalid &&
             d.Message.Contains("direct children of a component tag"));
     }
@@ -262,6 +283,8 @@ public class C6SlotTests
     public void SlotFill_BindInsideFill_IsEUI040()
     {
         var (_, diags, _) = ParseAnalyze(CatalogWithComponent(), """
+            @using Probe
+            @using EclipseUI.Elements
             <ProbeCard Title="Hi"><Slot Name="Rows"><CheckBox @bind-Checked={flag} /></Slot></ProbeCard>
             """);
         Assert.Contains(diags, d => d.Code == UiDiagnostics.BindTargetInvalid);
@@ -271,6 +294,8 @@ public class C6SlotTests
     public void SlotFill_KeyInsideFill_IsEUI010()
     {
         var (_, diags, _) = ParseAnalyze(CatalogWithComponent(), """
+            @using Probe
+            @using EclipseUI.Elements
             <ProbeCard Title="Hi"><Slot Name="Rows"><TextBlock Key={k} /></Slot></ProbeCard>
             """);
         Assert.Contains(diags, d => d.Code == UiDiagnostics.KeyMisuse);
@@ -282,6 +307,7 @@ public class C6SlotTests
     public void ContentSlot_SelfTemplate_SingleSlot_Resolves()
     {
         var (doc, diags, _) = ParseAnalyze(CatalogWithComponent(), """
+            @using EclipseUI.Elements
             <StackPanel><ContentSlot Name="Header" /></StackPanel>
             """);
         Assert.Empty(diags);
@@ -294,6 +320,7 @@ public class C6SlotTests
     public void ContentSlot_SelfTemplate_MultipleSlot_Resolves()
     {
         var (doc, diags, _) = ParseAnalyze(CatalogWithComponent(), """
+            @using EclipseUI.Elements
             <StackPanel><ContentSlot Name="Rows" /></StackPanel>
             """);
         Assert.Empty(diags);
@@ -304,7 +331,7 @@ public class C6SlotTests
     [Fact]
     public void ContentSlot_UnknownName_IsEUI022()
     {
-        var (_, diags, _) = ParseAnalyze(CatalogWithComponent(), """<StackPanel><ContentSlot Name="Foo" /></StackPanel>""");
+        var (_, diags, _) = ParseAnalyze(CatalogWithComponent(), "@using EclipseUI.Elements\n" + """<StackPanel><ContentSlot Name="Foo" /></StackPanel>""");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.SlotInvalid, diag.Code);
         Assert.Contains("unknown slot 'Foo'", diag.Message);
@@ -314,7 +341,7 @@ public class C6SlotTests
     [Fact]
     public void ContentSlot_MissingName_IsEUI022()
     {
-        var (_, diags, _) = ParseAnalyze(CatalogWithComponent(), """<StackPanel><ContentSlot /></StackPanel>""");
+        var (_, diags, _) = ParseAnalyze(CatalogWithComponent(), "@using EclipseUI.Elements\n" + """<StackPanel><ContentSlot /></StackPanel>""");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.SlotInvalid, diag.Code);
         Assert.Contains("Name", diag.Message);
@@ -323,7 +350,7 @@ public class C6SlotTests
     [Fact]
     public void ContentSlot_UnexpectedAttribute_IsEUI022()
     {
-        var (_, diags, _) = ParseAnalyze(CatalogWithComponent(), """<StackPanel><ContentSlot Name="Header" Gap="4" /></StackPanel>""");
+        var (_, diags, _) = ParseAnalyze(CatalogWithComponent(), "@using EclipseUI.Elements\n" + """<StackPanel><ContentSlot Name="Header" Gap="4" /></StackPanel>""");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.SlotInvalid, diag.Code);
         Assert.Contains("Gap", diag.Message);
@@ -333,7 +360,7 @@ public class C6SlotTests
     public void ContentSlot_WithChildren_IsEUI022()
     {
         var (_, diags, _) = ParseAnalyze(CatalogWithComponent(),
-            """<StackPanel><ContentSlot Name="Header"><TextBlock /></ContentSlot></StackPanel>""");
+            "@using EclipseUI.Elements\n" + """<StackPanel><ContentSlot Name="Header"><TextBlock /></ContentSlot></StackPanel>""");
         Assert.Contains(diags, d => d.Code == UiDiagnostics.SlotInvalid &&
             d.Message.Contains("placement marker"));
     }
@@ -342,7 +369,7 @@ public class C6SlotTests
     public void ContentSlot_InsideBlock_IsEUI022()
     {
         var (_, diags, _) = ParseAnalyze(CatalogWithComponent(),
-            """<StackPanel>@if (true) { <ContentSlot Name="Header" /> }</StackPanel>""");
+            "@using EclipseUI.Elements\n" + """<StackPanel>@if (true) { <ContentSlot Name="Header" /> }</StackPanel>""");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.SlotInvalid, diag.Code);
         Assert.Contains("@if/@foreach blocks", diag.Message);
@@ -351,7 +378,7 @@ public class C6SlotTests
     [Fact]
     public void ContentSlot_AtDocumentRoot_IsEUI022()
     {
-        var (_, diags, _) = ParseAnalyze(CatalogWithComponent(), """<ContentSlot Name="Header" />""");
+        var (_, diags, _) = ParseAnalyze(CatalogWithComponent(), "@using EclipseUI.Elements\n" + """<ContentSlot Name="Header" />""");
         Assert.Contains(diags, d => d.Code == UiDiagnostics.SlotInvalid &&
             d.Message.Contains("template root"));
     }
@@ -360,6 +387,7 @@ public class C6SlotTests
     public void ContentSlot_DuplicatePlacement_IsEUI022()
     {
         var (_, diags, _) = ParseAnalyze(CatalogWithComponent(), """
+            @using EclipseUI.Elements
             <StackPanel>
               <ContentSlot Name="Header" />
               <ContentSlot Name="Header" />
@@ -375,7 +403,7 @@ public class C6SlotTests
     {
         // <ContentSlot> 属于组件自身模板，不能出现在使用其他组件的填充里
         var (_, diags, _) = ParseAnalyze(CatalogWithComponent(),
-            """<ProbeCard Title="Hi"><ContentSlot Name="Header" /></ProbeCard>""");
+            "@using Probe\n" + """<ProbeCard Title="Hi"><ContentSlot Name="Header" /></ProbeCard>""");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.SlotInvalid, diag.Code);
         Assert.Contains("own template", diag.Message);
@@ -384,7 +412,7 @@ public class C6SlotTests
     [Fact]
     public void ContentSlot_OwnDefMissing_IsEUI022()
     {
-        var (_, diags, _) = ParseAnalyze(CatalogWithoutSelf(), """<StackPanel><ContentSlot Name="Header" /></StackPanel>""");
+        var (_, diags, _) = ParseAnalyze(CatalogWithoutSelf(), "@using EclipseUI.Elements\n" + """<StackPanel><ContentSlot Name="Header" /></StackPanel>""");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.SlotInvalid, diag.Code);
         Assert.Contains("cannot resolve the slots", diag.Message);
@@ -393,7 +421,7 @@ public class C6SlotTests
     [Fact]
     public void ContentSlot_InsideTextModel_IsEUI022()
     {
-        var (_, diags, _) = ParseAnalyze(CatalogWithComponent(), """<TextBlock><ContentSlot Name="Header" /></TextBlock>""");
+        var (_, diags, _) = ParseAnalyze(CatalogWithComponent(), "@using EclipseUI.Elements\n" + """<TextBlock><ContentSlot Name="Header" /></TextBlock>""");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.SlotInvalid, diag.Code);
         Assert.Contains("element container", diag.Message);

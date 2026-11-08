@@ -41,6 +41,7 @@ public static class UiDiagnostics
     public const string CodeBehindMissing = "EUI005";
     public const string TextNotAllowed = "EUI006";
     public const string ForEachItemTypeUnknown = "EUI007";
+    // EUI008（@switch 不支持）已随 K23 ③ 停用——@switch 转正后不再发出，编号不复用。
     public const string SwitchNotSupported = "EUI008";
     public const string UnknownDirective = "EUI009";
     public const string KeyMisuse = "EUI010";
@@ -71,10 +72,15 @@ public static class UiDiagnostics
     public const string SameTargetDuplicate = "EUI033";
     public const string BindSourceInvalid = "EUI037";
     public const string BindTargetInvalid = "EUI040";
-    public const string LegacySyntax = "EUI043";
+    // EUI043（旧语法 P:bind/P:value 弃用告警）已随 K27 停用——S6 移除旧语法后不再发出，
+    // 测试与快照必须断言零出现（spec/01 §6.2 停用码纪律）。
 
-    // D57（spec/02 §10）：code-behind 与生成成员冲突。编号此前只保留未分配，2026-11-08 落地。
     public const string CodeBehindConflict = "EUI045";
+
+    // S6（K27）：旧绑定语法 P:bind/P:value 已移除（替代已停用的 EUI043，级别升为 Error）。
+    public const string LegacySyntaxRemoved = "EUI046";
+    // S6（K29 ②）：@switch 的 case 标签必须是编译期常量。
+    public const string CaseLabelNotConstant = "EUI047";
 
     // 语法诊断
     public const string Syntax = "EUI100";

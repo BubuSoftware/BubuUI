@@ -56,7 +56,7 @@ public class C3LiteralAndDiagnosticsTests
     public void FloatLiteral_Converts()
     {
         var catalog = CatalogWithProbe();
-        var (doc, diags) = ParseAnalyze(catalog, """<Probe Rate="8.5" />""");
+        var (doc, diags) = ParseAnalyze(catalog, "@using Probe\n" + """<Probe Rate="8.5" />""");
         Assert.Empty(diags);
         Assert.Equal("8.5f", doc.Nodes.OfType<UiElement>().Single().Attributes[0].ConvertedLiteral);
     }
@@ -65,7 +65,7 @@ public class C3LiteralAndDiagnosticsTests
     public void DecimalLiteral_Converts()
     {
         var catalog = CatalogWithProbe();
-        var (_, diags) = ParseAnalyze(catalog, """<Probe Blend="8.5" />""");
+        var (_, diags) = ParseAnalyze(catalog, "@using Probe\n" + """<Probe Blend="8.5" />""");
         Assert.Empty(diags); // 精确串断言放在单元级（见 ConvertDecimalSuite）
     }
 
@@ -73,7 +73,7 @@ public class C3LiteralAndDiagnosticsTests
     public void CharLiteral_Converts()
     {
         var catalog = CatalogWithProbe();
-        var (doc, diags) = ParseAnalyze(catalog, """<Probe Letter="A" />""");
+        var (doc, diags) = ParseAnalyze(catalog, "@using Probe\n" + """<Probe Letter="A" />""");
         Assert.Empty(diags);
         Assert.Equal("'A'", doc.Nodes.OfType<UiElement>().Single().Attributes[0].ConvertedLiteral);
     }
@@ -82,7 +82,7 @@ public class C3LiteralAndDiagnosticsTests
     public void EnumLiteral_ConvertsToQualifiedMember()
     {
         var catalog = CatalogWithProbe();
-        var (doc, diags) = ParseAnalyze(catalog, """<Probe Mode="Sunny" />""");
+        var (doc, diags) = ParseAnalyze(catalog, "@using Probe\n" + """<Probe Mode="Sunny" />""");
         Assert.Empty(diags);
         Assert.Equal("global::Probe.Weather.Sunny",
             doc.Nodes.OfType<UiElement>().Single().Attributes[0].ConvertedLiteral);
@@ -92,7 +92,7 @@ public class C3LiteralAndDiagnosticsTests
     public void EnumLiteral_UnknownMember_IsFormatErrorWithMembers()
     {
         var catalog = CatalogWithProbe();
-        var (_, diags) = ParseAnalyze(catalog, """<Probe Mode="sunny" />""");
+        var (_, diags) = ParseAnalyze(catalog, "@using Probe\n" + """<Probe Mode="sunny" />""");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.LiteralFormat, diag.Code);
         Assert.Contains("Probe.Weather", diag.Message);
@@ -103,7 +103,7 @@ public class C3LiteralAndDiagnosticsTests
     public void TimeSpanLiteral_ConvertsToConstructorCall()
     {
         var catalog = CatalogWithProbe();
-        var (doc, diags) = ParseAnalyze(catalog, """<Probe Delay="1h" />""");
+        var (doc, diags) = ParseAnalyze(catalog, "@using Probe\n" + """<Probe Delay="1h" />""");
         Assert.Empty(diags);
         Assert.Equal("new global::System.TimeSpan(36000000000L)",
             doc.Nodes.OfType<UiElement>().Single().Attributes[0].ConvertedLiteral);
@@ -113,7 +113,7 @@ public class C3LiteralAndDiagnosticsTests
     public void TimeSpanLiteral_ClockForm_ConvertsToConstructorCall()
     {
         var catalog = CatalogWithProbe();
-        var (doc, diags) = ParseAnalyze(catalog, """<Probe Delay="1.02:03:04.5" />""");
+        var (doc, diags) = ParseAnalyze(catalog, "@using Probe\n" + """<Probe Delay="1.02:03:04.5" />""");
         Assert.Empty(diags);
         Assert.Equal("new global::System.TimeSpan(937845000000L)",
             doc.Nodes.OfType<UiElement>().Single().Attributes[0].ConvertedLiteral);
@@ -123,7 +123,7 @@ public class C3LiteralAndDiagnosticsTests
     public void TimeSpanLiteral_MultiUnit_IsFormatError()
     {
         var catalog = CatalogWithProbe();
-        var (_, diags) = ParseAnalyze(catalog, """<Probe Delay="1h30m" />""");
+        var (_, diags) = ParseAnalyze(catalog, "@using Probe\n" + """<Probe Delay="1h30m" />""");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.LiteralFormat, diag.Code);
         Assert.Contains("single", diag.Message.ToLowerInvariant())
@@ -134,7 +134,7 @@ public class C3LiteralAndDiagnosticsTests
     public void LiteralWithoutConverter_IsNoConverterDiagnostic()
     {
         var catalog = CatalogWithProbe();
-        var (_, diags) = ParseAnalyze(catalog, """<Probe Widget="1" />""");
+        var (_, diags) = ParseAnalyze(catalog, "@using Probe\n" + """<Probe Widget="1" />""");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.NoLiteralConverter, diag.Code);
         Assert.Contains("Probe.Widget", diag.Message);
@@ -146,7 +146,7 @@ public class C3LiteralAndDiagnosticsTests
     public void DuplicatePlainAttribute_IsDuplicateAttribute()
     {
         var catalog = CatalogWithProbe();
-        var (_, diags) = ParseAnalyze(UiTestCatalogs.BuiltIn(), """<StackPanel Padding="1" Padding="2" />""");
+        var (_, diags) = ParseAnalyze(UiTestCatalogs.BuiltIn(), "@using EclipseUI.Elements\n" + """<StackPanel Padding="1" Padding="2" />""");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.DuplicateAttribute, diag.Code);
         Assert.Contains("Padding", diag.Message);
@@ -156,14 +156,14 @@ public class C3LiteralAndDiagnosticsTests
     public void DuplicateBindVsPlain_SameTarget_IsSameTargetDuplicate()
     {
         // S2 语义保持：名称相同但任一侧是绑定 → EUI033（目标级），不是 EUI025。
-        var (_, diags) = ParseAnalyze(UiTestCatalogs.BuiltIn(), """<CheckBox Checked={x} @bind-Checked={y}>c</CheckBox>""");
+        var (_, diags) = ParseAnalyze(UiTestCatalogs.BuiltIn(), "@using EclipseUI.Elements\n" + """<CheckBox Checked={x} @bind-Checked={y}>c</CheckBox>""");
         Assert.Contains(diags, d => d.Code == UiDiagnostics.SameTargetDuplicate);
     }
 
     [Fact]
     public void ClassAttribute_IsReservedSyntax()
     {
-        var (_, diags) = ParseAnalyze(UiTestCatalogs.BuiltIn(), """<StackPanel Class="elevated" />""");
+        var (_, diags) = ParseAnalyze(UiTestCatalogs.BuiltIn(), "@using EclipseUI.Elements\n" + """<StackPanel Class="elevated" />""");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.ReservedSyntax, diag.Code);
         Assert.Contains("G4", diag.Message);
@@ -172,14 +172,14 @@ public class C3LiteralAndDiagnosticsTests
     [Fact]
     public void StyleAttribute_IsReservedSyntax()
     {
-        var (_, diags) = ParseAnalyze(UiTestCatalogs.BuiltIn(), """<StackPanel Style="flat" />""");
+        var (_, diags) = ParseAnalyze(UiTestCatalogs.BuiltIn(), "@using EclipseUI.Elements\n" + """<StackPanel Style="flat" />""");
         Assert.Contains(diags, d => d.Code == UiDiagnostics.ReservedSyntax);
     }
 
     [Fact]
     public void AttachedPropertySyntax_IsReservedSyntax()
     {
-        var (_, diags) = ParseAnalyze(UiTestCatalogs.BuiltIn(), """<StackPanel Grid.Row="1" />""");
+        var (_, diags) = ParseAnalyze(UiTestCatalogs.BuiltIn(), "@using EclipseUI.Elements\n" + """<StackPanel Grid.Row="1" />""");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.ReservedSyntax, diag.Code);
         Assert.Contains("attached", diag.Message);
