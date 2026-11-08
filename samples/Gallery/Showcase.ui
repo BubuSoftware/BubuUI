@@ -1,0 +1,25 @@
+@using EclipseUI.Elements
+
+<StackPanel Gap="10">
+    <TextBlock FontSize="18">Control showcase</TextBlock>
+
+    <TextBlock FontSize="13">Grid - Auto, fixed and star tracks</TextBlock>
+    <Grid RowDefinitions="Auto,56" ColumnDefinitions="110,*,2*" Gap="6">
+        <Button>row 0 / fixed 110</Button>
+        <Button Grid.Column="1">row 0 / star</Button>
+        <Button Grid.Column="2">row 0 / 2x star</Button>
+        <Button Grid.Row="1">row 1 / fixed 110</Button>
+        <Button Grid.Row="1" Grid.Column="1">row 1 / star</Button>
+        <Button Grid.Row="1" Grid.Column="2">row 1 / 2x star</Button>
+    </Grid>
+
+    <TextBlock FontSize="13">WrapPanel - wraps when the row is full</TextBlock>
+    <WrapPanel Gap="6">
+        <Button>alpha</Button>
+        <Button>beta</Button>
+        <Button>gamma</Button>
+        <Button>delta</Button>
+        <Button>epsilon</Button>
+        <Button>zeta</Button>
+    </WrapPanel>
+</StackPanel>

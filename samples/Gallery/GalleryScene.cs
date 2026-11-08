@@ -5,7 +5,7 @@ using EclipseUI.Elements;
 namespace Gallery;
 
 /// <summary>
-/// 画廊主场景（平台无关）：标题 + Counter 展示页 + 任务列表演示。
+/// 画廊主场景（平台无关）：标题 + Counter 展示页 + 控件展示区（Grid/WrapPanel）+ 任务列表演示。
 /// 手工元素树 + <see cref="GalleryRoot"/> 组件接管所有权与失效队列（G2 口径）。
 /// </summary>
 public static class GalleryScene
@@ -29,6 +29,11 @@ public static class GalleryScene
         taskList.Mount();
         SetPadding(taskList.Root, 16);
 
+        // 控件展示区（G4 布局切片）：Grid 行列布局 + WrapPanel 流式换行。
+        var showcase = new Showcase();
+        showcase.Mount();
+        SetPadding(showcase.Root, 16);
+
         var addTaskButton = new Button { Label = "+ Add task" };
         var nextId = 4;
         addTaskButton.AddHandler(Button.ClickEvent, () =>
@@ -43,9 +48,10 @@ public static class GalleryScene
         });
 
         var root = new StackPanel { Gap = 14, Padding = 20 };
-        root.Children.Add(Text("EclipseUI G2 Gallery", 26));
-        root.Children.Add(Text("Click the checkbox to reveal +1 · Tab / Space to drive focus · Esc to close", 12));
+        root.Children.Add(Text("EclipseUI G4 Gallery", 26));
+        root.Children.Add(Text("Checkbox reveals +1 · Tab / Space focus · Esc closes", 12));
         root.Children.Add(counter.Root);
+        root.Children.Add(showcase.Root);
         root.Children.Add(addTaskButton);
         root.Children.Add(taskList.Root);
         return (root, counter, taskList, addTaskButton);
