@@ -3,18 +3,16 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
-    <RootNamespace>GalleryApp</RootNamespace>
+    <RootNamespace>Gallery.Desktop</RootNamespace>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Description>G2 出口验证：CounterApp / TaskList 在真实 Win32 窗口里可交互。</Description>
+    <Description>EclipseUI 画廊的 Windows 平台入口（Avalonia 式分层）：Win32 窗口 + 主循环，仅负责展示与截图。验证/自检见 sandbox/GalleryCheck。</Description>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\CounterApp\CounterApp.csproj" />
+    <ProjectReference Include="..\Gallery\Gallery.csproj" />
     <ProjectReference Include="..\..\src\EclipseUI.Platform.Windows\EclipseUI.Platform.Windows.csproj" />
     <ProjectReference Include="..\..\src\EclipseUI.Rendering.Vello\EclipseUI.Rendering.Vello.csproj" />
-    <ProjectReference Include="..\..\src\EclipseUI.Rendering\EclipseUI.Rendering.csproj" />
-    <ProjectReference Include="..\..\src\EclipseUI.Text.Shaping\EclipseUI.Text.Shaping.csproj" />
   </ItemGroup>
 
 </Project>

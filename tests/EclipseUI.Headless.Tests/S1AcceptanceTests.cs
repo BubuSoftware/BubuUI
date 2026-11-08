@@ -1,7 +1,6 @@
 using System;
 using System.Linq;
 using EclipseUI.Elements;
-using Samples;
 using Xunit;
 
 namespace EclipseUI.Headless.Tests;

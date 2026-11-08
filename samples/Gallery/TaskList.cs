@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace Samples;
+namespace Gallery;
 
 public sealed class TaskItem
 {

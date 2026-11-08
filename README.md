@@ -115,11 +115,11 @@ src/
                                  （netstandard2.0；C2 起由分析器与生成器同源消费，源码内嵌进生成器）
   EclipseUI.Compiler.Generator/  Roslyn 增量源生成器：code-behind 发现、@foreach item 类型推断、
                                  @bind 源可写性校验、代码发射（U/R 定向更新、#line 映射回 .ui）
-samples/CounterApp/              三个样例组件：Counter（计数器/条件/双向绑定）、
-                                 TaskList（@foreach Key 对齐）、S1Probe（v4 失效切片）；
-                                 生成的 C# 落盘在 Generated/ 供检视
-samples/GalleryApp/              G2 验收样例：Counter + TaskList 真窗口交互、--selfcheck、
-                                 CPU/窗口截图与帧时间统计
+samples/Gallery/                 画廊共享 UI（平台无关，Avalonia 式 App 本体）：展示页
+                                 Counter（计数器/条件/双向绑定）、TaskList（@foreach Key 对齐）、
+                                 Prefs；主场景 GalleryScene + 截图/字体辅助
+samples/Gallery.Desktop/         画廊 Windows 平台入口：Win32 窗口 + 主循环，仅展示与截图；
+                                 验证/自检在 sandbox/GalleryCheck
 tests/EclipseUI.Headless.Tests/  214 个无头测试：属性引擎、布局（含 padding 与块布局透明）、块协调、
                                  输入/焦点路由、shaping、编译器、字面量转换与使用点诊断（C3）、
                                  失效队列/所有权（含接管迁移）、具名插槽、端到端（含泄漏回归）、
@@ -140,8 +140,10 @@ src/EclipseUI.Rendering/         渲染契约：DisplayList、DrawCommand、Brus
 src/EclipseUI.Rendering.Vello/   Vello 后端：VelloSceneBuilder（CPU/GPU 共用）、CPU 离屏、wgpu surface
 src/EclipseUI.Platform.Windows/  Win32 窗口宿主：消息循环、DPI、resize、鼠标/键盘事件、
                                  WindowHost（布局+绘制+damage 跳帧上屏循环）
-samples/RenderSpike/             G1 像素管线 spike：PNG 输出 + 性能 bench
-samples/WindowSpike/             G2 上屏 spike：动画场景 + 帧时间分段 + resize 自检
+sandbox/RenderSpike/             G1 像素管线 spike：PNG 输出 + 性能 bench（不入解决方案）
+sandbox/WindowSpike/             G2 上屏 spike：动画场景 + 帧时间分段 + resize 自检（不入解决方案）
+sandbox/GalleryCheck/            画廊验证壳：--selfcheck 六步自动化、damage 覆盖率、帧成本测量、
+                                 CPU 离屏链路（bench-60fps.ps1 的窗口测量跑这里）
 tools/capture-window.ps1         截取真实窗口客户区 PNG，用于像素核对
 ```
 
@@ -151,23 +153,26 @@ tools/capture-window.ps1         截取真实窗口客户区 PNG，用于像素�
 dotnet build EclipseUI.slnx
 dotnet test  EclipseUI.slnx
 
-# G1：离屏 PNG 与性能表
-dotnet run --project samples/RenderSpike -c Release
-dotnet run --project samples/RenderSpike -c Release -- bench
+# G1：离屏 PNG 与性能表（sandbox，不入解决方案，可单独 dotnet run）
+dotnet run --project sandbox/RenderSpike -c Release
+dotnet run --project sandbox/RenderSpike -c Release -- bench
 
 # G2：真实窗口（Esc/关闭按钮退出；--frames N 自动退出）
-dotnet run --project samples/WindowSpike -c Release -- --frames 300
-dotnet run --project samples/WindowSpike -c Release -- --selfcheck   # resize 冒烟
+dotnet run --project sandbox/WindowSpike -c Release -- --frames 300
+dotnet run --project sandbox/WindowSpike -c Release -- --selfcheck   # resize 冒烟
 
-# G2 验收：Counter + TaskList 真窗口交互（事件 → 输入路由 → 失效重算 → 重绘）
-dotnet run --project samples/GalleryApp -c Release
-dotnet run --project samples/GalleryApp -c Release -- --selfcheck --no-vsync   # 6 步自检 + damage 覆盖率
-dotnet run --project samples/GalleryApp -c Release -- --no-vsync --frames 400  # 空闲跳帧：rendered=1
-dotnet run --project samples/GalleryApp -c Release -- --always-render --no-vsync --max-fps 60 --frames 1200  # 帧成本
-dotnet run --project samples/GalleryApp -c Release -- --cpu --shot out/gallery-cpu.png
+# 画廊（展示）：Counter + TaskList 真窗口交互（事件 → 输入路由 → 失效重算 → 重绘）
+dotnet run --project samples/Gallery.Desktop -c Release
+dotnet run --project samples/Gallery.Desktop -c Release -- --shot out/gallery-window.png
+dotnet run --project samples/Gallery.Desktop -c Release -- --cpu --shot out/gallery-cpu.png
+
+# 画廊验证（测试壳，sandbox）：6 步自检 + damage 覆盖率 + 帧成本
+dotnet run --project sandbox/GalleryCheck -c Release -- --selfcheck --no-vsync
+dotnet run --project sandbox/GalleryCheck -c Release -- --no-vsync --frames 400  # 空闲跳帧：rendered=1
+dotnet run --project sandbox/GalleryCheck -c Release -- --always-render --no-vsync --max-fps 60 --frames 1200  # 帧成本
 ```
 
-模板（`samples/CounterApp/Counter.ui`）：
+模板（`samples/Gallery/Counter.ui`）：
 
 ```xml
 <StackPanel Gap="8">

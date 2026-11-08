@@ -1,9 +1,7 @@
 <Solution>
   <Folder Name="/samples/">
-    <Project Path="samples/CounterApp/CounterApp.csproj" />
-    <Project Path="samples/GalleryApp/GalleryApp.csproj" />
-    <Project Path="samples/RenderSpike/RenderSpike.csproj" />
-    <Project Path="samples/WindowSpike/WindowSpike.csproj" />
+    <Project Path="samples/Gallery/Gallery.csproj" />
+    <Project Path="samples/Gallery.Desktop/Gallery.Desktop.csproj" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/EclipseUI.Compiler.Generator/EclipseUI.Compiler.Generator.csproj" />

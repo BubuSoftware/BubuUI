@@ -3,13 +3,13 @@
     目标机 60fps 复测可复现脚本（B3）。
 .DESCRIPTION
     固定顺序：Release 构建 -> CPU 渲染测试 -> RenderSpike bench（GPU 分支，无适配器优雅跳过）
-    -> 可选 GalleryApp 窗口帧测量 -> 可选 WindowSpike 分段耗时。
+    -> 可选 GalleryCheck 窗口帧测量 -> 可选 WindowSpike 分段耗时。
     采集 Win32_VideoController.CurrentRefreshRate / PresentMode / 帧平均·p95 /
     acquire·render·present 分段，写入 out/bench-60fps-<时间戳>.log，
     并打印 16.7ms 预算判定与「本机 29Hz 虚拟显示不下 60fps 结论」提示。
 
     默认不运行任何窗口测量（避免弹窗 / 需人工）。
-    -RunWindowMeasure 开启 GalleryApp；-IncludeWindowSpike 额外跑 WindowSpike 采集分段耗时。
+    -RunWindowMeasure 开启 GalleryCheck；-IncludeWindowSpike 额外跑 WindowSpike 采集分段耗时。
     结果回填模板：design/reports/target-machine-60fps-template.md
 .EXAMPLE
     powershell -File tools/bench-60fps.ps1
@@ -126,7 +126,7 @@ try {
 
     # ---- ③ RenderSpike bench（GPU 分支优雅跳过）----
     $env:RENDERSPIKE_ITERATIONS = [string]$Iterations
-    $r = Invoke-Step "③ RenderSpike bench (GPU 分支)" @("run", "--project", "samples/RenderSpike", "-c", $Configuration, "--", "bench")
+    $r = Invoke-Step "③ RenderSpike bench (GPU 分支)" @("run", "--project", "sandbox/RenderSpike", "-c", $Configuration, "--", "bench")
     $combined += $r.Text
     if ($r.Text -match "NaN|useCpu=False failed|no GPU|adapter") {
         Write-Log "③ GPU 分支：GPU 列为空/NaN 或 stderr 报 failed（适配器本次不可用），已优雅跳过 GPU 判定；仅 CPU 数据有效，不下 60fps 结论。"
@@ -134,14 +134,14 @@ try {
         Write-Log "③ GPU 分支：bench 已执行；若上表 GPU 列仍为 NaN，则以 CPU 数据为准。"
     }
 
-    # ---- ④ GalleryApp 窗口帧测量（可开关）----
+    # ---- ④ GalleryCheck 窗口帧测量（可开关）----
     $galleryText = ""
     if ($RunWindowMeasure) {
-        Write-Log "④ GalleryApp 窗口帧测量：将打开真实窗口，--frames $Frames 后自动退出（需人工确保窗口前台）。"
-        $r = Invoke-Step "④ GalleryApp" @("run", "--project", "samples/GalleryApp", "-c", $Configuration, "--", "--always-render", "--no-vsync", "--max-fps", [string]$MaxFps, "--frames", [string]$Frames)
+        Write-Log "④ GalleryCheck 窗口帧测量：将打开真实窗口，--frames $Frames 后自动退出（需人工确保窗口前台）。"
+        $r = Invoke-Step "④ GalleryCheck" @("run", "--project", "sandbox/GalleryCheck", "-c", $Configuration, "--", "--always-render", "--no-vsync", "--max-fps", [string]$MaxFps, "--frames", [string]$Frames)
         $galleryText = $r.Text
         $combined += $r.Text
-        if ($r.Exit -ne 0) { Write-Log ("警告: GalleryApp 退出码 " + $r.Exit) }
+        if ($r.Exit -ne 0) { Write-Log ("警告: GalleryCheck 退出码 " + $r.Exit) }
     } else {
         Write-Log "④ 跳过窗口帧测量 (-RunWindowMeasure 未开启；避免弹窗/人工介入)，无法据此判定 16.7ms 预算。"
     }
@@ -152,7 +152,7 @@ try {
         if (-not $RunWindowMeasure) {
             Write-Log "⑤ 提示: -IncludeWindowSpike 建议配合 -RunWindowMeasure；仍单独执行 WindowSpike。"
         }
-        $r = Invoke-Step "⑤ WindowSpike 分段耗时" @("run", "--project", "samples/WindowSpike", "-c", $Configuration, "--", "--frames", [string]$Frames, "--no-vsync", "--max-fps", [string]$MaxFps)
+        $r = Invoke-Step "⑤ WindowSpike 分段耗时" @("run", "--project", "sandbox/WindowSpike", "-c", $Configuration, "--", "--frames", [string]$Frames, "--no-vsync", "--max-fps", [string]$MaxFps)
         $spikeText = $r.Text
         $combined += $r.Text
     } else {

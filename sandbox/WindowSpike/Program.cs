@@ -6,8 +6,8 @@ using EclipseUI.Rendering.Vello;
 using WindowSpike;
 
 // G2-00/01 spike：真实窗口 + Vello GPU surface 呈现。
-//   dotnet run --project samples/WindowSpike -c Release
-//   dotnet run --project samples/WindowSpike -c Release -- --frames 120 --shot out/window-frame.png
+//   dotnet run --project sandbox/WindowSpike -c Release
+//   dotnet run --project sandbox/WindowSpike -c Release -- --frames 120 --shot out/window-frame.png
 
 int width = 1100;
 int height = 720;

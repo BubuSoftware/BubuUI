@@ -1,4 +1,4 @@
-namespace Samples;
+namespace Gallery;
 
 public partial class Prefs
 {

@@ -7,8 +7,8 @@ using EclipseUI.Text.Shaping;
 using RenderSpike;
 
 // G1 渲染 gate 的可运行入口。
-//   dotnet run --project samples/RenderSpike -c Release          # 输出 PNG
-//   dotnet run --project samples/RenderSpike -c Release -- bench # 性能表
+//   dotnet run --project sandbox/RenderSpike -c Release          # 输出 PNG
+//   dotnet run --project sandbox/RenderSpike -c Release -- bench # 性能表
 
 var mode = args.Length > 0 && args[0] is "bench" or "gpu" ? args[0] : "render";
 var outputDirectory = args.Length > 1

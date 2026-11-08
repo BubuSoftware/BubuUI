@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using EclipseUI;
 using EclipseUI.Elements;
-using Samples;
+using Gallery;
 using Xunit;
 
 namespace EclipseUI.Headless.Tests;

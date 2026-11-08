@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>GalleryCheck</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Description>EclipseUI 画廊验证壳（原 GalleryApp 的 --selfcheck 六步自动化、damage 覆盖率统计、帧成本测量、CPU 离屏链路）；bench-60fps.ps1 的窗口测量步骤跑本工程。画廊展示入口在 samples/Gallery.Desktop。</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\samples\Gallery\Gallery.csproj" />
+    <ProjectReference Include="..\..\src\EclipseUI.Platform.Windows\EclipseUI.Platform.Windows.csproj" />
+    <ProjectReference Include="..\..\src\EclipseUI.Rendering.Vello\EclipseUI.Rendering.Vello.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,15 +1,18 @@
+using System.Collections.Generic;
 using EclipseUI;
 using EclipseUI.Elements;
 using EclipseUI.Platform.Windows;
 using EclipseUI.Rendering;
 using EclipseUI.Rendering.Vello;
 using EclipseUI.Text.Shaping;
-using Samples;
+using Gallery;
 
-// G2 出口验证样例：CounterApp + TaskList 在真实 Win32 窗口中可交互。
-//   dotnet run --project samples/GalleryApp -c Release
-//   dotnet run --project samples/GalleryApp -c Release -- --frames 300 --shot out/gallery-window.png
-//   dotnet run --project samples/GalleryApp -c Release -- --cpu --shot out/gallery-cpu.png
+// EclipseUI 画廊验证壳（原 GalleryApp 的验证职责，2026-11-09 从 samples 移到 sandbox）：
+//   --selfcheck       六步真实消息自动化（消息 → InputRouter → 信号 → 重建 全链路）
+//   --frames N        限帧运行并打印帧平均/p95
+//   damage 统计        full/partial 帧数与覆盖率（avg/max），无需开关
+//   --cpu             无窗口离屏链路（InputRouter 点击 + PNG 对照）
+//   dotnet run --project sandbox/GalleryCheck -c Release -- --selfcheck --no-vsync
 
 int width = 1000;
 int height = 760;
@@ -61,15 +64,14 @@ for (int i = 0; i < args.Length; i++)
 
 if (maxFps == 0 && vsync) maxFps = 60;
 
-// 字体：优先西文字体，回落 CJK 字体；都没有时用只测量不绘制的降级实现。
-using var shaper = TryCreateShaper();
+using var shaper = TextShaperFactory.TryCreate();
 using var harfBuzz = shaper is null ? null : new HarfBuzzTextPainter(shaper);
 ITextPainter textPainter = harfBuzz is null ? new MeasuringTextPainter() : harfBuzz;
 // 布局与绘制共用同一个 shaping 缓存（同一字体、同一进距）。
 if (harfBuzz is not null) TextMeasurer.Current = harfBuzz;
 
 var theme = new ElementTheme();
-var scene = BuildGallery();
+var scene = GalleryScene.Build();
 var galleryRoot = new GalleryRoot(scene.Counter, scene.Tasks, scene.Root);
 galleryRoot.Mount();
 var gallery = galleryRoot.Root;
@@ -82,7 +84,7 @@ using (galleryRoot)
     if (useCpu || !OperatingSystem.IsWindows())
         return RunCpu();
 
-    using var window = new Win32Window("EclipseUI · G2 Gallery (Counter + TaskList)", width, height);
+    using var window = new Win32Window("EclipseUI · Gallery Check (Counter + TaskList)", width, height);
     using var presenter = VelloSurfaceBackend.Create(
         window.Handle,
         Math.Max(window.ClientWidth, 1),
@@ -100,7 +102,6 @@ using (galleryRoot)
         AlwaysRender = alwaysRender,
     }, galleryRoot);
 
-    var clicks = 0;
     var checkBox = gallery.Descendants().OfType<CheckBox>().First();
     var failures = new List<string>();
     var measured = new List<double>();
@@ -173,9 +174,6 @@ using (galleryRoot)
         }
     };
 
-    // 记录交互结果，退出时打印，便于脚本化验证。
-    addTaskButton.AddHandler(Button.ClickEvent, () => clicks++);
-
     var rendered = host.Run(frames);
 
     var measuredAvg = measured.Count == 0 ? 0 : measured.Average();
@@ -189,11 +187,11 @@ using (galleryRoot)
                       $"frame={frameSummary} " +
                       $"logical={window.LogicalClientSize.Width:F0}x{window.LogicalClientSize.Height:F0} scale={window.ScaleFactor:F2}");
     Console.WriteLine($"damage: full={fullFrames} partial={partialFrames} coverage(avg/max)={coverageSummary}");
-    Console.WriteLine($"state: counter={counter.count} showButton={counter.showButton} " +
-                      $"tasks={taskList.tasks.Count} buttonClicks={clicks}");
+    Console.WriteLine($"state: counter={counter.count} showButton={counter.showButton} tasks={taskList.tasks.Count}");
 
     if (shotPath is not null && rendered > 0)
-        SavePng(gallery, window.LogicalClientSize, window.ScaleFactor, host.Input.Focus.Focused, shotPath);
+        GallerySnapshot.SavePng(gallery, window.LogicalClientSize, window.ScaleFactor,
+            host.Input.Focus.Focused, shotPath, theme, textPainter);
 
     if (selfCheck)
     {
@@ -213,89 +211,7 @@ using (galleryRoot)
 
 return 0;
 
-// ---- 场景 ----
-
-static (StackPanel Root, Counter Counter, TaskList Tasks, Button AddButton) BuildGallery()
-{
-    var counter = new Counter();
-    counter.Mount();
-    SetPadding(counter.Root, 16);
-
-    var taskList = new TaskList();
-    // 先填数据再 Mount：Build 末尾的 Refresh 会读当前 tasks（spec/03 §2.3），省一次渲染；
-    // 接管前入队的失效如今会由 Adopt 迁移（D78），此处写 Invalidate 也正确。
-    taskList.tasks = new List<TaskItem>
-    {
-        new TaskItem { Id = 1, Name = "Design review" },
-        new TaskItem { Id = 2, Name = "Damage tracking v0" },
-        new TaskItem { Id = 3, Name = "Golden image test" },
-    };
-    taskList.Mount();
-    SetPadding(taskList.Root, 16);
-
-    var addTaskButton = new Button { Label = "+ Add task" };
-    var nextId = 4;
-    addTaskButton.AddHandler(Button.ClickEvent, () =>
-    {
-        var tasks = new List<TaskItem>(taskList.tasks)
-        {
-            new TaskItem { Id = nextId, Name = $"Task {nextId}" },
-        };
-        nextId++;
-        taskList.tasks = tasks;
-        taskList.Invalidate();
-    });
-
-    var root = new StackPanel { Gap = 14, Padding = 20 };
-    root.Children.Add(Text("EclipseUI G2 Gallery", 26));
-    root.Children.Add(Text("Click the checkbox to reveal +1 · Tab / Space to drive focus · Esc to close", 12));
-    root.Children.Add(counter.Root);
-    root.Children.Add(addTaskButton);
-    root.Children.Add(taskList.Root);
-    return (root, counter, taskList, addTaskButton);
-}
-
-static TextBlock Text(string text, double fontSize)
-{
-    var block = new TextBlock { FontSize = fontSize };
-    block.AddRun(new TextRun(text));
-    return block;
-}
-
-static void SetPadding(Element element, double padding)
-{
-    if (element is Panel panel) panel.Padding = padding;
-}
-
-static HarfBuzzTextShaper? TryCreateShaper()
-{
-    var candidates = new[]
-    {
-        @"C:\Windows\Fonts\segoeui.ttf",
-        @"C:\Windows\Fonts\msyh.ttc",
-        @"C:\Windows\Fonts\arial.ttf",
-    };
-
-    foreach (var path in candidates)
-    {
-        if (!File.Exists(path)) continue;
-        try
-        {
-            var shaper = new HarfBuzzTextShaper(path);
-            Console.WriteLine($"font: {path}");
-            return shaper;
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"font failed: {path}: {ex.Message}");
-        }
-    }
-
-    Console.WriteLine("font: none (measuring-only text painter)");
-    return null;
-}
-
-// ---- 离屏路径（无窗口自检 / 截图对照）----
+// ---- CPU 离屏路径（无窗口自检 / 截图对照）----
 
 int RunCpu()
 {
@@ -322,7 +238,7 @@ int RunCpu()
     gallery.Arrange(new Rect(Point.Zero, size));
 
     var path = shotPath ?? Path.Combine(Environment.CurrentDirectory, "out", "gallery-cpu.png");
-    SavePng(gallery, size, 1.0, input.Focus.Focused, path);
+    GallerySnapshot.SavePng(gallery, size, 1.0, input.Focus.Focused, path, theme, textPainter);
     return 0;
 }
 
@@ -360,51 +276,4 @@ static double Percentile(List<double> values, double percentile)
     Array.Sort(sorted);
     var index = Math.Clamp((int)Math.Ceiling(percentile * sorted.Length) - 1, 0, sorted.Length - 1);
     return sorted[index];
-}
-
-void SavePng(Element root, Size logicalSize, double scale, Element? focus, string path)
-{
-    var directory = Path.GetDirectoryName(Path.GetFullPath(path));
-    if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
-
-    var painter = new ElementPainter(theme, textPainter);
-    var list = painter.Build(root, logicalSize, scale, focus);
-    var errors = list.Validate();
-    if (errors.Count > 0)
-    {
-        Console.Error.WriteLine($"display list invalid: {string.Join("; ", errors)}");
-        return;
-    }
-
-    var widthPx = Math.Max(1, (int)Math.Round(logicalSize.Width * scale));
-    var heightPx = Math.Max(1, (int)Math.Round(logicalSize.Height * scale));
-
-    using var backend = new VelloCpuBackend(new VelloBackendOptions { UseCpu = true, ValidateDisplayList = true });
-    var target = new RenderTarget(widthPx, heightPx);
-    backend.Render(list, target);
-    PngEncoder.Write(path, target);
-
-    Console.WriteLine($"shot: {path} ({widthPx}x{heightPx} px, {list.Commands.Count} commands, hash={target.ContentHash():X16})");
-}
-
-// G2 场景是手工元素树；根组件只承担所有权与失效队列，供 WindowHost 每帧处理。
-sealed class GalleryRoot : Component
-{
-    private readonly Counter _counter;
-    private readonly TaskList _tasks;
-    private readonly Element _tree;
-
-    public GalleryRoot(Counter counter, TaskList tasks, Element tree)
-    {
-        _counter = counter;
-        _tasks = tasks;
-        _tree = tree;
-    }
-
-    protected override Element Build()
-    {
-        Track(_counter);
-        Track(_tasks);
-        return _tree;
-    }
 }
