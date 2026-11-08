@@ -36,27 +36,18 @@ public static class UiCatalogFactory
     internal static readonly SymbolDisplayFormat Qualified = SymbolDisplayFormat.FullyQualifiedFormat;
 
     /// <summary>
-    /// R4「全 global:: 限定」在原生类型上的补齐：FullyQualifiedFormat 把内置类型打印成关键字
-    /// （int/string?），生成代码与 spec/02 §4.3.3/§4.4.3 的冻结文本要求 global::System.Int32/
-    /// global::System.String?。只作用于参数/委托显示（组件推送与 Comparer 文本）；
-    /// fully-qualified 用户类型不含裸关键字记号，不受影响。
+    /// R4「全 global:: 限定」在原生类型上的补齐：FullyQualifiedFormat 含 UseSpecialTypes，
+    /// 会把内置类型打印成关键字（int/string?），而生成代码与 spec/02 §4.3.3/§4.4.3 的冻结文本
+    /// 要求 global::System.Int32/global::System.String?。改为去掉 UseSpecialTypes 的派生格式，
+    /// 让 Roslyn 符号显示引擎按符号结构直接产出限定名（泛型/数组/可空/元组由符号递归处理，
+    /// 不做任何文本后处理——原 <c>SpecialTypeWord</c> 正则逐词替换已移除）。
+    /// 只作用于参数/委托显示（组件推送与 Comparer 文本）；fully-qualified 用户类型不含裸
+    /// 关键字记号，不受影响。
     /// </summary>
-    private static readonly Dictionary<string, string> SpecialTypeNames = new()
-    {
-        ["bool"] = "global::System.Boolean", ["byte"] = "global::System.Byte",
-        ["char"] = "global::System.Char", ["decimal"] = "global::System.Decimal",
-        ["double"] = "global::System.Double", ["float"] = "global::System.Single",
-        ["int"] = "global::System.Int32", ["uint"] = "global::System.UInt32",
-        ["long"] = "global::System.Int64", ["ulong"] = "global::System.UInt64",
-        ["short"] = "global::System.Int16", ["ushort"] = "global::System.UInt16",
-        ["sbyte"] = "global::System.SByte", ["nint"] = "global::System.IntPtr",
-        ["nuint"] = "global::System.UIntPtr", ["object"] = "global::System.Object",
-        ["string"] = "global::System.String", ["void"] = "global::System.Void",
-    };
-
-    private static readonly System.Text.RegularExpressions.Regex SpecialTypeWord =
-        new(@"\b(bool|byte|sbyte|char|decimal|double|float|int|uint|long|ulong|short|ushort|nint|nuint|object|string|void)\b",
-            System.Text.RegularExpressions.RegexOptions.Compiled);
+    internal static readonly SymbolDisplayFormat QualifiedFrozen =
+        SymbolDisplayFormat.FullyQualifiedFormat.WithMiscellaneousOptions(
+            SymbolDisplayFormat.FullyQualifiedFormat.MiscellaneousOptions
+                & ~SymbolDisplayMiscellaneousOptions.UseSpecialTypes);
 
 
     /// <summary>保留属性名（design/01 §4.13）；控件暴露它们会与语法冲突 → 元数据问题。</summary>
@@ -857,10 +848,8 @@ public static class UiCatalogFactory
 
         private static string Display(ISymbol symbol) => symbol.ToDisplayString(Qualified);
 
-    /// <summary>参数/委托文本的显示：特殊类型关键字按 R4 归一为 global::System.*（见上面的说明）。</summary>
-    private static string DisplayQualified(ISymbol symbol) =>
-        SpecialTypeWord.Replace(symbol.ToDisplayString(Qualified),
-            m => SpecialTypeNames[m.Value]);
+    /// <summary>参数/委托文本的显示：特殊类型由 Roslyn 符号显示引擎直接按 R4 产出 global::System.*，零文本后处理。</summary>
+    private static string DisplayQualified(ISymbol symbol) => symbol.ToDisplayString(QualifiedFrozen);
 
         private static UiMetadataProblem Problem(string code, INamedTypeSymbol declaringType, string? memberName, string message)
             => new UiMetadataProblem(code, message, Display(declaringType), memberName,
