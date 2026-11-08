@@ -95,7 +95,7 @@ public abstract class Element
     internal bool _needsMeasure = true;
     internal bool _needsArrange = true;
     private long _renderVersion;
-    private Dictionary<StyledProperty, object?>? _localValues;
+    private Dictionary<StyledProperty, IValueBox>? _localValues;
     private Dictionary<RoutedEvent, List<Action<RoutedEventArgs>>>? _handlers;
 
     public Element? Parent => _parent;
@@ -125,8 +125,12 @@ public abstract class Element
 
     public T GetValue<T>(StyledProperty<T> property)
     {
-        if (_localValues is not null && _localValues.TryGetValue(property, out var boxed))
-            return (T)boxed!;
+        // 命中本地值盒：强类型读取，无拆箱。类型不匹配（正常 API 下不可达）时退化到
+        // 继承/默认值，避免抛未处理异常；仍保持「本地 → 父链 → DefaultValue」原顺序。
+        if (_localValues is not null &&
+            _localValues.TryGetValue(property, out var box) &&
+            box is ValueBox<T> typedBox)
+            return typedBox.Value;
         if (property.Inherits && _parent is not null)
             return _parent.GetValue(property);
         return property.DefaultValue;
@@ -135,11 +139,21 @@ public abstract class Element
     public void SetValue<T>(StyledProperty<T> property, T value)
     {
         if (_localValues is not null &&
-            _localValues.TryGetValue(property, out var old) &&
-            EqualityComparer<T>.Default.Equals((T)old!, value))
-            return;
+            _localValues.TryGetValue(property, out var existing) &&
+            existing is ValueBox<T> typedBox)
+        {
+            // 命中已有 ValueBox<T>：相等短路；否则只改 .Value 字段，不新建对象，
+            // 消除重复赋值时的装箱与分配。
+            if (EqualityComparer<T>.Default.Equals(typedBox.Value, value))
+                return;
+            typedBox.Value = value;
+        }
+        else
+        {
+            // 首次设置（或类型不匹配的防御性重建）才 new。
+            (_localValues ??= new Dictionary<StyledProperty, IValueBox>())[property] = new ValueBox<T>(value);
+        }
 
-        (_localValues ??= new Dictionary<StyledProperty, object?>())[property] = value;
         PropertyChanged?.Invoke(this, property);
         InvalidateRender();
         switch (property.Invalidate)

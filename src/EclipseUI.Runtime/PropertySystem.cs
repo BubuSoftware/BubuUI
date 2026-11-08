@@ -56,6 +56,25 @@ public sealed class StyledProperty<T> : StyledProperty
     }
 }
 
+/// <summary>
+/// 属性本地值的存储标记。值以 <see cref="ValueBox{T}"/> 的泛型字段内联保存，
+/// 再以引用类型身份存入字典，避免把值类型装箱成 <see cref="object"/>（A1 去装箱）。
+/// </summary>
+internal interface IValueBox
+{
+}
+
+/// <summary>
+/// 强类型值盒：<typeparamref name="T"/> 以字段内联，命中已有盒子时只改
+/// <see cref="Value"/> 即可复用，重复赋值不再产生装箱与新对象分配。
+/// </summary>
+internal sealed class ValueBox<T> : IValueBox
+{
+    public T Value;
+
+    public ValueBox(T value) => Value = value;
+}
+
 /// <summary>属性注册表：编译器与 LSP 未来的组件元数据查询入口。</summary>
 public static class StyledPropertyRegistry
 {

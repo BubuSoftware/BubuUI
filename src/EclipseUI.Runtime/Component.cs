@@ -169,6 +169,14 @@ public abstract class Component : IDisposable
         if (_disposed)
             return;
         _disposed = true;
+        // 清空自身失效队列：已释放组件不会再被 ProcessInvalidations 排空
+        // （_disposed 时直接返回），残留队列会多持有一轮强引用。
+        // 与 EnqueueInvalidation / ProcessInvalidations / MigratePending 共用同一把锁。
+        lock (_invalidationLock)
+        {
+            _pendingRenders.Clear();
+            _pendingSet.Clear();
+        }
         foreach (var disposable in _tracked)
             disposable.Dispose();
         _tracked.Clear();
