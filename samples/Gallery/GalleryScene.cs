@@ -36,7 +36,7 @@ public static class GalleryScene
         showcase.virtualList.ItemFactory =
             i => new Button { Label = $"virtual item {i + 1}" };   // 1000 行只实例化视口可见
 
-        var addTaskButton = new Button { Label = "+ Add task" };
+        var addTaskButton = new Button { Label = "+ Add task", Classes = ["primary"] };
         var nextId = 4;
         addTaskButton.AddHandler(Button.ClickEvent, () =>
         {
@@ -53,7 +53,8 @@ public static class GalleryScene
         root.Children.Add(Text("EclipseUI G4 Gallery", 26));
         root.Children.Add(Text("Checkbox reveals +1 · Tab / Space focus · Esc closes", 12));
         // S-A 主题令牌化：切换按钮本体在树里，Click 由宿主接线（SetTheme 换 token 表 → 整帧重绘）。
-        var themeButton = new Button { Label = "Toggle theme" };
+        // Classes=["tool"] 演示 S-B Class 样式（静态覆盖色，不随主题）。
+        var themeButton = new Button { Label = "Toggle theme", Classes = ["tool"] };
         root.Children.Add(themeButton);
         root.Children.Add(counter.Root);
         // 交互演示（Counter/TaskList）放在控件陈列区之前：G4 showcase 高约 700px，

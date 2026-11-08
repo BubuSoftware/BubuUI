@@ -104,6 +104,8 @@ public abstract class Element
     internal bool _needsArrange = true;
     private long _renderVersion;
     private Dictionary<StyledProperty, IValueBox>? _localValues;
+    private Dictionary<StyledProperty, IValueBox>? _styleValues;
+    private IReadOnlyList<string>? _classes;
     private Dictionary<RoutedEvent, List<Action<RoutedEventArgs>>>? _handlers;
 
     public Element? Parent => _parent;
@@ -142,12 +144,16 @@ public abstract class Element
 
     public T GetValue<T>(StyledProperty<T> property)
     {
-        // 命中本地值盒：强类型读取，无拆箱。类型不匹配（正常 API 下不可达）时退化到
-        // 继承/默认值，避免抛未处理异常；仍保持「本地 → 父链 → DefaultValue」原顺序。
+        // 有效值分层（S-B）：local（inline）→ class 样式 → 继承 → 默认。
+        // 命中值盒：强类型读取，无拆箱。类型不匹配（正常 API 下不可达）时退化到下一层。
         if (_localValues is not null &&
             _localValues.TryGetValue(property, out var box) &&
             box is ValueBox<T> typedBox)
             return typedBox.Value;
+        if (_styleValues is not null &&
+            _styleValues.TryGetValue(property, out var styleBox) &&
+            styleBox is ValueBox<T> styleTyped)
+            return styleTyped.Value;
         if (property.Inherits && _parent is not null)
             return _parent.GetValue(property);
         return property.DefaultValue;
@@ -171,6 +177,56 @@ public abstract class Element
             (_localValues ??= new Dictionary<StyledProperty, IValueBox>())[property] = new ValueBox<T>(value);
         }
 
+        ApplyValueChange(property);
+    }
+
+    /// <summary>
+    /// 写入 class 样式层的值（S-B）：优先级低于 local（<see cref="SetValue"/>）、
+    /// 高于继承与默认值。由 <see cref="IStyleProvider"/> 的样式应用调用——
+    /// 模板作者与控件代码不直接使用（样式经 <see cref="Classes"/> 声明）。
+    /// 失效语义与 <see cref="SetValue"/> 完全一致。
+    /// </summary>
+    public void SetStyleValue<T>(StyledProperty<T> property, T value)
+    {
+        if (_styleValues is not null &&
+            _styleValues.TryGetValue(property, out var existing) &&
+            existing is ValueBox<T> typedBox)
+        {
+            if (EqualityComparer<T>.Default.Equals(typedBox.Value, value))
+                return;
+            typedBox.Value = value;
+        }
+        else
+        {
+            (_styleValues ??= new Dictionary<StyledProperty, IValueBox>())[property] = new ValueBox<T>(value);
+        }
+
+        ApplyValueChange(property);
+    }
+
+    /// <summary>
+    /// 清除 local 层的一个值（「显式取消覆盖」语义，S-B）：下一次 <see cref="GetValue{T}"/>
+    /// 落到 class 层/继承/默认。对未设置的属性是 no-op。
+    /// </summary>
+    public void ClearLocalValue<T>(StyledProperty<T> property)
+    {
+        if (_localValues?.Remove(property) == true)
+            ApplyValueChange(property);
+    }
+
+    /// <summary>清除全部 class 样式值并按失效级别触发重算（Classes 变化时由提供者调用）。</summary>
+    public void ClearStyleValues()
+    {
+        if (_styleValues is not { Count: > 0 })
+            return;
+        var affected = new List<StyledProperty>(_styleValues.Keys);
+        _styleValues = null;
+        foreach (var property in affected)
+            ApplyValueChange(property);
+    }
+
+    private void ApplyValueChange(StyledProperty property)
+    {
         PropertyChanged?.Invoke(this, property);
         InvalidateRender();
         switch (property.Invalidate)
@@ -180,6 +236,33 @@ public abstract class Element
         }
         if (property.Inherits)
             NotifyInheritedChange(property);
+    }
+
+    /// <summary>
+    /// 样式类（S-B）：经 <see cref="Styling.Provider"/> 应用样式表；类集变化时
+    /// 先清 class 层值再重新应用（local 值不受影响）。Provider 未装配时记录声明、
+    /// 装配后补应用（宿主可晚于建树装配）。
+    /// </summary>
+    public IReadOnlyList<string> Classes
+    {
+        get => _classes ?? Array.Empty<string>();
+        set
+        {
+            var next = value ?? Array.Empty<string>();
+            if (_classes is not null && _classes.SequenceEqual(next))
+                return;
+            _classes = next.Count == 0 ? null : next.ToArray();
+            var provider = Styling.Provider;
+            if (provider is null)
+            {
+                if (!Styling.PendingClasses.Any(p => ReferenceEquals(p.Element, this)))
+                    Styling.PendingClasses.Add((this, _classes ?? Array.Empty<string>()));
+                return;
+            }
+            provider.ClearStyles(this);
+            foreach (var cls in _classes ?? Array.Empty<string>())
+                provider.ApplyClass(this, cls);
+        }
     }
 
     private void NotifyInheritedChange(StyledProperty property)

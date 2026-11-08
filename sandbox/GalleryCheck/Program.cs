@@ -71,6 +71,8 @@ ITextPainter textPainter = harfBuzz is null ? new MeasuringTextPainter() : harfB
 if (harfBuzz is not null) TextMeasurer.Current = harfBuzz;
 
 var theme = new ElementTheme();
+Styling.Provider = StyleRegistry.Instance; // S-B：装配 Class 样式（类名直配 setter 序列）
+GalleryStyles.Define();
 var scene = GalleryScene.Build();
 var galleryRoot = new GalleryRoot(scene.Counter, scene.Tasks, scene.Root);
 galleryRoot.Mount();

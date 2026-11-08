@@ -194,13 +194,13 @@ public sealed class ElementPainter
             switch (element)
             {
                 case ListBoxItem:
-                    PaintCard(rect, _theme.ItemBackground, _theme.ItemBorder, _theme.ItemRadius);
+                    PaintCard(element, rect, _theme.ItemBackground, _theme.ItemBorder, _theme.ItemRadius);
                     break;
                 case ScrollViewer:
-                    PaintCard(rect, _theme.PanelBackground, _theme.PanelBorder, _theme.PanelRadius);
+                    PaintCard(element, rect, _theme.PanelBackground, _theme.PanelBorder, _theme.PanelRadius);
                     break;
                 case StackPanel:
-                    PaintCard(rect, _theme.PanelBackground, _theme.PanelBorder, _theme.PanelRadius);
+                    PaintCard(element, rect, _theme.PanelBackground, _theme.PanelBorder, _theme.PanelRadius);
                     break;
             }
         }
@@ -254,13 +254,16 @@ public sealed class ElementPainter
 
     private void PaintTextBlock(TextBlock block, Rect rect)
     {
+        // S-B：显式前景覆盖优先于字号次色规则。
+        var explicitForeground = Visual.GetForeground(block);
         foreach (var run in block.Runs)
         {
             var text = run.Text;
             if (string.IsNullOrEmpty(text)) continue;
 
             var fontSize = run.GetValue(TextBlock.FontSizeProperty);
-            var color = fontSize < _theme.MutedFontSizeBelow ? _theme.MutedForeground : _theme.Foreground;
+            var color = explicitForeground
+                        ?? (fontSize < _theme.MutedFontSizeBelow ? _theme.MutedForeground : _theme.Foreground);
             var origin = new Point(rect.X + run.FinalRect.X, rect.Y + run.FinalRect.Y);
             _text?.Paint(_paintList, text, fontSize, origin, color);
         }
@@ -270,10 +273,11 @@ public sealed class ElementPainter
     {
         if (rect.Width <= 0 || rect.Height <= 0) return;
 
-        _paintList.Add(new FillRoundedRect(
-            rect,
-            _theme.ButtonRadius,
-            button.IsPressed ? _theme.AccentPressed : _theme.Accent));
+        // S-B：元素级视觉覆盖（class/inline）优先，null 回落主题令牌；
+        // 覆盖色完全接管按下态换色（v1 口径）。
+        var background = Visual.GetBackground(button)
+                         ?? (button.IsPressed ? _theme.AccentPressed : _theme.Accent);
+        _paintList.Add(new FillRoundedRect(rect, _theme.ButtonRadius, background));
 
         var label = button.Label;
         if (string.IsNullOrEmpty(label) || _text is null) return;
@@ -285,7 +289,7 @@ public sealed class ElementPainter
             rect.Y + (rect.Height - metrics.Height) / 2);
         // 必须写段缓冲 _paintList：写 _list 会先于背景 AddRange（背景后画盖掉文字），
         // 且文字命令不进段、复用帧彻底丢失（D97 回归测试锁定）。
-        _text.Paint(_paintList, label, fontSize, origin, _theme.OnAccent);
+        _text.Paint(_paintList, label, fontSize, origin, Visual.GetForeground(button) ?? _theme.OnAccent);
     }
 
     private void PaintCheckBox(CheckBox checkBox, Rect rect)
@@ -298,8 +302,9 @@ public sealed class ElementPainter
 
         if (checkBox.Checked)
         {
-            _paintList.Add(new FillRoundedRect(box, _theme.CheckBoxRadius,
-                checkBox.IsPressed ? _theme.AccentPressed : _theme.Accent));
+            var checkedBg = Visual.GetBackground(checkBox)
+                            ?? (checkBox.IsPressed ? _theme.AccentPressed : _theme.Accent);
+            _paintList.Add(new FillRoundedRect(box, _theme.CheckBoxRadius, checkedBg));
 
             var strokeWidth = Math.Max(1.5, boxSize * 0.11);
             var check = new PathGeometryBuilder()
@@ -326,19 +331,22 @@ public sealed class ElementPainter
         var origin = new Point(
             rect.X + boxSize + 8,
             rect.Y + (rect.Height - metrics.Height) / 2);
-        // 同 PaintButton：标签必须写段缓冲（D97）。
-        _text.Paint(_paintList, label, fontSize, origin, _theme.Foreground);
+        // 同 PaintButton：标签必须写段缓冲（D97）；前景覆盖优先（S-B）。
+        _text.Paint(_paintList, label, fontSize, origin, Visual.GetForeground(checkBox) ?? _theme.Foreground);
     }
 
-    private void PaintCard(Rect rect, Color background, Color border, double radius)
+    private void PaintCard(Element element, Rect rect, Color background, Color border, double radius)
     {
         if (rect.Width <= 0 || rect.Height <= 0) return;
 
-        _paintList.Add(new FillRoundedRect(rect, radius, background));
+        // S-B：卡片三件套均可被元素级覆盖替换。
+        var bg = Visual.GetBackground(element) ?? background;
+        var corner = Visual.GetCornerRadius(element) ?? radius;
+        _paintList.Add(new FillRoundedRect(rect, corner, bg));
 
         if (_theme.BorderWidth <= 0 || border.A == 0) return;
         _paintList.Add(new StrokePath(
-            PathGeometry.RoundedRectangle(Inset(rect, _theme.BorderWidth / 2), radius),
+            PathGeometry.RoundedRectangle(Inset(rect, _theme.BorderWidth / 2), corner),
             border,
             _theme.BorderWidth));
     }
