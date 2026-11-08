@@ -109,6 +109,11 @@
 > **S5 预算门槛扩展（2026-11-09，D94）**：`RuntimeHardeningTests` +3——附加属性重复赋值不重分配
 > 值盒、布局热路径分配常数级（Grid 轨道解析缓存 + cells/`double[]` 缓冲复用 + `ElementCollection`
 > struct enumerator 消除 foreach 装箱）、retained 帧构建 ≤512B/帧（锁 D93 段复用收益）。
+> **AOT/裁剪试点（2026-11-09，D95）**：Gallery.Desktop **full trimming 0 警告通过**、发布产物
+> 实跑出图（源生成器架构无运行时反射，天然裁剪友好）；AOT ILC 通过但运行阻塞于上游
+> `VelloSharp.NativeLibraryLoader`（`Assembly.GetCallingAssembly()` AOT 不支持，待上游修复）；
+> 试点配置固化 csproj（`PublishTrimmed`/`TrimMode=full` + `EnableAot` 开关——注意 `-p:`
+> 全局属性会传染源生成器报 NETSDK1124，必须放 csproj）。
 > **655 个用例（Headless 330 / Compiler 241 / Rendering 84），全绿**。
 >
 > **表达式语义预检已通过（2026-11-09，EUI049 Warning）**：属性 `{expr}`、`@if` 条件、插值文本段

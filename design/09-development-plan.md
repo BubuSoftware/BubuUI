@@ -376,6 +376,17 @@ CPU 侧部分收敛（2026-11-08/D84）：CPU 像素 golden（`PixelGoldenTests`
   cells/`double[]` 缓冲复用 + `ElementCollection` 改 struct enumerator 消除 foreach 装箱）、
   retained 帧构建每帧分配 ≤512B（锁 D93 段复用收益——段失效逐元素重画会是数 KB/帧）。
   顺带优化：`Grid.MeasureCore/ArrangeCore` 不再每帧 `string.Split` 解析轨道（引用键缓存）。
+  ⑧ S5 AOT/裁剪试点收敛（D95）：`Gallery.Desktop` 为试点——**full trimming 完全通过**：
+  0 条 IL2xxx 警告（源生成器架构无运行时反射，天然裁剪友好），self-contained 发布产物
+  实跑 `--cpu --shot` 出图 hash 正常（native P/Invoke 完好）；**AOT 编译通过、运行被上游阻塞**：
+  ILC 正常（仅 VelloSharp 4 条 IL3000），链接需手动补 `LIB`/`INCLUDE`（MSVC 14.51 + Windows
+  SDK 10.0.26100 的库路径，ILC 自动探测不含 SDK）；产物启动即崩于
+  `VelloSharp.NativeLibraryLoader` 的 `<Module>..cctor` 调 `Assembly.GetCallingAssembly()`
+  （AOT 不支持，PlatformNotSupportedException）——与 IL3000 同源，**需上游把 native 探测改为
+  `AppContext.BaseDirectory` 并去掉 GetCallingAssembly** 后复测。试点配置固化在
+  `Gallery.Desktop.csproj`：`PublishTrimmed`（Release 条件）+ `TrimMode=full` + AOT 开关
+  走自定义属性 `EnableAot`（**坑：`-p:PublishTrimmed=true` 命令行全局属性会传染 netstandard2.0
+  的源生成器项目 → NETSDK1124，必须放 csproj**）。
 - 属性存储去装箱（`IValueBox`/`ValueBox<T>`，✅ 2026-11-08/D83）；剩失效队列分配预算门槛、
   benchmark 基线、帧预算门槛、CI 配置。
 
