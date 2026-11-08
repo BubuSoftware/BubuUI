@@ -192,9 +192,12 @@ public sealed class WindowHost : IDisposable
 
             if (frameInterval > 0)
             {
-                // Windows 的 sleep 粒度较大（~15ms），剩余部分用自旋补足。
+                // 提前 1ms 唤醒、末段自旋补足：依赖 Win32Window 已把定时器分辨率提到 1ms，
+                // 直接 Sleep(remaining) 仍会带 ~1ms 量化误差，提前醒来可把 pacing 收敛到亚毫秒。
+                // （DwmFlush 合成钟 pacing 实测过：在合成节奏抖动的虚拟显示链上反而拖垮到 43.5fps，
+                // 见 design/reports/target-machine-60fps-2026-11-08.md §7，物理面板上可再评估。）
                 var remaining = frameInterval - clock.Elapsed.TotalMilliseconds;
-                if (remaining > 1.0) Thread.Sleep((int)remaining);
+                if (remaining > 2.0) Thread.Sleep((int)(remaining - 1.0));
                 while (clock.Elapsed.TotalMilliseconds < frameInterval) Thread.SpinWait(64);
             }
             else if (!presented && _options.IdleSleepMilliseconds > 0)

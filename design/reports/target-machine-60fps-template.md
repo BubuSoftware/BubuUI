@@ -86,7 +86,10 @@ dotnet run --project samples/WindowSpike -c Release -- --frames 1200 --no-vsync 
 
 ## 6. 已知本机限制（复测时勿复用本机数据）
 
-- 本机显示器 `CurrentRefreshRate = 29Hz`（虚拟显示器），窗口帧测量受刷新率限制。
+- 本机（Intel UHD 630 + GameViewer 虚拟链）已调至 60Hz 报告值，但 DWM 合成节奏在 32–60Hz 间波动：
+  `Immediate` 模式墙钟节奏可信（软限速已修准，见
+  [target-machine-60fps-2026-11-08.md](./target-machine-60fps-2026-11-08.md)），
+  `Fifo` 上屏侧结论仍需物理目标机。
 - 本机 GPU 适配器可用（wgpu Dx12，历史 GPU bench 有数据）；若本次 `RenderSpike bench` GPU 列为 `NaN`，
   表示适配器初始化失败，仅记录、不影响 CPU 结论，也不据此下 60fps 结论。
 - 本机 CPU 后端固定开销约 60ms/帧，与 60fps 目标无关。

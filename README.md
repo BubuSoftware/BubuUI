@@ -73,7 +73,9 @@
 > （按 `FrameDamage` 只 blit 脏区的 retained 合成原型）+ `tools/bench-60fps.ps1` 与目标机报告模板。
 > **边界**：合成原型不减少光栅化，真正局部重绘需 `IRenderBackend.Render` 脏区/scissor 重载
 > （VelloSharp 0.5.0-alpha.3 无公开 API）；GPU retained layer 依赖 HWND + wgpu device，本机无法验证；
-> 「稳定 60fps」结论依赖目标机真实显示器（本机 29Hz 虚拟显示），只能给可复现测量程序与报告模板；
+> 「稳定 60fps」结论依赖物理目标机——本机（60Hz 虚拟链）已完成帧节奏修复与复测（
+> [报告](./design/reports/target-machine-60fps-2026-11-08.md)）：`Immediate` 模式墙钟 59.7–59.8fps 稳定，
+> `Fifo` 上屏受虚拟链 DWM 合成波动（32–60Hz）主导；
 > 像素探针 DSL 仍缺。余项：S4/S5（Element.Unmount 属 G4、AOT/裁剪、旧语法清理、最终审计、
 > 帧预算/分配预算门槛、CI）、G2（GPU retained layer/真正局部重绘、目标机稳定 60fps 结论、
 > 像素探针 DSL、CPU/GPU 交叉一致性门禁）、G4（样式/主题/附加属性；泛型标签暂缓 K19）、IDE/DevTools。
@@ -250,7 +252,10 @@ public partial class Counter
 - 字体 fallback 未实现（缺字显示 `.notdef`）；CPU 光栅化每次约 60 ms 固定开销，仅用于 CI/离线导出。
 - 3D：**不提供 3D 引擎**。规划为 WebGPU 视口控件——应用自带渲染器，框架负责布局、
   裁剪、DPI、输入与纹理合成（见 [05 布局、渲染与输入](./design/05-layout-rendering-input.md) 与 G7）。
-- 测试机显示器为 29 Hz，`Fifo` 下 33.3ms/帧属正常；60fps 结论需在目标机用 `--no-vsync` 复测。
+- 测试机（Intel UHD 630 + GameViewer 虚拟链）已调至 60Hz 报告值：软限速器已修准
+  （`Immediate` 墙钟 59.7–59.8fps，帧成本不受影响）；`Fifo` 上屏节奏受虚拟链 DWM 合成
+  波动（32–60Hz）主导，稳定 60fps 结论仍需物理目标机复测。详见
+  [60fps 复测报告](./design/reports/target-machine-60fps-2026-11-08.md)。
 
 ## 下一步（按开发计划）
 

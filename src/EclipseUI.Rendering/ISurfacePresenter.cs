@@ -18,6 +18,12 @@ public interface ISurfacePresenter : IDisposable
     int Height { get; }
 
     /// <summary>
+    /// 呈现模式是否垂直同步锁定（Fifo/AutoVsync）。
+    /// 宿主据此选择帧节奏策略：vsync 锁定时用 DWM 合成钟 pacing，否则用软限速。
+    /// </summary>
+    bool IsVsync { get; }
+
+    /// <summary>
     /// 改变表面尺寸。同一尺寸重复调用应为 no-op。
     /// 实现须自行重建依赖尺寸的资源（renderer/swapchain）。
     /// </summary>

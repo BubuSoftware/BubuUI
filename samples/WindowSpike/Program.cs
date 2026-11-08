@@ -174,10 +174,14 @@ while (window.PumpMessages())
     var renderEnd = Stopwatch.GetTimestamp();
 
     // 主动限帧：Fifo 下如果自由跑，每次都会错过一个 vsync（acquire 阻塞 + 提交延迟叠加）。
+    // 提前 1ms 唤醒、末段自旋补足（依赖 Win32Window 的 1ms 定时器分辨率）；
+    // 直接 Sleep(remaining) 在默认 ~15.6ms 量子下会整量子超调（实测墙钟只有 ~33fps）。
+    // （DwmFlush 合成钟 pacing 实测过：虚拟显示链合成节奏抖动大，反而拖垮到 43.5fps，
+    // 见 design/reports/target-machine-60fps-2026-11-08.md §7。）
     if (targetIntervalMs > 0)
     {
         var remaining = targetIntervalMs - interval.Elapsed.TotalMilliseconds;
-        if (remaining > 1.0) Thread.Sleep((int)remaining);
+        if (remaining > 2.0) Thread.Sleep((int)(remaining - 1.0));
         while (interval.Elapsed.TotalMilliseconds < targetIntervalMs) Thread.SpinWait(64);
     }
 

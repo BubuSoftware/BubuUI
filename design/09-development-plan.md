@@ -161,7 +161,8 @@
 （[11 G2 第一切片](./11-g2-surface-slice.md)）；元素树→display list、输入路由、文本 shaping 接入、
 Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-slice.md)）；
 元素级脏区检测、空闲跳帧与覆盖率统计（[13 G2 第三切片](./13-g2-damage-v0.md)）。
-CPU 侧部分收敛（2026-11-08/D84）：CPU 像素 golden（`PixelGoldenTests` 4 例 + `PixelGolden.baseline.txt`）、retained 合成原型（`RetainedFrameCompositor.cs`，只 blit 脏区、不减少光栅化）、`tools/bench-60fps.ps1` + 目标机报告模板。剩余：GPU retained layer / 真正局部重绘（需 `IRenderBackend.Render` 脏区/scissor 重载，VelloSharp 0.5.0-alpha.3 无公开 API）、目标机稳定 60fps 结论（本机 29Hz 虚拟显示，只能给可复现测量程序）、像素探针 DSL、CPU/GPU 交叉一致性门禁。
+CPU 侧部分收敛（2026-11-08/D84）：CPU 像素 golden（`PixelGoldenTests` 4 例 + `PixelGolden.baseline.txt`）、retained 合成原型（`RetainedFrameCompositor.cs`，只 blit 脏区、不减少光栅化）、`tools/bench-60fps.ps1` + 目标机报告模板。剩余：GPU retained layer / 真正局部重绘（需 `IRenderBackend.Render` 脏区/scissor 重载，VelloSharp 0.5.0-alpha.3 无公开 API）、物理目标机稳定 60fps 结论（见 [60fps 复测报告](./reports/target-machine-60fps-2026-11-08.md)）、像素探针 DSL、CPU/GPU 交叉一致性门禁。
+帧节奏修复（2026-11-08 晚）：`Win32Window` 存续期 `timeBeginPeriod(1)`（引用计数）+ `WindowHost`/`WindowSpike` 软限速器提前 1ms 唤醒自旋——修复 `Thread.Sleep` 在默认 ~15.6ms 定时器量子下整量子超调导致的墙钟 ~33fps；修复后 `Immediate` 模式墙钟 59.7–59.8fps 稳定（两样例），`Fifo` 上屏节奏受本机虚拟显示链 DWM 合成波动（32–60Hz）限制。`DwmFlush` 合成钟 pacing 实验过（43.5fps，更差）已回退；确定性修复需 VelloSharp 暴露 frame latency（原生硬编码 2），上游阻塞。
 
 | 子项 | 状态 |
 |---|---|
@@ -185,11 +186,10 @@ CPU 侧部分收敛（2026-11-08/D84）：CPU 像素 golden（`PixelGoldenTests`
 
 - `CounterApp`、`TaskList` 在真实窗口可交互。—— ✅ GalleryApp 自检 6 步全过（[12](./12-g2-interactive-slice.md)）。
 - resize/DPI 变化不崩、不闪。—— ✅ 860×600 ↔ 1000×760 自检 + 第一切片 4 档尺寸冒烟。
-- 1280×800 简单场景稳定 60fps（目标机实测）。—— ⏳ 本机稳态帧成本 4.49 ms（p95 5.95），受 29 Hz 虚拟显示限制待目标机复测。
+- 1280×800 简单场景稳定 60fps（目标机实测）。—— ⏳ 帧成本 4.49 ms（p95 5.95）余量充足；软限速器已修准（`Immediate` 墙钟 59.7–59.8fps @ 60Hz，2026-11-08 帧节奏修复）；`Fifo` 上屏节奏受本机虚拟链 DWM 合成波动（32–60Hz）限制，稳定 60fps 结论仍待物理目标机复测（[报告](./reports/target-machine-60fps-2026-11-08.md)）。
 - `dotnet test` 含渲染测试且跨机器稳定（容差/探针策略）。—— ✅ 257 个测试（103 无头 + 93 编译器 + 61 渲染），GPU 用例无设备自动跳过。
 
-**已知约束**（第一切片测得）：测试机显示器 29 Hz，`Fifo` 下 33.3ms/帧是正确行为；
-60fps 结论必须在目标机（真实显示器）上用 `--no-vsync` 的 `Immediate` 模式复测。
+**已知约束**（2026-11-08 更新）：本机为 Intel UHD 630（GameViewer 虚拟链）已调至 60Hz 报告值，但 DWM 合成节奏在 32–60Hz 间波动；软限速修复后 `Immediate` 模式墙钟 ~60fps 稳定（代码侧节奏已验证），`Fifo` 上屏受合成波动主导。稳定 60fps 结论仍必须在物理目标机（真实显示器）上复测（`Immediate` 模式 + 分段耗时）。
 
 ### G3：语义与编译器硬化（6–8 周，可与 G2 并行）
 

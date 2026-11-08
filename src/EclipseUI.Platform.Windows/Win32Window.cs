@@ -109,6 +109,7 @@ public sealed class Win32Window : IDisposable
     private static Win32Native.WndProc? StaticWndProc;
     private static ushort ClassAtom;
     private static int DpiAwarenessSet;
+    private static int TimerPeriodUsers;
 
     private readonly nint _hwnd;
     private bool _disposed;
@@ -122,6 +123,7 @@ public sealed class Win32Window : IDisposable
 
         EnsureDpiAwareness();
         EnsureClassRegistered();
+        EnsureTimerResolution();
 
         var style = Win32Native.WS_OVERLAPPEDWINDOW;
         var rect = new Win32Native.RECT { Left = 0, Top = 0, Right = width, Bottom = height };
@@ -313,6 +315,8 @@ public sealed class Win32Window : IDisposable
             Win32Native.DestroyWindow(_hwnd);
         }
 
+        ReleaseTimerResolution();
+
         lock (ClassLock)
         {
             Windows.Remove(_hwnd);
@@ -337,6 +341,31 @@ public sealed class Win32Window : IDisposable
         if (Interlocked.Exchange(ref DpiAwarenessSet, 1) == 1) return;
         // 进程级设置；若宿主已设置过则忽略失败。
         Win32Native.SetProcessDpiAwarenessContext(Win32Native.DpiAwarenessPerMonitorV2);
+    }
+
+    /// <summary>
+    /// 窗口存续期间把系统定时器分辨率提到 1ms：<see cref="Thread.Sleep"/> 的实际粒度
+    /// 等于系统定时器分辨率（默认 ~15.6ms），软限速器会整量子超调。引用计数保证
+    /// 多窗口场景 begin/end 成对；失败（如宿主已锁定分辨率）只影响精度，不影响正确性。
+    /// </summary>
+    private static void EnsureTimerResolution()
+    {
+        if (Interlocked.Increment(ref TimerPeriodUsers) != 1) return;
+        if (Win32Native.timeBeginPeriod(Win32Native.TimerPeriodMilliseconds) == Win32Native.TimerErrorNoCanDo)
+            Interlocked.Decrement(ref TimerPeriodUsers); // 请求被拒：撤销登记，后续窗口会重试
+    }
+
+    private static void ReleaseTimerResolution()
+    {
+        var remaining = Interlocked.Decrement(ref TimerPeriodUsers);
+        if (remaining < 0)
+        {
+            Interlocked.Increment(ref TimerPeriodUsers); // 无登记可释放：撤销递减，保持计数自洽
+            return;
+        }
+
+        if (remaining == 0)
+            Win32Native.timeEndPeriod(Win32Native.TimerPeriodMilliseconds);
     }
 
     private static void EnsureClassRegistered()

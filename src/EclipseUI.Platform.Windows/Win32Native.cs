@@ -225,6 +225,18 @@ internal static class Win32Native
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
     public static extern nint GetModuleHandleW(string? moduleName);
 
+    // 睡眠粒度：Windows 默认系统定时器分辨率 ~15.6ms，Thread.Sleep 会整量子超调，
+    // 软限速器因此无法命中 16.7ms 目标（实测 ~33fps）。窗口存续期间提到 1ms（timeEndPeriod 必须与
+    // timeBeginPeriod 成对调用，见 Win32Window 的引用计数）。
+    public const uint TimerPeriodMilliseconds = 1;
+    public const uint TimerErrorNoCanDo = 1;
+
+    [DllImport("winmm.dll")]
+    public static extern uint timeBeginPeriod(uint msPeriod);
+
+    [DllImport("winmm.dll")]
+    public static extern uint timeEndPeriod(uint msPeriod);
+
     [DllImport("user32.dll")]
     public static extern nint LoadCursorW(nint hInstance, nint cursorName);
 

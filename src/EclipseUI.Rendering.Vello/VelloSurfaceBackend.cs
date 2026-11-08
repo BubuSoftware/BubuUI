@@ -71,6 +71,9 @@ public sealed class VelloSurfaceBackend : ISurfacePresenter
     /// <summary>实际配置的呈现模式（诊断用）。</summary>
     public PresentMode PresentMode => _presentMode;
 
+    /// <summary>呈现模式是否垂直同步锁定（Fifo/AutoVsync）。</summary>
+    public bool IsVsync => _presentMode is PresentMode.Fifo or PresentMode.AutoVsync;
+
     /// <summary>表面能力摘要（格式 / 呈现模式 / alpha 模式），用于诊断。</summary>
     public string Diagnostics { get; private set; } = string.Empty;
 
