@@ -67,7 +67,8 @@ public static class UiTestCatalogs
         {
             "# EclipseUI 内置模板表面（design/14 §14.11.1）。",
             "# 由 CatalogScannerTests.Surface_MatchesGoldenSnapshotFile 生成/比对；控件 API 变化时必须连同变更记录一起更新。",
-            $"# 标签 {catalog.Elements.Count} / 属性项 {catalog.Elements.Sum(e => e.Properties.Count)} / 事件项 {catalog.Elements.Sum(e => e.Events.Count)}",
+            $"# 标签 {catalog.Elements.Count} / 属性项 {catalog.Elements.Sum(e => e.Properties.Count)} / 事件项 {catalog.Elements.Sum(e => e.Events.Count)}" +
+            $" / 附加属性项 {catalog.AttachedProperties.Count}",
             "",
         };
 
@@ -89,6 +90,13 @@ public static class UiTestCatalogs
                 lines.Add($"    slot   {slot.Key} -> {slot.Value.PropertyName}");
             lines.Add("");
         }
+
+        // G4：附加属性表面（design/14 §14.5.5）——宿主不进标签列表，单独成块。
+        foreach (var attached in catalog.AttachedProperties)
+            lines.Add($"[attached] {attached.OwnerTag}.{attached.Name} {attached.TypeShape.CanonicalKey} " +
+                $"declared={attached.OwnerClrName} setter={attached.SetterMethod}");
+        if (catalog.AttachedProperties.Count > 0)
+            lines.Add("");
 
         foreach (var hidden in catalog.HiddenTags.OrderBy(h => h.Tag, StringComparer.Ordinal))
             lines.Add($"[hidden] {hidden.Tag} {hidden.ClrTypeName} {hidden.ReasonCode} {hidden.Reason}");

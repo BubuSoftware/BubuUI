@@ -79,15 +79,23 @@
 > `Fifo` 上屏受虚拟链 DWM 合成波动（32–60Hz）主导；
 > 像素探针 DSL 仍缺。余项：S4/S5（Element.Unmount 属 G4、AOT/裁剪、旧语法清理、最终审计、
 > 帧预算/分配预算门槛、CI）、G2（GPU retained layer/真正局部重绘、目标机稳定 60fps 结论、
-> 像素探针 DSL、CPU/GPU 交叉一致性门禁）、G4（样式/主题/附加属性；泛型标签暂缓 K19）、IDE/DevTools。
+> 像素探针 DSL、CPU/GPU 交叉一致性门禁）、G4（样式/主题；附加属性首批 ✅ 2026-11-09；泛型标签暂缓 K19）、IDE/DevTools。
 
+> **G4 附加属性切片已通过（2026-11-09）**：模板 `Grid.Row="1"`/`Grid.Column={expr}` → 生成代码
+> 直调静态 setter（`global::EclipseUI.Elements.Grid.SetRow(el, 1)`）；`AttachedProperty<T>` 以
+> `ConditionalWeakTable` 弱表存值（元素卸载随 GC 回收，K33 口径）、重复赋值复用值盒；目录新增
+> `UiAttachedPropDef` 与扫描规则（顶层宿主、Get/Set 配对、值类型一致、同 (Owner,Name) 冲突先声明胜出）；
+> EUI031 对附加属性解禁——已注册的正常解析，未知点号名按未知附加属性报 EUI002（带最近名建议）；
+> 组件标签同样可携带；表达式值走 `U{N}`/`R{N}` 动态调用语句；内置表面 +2 附加属性项（14 §14.5.5、
+> spec/02 §4.19，`G4AttachedPropertyTests` 9 例 + 扫描规则 7 例）。
+>
 > **G4 首批切片已通过（2026-11-09，K33/D89 + D90）**：① `Element.Unmount` 卸载链路——
 > `UnmountedEvent`（Direct 路由，`[UiIgnore]` 退出模板事件表面）、子树级 `OnUnmount` 钩子、
 > 组件根订阅自 `Dispose`（作用域/绑定随之解除；Dispose 退订防泄漏回归）、焦点离树修剪
 > （`UnmountTests` 9 例）；手工 `Children.Remove` 保守不触发（契约锁定）。② `WrapPanel`
 > 流式布局（水平/竖直换行、Gap、越界独占一行，`WrapPanelTests` 5 例）——内置表面 5→6 标签、
 > 17→22 属性项、37→44 事件项。
-> **575 个用例（Headless 288 / Compiler 227 / Rendering 65 → 574 绿）**——唯一红仍是既有像素
+> **597 个用例（Headless 298 / Compiler 234 / Rendering 65 → 596 绿）**——唯一红仍是既有像素
 > golden `PixelGoldens_MatchBaseline`。
 >
 > **S6 语法对齐（✅ 已实现 2026-11-08，K23 + K24–K31）**：`.ui` 语法表面向 Blazor/Razor 对齐——
@@ -290,7 +298,7 @@ EUI024 事件处理器签名匹配 ✅ D82）也已全部通过**，落地记录
 像素探针 DSL、CPU/GPU 交叉一致性门禁（CPU 侧像素 golden 与 retained 合成原型已由 D84 部分落地）；
 S4/S5 余项（Element.Unmount 属 G4、AOT/裁剪、旧语法清理、最终审计、帧预算/分配预算门槛、CI）与
 **S6 语法对齐（K23，✅ 已实现 2026-11-08）** 按排期插在 G3 之后、G4 之前；
-G4（样式/主题/附加属性；泛型标签暂缓 K19）、IDE/DevTools 随后。
+G4（样式/主题；附加属性首批 ✅ 2026-11-09；泛型标签暂缓 K19）、IDE/DevTools 随后。
 完整路线图见 [09 开发计划](./design/09-development-plan.md)，G1 数据见
 [render-gate-2026-11](./design/reports/render-gate-2026-11.md)，G2 进度见
 [11 G2 第一切片](./design/11-g2-surface-slice.md)、[12 G2 第二切片](./design/12-g2-interactive-slice.md)

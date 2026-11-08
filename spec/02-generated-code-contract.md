@@ -78,7 +78,7 @@
 | `@foreach` | §4.10 | ✅ S2 |
 | 组件标签 | §4.12 | ✅ C4 |
 | `Key` | §4.13 | ✅ S2 |
-| `Ref` | §4.14 | ✅ C5（Class/Style/附加属性仍 G4/G4+） |
+| `Ref` | §4.14 | ✅ C5（Class/Style 仍 G4；附加属性 ✅ G4 → §4.19） |
 | 具名插槽（`<Slot>` + `<ContentSlot>`） | §4.12.5 | ✅ C6 |
 
 ### 0.6 示例约定
@@ -1135,7 +1135,7 @@ foreach (var slot8 in Rows)
 | `Ref={ident}` | Build 时把元素/组件赋给 code-behind 字段 | ✅ C5 | `EUI029`（保留） |
 | `Class`/`Style` | 样式/主题 | G4 | `EUI031` |
 | `<Slot Name="...">` / `<ContentSlot>` | 具名插槽 | ✅ C6 | `EUI022`（生成形态见 §4.12.5） |
-| 附加属性 `P.Attached` | 附加属性 | G4 | `EUI031` |
+| 附加属性 `P.Attached` | 附加属性 | ✅ G4（2026-11-09，见 §4.19） | 已注册走正常解析；未注册点号名报 `EUI002`（不再占 `EUI031` 保留位） |
 | 泛型标签 `<C<T>>` | 泛型组件/控件 | 暂缓（K19，不排期） | `EUI030`（保留位；当前写法落 `EUI100`） |
 
 - 保留语法在实现前**不生成任何代码**；分析器报对应诊断，生成器跳过该节点/属性。
@@ -1272,6 +1272,24 @@ public partial class {Class} : global::EclipseUI.Component
    `CollectUsingLines` 是生成文件头与两棵探针树的唯一来源。
 6. 目标不是目录里的已知元素/组件 → `EUI048`（Error），整份生成代码缺失（与其它 Error 口径一致）。
 7. 别名行按模板顺序去重；命名空间导入与别名**各自**去重，互不影响。
+
+### 4.19 附加属性 `Owner.Prop`（✅ G4 首批，2026-11-09）
+
+- 声明（design/14 §14.5.5）：宿主类提供 `public static readonly AttachedProperty<T> XxxProperty` 与
+  `public static T GetXxx(Element)` / `public static void SetXxx(Element, T)`；扫描器要求配对存在且值类型一致，
+  否则报 `EUI019` 家族问题、不进目录。目录项 `UiAttachedPropDef(OwnerTag, Name, OwnerClrName, SetterMethod, ClrTypeDisplayName, TypeShape)`。
+- 字面量：按 `TypeShape` 走 `UiLiterals` 同一管道（无转换器 → `EUI023`，格式错 → `EUI003`），生成**直调静态 setter**：
+
+  ```csharp
+  global::EclipseUI.Elements.Grid.SetRow(el1, 1);
+  ```
+
+- 表达式 `Grid.Row={expr}`：动态形态不是赋值左值而是调用语句——根级提升为 `U{N}`、块内 `R{N}`，方法体即
+  `global::Ns.Owner.SetXxx(elN, expr);`（`#line` 列映射对准 `{expr}`）。内容上下文仍是 build-once 快照（§4.12.3 规则 8）。
+- 组件标签同样可携带附加属性（组件实例是 `Element`）；发射点在参数赋值之前按源码顺序执行。
+- 值存储由 `AttachedProperty<T>` 的 `ConditionalWeakTable` 弱表承担：元素卸载随 GC 回收，Unmount 无需清理（K33 口径）；
+  读取 `Owner.GetXxx(el)` 无本地值时回落声明时的默认值。
+- `@bind-` 附加属性不支持（`EUI040`，写入来自模板一次性赋值）；未知点号名报 `EUI002` 未知附加属性（带全目录最近名建议）。
 
 ## 5. 顺序、资源与释放
 
@@ -1551,7 +1569,7 @@ EUI045 是 Error 但不计入生成短路，生成器仍按本文输出；其它
 ## 12. 实现偏差台账 D42–D88
 
 **S1 已收敛（2026-10-30）、S2 已收敛（2026-10-30）、S3 已收敛（控件侧 2026-11-02、组件侧随 C4 2026-11-05）、C1 已收敛（2026-11-02，目录派生）、C3 已收敛（2026-11-03，字面量转换器/使用点诊断/保留语法）、C4 已收敛（2026-11-05，组件标签）、C5 已收敛（2026-11-05，Ref/使用点诊断）、C6 已收敛（2026-11-05，具名插槽 §4.12.5）、G3 七个小切片全部收敛（块布局透明 2026-11-05/D77、失效迁移 2026-11-07/D78、按文件增量 2026-11-08、`#line` 列映射 2026-11-08/D79、EUI045 code-behind 冲突诊断 2026-11-08/D57/D80、诊断出口补全 2026-11-08/D74 ②/D81、EUI024 事件处理器签名匹配 2026-11-08/D82）、S4/S5 运行时硬化部分收敛（2026-11-08/D83）、G2 CPU 侧部分收敛（2026-11-08/D84）**，
-下表中标 ✅ S1/✅ S2/✅ S3/✅ C1/✅ C4/✅ C5/✅ C6/✅ G3 的条目已关闭；D82/D83/D84 记录本轮新落地口径与边界。其余偏差按下列余项收敛：S4/S5（AOT/裁剪、最终审计、帧预算/分配预算门槛、CI；Element.Unmount 已随 D89/K33 收敛）、G2（GPU retained layer/真正局部重绘、目标机稳定 60fps 结论、像素探针 DSL、CPU/GPU 交叉一致性门禁）、G4（样式/主题/附加属性；泛型标签暂缓 K19、不排期）、IDE/DevTools。台账之外的差异视为实现缺陷。
+下表中标 ✅ S1/✅ S2/✅ S3/✅ C1/✅ C4/✅ C5/✅ C6/✅ G3 的条目已关闭；D82/D83/D84 记录本轮新落地口径与边界。其余偏差按下列余项收敛：S4/S5（AOT/裁剪、最终审计、帧预算/分配预算门槛、CI；Element.Unmount 已随 D89/K33 收敛）、G2（GPU retained layer/真正局部重绘、目标机稳定 60fps 结论、像素探针 DSL、CPU/GPU 交叉一致性门禁）、G4（样式/主题；附加属性首批 ✅ 2026-11-09；泛型标签暂缓 K19、不排期）、IDE/DevTools。台账之外的差异视为实现缺陷。
 
 **2026-11-08 补充（K23）**：D85–D88 记录「决策已进规范正文、代码仍是 v2」的规范先行偏差，目标阶段统一为 **S6 语法对齐**（design/09 §9.5/§9.6），不并入 S4/S5/G2/G4 余项；收敛一条即在对应行标 ✅ S6 并同步 design/03 §3.5.4。Q3/Q4/Q6/Q7 等未拍板细项不登记偏差，待拍板后按 K24 起登记。
 D77 是运行时排布口径，**不改本文的生成形态**（块仍按 §4.9–§4.10 生成），规范条文在 spec/01 §4.10/§4.11。

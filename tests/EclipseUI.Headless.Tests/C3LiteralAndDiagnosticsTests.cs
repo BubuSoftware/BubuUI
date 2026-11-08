@@ -49,7 +49,8 @@ public class C3LiteralAndDiagnosticsTests
             new Dictionary<string, UiEventDef>(StringComparer.Ordinal),
             new Dictionary<string, UiParameterDef>(StringComparer.Ordinal),
             new Dictionary<string, UiSlotDef>(StringComparer.Ordinal), []);
-        return new UiCatalog(built.Elements.Append(probe), built.HiddenTags, built.Problems);
+        return new UiCatalog(built.Elements.Append(probe), built.HiddenTags, built.Problems,
+            built.AttachedProperties);
     }
 
     [Fact]
@@ -177,12 +178,15 @@ public class C3LiteralAndDiagnosticsTests
     }
 
     [Fact]
-    public void AttachedPropertySyntax_IsReservedSyntax()
+    public void AttachedProperty_IsResolvedSinceG4()
     {
-        var (_, diags) = ParseAnalyze(UiTestCatalogs.BuiltIn(), "@using EclipseUI.Elements\n" + """<StackPanel Grid.Row="1" />""");
-        var diag = Assert.Single(diags);
-        Assert.Equal(UiDiagnostics.ReservedSyntax, diag.Code);
-        Assert.Contains("attached", diag.Message);
+        // G4 前 Grid.Row 报 EUI031（保留语法）；附加属性落地后已注册的 Owner.Prop 走正常解析，
+        // 未知点号名改报 EUI002（见 G4AttachedPropertyTests）。
+        var (doc, diags) = ParseAnalyze(UiTestCatalogs.BuiltIn(), "@using EclipseUI.Elements\n" + """<StackPanel Grid.Row="1" />""");
+        Assert.Empty(diags);
+        var attr = doc.Nodes.OfType<UiElement>().Single().Attributes.Single();
+        Assert.NotNull(attr.AttachedDef);
+        Assert.Equal("1", attr.ConvertedLiteral);
     }
 
     // ---- 直接单元级转换（不经过解析器） ----

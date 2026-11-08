@@ -78,7 +78,7 @@ public class C4ComponentTests
             listParameters,
             new Dictionary<string, UiSlotDef>(StringComparer.Ordinal), []);
         var merged = built.Elements.Append(card).Append(list);
-        return new UiCatalog(merged, built.HiddenTags, built.Problems);
+        return new UiCatalog(merged, built.HiddenTags, built.Problems, built.AttachedProperties);
     }
 
     [Fact]

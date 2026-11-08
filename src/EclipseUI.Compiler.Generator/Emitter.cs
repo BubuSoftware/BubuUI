@@ -221,8 +221,8 @@ public sealed class Emitter
     {
         if (!ctx.IsRoot) return false;
         var dynamicAttr = element.Attributes.Any(attr =>
-            attr.PropDef is not null && !attr.IsBind && attr.Name != "Key" &&
-            attr.Kind == AttrValueKind.Expression);
+            (attr.PropDef is not null || attr.AttachedDef is not null) && !attr.IsBind &&
+            attr.Name != "Key" && attr.Kind == AttrValueKind.Expression);
         if (dynamicAttr) return true;
         return element.ResolvedDef!.Content == UiContentModel.Text &&
                element.Children.OfType<UiText>().SelectMany(t => t.Segments)
@@ -246,7 +246,7 @@ public sealed class Emitter
         return local;
     }
 
-    private string CreateU(string target, string body, TextSpan span, int bodyOffset)
+    private string CreateU(string statement, TextSpan span, int tokenOffset)
     {
         var name = $"U{_fnCounter++}";
         var sb = new StringBuilder();
@@ -254,23 +254,23 @@ public sealed class Emitter
         var savedIndent = _indent;
         _out = sb;
         _indent = 2;
-        Mapped(span, $"{target} = {body};", target.Length + 3 + bodyOffset);
+        Mapped(span, $"{statement};", tokenOffset);
         _out = savedOut;
         _indent = savedIndent;
         _uMethods.Add(new UMethod(name, sb.ToString()));
         return name;
     }
 
-    /// <summary>组件级动态写入：U 方法 + Build 首次调用 + Render 登记。</summary>
-    private void RootUpdate(string target, string body, TextSpan span, int bodyOffset)
+    /// <summary>组件级动态写入：U 方法 + Build 首次调用 + Render 登记。语句形态由调用方拼装。</summary>
+    private void RootUpdate(string statement, TextSpan span, int tokenOffset)
     {
-        var name = CreateU(target, body, span, bodyOffset);
+        var name = CreateU(statement, span, tokenOffset);
         Line($"{name}();");
         _renderCalls.Add($"{name}();");
     }
 
-    /// <summary>块内动态写入：R 局部函数 + 首次调用 + 作用域渲染动作。</summary>
-    private void BlockUpdate(string target, string body, TextSpan span, int bodyOffset, EmitContext ctx)
+    /// <summary>块内动态写入：R 局部函数 + 首次调用 + 作用域渲染动作。语句形态由调用方拼装。</summary>
+    private void BlockUpdate(string statement, TextSpan span, int tokenOffset, EmitContext ctx)
     {
         var name = $"R{_fnCounter++}";
         var sb = new StringBuilder();
@@ -278,7 +278,7 @@ public sealed class Emitter
         var savedIndent = _indent;
         _out = sb;
         _indent = savedIndent + 1;
-        Mapped(span, $"{target} = {body};", target.Length + 3 + bodyOffset);
+        Mapped(span, $"{statement};", tokenOffset);
         _out = savedOut;
         _indent = savedIndent;
 
@@ -349,6 +349,24 @@ public sealed class Emitter
             if (attr.RefTarget is { } refField)
             {
                 MappedToken(span, $"{refField} = {v};", refField);
+                continue;
+            }
+
+            // G4：附加属性（design/14 §14.5.5）——直调宿主静态 setter；绑定已由 EUI040 拒绝。
+            if (attr.AttachedDef is { } attached)
+            {
+                if (attr.IsBind) continue;                        // EUI040 已报
+                if (attr.Kind == AttrValueKind.Literal)
+                {
+                    if (attr.ConvertedLiteral is not null)        // EUI003 已报
+                        MappedToken(span,
+                            $"{attached.OwnerClrName}.{attached.SetterMethod}({v}, {attr.ConvertedLiteral});",
+                            attr.ConvertedLiteral);
+                }
+                else if (attr.Kind == AttrValueKind.Expression)
+                {
+                    EmitAttachedDynamic(attached, v, attr.Value, attr.ValueSpan, ctx);
+                }
                 continue;
             }
 
@@ -449,6 +467,25 @@ public sealed class Emitter
                 MappedToken(span, $"{refField} = {v};", refField);
                 continue;
             }
+            // G4：附加属性（design/14 §14.5.5）——组件实例也是 Element，可携带 Grid.Row 等；
+            // 生成侧与控件一致直调宿主静态 setter。
+            if (attr.AttachedDef is { } attached)
+            {
+                if (attr.IsBind) continue;                        // EUI040 已报
+                if (attr.Kind == AttrValueKind.Literal)
+                {
+                    if (attr.ConvertedLiteral is not null)
+                        MappedToken(span,
+                            $"{attached.OwnerClrName}.{attached.SetterMethod}({v}, {attr.ConvertedLiteral});",
+                            attr.ConvertedLiteral);
+                }
+                else if (attr.Kind == AttrValueKind.Expression)
+                {
+                    EmitAttachedDynamic(attached, v, attr.Value, attr.ValueSpan, ctx);
+                }
+                continue;
+            }
+
             var p = attr.ParamDef;
             if (p is null) continue;          // 未解析名 EUI002 / 保留语法已报
             if (p.IsContent) continue;        // P= 写内容参数 EUI021 已报；内容由子节点提供
@@ -848,10 +885,11 @@ public sealed class Emitter
         parts.Append('"');
 
         var body = parts.ToString();
+        var prefix = $"{elementVar}.{target}";
         if (ctx.IsRoot)
-            RootUpdate($"{elementVar}.{target}", body, firstExprSpan, firstExprOffset);
+            RootUpdate($"{prefix} = {body}", firstExprSpan, prefix.Length + 3 + firstExprOffset);
         else
-            BlockUpdate($"{elementVar}.{target}", body, firstExprSpan, firstExprOffset, ctx);
+            BlockUpdate($"{prefix} = {body}", firstExprSpan, prefix.Length + 3 + firstExprOffset, ctx);
     }
 
     private void EmitDynamicUpdate(string expression, TextSpan span, EmitContext ctx,
@@ -868,10 +906,34 @@ public sealed class Emitter
             MappedToken(span, $"{target} = {body};", trimmed);
             return;
         }
+        var statement = $"{target} = {body}";
         if (ctx.IsRoot)
-            RootUpdate(target, body, span, bodyOffset);
+            RootUpdate(statement, span, target.Length + 3 + bodyOffset);
         else
-            BlockUpdate(target, body, span, bodyOffset, ctx);
+            BlockUpdate(statement, span, target.Length + 3 + bodyOffset, ctx);
+    }
+
+    /// <summary>
+    /// G4：附加属性的动态写入（design/14 §14.5.5）——目标不是赋值左值而是静态调用
+    /// <c>Owner.Setter(el, expr)</c>，语句形态由本方法拼装；用户表达式前的生成前缀
+    /// 即调用前缀，供 #line 列映射。内容上下文仍是 build-once 快照。
+    /// </summary>
+    private void EmitAttachedDynamic(UiAttachedPropDef attached, string v,
+        string expression, TextSpan span, EmitContext ctx)
+    {
+        var trimmed = expression.Trim();
+        var prefix = $"{attached.OwnerClrName}.{attached.SetterMethod}({v}, ";
+        var statement = $"{prefix}{trimmed})";
+
+        if (ctx.IsContent)
+        {
+            Mapped(span, $"{statement};", prefix.Length);
+            return;
+        }
+        if (ctx.IsRoot)
+            RootUpdate(statement, span, prefix.Length);
+        else
+            BlockUpdate(statement, span, prefix.Length, ctx);
     }
 
     private string EmitIf(UiIf node, string? parentVar, EmitContext ctx)

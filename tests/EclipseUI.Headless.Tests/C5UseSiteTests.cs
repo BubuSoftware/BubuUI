@@ -43,7 +43,7 @@ public class C5UseSiteTests
         var faultyCard = Def("FaultyCard", "global::Probe.FaultyCard", UiElementOrigin.Component,
             referenced: true, contentProblem);
         var merged = built.Elements.Append(broken).Append(faultyCard);
-        return new UiCatalog(merged, built.HiddenTags, built.Problems);
+        return new UiCatalog(merged, built.HiddenTags, built.Problems, built.AttachedProperties);
     }
 
     /// <summary>同样的问题清单，但 def 来自源项目（声明处归 EUI026，用点不得触发 EUI019/020/021）。</summary>
@@ -55,7 +55,7 @@ public class C5UseSiteTests
         var faultyCard = Def("FaultyCard", "global::Probe.FaultyCard", UiElementOrigin.Component,
             referenced: false, contentProblem);
         var merged = built.Elements.Append(broken).Append(faultyCard);
-        return new UiCatalog(merged, built.HiddenTags, built.Problems);
+        return new UiCatalog(merged, built.HiddenTags, built.Problems, built.AttachedProperties);
     }
 
     private static readonly UiMetadataProblem gapProblem = new(

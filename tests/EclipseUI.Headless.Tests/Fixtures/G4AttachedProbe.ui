@@ -1,0 +1,6 @@
+@using EclipseUI.Elements
+
+<StackPanel>
+    <Button Grid.Row="1" Grid.Column={extraCol}>ok</Button>
+    <CheckBox Grid.Row="2" />
+</StackPanel>

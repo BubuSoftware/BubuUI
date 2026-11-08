@@ -124,7 +124,7 @@ bind-attr  ::= "@bind-" attr-base
 ```
 
 - 标签名是单段短名：`Button`、`TextBlock`。**不带命名空间、不带泛型实参**；泛型标签是 G4（`EUI030`）。
-- 属性名支持 `Owner.Name` 形状仅为附加属性预留（G4，如 `Grid.Row`）；附加属性实现前按未知属性报 `EUI002`（D19）。
+- 属性名支持 `Owner.Name` 形状为附加属性（✅ G4 首批，如 `Grid.Row`）：已注册的正常解析，未注册的点号名按未知附加属性报 `EUI002`（D19 终极语义落地）。
 - 末尾 `:ident` 是旧修饰符：`bind` / `value` 均已弃用（S3 起报 `EUI043`）；其它修饰符按未知属性处理（`EUI002`）。
 - `@bind-P` 是双向绑定的**独立属性形态**：只出现在标记模式的属性名位置，`@bind-` 是字面前缀，`P` 是 `attr-base`；
   它**不是**指令，不参与 `@if`/`@foreach` 的 `@name` 解析（§3.1.7）。
@@ -255,7 +255,7 @@ string        ::= '"' raw-char* '"'
 - `node*` 的合法组合由内容模型进一步限制（§3.3.5），句法层先接受再语义拒绝。
 - 没有 `else`、`else if`、`@switch`、`@code`、`@inherits`、`@using`、`@model`；未知 `@` 指令是 `EUI009`。
   （v3 历史结论，按 `spec/README` 第 5 条保留原文；`@using` 已由 K22 定为合法指令，其余由整波 K23 取代，偏差见 D85–D88。）
-- 泛型标签（`DataGrid<Order>`）、附加属性（`Grid.Row`）、插槽标签（`<Slot>`）不在当前句法内；
+- 泛型标签（`DataGrid<Order>`）、插槽标签（`<Slot>`）不在当前句法内；附加属性（`Grid.Row`）✅ G4 已入句法；
   分别按 G4 / G4 / G4 保留（§3.3.9）。
 
 ### 3.2.2 结构规则
@@ -321,7 +321,7 @@ string        ::= '"' raw-char* '"'
 
 | Origin | 普通属性 | `@bind-P` |
 |---|---|---|
-| 控件（`Element` 派生） | 保留属性（`Key`/`Ref`/`Class`/`Style`）→ 事件（`On{Event}`）→ 属性表 → 附加属性（G4）→ 未知 | 目标必须是属性表内的可写属性 + `{Name}Property`；事件/保留/只读 → `EUI040` |
+| 控件（`Element` 派生） | 保留属性（`Key`/`Ref`/`Class`/`Style`）→ 事件（`On{Event}`）→ 属性表 → 附加属性（✅ G4）→ 未知 | 目标必须是属性表内的可写属性 + `{Name}Property`；事件/保留/只读 → `EUI040` |
 | 组件（`Component` 派生） | 保留属性 → 参数表（委托参数就是事件，不做 `On*` 推断）→ 未知 | 目标必须是 `[UiParameter]` + 可观察 partial 属性；否则 `EUI040` |
 
 - 标签必须解析到目录中的已知控件/组件；未知 → `EUI001`；冲突 → `EUI016`；不可用 → `EUI017`/`EUI018`/`EUI030`。
@@ -643,7 +643,7 @@ parent0.Children.Add(c0.Root);   // 最后挂到父级
 | `<Slot Name="...">` | 具名插槽（消费侧） | G4 | 当前 `EUI001`（D3） |
 | `<ContentSlot Name="..." />` | 插槽宿主（组件模板侧） | G4 | 当前 `EUI001`（D3） |
 | `<DataGrid<Order>>` | 泛型标签 | G4 | 当前 `EUI100`（D5） |
-| `Grid.Row="1"` | 附加属性 | G4 | 当前 `EUI002`（D19）；规范 `EUI031` |
+| `Grid.Row="1"` | 附加属性 | ✅ G4（2026-11-09） | 已注册正常解析；未注册点号名 `EUI002`（D19 终极语义） |
 
 保留语法的统一规则：
 
@@ -711,7 +711,7 @@ parent0.Children.Add(c0.Root);   // 最后挂到父级
 |---|---|
 | 未知/冲突/不可用标签 | `EUI001` / `EUI016` / `EUI017` / `EUI018` / `EUI030` |
 | 未知属性/事件/参数 | `EUI002`（附 `EUI019`/`EUI020`/`EUI024`/`EUI026`/`EUI028`） |
-| 保留语法 | `EUI022`（插槽错误，G4）/ `EUI029`（`Ref`）/ `EUI031`（`Class`/`Style`/插槽/附加属性） |
+| 保留语法 | `EUI022`（插槽错误，G4）/ `EUI029`（`Ref`）/ `EUI031`（`Class`/`Style`/插槽；附加属性已 G4 解禁 → `EUI002`） |
 | 字面量 | `EUI003` / `EUI023` |
 | 事件值 | `EUI004` / `EUI024` |
 | 内容模型 | `EUI006` / `EUI021` |
@@ -750,7 +750,7 @@ parent0.Children.Add(c0.Root);   // 最后挂到父级
 | `Class`/`Style` | 3.3.9 | G4 | 保留 `EUI031`；当前 `EUI002`（D2） |
 | 具名插槽/`ContentSlot` | 3.3.9 | G4 | 当前 `EUI001`（D3） |
 | 泛型标签 | 3.3.9 | G4 | 当前 `EUI100`（D5） |
-| 附加属性 | 3.3.9 | G4 | 保留 `EUI031`；当前 `EUI002`（D19） |
+| 附加属性 | 3.3.9 | ✅ G4（2026-11-09） | 已注册正常解析；未注册 `EUI002`（D19） |
 | 组件/参数/必填 | 3.3.8 | C4 | 当前 `EUI001` |
 | 可观察组件参数 | 3.3.8 / 15.7 | S3 | 当前实现只推荐 `Signal<T>` 参数（D35） |
 | item 可观察属性/item `@bind` | 3.3.6.2 / 15.4.8 | S2/S3 | 当前 `EUI014` 全面禁止（D34） |
@@ -798,7 +798,7 @@ parent0.Children.Add(c0.Root);   // 最后挂到父级
 | D16 | ✅ G3：块布局透明落地——新增 `Element.IsLayoutTransparent`，`StackPanelBase` 对透明节点取零内边距 + 最近布局祖先的 `Gap`，空块不占间距槽（实现口径 D77） | 已修复（2026-11-05，[Panels.cs](../src/EclipseUI.Runtime/Panels.cs)、[Blocks.cs](../src/EclipseUI.Runtime/Blocks.cs)）；`IsVisualTransparent` 仍只管绘制 | 实测：条目间距 19.6 → 27.6（根 `Gap=8`），空块两侧 35.6 → 27.6 | ✅ G3（D77） |
 | D17 | ✅ C4：组件标签/参数落地——`[UiParameter]`/`[UiContent]`/委托参数进目录（符号派生），`.ui` 组件标签按 spec/02 §4.12 生成（参数推送/委托事件/默认内容/生命周期）；具名插槽由 C6 收敛（D75/D76） | 组件不可写 | ✅ C4（2026-11-05，[design/14 §14.12.4](../design/14-control-template-contract.md)） |
 | D18 | 块 Dispose 释放条目作用域 | ✅ S2：`ForEachBlock.Dispose`/条目移除逆序释放条目 `BlockScope`（[Blocks.cs](../src/EclipseUI.Runtime/Blocks.cs)） | 已修复（同 D51） | ✅ S2 |
-| D19 | ✅ C3：附加属性在使用点报 `EUI031`（直到 G4 实现真实附加属性） | 已修复（2026-11-03，`Analyzer` 拦截任意 `Owner.Prop` 形式属性名） | ✅ C3 |
+| D19 | ✅ G4：附加属性首批落地（2026-11-09）——已注册的 `Owner.Prop` 正常解析（生成直调静态 setter），未注册的点号名按未知附加属性报 `EUI002`（D19 终极语义）；C3 阶段的 EUI031 保留位随之解禁 | 已修复（2026-11-09，`Analyzer`/`UiCatalogFactory`/`Emitter`） | ✅ G4 |
 | D20 | `TextRuns` 走 `ITextContentHost.AddRun(string)` | ✅ S2：Emitter 生成 `((ITextContentHost)el).AddRun("...")`；接口与 `TextBlock` 实现已落地（[Emitter.cs](../src/EclipseUI.Compiler.Generator/Emitter.cs)） | 已修复（同 D59） | ✅ S2 |
 | D21 | 属性/事件/内容目标元数据缺失报 `EUI019`/`EUI020`/`EUI021` | Analyzer 不校验这些符号；Emitter 直接生成 `{Name}Property`/`{Name}Event`/`AddRun`，由 C# 报 CS0117 等 | 错误不在 `.ui` span 上 | C3 |
 | D22 | ✅ C2：生成代码类型全用 `global::` 限定、不依赖 using（R4/14.8.2）；`@foreach` 生成的未限定 `List<...>` 已改为全限定，去掉 `ImplicitUsings` 依赖 | 已修复（2026-11-02） | ✅ C2 |
@@ -833,7 +833,7 @@ D37–D41 描述的生成文本偏差已随 v4 S2 收敛，形态以 spec/02 为
 ### 3.5.4 v4 实现偏差台账（D42–D88）
 
 v4 换轨后，**S1 已收敛（2026-10-30）、S2 已收敛（2026-10-30）、S3 已收敛（控件侧 2026-11-02、组件侧随 C4 2026-11-05）、C1 已收敛（2026-11-02，目录派生）、C3 已收敛（2026-11-03，字面量转换器/使用点诊断/保留语法）、C4 已收敛（2026-11-05，组件标签）、C5 已收敛（2026-11-05，Ref/使用点诊断）、C6 已收敛（2026-11-05，具名插槽）、G3 七个小切片全部收敛（块布局透明 2026-11-05/D77；§3.5.3 的 D16 随之关闭、失效迁移 2026-11-07/D78、按文件增量 2026-11-08、`#line` 列映射 2026-11-08/D79、EUI045 code-behind 冲突诊断 2026-11-08/D57/D80、诊断出口补全 2026-11-08/D74 ②/D81、EUI024 事件处理器签名匹配 2026-11-08/D82）、S4/S5 运行时硬化部分收敛（2026-11-08/D83）、G2 CPU 侧部分收敛（2026-11-08/D84）、**S6 语法对齐已收敛（2026-11-08/D85–D88 关闭：`@using`（K22/D85）、`@code` 单文件（K21/K23④/D86）、`else`/`else if`/`@switch`（K23③/K29/D87）、`@* *@` 与未闭合注释（K23/K26/D88，D12 随之关闭）、`EUI046`/`EUI047` 新诊断（K27/K29）、样例与约 94 例 golden 补 `@using` 一次性迁移，`dotnet test EclipseUI.slnx` 497 例全绿）**；
-其余偏差按下列余项收敛：S4/S5（[spec/03 §13](../spec/03-reactivity-and-binding.md#13-阶段-s1s5) 的 S4；AOT/裁剪、最终审计、帧预算/分配预算门槛、CI——Element.Unmount 已随 D89/K33 收敛——旧语法清理已随 S6 提前完成（K27/D85–D88 ✅ 2026-11-08））、G2（GPU retained layer/真正局部重绘、目标机稳定 60fps 结论、像素探针 DSL、CPU/GPU 交叉一致性门禁）、G4（样式/主题/附加属性；泛型标签暂缓 K19、不排期）、IDE/DevTools。本表与 [spec/02 §12](../spec/02-generated-code-contract.md#12-实现偏差台账-d42d88) 是同一张台账，
+其余偏差按下列余项收敛：S4/S5（[spec/03 §13](../spec/03-reactivity-and-binding.md#13-阶段-s1s5) 的 S4；AOT/裁剪、最终审计、帧预算/分配预算门槛、CI——Element.Unmount 已随 D89/K33 收敛——旧语法清理已随 S6 提前完成（K27/D85–D88 ✅ 2026-11-08））、G2（GPU retained layer/真正局部重绘、目标机稳定 60fps 结论、像素探针 DSL、CPU/GPU 交叉一致性门禁）、G4（样式/主题；附加属性首批 ✅ 2026-11-09；泛型标签暂缓 K19、不排期）、IDE/DevTools。本表与 [spec/02 §12](../spec/02-generated-code-contract.md#12-实现偏差台账-d42d88) 是同一张台账，
 任一侧更新必须同步另一侧；台账之外的差异视为实现缺陷。
 
 | # | 偏差 | 目标（spec） | 阶段 |

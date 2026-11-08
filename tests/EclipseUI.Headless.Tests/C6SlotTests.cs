@@ -77,7 +77,8 @@ public class C6SlotTests
                 ["Rows"] = Slot("Rows", "Rows", ElementListT, UiSlotCardinality.Multiple),
             }, []);
         return new UiCatalog(
-            built.Elements.Append(card).Append(self).ToArray(), built.HiddenTags, built.Problems);
+            built.Elements.Append(card).Append(self).ToArray(), built.HiddenTags, built.Problems,
+            built.AttachedProperties);
     }
 
     private static UiCatalog CatalogWithoutSelf()
@@ -97,7 +98,8 @@ public class C6SlotTests
             {
                 ["Header"] = Slot("Header", "Header", ElementOptT, UiSlotCardinality.Single),
             }, []);
-        return new UiCatalog(built.Elements.Append(orphan).ToArray(), built.HiddenTags, built.Problems);
+        return new UiCatalog(built.Elements.Append(orphan).ToArray(), built.HiddenTags, built.Problems,
+            built.AttachedProperties);
     }
 
     // ---- 消费侧：解析与发射解析 ----

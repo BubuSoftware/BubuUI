@@ -1,6 +1,6 @@
 # EclipseUI 内置模板表面（design/14 §14.11.1）。
 # 由 CatalogScannerTests.Surface_MatchesGoldenSnapshotFile 生成/比对；控件 API 变化时必须连同变更记录一起更新。
-# 标签 6 / 属性项 22 / 事件项 44
+# 标签 6 / 属性项 22 / 事件项 44 / 附加属性项 2
 
 [Button] global::EclipseUI.Elements.Button origin=Control content=Text:Label
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
@@ -79,6 +79,9 @@
     event  OnPointerMoved PointerMoved declared=global::EclipseUI.Element field=PointerMovedEvent
     event  OnPointerPressed PointerPressed declared=global::EclipseUI.Element field=PointerPressedEvent
     event  OnPointerReleased PointerReleased declared=global::EclipseUI.Element field=PointerReleasedEvent
+
+[attached] Grid.Column int declared=global::EclipseUI.Elements.Grid setter=SetColumn
+[attached] Grid.Row int declared=global::EclipseUI.Elements.Grid setter=SetRow
 
 [hidden] Component global::EclipseUI.Component EUI017 the type is abstract
 [hidden] Element global::EclipseUI.Element EUI017 the type is abstract

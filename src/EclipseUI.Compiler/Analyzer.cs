@@ -601,18 +601,58 @@ public static class TemplateAnalyzer
             }
             attrSeen.Add(attr.Name, attr.IsBind);
 
-            // EUI031：保留语法——Class/Style（G4 样式）与附加属性（Owner.Prop 点号形式，G4）。
+            // EUI031：保留语法——Class/Style（G4 样式）。附加属性已于 G4 解禁（下方点号分支）。
             if (attr.Name is "Class" or "Style")
             {
                 diags.Add(UiDiagnostics.Error(UiDiagnostics.ReservedSyntax,
                     $"'{attr.Name}' is reserved for styling (G4) and has no effect yet", attr.NameSpan));
                 continue;
             }
+            // G4：附加属性（design/14 §14.5.5）——Owner.Prop 点号形式查目录附加属性表。
+            // 已注册 → 正常解析（字面量按值类型转换、表达式动态写入）；未注册 → EUI002
+            // 「未知附加属性」（附加属性已实现，拼写错误按未知处理，不再占 EUI031 保留位）。
             if (attr.Name.IndexOf('.') >= 0)
             {
-                diags.Add(UiDiagnostics.Error(UiDiagnostics.ReservedSyntax,
-                    $"'{attr.Name}' looks like an attached property; attached properties are reserved for G4",
-                    attr.NameSpan));
+                var dot = attr.Name.IndexOf('.');
+                var owner = attr.Name.Substring(0, dot);
+                var propName = attr.Name.Substring(dot + 1);
+                var attached = propName.IndexOf('.') < 0 ? catalog.FindAttached(owner, propName) : null;
+                if (attached is null)
+                {
+                    var hint = Suggest.Nearest(attr.Name, catalog.AttachedKeys);
+                    diags.Add(UiDiagnostics.Error(UiDiagnostics.UnknownProperty,
+                        $"unknown attached property '{attr.Name}' on '{element.Tag}'" +
+                        (hint is null ? "" : $"; did you mean '{hint}'?"),
+                        attr.NameSpan));
+                    continue;
+                }
+
+                attr.AttachedDef = attached;
+                if (attr.IsBind)
+                {
+                    diags.Add(UiDiagnostics.Error(UiDiagnostics.BindTargetInvalid,
+                        $"'{attr.Name}' on '{element.Tag}' is an attached property; @bind-{attr.Name} is not supported — " +
+                        "attached properties are written once from the template",
+                        attr.NameSpan));
+                }
+                else if (attr.Kind == AttrValueKind.Literal)
+                {
+                    if (!UiLiterals.HasConverter(attached.TypeShape))
+                    {
+                        diags.Add(UiDiagnostics.Error(UiDiagnostics.NoLiteralConverter,
+                            $"attached property '{attr.Name}' of '{element.Tag}' has no literal converter for " +
+                            $"'{attached.TypeShape.CanonicalKey}'; write an {{expression}} instead", attr.ValueSpan));
+                    }
+                    else if (UiLiterals.TryConvert(attached.TypeShape, attr.Value, out var attachedConverted, out var attachedError))
+                    {
+                        attr.ConvertedLiteral = attachedConverted;
+                    }
+                    else
+                    {
+                        diags.Add(UiDiagnostics.Error(UiDiagnostics.LiteralFormat,
+                            $"attached property '{attr.Name}' of '{element.Tag}' {attachedError}", attr.ValueSpan));
+                    }
+                }
                 continue;
             }
 

@@ -21,6 +21,7 @@ public static class UiCatalogFactory
     private const string ComponentMetadataName = "EclipseUI.Component";
     private const string RoutedEventMetadataName = "EclipseUI.RoutedEvent";
     private const string StyledPropertyGenericMetadataName = "EclipseUI.StyledProperty`1";
+    private const string AttachedPropertyGenericMetadataName = "EclipseUI.AttachedProperty`1";
     private const string TextContentHostMetadataName = "EclipseUI.ITextContentHost";
     private const string SignalGenericMetadataName = "EclipseUI.Signal`1";
 
@@ -65,6 +66,7 @@ public static class UiCatalogFactory
         private readonly INamedTypeSymbol? _component;
         private readonly INamedTypeSymbol? _routedEvent;
         private readonly INamedTypeSymbol? _styledPropertyGeneric;
+        private readonly INamedTypeSymbol? _attachedPropertyGeneric;
         private readonly INamedTypeSymbol? _textContentHost;
         private readonly INamedTypeSymbol? _signalGeneric;
         private readonly INamedTypeSymbol? _nullableGeneric;
@@ -79,6 +81,7 @@ public static class UiCatalogFactory
             _component = compilation.GetTypeByMetadataName(ComponentMetadataName);
             _routedEvent = compilation.GetTypeByMetadataName(RoutedEventMetadataName);
             _styledPropertyGeneric = compilation.GetTypeByMetadataName(StyledPropertyGenericMetadataName);
+            _attachedPropertyGeneric = compilation.GetTypeByMetadataName(AttachedPropertyGenericMetadataName);
             _textContentHost = compilation.GetTypeByMetadataName(TextContentHostMetadataName);
             _signalGeneric = compilation.GetTypeByMetadataName(SignalGenericMetadataName);
             _nullableGeneric = compilation.GetTypeByMetadataName("System.Nullable`1");
@@ -92,6 +95,8 @@ public static class UiCatalogFactory
             var exposed = new List<UiElementDef>();
             var hidden = new List<UiHiddenTag>();
             var problems = new List<UiMetadataProblem>();
+            var attached = new List<UiAttachedPropDef>();
+            var attachedSeen = new Dictionary<(string Owner, string Name), string>();
 
             // 没有运行时锚点的编译（例如纯 C# 测试项目）得到空目录，而不是异常
             if (_element is null && _component is null)
@@ -111,6 +116,10 @@ public static class UiCatalogFactory
                             $"'{Display(type)}' is a static host class declaring RoutedEvent fields; declare them on an Element-derived type"));
                         continue;
                     }
+
+                    // G4：附加属性宿主（design/14 §14.5.5）。与标签表面独立：宿主不要求 Element 派生、
+                    // 不要求可实例化（静态类/抽象类都可以做宿主），只要求顶层、public 可见、无 [UiIgnore]。
+                    CollectAttachedProperties(type, attached, attachedSeen, problems);
 
                     var origin = OriginOf(type);
                     if (origin is null) continue;
@@ -140,7 +149,7 @@ public static class UiCatalogFactory
                 }
             }
 
-            return new UiCatalog(exposed, hidden, problems);
+            return new UiCatalog(exposed, hidden, problems, attached);
         }
 
         // ---- 扫描范围 ----
@@ -232,6 +241,92 @@ public static class UiCatalogFactory
             valueType = named.TypeArguments[0];
             return true;
         }
+
+        private bool IsAttachedPropertyOf(ITypeSymbol type, out ITypeSymbol? valueType)
+        {
+            valueType = null;
+            if (_attachedPropertyGeneric is null) return false;
+            if (type is not INamedTypeSymbol named || named.Arity != 1) return false;
+            if (!SymbolEqualityComparer.Default.Equals(named.OriginalDefinition, _attachedPropertyGeneric)) return false;
+            valueType = named.TypeArguments[0];
+            return true;
+        }
+
+        /// <summary>
+        /// G4：收集一个类型上的附加属性声明（design/14 §14.5.5）。候选 = <c>public static readonly
+        /// AttachedProperty&lt;T&gt; XxxProperty</c> 字段 + 配对的 <c>public static Get/Set</c> 方法；
+        /// 宿主要求顶层、public 可见、无 [UiIgnore]。嵌套宿主 v1 静默跳过（OwnerTag 歧义风险）。
+        /// 同 (OwnerTag, Name) 冲突报 <c>EUI026</c> 家族问题，先声明者胜出。
+        /// </summary>
+        private void CollectAttachedProperties(
+            INamedTypeSymbol type,
+            List<UiAttachedPropDef> result,
+            Dictionary<(string Owner, string Name), string> seen,
+            List<UiMetadataProblem> problems)
+        {
+            if (type.ContainingType is not null) return;            // 嵌套宿主不收集（v1）
+            if (!IsPubliclyVisible(type)) return;                   // 不可见 → 使用点按未知处理
+            if (HasIgnore(type)) return;                            // [UiIgnore] 退出附加属性表面
+
+            foreach (var field in type.GetMembers().OfType<IFieldSymbol>())
+            {
+                if (!field.IsStatic || !field.IsReadOnly) continue;
+                if (field.DeclaredAccessibility != Accessibility.Public) continue;
+                if (HasIgnore(field)) continue;
+                if (!IsAttachedPropertyOf(field.Type, out var valueType) || valueType is null) continue;
+
+                var propName = field.Name.EndsWith("Property", StringComparison.Ordinal)
+                    && field.Name.Length > "Property".Length
+                        ? field.Name.Substring(0, field.Name.Length - "Property".Length)
+                        : null;
+                if (propName is null)
+                {
+                    problems.Add(Problem(UiDiagnostics.PropertyNotBindable, type, field.Name,
+                        $"'{field.Name}' must be named 'XxxProperty' to become the attached property 'Xxx'"));
+                    continue;
+                }
+
+                var setter = FindAttachedAccessor(type, "Set" + propName, parameters: 2);
+                var getter = FindAttachedAccessor(type, "Get" + propName, parameters: 1);
+                if (setter is null || getter is null)
+                {
+                    problems.Add(Problem(UiDiagnostics.PropertyNotBindable, type, field.Name,
+                        $"'{field.Name}' needs a public static pair 'Get{propName}(Element)' / 'Set{propName}(Element, {Display(valueType)})'"));
+                    continue;
+                }
+                // 目录按字段泛型实参转换字面量并生成调用；访问器形状不一致时在使用点才会爆 CS1503，
+                // 声明期先拦住，保证目录可信（生成器与探针不做二次类型检查，§2.4 规则 8）。
+                if (!SymbolEqualityComparer.Default.Equals(setter.Parameters[1].Type, valueType)
+                    || !SymbolEqualityComparer.Default.Equals(getter.ReturnType, valueType))
+                {
+                    problems.Add(Problem(UiDiagnostics.PropertyNotBindable, type, field.Name,
+                        $"'Get{propName}'/'Set{propName}' must use the attached property value type {Display(valueType)}"));
+                    continue;
+                }
+
+                var key = (type.Name, propName);
+                if (seen.TryGetValue(key, out var existing))
+                {
+                    problems.Add(Problem(UiDiagnostics.MetadataDeclarationInvalid, type, field.Name,
+                        $"attached property '{type.Name}.{propName}' is already declared by '{existing}'; the first declaration wins"));
+                    continue;
+                }
+                seen[key] = Display(type);
+                result.Add(new UiAttachedPropDef(
+                    type.Name,
+                    propName,
+                    Display(type),
+                    setter.Name,
+                    Display(valueType),
+                    Shape(valueType)));
+            }
+        }
+
+        private static IMethodSymbol? FindAttachedAccessor(INamedTypeSymbol type, string name, int parameters)
+            => type.GetMembers(name).OfType<IMethodSymbol>().FirstOrDefault(m =>
+                m.IsStatic
+                && m.DeclaredAccessibility == Accessibility.Public
+                && m.Parameters.Length == parameters);
 
         private static bool CanExpose(INamedTypeSymbol type, out string reasonCode, out string reason)
         {

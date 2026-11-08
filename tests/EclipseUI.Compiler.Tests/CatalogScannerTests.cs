@@ -562,6 +562,16 @@ public class CatalogScannerTests
         Assert.Equal(44, catalog.Elements.Sum(e => e.Events.Count));
         // 9 个不同的事件名：Element 继承 7 个 + Button.OnClick + CheckBox.CheckedChanged
         Assert.Equal(9, catalog.Elements.SelectMany(e => e.Events.Keys).Distinct().Count());
+
+        // G4：附加属性表面（design/14 §14.5.5）——Grid.Row/Grid.Column，宿主不进标签列表。
+        var attached = catalog.AttachedProperties.Select(p => $"{p.OwnerTag}.{p.Name}").ToArray();
+        Assert.Equal(["Grid.Column", "Grid.Row"], attached);
+        var row = catalog.FindAttached("Grid", "Row")!;
+        Assert.Equal("global::EclipseUI.Elements.Grid", row.OwnerClrName);
+        Assert.Equal("SetRow", row.SetterMethod);
+        Assert.Equal("int", row.TypeShape.CanonicalKey);
+        Assert.Equal(UiTypeShapeKind.Primitive, row.TypeShape.Kind);
+        Assert.Null(catalog.FindAttached("Grid", "Rows"));
     }
 
     [Fact]
@@ -571,6 +581,148 @@ public class CatalogScannerTests
         var second = BuiltIn();
         Assert.True(first.Equals(second));
         Assert.Equal(first.GetHashCode(), second.GetHashCode());
+    }
+
+    // ---- 附加属性扫描规则（G4，design/14 §14.5.5）----
+
+    // ProbeCompilation 的 preamble 已带 using System/EclipseUI/EclipseUI.Elements；
+    // 这里只补命名空间（重复 using 同一命名空间会产生 CS0105 噪声）。
+    private const string AttachedProbePreamble = "namespace Probe;\n";
+
+    [Fact]
+    public void AttachedProperty_ValidDeclaration_EntersCatalog()
+    {
+        var catalog = Scan(AttachedProbePreamble + """
+            public static class DockHost
+            {
+                public static readonly AttachedProperty<int> DockProperty = new("Dock", typeof(DockHost));
+                public static int GetDock(Element element) => DockProperty.GetValue(element);
+                public static void SetDock(Element element, int value) => DockProperty.SetValue(element, value);
+            }
+            """);
+        var def = Assert.Single(catalog.AttachedProperties, p => p.OwnerTag == "DockHost");
+        Assert.Equal("DockHost", def.OwnerTag);
+        Assert.Equal("Dock", def.Name);
+        Assert.Equal("global::Probe.DockHost", def.OwnerClrName);
+        Assert.Equal("SetDock", def.SetterMethod);
+        Assert.Equal("int", def.TypeShape.CanonicalKey);
+        Assert.Empty(catalog.Problems);
+    }
+
+    [Fact]
+    public void AttachedProperty_MissingAccessorPair_ReportsProblemAndStaysOut()
+    {
+        var catalog = Scan(AttachedProbePreamble + """
+            public static class DockHost
+            {
+                public static readonly AttachedProperty<int> DockProperty = new("Dock", typeof(DockHost));
+            }
+            """);
+        Assert.DoesNotContain(catalog.AttachedProperties, p => p.OwnerTag == "DockHost");
+        var problem = Assert.Single(catalog.Problems);
+        Assert.Equal(UiDiagnostics.PropertyNotBindable, problem.Code);
+        Assert.Contains("GetDock", problem.Message);
+        Assert.Contains("SetDock", problem.Message);
+    }
+
+    [Fact]
+    public void AttachedProperty_AccessorValueTypeMismatch_ReportsProblem()
+    {
+        var catalog = Scan(AttachedProbePreamble + """
+            public static class DockHost
+            {
+                public static readonly AttachedProperty<int> DockProperty = new("Dock", typeof(DockHost));
+                public static int GetDock(Element element) => 0;
+                public static void SetDock(Element element, string value) { }
+            }
+            """);
+        Assert.DoesNotContain(catalog.AttachedProperties, p => p.OwnerTag == "DockHost");
+        Assert.Contains(catalog.Problems, p => p.Code == UiDiagnostics.PropertyNotBindable
+            && p.Message.Contains("'GetDock'/'SetDock' must use the attached property value type int"));
+    }
+
+    [Fact]
+    public void AttachedProperty_FieldNotNamedXxxProperty_ReportsProblem()
+    {
+        var catalog = Scan(AttachedProbePreamble + """
+            public static class DockHost
+            {
+                public static readonly AttachedProperty<int> Dock = new("Dock", typeof(DockHost));
+                public static int GetDock(Element element) => 0;
+                public static void SetDock(Element element, int value) { }
+            }
+            """);
+        Assert.DoesNotContain(catalog.AttachedProperties, p => p.OwnerTag == "DockHost");
+        var problem = Assert.Single(catalog.Problems);
+        Assert.Equal(UiDiagnostics.PropertyNotBindable, problem.Code);
+        Assert.Contains("XxxProperty", problem.Message);
+    }
+
+    [Fact]
+    public void AttachedProperty_IgnoreOnHostOrField_LeavesSurface()
+    {
+        var catalog = Scan(AttachedProbePreamble + """
+            [UiIgnore]
+            public static class IgnoredHost
+            {
+                public static readonly AttachedProperty<int> DockProperty = new("Dock", typeof(IgnoredHost));
+                public static int GetDock(Element element) => 0;
+                public static void SetDock(Element element, int value) { }
+            }
+            public static class FieldIgnoredHost
+            {
+                [UiIgnore]
+                public static readonly AttachedProperty<int> DockProperty = new("Dock", typeof(FieldIgnoredHost));
+                public static int GetDock(Element element) => 0;
+                public static void SetDock(Element element, int value) { }
+            }
+            """);
+        Assert.DoesNotContain(catalog.AttachedProperties, p => p.OwnerTag is "IgnoredHost" or "FieldIgnoredHost");
+        Assert.Empty(catalog.Problems);
+    }
+
+    [Fact]
+    public void AttachedProperty_NestedHost_IsSkippedSilently()
+    {
+        var catalog = Scan(AttachedProbePreamble + """
+            public static class Outer
+            {
+                public static class Nested
+                {
+                    public static readonly AttachedProperty<int> DockProperty = new("Dock", typeof(Nested));
+                    public static int GetDock(Element element) => 0;
+                    public static void SetDock(Element element, int value) { }
+                }
+            }
+            """);
+        Assert.DoesNotContain(catalog.AttachedProperties, p => p.OwnerClrName.StartsWith("global::Probe", StringComparison.Ordinal));
+        Assert.Empty(catalog.Problems);
+    }
+
+    [Fact]
+    public void AttachedProperty_SameOwnerNameConflict_FirstWinsAndReports()
+    {
+        var catalog = Scan(AttachedProbePreamble + """
+            public static class Dock
+            {
+                public static readonly AttachedProperty<int> ModeProperty = new("Mode", typeof(Dock));
+                public static int GetMode(Element element) => 0;
+                public static void SetMode(Element element, int value) { }
+            }
+            namespace Other
+            {
+                public static class Dock
+                {
+                    public static readonly AttachedProperty<int> ModeProperty = new("Mode", typeof(Dock));
+                    public static int GetMode(Element element) => 0;
+                    public static void SetMode(Element element, int value) { }
+                }
+            }
+            """);
+        var def = Assert.Single(catalog.AttachedProperties, p => p.OwnerClrName == "global::Probe.Dock");
+        Assert.Equal("global::Probe.Dock", def.OwnerClrName);
+        Assert.Contains(catalog.Problems, p => p.Code == UiDiagnostics.MetadataDeclarationInvalid
+            && p.Message.Contains("already declared by 'global::Probe.Dock'"));
     }
 
     [Fact]

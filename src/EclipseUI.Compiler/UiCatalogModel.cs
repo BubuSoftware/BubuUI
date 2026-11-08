@@ -79,6 +79,25 @@ public sealed record UiEventDef(
     string FieldName,
     string ArgsTypeName);
 
+/// <summary>
+/// 附加属性（design/14 §14.5.5，G4 落地）：宿主类声明 <c>public static readonly AttachedProperty&lt;T&gt; XxxProperty</c>
+/// 与 <c>Get/Set</c> 方法对，模板写 <c>Owner.Prop="v"</c>。生成代码直调静态 setter，值存储由
+/// <c>AttachedProperty&lt;T&gt;</c> 的弱表承担，目录与生成器不引入新存储形态。
+/// </summary>
+/// <param name="OwnerTag">模板前缀（宿主类型短名，如 <c>Grid</c>）。</param>
+/// <param name="Name">属性名（去掉 <c>Property</c> 后缀，如 <c>Row</c>）。</param>
+/// <param name="OwnerClrName">宿主类型的全限定名（<c>global::Ns.Grid</c>），生成代码按它调静态方法。</param>
+/// <param name="SetterMethod">静态 setter 名（<c>SetRow</c>）；getter 由扫描规则保证存在，生成侧不引用。</param>
+/// <param name="ClrTypeDisplayName">值类型 T 的全限定显示名（<c>global::System.Int32</c>）。</param>
+/// <param name="TypeShape">值类型形状：字面量转换（<c>UiLiterals</c>）按它分派。</param>
+public sealed record UiAttachedPropDef(
+    string OwnerTag,
+    string Name,
+    string OwnerClrName,
+    string SetterMethod,
+    string ClrTypeDisplayName,
+    UiTypeShape TypeShape);
+
 /// <param name="Required">来自 <c>[UiParameter(Required = true)]</c>，不是 C# <c>required</c> 修饰符。</param>
 /// <param name="IsContent">来自 <c>[UiContent]</c> 标在参数属性上（design/14 §14.6.3）：默认内容参数。
 /// 类型只接受 <c>IReadOnlyList&lt;Element&gt;</c>（多根）或 <c>Element?</c>（单根），其余在扫描期进
@@ -187,11 +206,13 @@ public sealed class UiCatalog : IEquatable<UiCatalog>
     private readonly Dictionary<string, UiElementDef[]> _byTag;
     private readonly Dictionary<string, UiElementDef> _byType;
     private readonly Dictionary<string, UiHiddenTag> _hidden;
+    private readonly Dictionary<(string Owner, string Name), UiAttachedPropDef> _attached;
 
     public UiCatalog(
         IEnumerable<UiElementDef> elements,
         IEnumerable<UiHiddenTag> hiddenTags,
-        IEnumerable<UiMetadataProblem> problems)
+        IEnumerable<UiMetadataProblem> problems,
+        IEnumerable<UiAttachedPropDef>? attachedProperties = null)
     {
         _byTag = elements
             .GroupBy(e => e.Tag, StringComparer.Ordinal)
@@ -216,6 +237,20 @@ public sealed class UiCatalog : IEquatable<UiCatalog>
             .ThenBy(p => p.MemberName, StringComparer.Ordinal)
             .ThenBy(p => p.Code, StringComparer.Ordinal)
             .ToList();
+        // 附加属性（design/14 §14.5.5）：Ordinal 排序；同 (Owner, Name) 冲突由扫描器报问题，
+        // 此处第一个（排序后）胜出，保证目录结构确定。
+        _attached = new Dictionary<(string, string), UiAttachedPropDef>();
+        foreach (var prop in (attachedProperties ?? Array.Empty<UiAttachedPropDef>())
+            .OrderBy(p => p.OwnerTag, StringComparer.Ordinal)
+            .ThenBy(p => p.Name, StringComparer.Ordinal))
+        {
+            if (!_attached.ContainsKey((prop.OwnerTag, prop.Name)))
+                _attached[(prop.OwnerTag, prop.Name)] = prop;
+        }
+        AttachedProperties = _attached.Values
+            .OrderBy(p => p.OwnerTag, StringComparer.Ordinal)
+            .ThenBy(p => p.Name, StringComparer.Ordinal)
+            .ToList();
     }
 
     public IReadOnlyList<UiElementDef> Elements { get; }
@@ -223,6 +258,9 @@ public sealed class UiCatalog : IEquatable<UiCatalog>
     public IReadOnlyList<UiHiddenTag> HiddenTags { get; }
 
     public IReadOnlyList<UiMetadataProblem> Problems { get; }
+
+    /// <summary>附加属性表面（design/14 §14.5.5）：Ordinal 按 OwnerTag/Name 排序。</summary>
+    public IReadOnlyList<UiAttachedPropDef> AttachedProperties { get; }
 
     public IEnumerable<string> ElementTags => _byTag.Keys.OrderBy(t => t, StringComparer.Ordinal);
 
@@ -250,6 +288,14 @@ public sealed class UiCatalog : IEquatable<UiCatalog>
     /// </summary>
     public UiElementDef? FindByTypeDisplayName(string clrTypeDisplayName) =>
         _byType.TryGetValue(clrTypeDisplayName, out var def) ? def : null;
+
+    /// <summary>按 <c>Owner.Prop</c> 两段查附加属性（design/14 §14.5.5）；名中含更多点号时调用方先行拒绝。</summary>
+    public UiAttachedPropDef? FindAttached(string owner, string name) =>
+        _attached.TryGetValue((owner, name), out var def) ? def : null;
+
+    /// <summary>全部 <c>Owner.Prop</c> 键（Ordinal 排序），供未知附加属性的建议算法使用。</summary>
+    public IEnumerable<string> AttachedKeys =>
+        AttachedProperties.Select(p => $"{p.OwnerTag}.{p.Name}");
 
     /// <summary>
     /// K22（D85）：按模板 <c>@using</c> 导入的命名空间过滤标签解析。内置控件（EclipseUI.Elements）
@@ -297,7 +343,8 @@ public sealed class UiCatalog : IEquatable<UiCatalog>
         other is not null
         && CatalogValueEq.Sequence(Elements, other.Elements)
         && CatalogValueEq.Sequence(HiddenTags, other.HiddenTags)
-        && CatalogValueEq.Sequence(Problems, other.Problems);
+        && CatalogValueEq.Sequence(Problems, other.Problems)
+        && CatalogValueEq.Sequence(AttachedProperties, other.AttachedProperties);
 
     public override bool Equals(object? obj) => Equals(obj as UiCatalog);
 
@@ -306,7 +353,8 @@ public sealed class UiCatalog : IEquatable<UiCatalog>
         var hash = CatalogValueEq.Start;
         hash = CatalogValueEq.AddSequence(hash, Elements);
         hash = CatalogValueEq.AddSequence(hash, HiddenTags);
-        return CatalogValueEq.AddSequence(hash, Problems);
+        hash = CatalogValueEq.AddSequence(hash, Problems);
+        return CatalogValueEq.AddSequence(hash, AttachedProperties);
     }
 }
 

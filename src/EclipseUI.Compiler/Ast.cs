@@ -42,6 +42,9 @@ public sealed class UiAttribute
     public UiPropDef? PropDef { get; set; }
     public UiEventDef? EventDef { get; set; }
     public UiParameterDef? ParamDef { get; set; }
+
+    /// <summary>G4：点号属性解析到的附加属性（design/14 §14.5.5）；与上三者互斥。</summary>
+    public UiAttachedPropDef? AttachedDef { get; set; }
     public string? ConvertedLiteral { get; set; }
 
     /// <summary>Ref 的目标字段名（仅 <c>Ref={ident}</c> 且 ident 是简单标识符时设置；Analyzer 填充，C5）。</summary>
