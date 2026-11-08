@@ -272,6 +272,9 @@ public sealed class HeadlessRoot
         _content.Arrange(new Rect(Point.Zero, _content.DesiredSize));
     }
 
+    /// <summary>滚轮输入（无头测试与 Win32 宿主共用同一 InputRouter 路径）。</summary>
+    public void PointerWheel(Point point, double delta) => Input.PointerWheel(point, delta);
+
     // ---- 输入（M4 无头形态：与平台宿主共用同一 hit test / 路由路径）----
     // 捕获语义：按下即捕获命中元素，释放路由给捕获元素（拖出后释放不会丢状态，
     // 也不会误触其他控件）；释放完成后捕获解除。

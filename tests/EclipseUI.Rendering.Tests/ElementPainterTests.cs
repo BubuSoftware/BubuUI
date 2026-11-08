@@ -339,4 +339,59 @@ public class ElementPainterTests
         Assert.Equal(paint.Width, layout.Width, 3);
         Assert.Equal(paint.Height, layout.Height, 3);
     }
+
+    [Fact]
+    public void ScrollViewer_ForcesClip_AndPaintsThumb()
+    {
+        var content = new StackPanel();
+        for (int i = 0; i < 30; i++) content.Children.Add(new FixedBox(400, 40));   // extent 1200，宽撑满视口
+        var viewer = new ScrollViewer();
+        viewer.Children.Add(content);
+
+        var root = new HeadlessRoot(viewer) { AvailableSize = new Size(400, 800) };
+        root.UpdateLayout();
+        viewer.ScrollToEnd();
+        root.UpdateLayout();
+
+        var list = new ElementPainter().Build(viewer, new Size(400, 800));
+
+        // 视口裁剪：即使 ClipToBounds 未开，ScrollViewer 也必须 PushClip 视口矩形。
+        Assert.Contains(list.Commands, c => c is PushClip push && push.Rect == new Rect(0, 0, 400, 800));
+
+        // 拇指：内缩 4、宽 6；offset 400/400 → 拇指贴轨道底
+        // trackHeight = 800-8 = 792，thumbH = 792×800/1200 = 528，y = 4 + (792-528)×1 = 268
+        var thumb = Assert.Single(list.Commands.OfType<FillRoundedRect>()
+            .Where(f => Math.Abs(f.Rect.Width - 6) < 0.5));
+        Assert.Equal(390, thumb.Rect.X, 3);
+        Assert.Equal(268, thumb.Rect.Y, 3);
+    }
+
+    [Fact]
+    public void ScrollViewer_NoOverflow_NoThumb()
+    {
+        var content = new StackPanel();
+        for (int i = 0; i < 5; i++) content.Children.Add(new FixedBox(100, 40));    // 200 < 800
+        var viewer = new ScrollViewer();
+        viewer.Children.Add(content);
+
+        var root = new HeadlessRoot(viewer) { AvailableSize = new Size(400, 800) };
+        root.UpdateLayout();
+
+        var list = new ElementPainter().Build(viewer, new Size(400, 800));
+
+        Assert.DoesNotContain(list.Commands, c => c is FillRoundedRect f && Math.Abs(f.Rect.Width - 6) < 0.5);
+    }
+
+    /// <summary>固定期望尺寸的探针元素（绕过 Measure 递归）。</summary>
+    private sealed class FixedBox : Panel
+    {
+        private readonly Size _size;
+        public FixedBox(double width, double height) => _size = new Size(width, height);
+
+        protected override Size MeasureCore(Size available) => _size;
+
+        protected override void ArrangeCore(Rect final)
+        {
+        }
+    }
 }

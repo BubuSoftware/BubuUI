@@ -69,7 +69,7 @@
 | 模板前端 | 🟢 可用 MVP（v2） | **S6 语法对齐已实现（K23 / D85–D88 ✅ 2026-11-08）**：`@using`、`@code` 单文件、`else`/`@switch`、`@* *@`；其余待办：trivia/pretty-printer、表达式全量 Roslyn 语义分析；附加属性 ✅ G4 首批已落地（2026-11-09）；泛型标签暂缓（K19，不排期） |
 | 源生成器 | 🟢 可用 MVP | 组件作者面样例；EUI024 签名匹配 ✅ 2026-11-08/D82（按文件增量 ✅ 2026-11-08、`#line` 列映射 ✅ 2026-11-08/D79、`EUI045` ✅ 2026-11-08/D57、诊断出口 ✅ 2026-11-08/D74 ② 均已落地） |
 | 运行时/属性 | 🟢 可用基础 | 属性存储去装箱、生命周期 Unmount、样式优先级、性能基准 |
-| 布局 | 🟡 部分 | WrapPanel ✅ / Grid ✅（2026-11-09）；Scroll、约束与裁剪、虚拟化待做（块布局透明化 ✅ 2026-11-05，D77） |
+| 布局 | 🟡 部分 | WrapPanel ✅ / Grid ✅ / ScrollViewer ✅（2026-11-09）；约束、虚拟化待做（块布局透明化 ✅ 2026-11-05，D77） |
 | 文本 | 🟡 单行 shaping 已接入 | 断行、bidi、fallback、emoji、glyph 缓存、display list 集成 |
 | 输入/焦点 | 🟡 元素路由已通 | 字符输入/IME、滚轮/触摸、Shift+Tab、无障碍 |
 | 渲染/合成器 | 🟡 scene graph + 上屏 + damage v0 | retained layer/合成器、局部重绘、帧预算 |
@@ -398,7 +398,7 @@ CPU 侧部分收敛（2026-11-08/D84）：CPU 像素 golden（`PixelGoldenTests`
 **范围**
 
 - 选择器编译（AOT 友好）、样式优先级、资源查找、亮暗主题。
-- 控件集：ListBox、TextBox、ScrollViewer、Grid ✅（2026-11-09）、WrapPanel ✅、Slider 等。
+- 控件集：ListBox、TextBox、ScrollViewer ✅（2026-11-09）、Grid ✅、WrapPanel ✅、Slider 等。
 - `VirtualizingPanel` 与 item 模板的容器复用。
 - 状态与反应式 S4：组件所有权/深度排序、参数推送与相等保护、异步/后台失效、`ShouldRender`（[spec/03 §13.1](../spec/03-reactivity-and-binding.md#131-阶段定义)）。
 - 控件契约 C6：具名插槽 + `ContentSlot` 宿主（✅ 2026-11-05，14 §14.12.6）；

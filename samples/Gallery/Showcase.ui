@@ -22,4 +22,22 @@
         <Button>epsilon</Button>
         <Button>zeta</Button>
     </WrapPanel>
+
+    <TextBlock FontSize="13">ScrollViewer - wheel to scroll</TextBlock>
+    <Grid RowDefinitions="150">
+        <ScrollViewer>
+            <StackPanel Gap="4">
+                <Button>scroll item 1</Button>
+                <Button>scroll item 2</Button>
+                <Button>scroll item 3</Button>
+                <Button>scroll item 4</Button>
+                <Button>scroll item 5</Button>
+                <Button>scroll item 6</Button>
+                <Button>scroll item 7</Button>
+                <Button>scroll item 8</Button>
+                <Button>scroll item 9</Button>
+                <Button>scroll item 10</Button>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
 </StackPanel>

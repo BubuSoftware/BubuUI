@@ -1,6 +1,6 @@
 # EclipseUI 内置模板表面（design/14 §14.11.1）。
 # 由 CatalogScannerTests.Surface_MatchesGoldenSnapshotFile 生成/比对；控件 API 变化时必须连同变更记录一起更新。
-# 标签 7 / 属性项 28 / 事件项 51 / 附加属性项 2
+# 标签 8 / 属性项 33 / 事件项 66 / 附加属性项 2
 
 [Button] global::EclipseUI.Elements.Button origin=Control content=Text:Label
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
@@ -13,6 +13,7 @@
     event  OnPointerMoved PointerMoved declared=global::EclipseUI.Element field=PointerMovedEvent
     event  OnPointerPressed PointerPressed declared=global::EclipseUI.Element field=PointerPressedEvent
     event  OnPointerReleased PointerReleased declared=global::EclipseUI.Element field=PointerReleasedEvent
+    event  OnPointerWheelChanged PointerWheelChanged declared=global::EclipseUI.Element field=PointerWheelChangedEvent
 
 [CheckBox] global::EclipseUI.Elements.CheckBox origin=Control content=Text:Label
     prop   Checked bool declared=global::EclipseUI.Elements.CheckBox field=CheckedProperty writable=True
@@ -26,6 +27,7 @@
     event  OnPointerMoved PointerMoved declared=global::EclipseUI.Element field=PointerMovedEvent
     event  OnPointerPressed PointerPressed declared=global::EclipseUI.Element field=PointerPressedEvent
     event  OnPointerReleased PointerReleased declared=global::EclipseUI.Element field=PointerReleasedEvent
+    event  OnPointerWheelChanged PointerWheelChanged declared=global::EclipseUI.Element field=PointerWheelChangedEvent
 
 [Grid] global::EclipseUI.Elements.Grid origin=Control content=Children:Children
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
@@ -41,6 +43,7 @@
     event  OnPointerMoved PointerMoved declared=global::EclipseUI.Element field=PointerMovedEvent
     event  OnPointerPressed PointerPressed declared=global::EclipseUI.Element field=PointerPressedEvent
     event  OnPointerReleased PointerReleased declared=global::EclipseUI.Element field=PointerReleasedEvent
+    event  OnPointerWheelChanged PointerWheelChanged declared=global::EclipseUI.Element field=PointerWheelChangedEvent
 
 [ListBoxItem] global::EclipseUI.Elements.ListBoxItem origin=Control content=Children:Children
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
@@ -54,6 +57,22 @@
     event  OnPointerMoved PointerMoved declared=global::EclipseUI.Element field=PointerMovedEvent
     event  OnPointerPressed PointerPressed declared=global::EclipseUI.Element field=PointerPressedEvent
     event  OnPointerReleased PointerReleased declared=global::EclipseUI.Element field=PointerReleasedEvent
+    event  OnPointerWheelChanged PointerWheelChanged declared=global::EclipseUI.Element field=PointerWheelChangedEvent
+
+[ScrollViewer] global::EclipseUI.Elements.ScrollViewer origin=Control content=Children:Children
+    prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
+    prop   HorizontalOffset double declared=global::EclipseUI.Elements.ScrollViewer field=HorizontalOffsetProperty writable=True
+    prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
+    prop   Padding double declared=global::EclipseUI.Elements.Panel field=PaddingProperty writable=True
+    prop   VerticalOffset double declared=global::EclipseUI.Elements.ScrollViewer field=VerticalOffsetProperty writable=True
+    event  OnGotFocus GotFocus declared=global::EclipseUI.Element field=GotFocusEvent
+    event  OnKeyDown KeyDown declared=global::EclipseUI.Element field=KeyDownEvent
+    event  OnKeyUp KeyUp declared=global::EclipseUI.Element field=KeyUpEvent
+    event  OnLostFocus LostFocus declared=global::EclipseUI.Element field=LostFocusEvent
+    event  OnPointerMoved PointerMoved declared=global::EclipseUI.Element field=PointerMovedEvent
+    event  OnPointerPressed PointerPressed declared=global::EclipseUI.Element field=PointerPressedEvent
+    event  OnPointerReleased PointerReleased declared=global::EclipseUI.Element field=PointerReleasedEvent
+    event  OnPointerWheelChanged PointerWheelChanged declared=global::EclipseUI.Element field=PointerWheelChangedEvent
 
 [StackPanel] global::EclipseUI.Elements.StackPanel origin=Control content=Children:Children
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
@@ -67,6 +86,7 @@
     event  OnPointerMoved PointerMoved declared=global::EclipseUI.Element field=PointerMovedEvent
     event  OnPointerPressed PointerPressed declared=global::EclipseUI.Element field=PointerPressedEvent
     event  OnPointerReleased PointerReleased declared=global::EclipseUI.Element field=PointerReleasedEvent
+    event  OnPointerWheelChanged PointerWheelChanged declared=global::EclipseUI.Element field=PointerWheelChangedEvent
 
 [TextBlock] global::EclipseUI.Elements.TextBlock origin=Control content=TextRuns
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
@@ -80,6 +100,7 @@
     event  OnPointerMoved PointerMoved declared=global::EclipseUI.Element field=PointerMovedEvent
     event  OnPointerPressed PointerPressed declared=global::EclipseUI.Element field=PointerPressedEvent
     event  OnPointerReleased PointerReleased declared=global::EclipseUI.Element field=PointerReleasedEvent
+    event  OnPointerWheelChanged PointerWheelChanged declared=global::EclipseUI.Element field=PointerWheelChangedEvent
 
 [WrapPanel] global::EclipseUI.Elements.WrapPanel origin=Control content=Children:Children
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
@@ -94,6 +115,7 @@
     event  OnPointerMoved PointerMoved declared=global::EclipseUI.Element field=PointerMovedEvent
     event  OnPointerPressed PointerPressed declared=global::EclipseUI.Element field=PointerPressedEvent
     event  OnPointerReleased PointerReleased declared=global::EclipseUI.Element field=PointerReleasedEvent
+    event  OnPointerWheelChanged PointerWheelChanged declared=global::EclipseUI.Element field=PointerWheelChangedEvent
 
 [attached] Grid.Column int declared=global::EclipseUI.Elements.Grid setter=SetColumn
 [attached] Grid.Row int declared=global::EclipseUI.Elements.Grid setter=SetRow

@@ -32,3 +32,21 @@ public sealed class KeyEventArgs : RoutedEventArgs
 
     public Key Key { get; }
 }
+
+/// <summary>
+/// 滚轮事件。Position 为根坐标系位置；Delta 为原始齿轮刻度（Win32 约定每格 120，
+/// 正值 = 向上滚/远离用户）。消费方负责把刻度换算为滚动像素。
+/// </summary>
+public sealed class WheelEventArgs : RoutedEventArgs
+{
+    public WheelEventArgs(RoutedEvent routedEvent, Point position, double delta)
+        : base(routedEvent)
+    {
+        Position = position;
+        Delta = delta;
+    }
+
+    public Point Position { get; }
+
+    public double Delta { get; }
+}

@@ -20,6 +20,8 @@ public sealed class ElementTheme
     public Color ControlBackground { get; init; } = new(44, 51, 68);
     public Color ControlBorder { get; init; } = new(78, 88, 112);
     public Color FocusRing { get; init; } = new(126, 186, 255);
+    public Color ScrollBarTrack { get; init; } = new(0, 0, 0, 0);
+    public Color ScrollBarThumb { get; init; } = new(96, 106, 132);
 
     // ---- 形状 ----
     public double PanelRadius { get; init; } = 12;

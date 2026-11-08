@@ -117,6 +117,9 @@ public sealed class ElementPainter
                 case ListBoxItem:
                     PaintCard(rect, _theme.ItemBackground, _theme.ItemBorder, _theme.ItemRadius);
                     break;
+                case ScrollViewer:
+                    PaintCard(rect, _theme.PanelBackground, _theme.PanelBorder, _theme.PanelRadius);
+                    break;
                 case StackPanel:
                     PaintCard(rect, _theme.PanelBackground, _theme.PanelBorder, _theme.PanelRadius);
                     break;
@@ -126,7 +129,9 @@ public sealed class ElementPainter
         if (ReferenceEquals(element, _focused) && element.IsFocusable)
             PaintFocusRing(element, rect);
 
-        var clip = element is Panel { ClipToBounds: true } && rect.Width > 0 && rect.Height > 0;
+        // ScrollViewer 无论 ClipToBounds 与否都必须裁剪：内容按 -Offset 平移，不裁就画出视口外。
+        var clip = (element is Panel { ClipToBounds: true } || element is ScrollViewer)
+                   && rect.Width > 0 && rect.Height > 0;
         if (clip) _list.Add(new PushClip(rect));
 
         // G2 的可视子节点全部来自 Panel（TextBlock 的 run 也是 Panel.Children 的一部分）。
@@ -137,7 +142,54 @@ public sealed class ElementPainter
         }
 
         if (clip) _list.Add(new PopClip());
+
+        // 滚动条画在内容之上（裁剪作用域外也不越界：位置按视口矩形内缩计算）。
+        if (element is ScrollViewer viewer)
+            PaintScrollBar(viewer, rect);
     }
+
+    /// <summary>叠加式滚动条：可滚动方向在视口内缘画拇指（v1 只显示，不做命中拖拽）。</summary>
+    private void PaintScrollBar(ScrollViewer viewer, Rect rect)
+    {
+        if (viewer.ScrollableHeight > 0)
+        {
+            var trackHeight = rect.Height - ScrollBarInset * 2;
+            if (trackHeight > ScrollBarThickness * 2)
+            {
+                var thumbHeight = Math.Max(ScrollBarThickness,
+                    trackHeight * viewer.ViewportHeight / Math.Max(1, viewer.ExtentHeight));
+                var maxScroll = Math.Max(1, viewer.ScrollableHeight);
+                var offset = Math.Clamp(viewer.VerticalOffset, 0, viewer.ScrollableHeight);
+                var thumbY = rect.Y + ScrollBarInset
+                             + (trackHeight - thumbHeight) * (offset / maxScroll);
+                _list.Add(new FillRoundedRect(
+                    new Rect(rect.Right - ScrollBarInset - ScrollBarThickness, thumbY, ScrollBarThickness, thumbHeight),
+                    ScrollBarThickness / 2,
+                    _theme.ScrollBarThumb));
+            }
+        }
+
+        if (viewer.ScrollableWidth > 0)
+        {
+            var trackWidth = rect.Width - ScrollBarInset * 2;
+            if (trackWidth > ScrollBarThickness * 2)
+            {
+                var thumbWidth = Math.Max(ScrollBarThickness,
+                    trackWidth * viewer.ViewportWidth / Math.Max(1, viewer.ExtentWidth));
+                var maxScroll = Math.Max(1, viewer.ScrollableWidth);
+                var offset = Math.Clamp(viewer.HorizontalOffset, 0, viewer.ScrollableWidth);
+                var thumbX = rect.X + ScrollBarInset
+                             + (trackWidth - thumbWidth) * (offset / maxScroll);
+                _list.Add(new FillRoundedRect(
+                    new Rect(thumbX, rect.Bottom - ScrollBarInset - ScrollBarThickness, thumbWidth, ScrollBarThickness),
+                    ScrollBarThickness / 2,
+                    _theme.ScrollBarThumb));
+            }
+        }
+    }
+
+    private const double ScrollBarInset = 4;
+    private const double ScrollBarThickness = 6;
 
     private void PaintTextBlock(TextBlock block, Rect rect)
     {

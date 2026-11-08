@@ -528,7 +528,7 @@ public class CatalogScannerTests
     public void BuiltInSurface_MatchesEnumeratedSnapshot()
     {
         string[] inherited =
-            ["OnGotFocus", "OnKeyDown", "OnKeyUp", "OnLostFocus", "OnPointerMoved", "OnPointerPressed", "OnPointerReleased"];
+            ["OnGotFocus", "OnKeyDown", "OnKeyUp", "OnLostFocus", "OnPointerMoved", "OnPointerPressed", "OnPointerReleased", "OnPointerWheelChanged"];
         var expected = new Dictionary<string, (UiContentModel Content, string? Target, string[] Props, string[] Events)>
         {
             ["TextBlock"] = (UiContentModel.TextRuns, null,
@@ -537,6 +537,8 @@ public class CatalogScannerTests
                 ["ClipToBounds", "Gap", "IsHitTestVisible", "Padding"], inherited),
             ["WrapPanel"] = (UiContentModel.Children, "Children",
                 ["ClipToBounds", "Gap", "IsHitTestVisible", "Orientation", "Padding"], inherited),
+            ["ScrollViewer"] = (UiContentModel.Children, "Children",
+                ["ClipToBounds", "HorizontalOffset", "IsHitTestVisible", "Padding", "VerticalOffset"], inherited),
             ["Grid"] = (UiContentModel.Children, "Children",
                 ["ClipToBounds", "ColumnDefinitions", "Gap", "IsHitTestVisible", "Padding", "RowDefinitions"], inherited),
             ["ListBoxItem"] = (UiContentModel.Children, "Children",
@@ -560,10 +562,10 @@ public class CatalogScannerTests
             Assert.Equal(want.Events, element.Events.Keys.ToArray());
         }
 
-        Assert.Equal(28, catalog.Elements.Sum(e => e.Properties.Count));
-        Assert.Equal(51, catalog.Elements.Sum(e => e.Events.Count));
-        // 9 个不同的事件名：Element 继承 7 个 + Button.OnClick + CheckBox.CheckedChanged
-        Assert.Equal(9, catalog.Elements.SelectMany(e => e.Events.Keys).Distinct().Count());
+        Assert.Equal(30, catalog.Elements.Sum(e => e.Properties.Count));
+        Assert.Equal(59, catalog.Elements.Sum(e => e.Events.Count));
+        // 10 个不同的事件名：Element 继承 8 个（含滚轮）+ Button.OnClick + CheckBox.CheckedChanged
+        Assert.Equal(10, catalog.Elements.SelectMany(e => e.Events.Keys).Distinct().Count());
 
         // G4：附加属性表面（design/14 §14.5.5）——Grid.Row/Grid.Column，宿主不进标签列表。
         var attached = catalog.AttachedProperties.Select(p => $"{p.OwnerTag}.{p.Name}").ToArray();

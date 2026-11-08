@@ -58,6 +58,17 @@ public sealed class InputRouter
         target.RaiseEvent(new PointerEventArgs(Element.PointerMovedEvent, point) { Source = target });
     }
 
+    /// <summary>
+    /// 滚轮：从命中元素起冒泡路由（<see cref="Element.PointerWheelChangedEvent"/>）。
+    /// 滚轮不做捕获——命中谁就路由给谁，可滚动容器在冒泡路径上消费。
+    /// </summary>
+    public void PointerWheel(Point point, double delta)
+    {
+        var target = _root.HitTest(point);
+        if (target is null) return;
+        target.RaiseEvent(new WheelEventArgs(Element.PointerWheelChangedEvent, point, delta) { Source = target });
+    }
+
     /// <summary>按键。Tab 由焦点系统拦截做遍历；其余 KeyDown 从焦点元素（或根）路由。</summary>
     public void KeyPress(Key key)
     {

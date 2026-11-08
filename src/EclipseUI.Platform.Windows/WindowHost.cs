@@ -93,6 +93,7 @@ public sealed class WindowHost : IDisposable
         _window.PointerMoved += OnPointerMoved;
         _window.PointerPressed += OnPointerPressed;
         _window.PointerReleased += OnPointerReleased;
+        _window.PointerWheel += OnPointerWheel;
         _window.KeyDown += OnKeyDown;
         _window.Closing += OnClosing;
     }
@@ -236,6 +237,9 @@ public sealed class WindowHost : IDisposable
     private void OnPointerReleased(object? sender, Win32PointerEventArgs e)
         => Input.PointerRelease(e.LogicalPosition);
 
+    private void OnPointerWheel(object? sender, Win32WheelEventArgs e)
+        => Input.PointerWheel(e.LogicalPosition, e.Delta);
+
     private void OnKeyDown(object? sender, Win32KeyEventArgs e)
     {
         if (_options.CloseOnEscape && e.Key == Key.Escape)
@@ -263,6 +267,7 @@ public sealed class WindowHost : IDisposable
         _window.PointerMoved -= OnPointerMoved;
         _window.PointerPressed -= OnPointerPressed;
         _window.PointerReleased -= OnPointerReleased;
+        _window.PointerWheel -= OnPointerWheel;
         _window.KeyDown -= OnKeyDown;
         _window.Closing -= OnClosing;
     }
