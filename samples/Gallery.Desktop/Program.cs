@@ -1,137 +1,77 @@
+using System.Runtime.Versioning;
 using EclipseUI;
-using EclipseUI.Elements;
 using EclipseUI.Platform.Windows;
 using EclipseUI.Rendering;
 using EclipseUI.Rendering.Vello;
 using EclipseUI.Text.Shaping;
 using Gallery;
+using Microsoft.Extensions.DependencyInjection;
 
-// EclipseUI 画廊 · Windows 展示入口（Avalonia 式分层：共享 UI 在 samples/Gallery，本工程只是平台壳）。
+// EclipseUI 画廊 · Windows 平台入口（D101 AppBuilder 形态：共享 UI 在 samples/Gallery，本工程只是平台壳）。
 //   dotnet run --project samples/Gallery.Desktop -c Release
-//   dotnet run --project samples/Gallery.Desktop -c Release -- --shot out/gallery-window.png
+//   dotnet run --project samples/Gallery.Desktop -c Release -- --shot out/gallery-cpu.png   （离屏快照）
 //   dotnet run --project samples/Gallery.Desktop -c Release -- --cpu --shot out/gallery-cpu.png
-// 自检/damage 统计/帧测量等验证能力在 sandbox/GalleryCheck。
+// 离屏对照与窗口走同一套 builder 装配（样式/主题/文本管线一致）；自检/damage 统计/帧测量在 sandbox/GalleryCheck。
 
-int width = 1000;
-int height = 760;
-int? frames = null;
-string? shotPath = null;
-bool vsync = true;
-bool useCpu = false;
-bool alwaysRender = false;
-int maxFps = 0;
+var options = ParseArgs(args);
+if (options is null)
+    return 2;
 
-for (int i = 0; i < args.Length; i++)
+var builder = AppBuilder.Configure<GalleryApp>()
+    .UseWindows()
+    .UseVello(new VelloSurfaceOptions { PreferVsync = options.Vsync })
+    .UseHarfBuzzText()
+    .UseTheme(ElementTheme.Dark)
+    .UseStyles(StyleRegistry.Instance, GalleryStyles.Define)
+    .ConfigureServices(s => s.AddSingleton(options));
+
+// --cpu / --shot：离屏 CPU 快照路径（不开窗口）——Build() 装配后直接 measure/arrange 出图。
+if (options.Offscreen)
+    return RunOffscreen(builder, options);
+
+return builder.Start(args);
+
+static GalleryLaunchOptions? ParseArgs(string[] args)
 {
-    switch (args[i])
+    try
     {
-        case "--frames" when i + 1 < args.Length:
-            frames = int.Parse(args[++i]);
-            break;
-        case "--width" when i + 1 < args.Length:
-            width = int.Parse(args[++i]);
-            break;
-        case "--height" when i + 1 < args.Length:
-            height = int.Parse(args[++i]);
-            break;
-        case "--shot" when i + 1 < args.Length:
-            shotPath = args[++i];
-            break;
-        case "--no-vsync":
-            vsync = false;
-            break;
-        case "--max-fps" when i + 1 < args.Length:
-            maxFps = int.Parse(args[++i]);
-            break;
-        case "--cpu":
-            useCpu = true;
-            break;
-        case "--always-render":
-            alwaysRender = true;
-            break;
-        default:
-            Console.Error.WriteLine($"unknown argument: {args[i]}");
-            return 2;
+        return GalleryLaunchOptions.Parse(args);
+    }
+    catch (Exception ex) when (ex is ArgumentException or FormatException)
+    {
+        Console.Error.WriteLine(ex.Message);
+        Console.Error.WriteLine(
+            "usage: Gallery.Desktop [--width N] [--height N] [--frames N] [--max-fps N] " +
+            "[--no-vsync] [--always-render] [--cpu] [--shot path]");
+        return null;
     }
 }
 
-if (maxFps == 0 && vsync) maxFps = 60;
-
-using var shaper = TextShaperFactory.TryCreate();
-using var harfBuzz = shaper is null ? null : new HarfBuzzTextPainter(shaper);
-ITextPainter textPainter = harfBuzz is null ? new MeasuringTextPainter() : harfBuzz;
-// 布局与绘制共用同一个 shaping 缓存（同一字体、同一进距）。
-if (harfBuzz is not null) TextMeasurer.Current = harfBuzz;
-
-var theme = new ElementTheme();
-Styling.Provider = StyleRegistry.Instance; // S-B：装配 Class 样式（类名直配 setter 序列）
-GalleryStyles.Define();
-var scene = GalleryScene.Build();
-var galleryRoot = new GalleryRoot(scene.Counter, scene.Tasks, scene.RootViewer);
-galleryRoot.Mount();
-var gallery = galleryRoot.Root;
-var counter = scene.Counter;
-var themeButton = scene.ThemeButton;
-
-using (galleryRoot)
+[SupportedOSPlatform("windows")]
+static int RunOffscreen(AppBuilder builder, GalleryLaunchOptions options)
 {
-    if (useCpu || !OperatingSystem.IsWindows())
-        return RunCpu();
-
-    using var window = new Win32Window("EclipseUI Gallery", width, height);
-    using var presenter = VelloSurfaceBackend.Create(
-        window.Handle,
-        Math.Max(window.ClientWidth, 1),
-        Math.Max(window.ClientHeight, 1),
-        new VelloSurfaceOptions { PreferVsync = vsync });
-
-    Console.WriteLine($"backend: {presenter.Name}, wgpu={presenter.BackendType}, format={presenter.Format}, present={presenter.PresentMode}");
-    Console.WriteLine($"surface: {presenter.Width}x{presenter.Height} px, vsync={vsync}, max-fps={maxFps}");
-
-    using var host = new WindowHost(window, presenter, gallery, new WindowHostOptions
+    var app = builder.Build();
+    try
     {
-        Theme = theme,
-        TextPainter = textPainter,
-        MaxFramesPerSecond = maxFps,
-        AlwaysRender = alwaysRender,
-    }, galleryRoot);
+        var window = app.MainWindow ?? throw new InvalidOperationException("MainWindow was not set.");
+        var root = window.Content ?? throw new InvalidOperationException("Window.Content was not set.");
 
-    // S-A 亮暗切换：点击换 token 表 → 段缓存失效 → 整帧重绘。
-    var dark = true;
-    themeButton.AddHandler(Button.ClickEvent, () =>
+        var size = new Size(options.Width, options.Height);
+        root.Measure(size);
+        root.Arrange(new Rect(Point.Zero, size));
+
+        var theme = (window.Theme ?? app.DefaultTheme) as ElementTheme ?? new ElementTheme();
+        var textPainter = app.Services.GetService<ITextPainter>() ?? new MeasuringTextPainter();
+        var shotPath = options.ShotPath
+                       ?? Path.Combine(Environment.CurrentDirectory, "out", "gallery-cpu.png");
+        GallerySnapshot.SavePng(root, size, 1.0, null, shotPath, theme, textPainter);
+
+        if (window.RootComponent is IDisposable rootComponent)
+            rootComponent.Dispose();
+        return 0;
+    }
+    finally
     {
-        dark = !dark;
-        host.SetTheme(dark ? ElementTheme.Dark : ElementTheme.Light);
-    });
-
-    host.FrameTicked += (_, e) =>
-    {
-        if (e.Iteration == 1)
-            Console.WriteLine($"first frame: {presenter.Width}x{presenter.Height} px, {gallery.Descendants().Count()} elements");
-    };
-
-    var rendered = host.Run(frames);
-
-    Console.WriteLine($"ticks={host.Ticks} rendered={rendered} skipped={host.SkippedFrames} " +
-                      $"logical={window.LogicalClientSize.Width:F0}x{window.LogicalClientSize.Height:F0} scale={window.ScaleFactor:F2}");
-    Console.WriteLine($"state: counter={counter.count} showButton={counter.showButton} tasks={scene.Tasks.tasks.Count}");
-
-    if (shotPath is not null && rendered > 0)
-        GallerySnapshot.SavePng(gallery, window.LogicalClientSize, window.ScaleFactor,
-            host.Input.Focus.Focused, shotPath, theme, textPainter);
-}
-
-return 0;
-
-// ---- 离屏路径（无窗口截图对照）----
-
-int RunCpu()
-{
-    var size = new Size(width, height);
-    gallery.Measure(size);
-    gallery.Arrange(new Rect(Point.Zero, size));
-
-    var path = shotPath ?? Path.Combine(Environment.CurrentDirectory, "out", "gallery-cpu.png");
-    GallerySnapshot.SavePng(gallery, size, 1.0, null, path, theme, textPainter);
-    return 0;
+        (app.Services as IDisposable)?.Dispose();
+    }
 }

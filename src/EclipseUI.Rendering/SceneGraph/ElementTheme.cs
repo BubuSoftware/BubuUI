@@ -4,8 +4,10 @@ namespace EclipseUI.Rendering;
 /// 场景图绘制的视觉参数（S-A 主题令牌化）：可替换 token 表——宿主换一套实例即换主题
 /// （<see cref="ElementPainter.ReplaceTheme"/>），亮暗切换 = 换表 + 全树重绘。
 /// 刻意保持「数据 + 默认值」，不引入任何布局语义；控件级覆盖（class/inline）走 S-B 有效值分层。
+/// 实现 Runtime 的 <see cref="IHostTheme"/> 标记（D101）：AppBuilder/Window 描述默认主题时
+/// 不依赖 Rendering 类型（调用侧直接传 <c>ElementTheme.Dark/Light</c>，隐式向上转型）。
 /// </summary>
-public class ElementTheme
+public class ElementTheme : IHostTheme
 {
     /// <summary>预置深色主题（原默认值）。</summary>
     public static ElementTheme Dark { get; } = new();

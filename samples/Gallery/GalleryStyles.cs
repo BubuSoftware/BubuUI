@@ -8,9 +8,12 @@ namespace Gallery;
 /// </summary>
 public static class GalleryStyles
 {
-    public static void Define()
+    /// <summary>默认注册到全局 <see cref="StyleRegistry.Instance"/>（无 AppBuilder 的宿主用）。</summary>
+    public static void Define() => Define(StyleRegistry.Instance);
+
+    /// <summary>AppBuilder 形态（D101）：<c>UseStyles(StyleRegistry.Instance, GalleryStyles.Define)</c> 方法组直连。</summary>
+    public static void Define(StyleRegistry registry)
     {
-        var registry = StyleRegistry.Instance;
         registry.Define("primary", s => s
             .Background(new ThemeColor(                     // 主操作：绿色（暗亮两档）
                 Dark: new Color(34, 160, 100),

@@ -84,7 +84,7 @@
 | 工具链 | 🔴 基本未开始 | 热重载、断点映射、DevTools、无头测试 SDK |
 | 平台 | 🟡 Win32 宿主已可用 | macOS/Linux、多窗口、设备丢失恢复 |
 | GPU/3D | 🔴 未开始 | WebGPU 视口控件、同 device 纹理混排、输入转发；不做 3D 引擎/拾取 |
-| 工程化 | 🟡 早期 | CI、LICENSE、打包、发布流程（AOT/裁剪试点 ✅ D95 full trimming 0 警告；分配预算门槛 ✅ D94） |
+| 工程化 | 🟡 早期 | CI、LICENSE、打包、发布流程（AOT/裁剪试点 ✅ D95 full trimming 0 警告；分配预算门槛 ✅ D94；AppBuilder + 依赖注入启动形态 ✅ D101） |
 
 ## 9.3 范围定义
 
@@ -475,6 +475,17 @@ CPU 侧部分收敛（2026-11-08/D84）：CPU 像素 golden（`PixelGoldenTests`
   `ReplaceTheme` 丢段重建即随新表刷新，无需新增失效维度；Gallery 分区卡/样式表全改双色资源
   （inline 静态色并示两种语义）。完整资源字典、`Style=` 内联与模板 `Class` 语法（目录/生成器/
   编译期类名校验）留 S-C 后续片；控件模板（S-D）远期。
+- 宿主启动形态：**AppBuilder + 依赖注入（✅ 2026-11-09，D101）**：Avalonia 式启动——
+  `AppBuilder.Configure<TApp>().UseWindows().UseVello().UseHarfBuzzText().UseTheme(...).
+  UseStyles(StyleRegistry.Instance, styles.Define).ConfigureServices(...).Start(args)`；
+  `Application` 基类（`Services`/`MainWindow`/`OnFrameworkInitializationCompleted`）+
+  描述式 `Window`（Title/尺寸/Content/RootComponent/Theme/帧循环调节项）由平台
+  `ClassicDesktopLifetime` 材料化为 Win32 + 表面 + `WindowHost`。**依赖方向**：Runtime 不引用
+  Rendering/平台包——主题走 `IHostTheme` 标记接口、样式走 `IStyleProvider` 泛型传实例，
+  平台能力全走 `IPlatformSetup` 扩展片；容器 Microsoft.Extensions.DependencyInjection，
+  平台先注册、用户 `ConfigureServices` 后注册可覆盖（MEDI 最后注册优先）。主题运行期切换
+  经 `Application.SetTheme`（`WindowHost` 实现 `IWindowHost`，生命周期注入 `Application.Host`）。
+  `Build()` 与 `Start()` 分离：无头/离屏/测试只装配不运行（画廊 `--cpu/--shot` 走此路径）。
 - 控件集：ListBox、TextBox、ScrollViewer ✅（2026-11-09）、Grid ✅、WrapPanel ✅、Slider 等。
 - `VirtualizingPanel` 与 item 模板的容器复用。—— ✅ **v1 切片（2026-11-09）**：元素级 `VirtualizingStackPanel`（ItemCount + ItemFactory、视口窗口实例化、均匀行高）；容器复用（pooling）、变高行、item 模板编译 RenderUnit 留后续片。
 - 状态与反应式 S4：组件所有权/深度排序、参数推送与相等保护、异步/后台失效、`ShouldRender`（[spec/03 §13.1](../spec/03-reactivity-and-binding.md#131-阶段定义)）。

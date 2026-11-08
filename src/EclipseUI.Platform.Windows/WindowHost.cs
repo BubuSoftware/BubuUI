@@ -59,10 +59,11 @@ public sealed class WindowHostOptions
 /// <item>布局：根元素 measure/arrange 到整个客户区（逻辑单位）。</item>
 /// <item>绘制：<see cref="ElementPainter"/> 全量构建 display list（G2 阶段）。</item>
 /// <item>输入：窗口事件 → <see cref="InputRouter"/>（与无头宿主同一路径）。</item>
+/// <item>D101：实现 <see cref="IWindowHost"/>，<see cref="Application.SetTheme"/> 经此换主题。</item>
 /// </list>
 /// </summary>
 [SupportedOSPlatform("windows")]
-public sealed class WindowHost : IDisposable
+public sealed class WindowHost : IDisposable, IWindowHost
 {
     private readonly Win32Window _window;
     private readonly ISurfacePresenter _presenter;
@@ -116,6 +117,11 @@ public sealed class WindowHost : IDisposable
         _painter.ReplaceTheme(theme);
         _painter.ResetDamage(); // 当前帧可能已构建过：再保证下一帧整帧
     }
+
+    /// <summary><see cref="IWindowHost"/> 实现（D101）：主题经标记接口传入，此处还原为 <see cref="ElementTheme"/>。</summary>
+    public void SetTheme(IHostTheme theme)
+        => SetTheme(theme as ElementTheme
+            ?? throw new ArgumentException($"Theme must be an ElementTheme (got {theme?.GetType().Name ?? "null"}).", nameof(theme)));
 
     public InputRouter Input { get; }
 

@@ -9,6 +9,9 @@ public interface ISurfacePresenter : IDisposable
 {
     string Name { get; }
 
+    /// <summary>一行式后端诊断摘要（D101：宿主启动时打印；含 wgpu 后端/格式/呈现模式等实现细节）。</summary>
+    string Description { get; }
+
     RenderCapabilities Capabilities { get; }
 
     /// <summary>当前表面宽度（设备像素）。</summary>

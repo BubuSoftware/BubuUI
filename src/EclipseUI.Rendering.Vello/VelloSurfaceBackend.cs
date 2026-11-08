@@ -57,6 +57,8 @@ public sealed class VelloSurfaceBackend : ISurfacePresenter
 
     public string Name => "Vello (GPU surface)";
 
+    public string Description => $"backend: {Name}, wgpu={BackendType}, format={Format}, present={PresentMode}, surface={Width}x{Height} px";
+
     public RenderCapabilities Capabilities => RenderCapabilities.All;
 
     public int Width { get; private set; }

@@ -146,6 +146,17 @@
 > （无需新增失效维度）。画廊分区卡/标题/primary/tool 样式全改双色资源——**亮暗切换整页跟随**，
 > inline 静态色保留以并示「静态覆盖 vs 主题跟随」。**670 个用例（332/241/97），全绿**。
 >
+> **AppBuilder + 依赖注入已通过（2026-11-09，D101）**：Avalonia 式启动形态——`AppBuilder.Configure<TApp>()`
+> 链式装配（`.UseWindows().UseVello().UseHarfBuzzText().UseTheme(...).UseStyles(...).ConfigureServices(...)`
+> `.Start(args)`）；`Application` 基类（`Services` 容器 / `MainWindow` 描述式 `Window` / `OnFrameworkInitializationCompleted`），
+> `ClassicDesktopLifetime`（Platform.Windows）把窗口描述材料化为 Win32 + 表面 + `WindowHost` 帧循环；
+> 依赖注入用 Microsoft.Extensions.DependencyInjection（平台 setup 先注册、用户 `ConfigureServices` 后注册可覆盖）；
+> Runtime 不依赖任何平台/渲染包——主题经 `IHostTheme` 标记、样式经 `IStyleProvider` 泛型接线，
+> 平台能力全走 `IPlatformSetup` 扩展片（`UseWindows`/`UseVello`/`UseHarfBuzzText`）。
+> 画廊改造为 `GalleryApp` + `GalleryLaunchOptions`（CLI→DI），`--cpu/--shot` 走 `Build()` 离屏对照
+> （同一套装配：样式/主题/文本一致）。`AppBuilderTests` 8 例；**678 个用例（Headless 340 /
+> Compiler 241 / Rendering 97），全绿**；GalleryCheck selfcheck PASS。
+>
 > **画廊完全重构（2026-11-09）**：根 `ScrollViewer` 包整页——内容超出窗口即可滚动（窗口根有限高度
 > 使视口生效）；分区卡片陈列框架全部能力：模板组件（@bind/@if/@foreach/@switch）、Button/CheckBox/
 > TextBlock、StackPanel/WrapPanel/Grid（附加属性）、ScrollViewer、VirtualizingStackPanel（1000 项）、
@@ -215,25 +226,30 @@ src/
   EclipseUI.Runtime/             运行时：失效队列与所有权、StyledProperty 属性引擎、
                                  元素树、measure/arrange 布局、块协调器（v4：`Refresh`/`BlockScope`）、
                                  路由事件、InputRouter 输入/焦点、Panel.Padding/ClipToBounds、无头宿主、
+                                 Application/AppBuilder/Window（启动形态，D101）、
                                  控件契约声明特性（`UiAttributes.cs`：`[UiContent]`/`[UiIgnore]`/
                                  `[UiParameter]`/`[UiSlot]` + `UiContentKind`）
   EclipseUI.Text.Shaping/        HarfBuzz shaping（HarfBuzzSharp）：先 shaping 再测量，
-                                 HarfBuzzTextPainter 让布局与绘制共用同一 shaping 缓存
+                                 HarfBuzzTextPainter 让布局与绘制共用同一 shaping 缓存；
+                                 UseHarfBuzzText() AppBuilder 扩展（字体候选/回落，D101）
   EclipseUI.Compiler/            .ui 编译器前端：Lexer / Parser / AST / 字面量转换与建议 / 诊断（netstandard2.0）
   EclipseUI.Compiler.Metadata/   控件契约目录（C1–C2）：声明式元数据模型 + Roslyn 符号扫描器，
                                  从符号派生模板目录（标签/属性/事件/内容/参数/插槽），不执行程序集
                                  （netstandard2.0；C2 起由分析器与生成器同源消费，源码内嵌进生成器）
   EclipseUI.Compiler.Generator/  Roslyn 增量源生成器：code-behind 发现、@foreach item 类型推断、
                                  @bind 源可写性校验、代码发射（U/R 定向更新、#line 映射回 .ui）
-samples/Gallery/                 画廊共享 UI（平台无关，Avalonia 式 App 本体）：展示页
+samples/Gallery/                 画廊共享 UI（平台无关，Avalonia 式 App 本体）：GalleryApp
+                                 （Application 子类）+ GalleryLaunchOptions（CLI→DI）+ 展示页
                                  Counter（计数器/条件/双向绑定）、TaskList（@foreach Key 对齐）、
                                  Prefs；主场景 GalleryScene + 截图/字体辅助
-samples/Gallery.Desktop/         画廊 Windows 平台入口：Win32 窗口 + 主循环，仅展示与截图；
+samples/Gallery.Desktop/         画廊 Windows 平台入口：AppBuilder 链式装配（UseWindows/
+                                 UseVello/UseHarfBuzzText）+ --cpu/--shot 离屏对照；
                                  验证/自检在 sandbox/GalleryCheck
-tests/EclipseUI.Headless.Tests/  332 个无头测试：属性引擎、布局（Grid/WrapPanel/ScrollViewer/
+tests/EclipseUI.Headless.Tests/  340 个无头测试：属性引擎、布局（Grid/WrapPanel/ScrollViewer/
                                  列表虚拟化，含 padding 与块布局透明）、块协调、输入/焦点路由、
                                  卸载链路、shaping、编译器、字面量转换与使用点诊断（C3）、
                                  失效队列/所有权（含接管迁移与死循环上限）、具名插槽、附加属性、
+                                 AppBuilder 装配契约（`AppBuilderTests` 8 例，D101）、
                                  端到端（含泄漏回归）、运行时硬化（`RuntimeHardeningTests`：
                                  分配预算/去装箱/泄漏回归）
 tests/EclipseUI.Compiler.Tests/  241 个测试：生成器契约（确定性 hint、U/R 形态与 Render、
@@ -250,10 +266,13 @@ tests/EclipseUI.Rendering.Tests/ 84 个渲染测试：图元/作用域/文本/�
                                  `PixelGoldenTests` 双层像素门禁 + `PixelProbe` 探针 DSL
 src/EclipseUI.Rendering/         渲染契约：DisplayList、DrawCommand、Brush、Transform、PngEncoder、
                                  SceneGraph/ElementPainter（元素树→display list）、FrameDamage/DamageTracker、
-                                 IRenderBackend、ISurfacePresenter（上屏目标）
-src/EclipseUI.Rendering.Vello/   Vello 后端：VelloSceneBuilder（CPU/GPU 共用）、CPU 离屏、wgpu surface
+                                 IRenderBackend、ISurfacePresenter（上屏目标）、
+                                 ISurfaceFactory（AppBuilder 表面扩展点，D101）
+src/EclipseUI.Rendering.Vello/   Vello 后端：VelloSceneBuilder（CPU/GPU 共用）、CPU 离屏、wgpu surface、
+                                 UseVello() AppBuilder 扩展（D101）
 src/EclipseUI.Platform.Windows/  Win32 窗口宿主：消息循环、DPI、resize、鼠标/键盘事件、
-                                 WindowHost（布局+绘制+damage 跳帧上屏循环）
+                                 WindowHost（布局+绘制+damage 跳帧上屏循环）、UseWindows() +
+                                 ClassicDesktopLifetime（AppBuilder 桌面生命周期，D101）
 sandbox/RenderSpike/             G1 像素管线 spike：PNG 输出 + 性能 bench（不入解决方案）
 sandbox/WindowSpike/             G2 上屏 spike：动画场景 + 帧时间分段 + resize 自检（不入解决方案）
 sandbox/GalleryCheck/            画廊验证壳：--selfcheck 六步自动化、damage 覆盖率、帧成本测量、
@@ -277,7 +296,7 @@ dotnet run --project sandbox/WindowSpike -c Release -- --selfcheck   # resize �
 
 # 画廊（展示）：Counter + TaskList 真窗口交互（事件 → 输入路由 → 失效重算 → 重绘）
 dotnet run --project samples/Gallery.Desktop -c Release
-dotnet run --project samples/Gallery.Desktop -c Release -- --shot out/gallery-window.png
+dotnet run --project samples/Gallery.Desktop -c Release -- --shot out/gallery-cpu.png
 dotnet run --project samples/Gallery.Desktop -c Release -- --cpu --shot out/gallery-cpu.png
 
 # 画廊验证（测试壳，sandbox）：6 步自检 + damage 覆盖率 + 帧成本
