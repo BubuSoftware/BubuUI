@@ -963,7 +963,7 @@ C4 只负责组件标签与参数/内容元数据，C5 只保留 `Ref` 与语法
 | `ListBoxItem` | `Children:Children` | `ClipToBounds`、`Gap`、`IsHitTestVisible`、`Padding` | — |
 | `StackPanel` | `Children:Children` | `ClipToBounds`、`Gap`、`IsHitTestVisible`、`Padding` | — |
 | `TextBlock` | `TextRuns:—` | `ClipToBounds`、`FontSize`、`IsHitTestVisible`、`Padding` | — |
-| **合计** | 8 标签 | **30 属性项** | **59 事件项** |
+| **合计** | 8 标签 | **33 属性项** | **66 事件项** |
 
 隐藏标签 4 个（`Component`/`Element`/`Panel`/`StackPanelBase`，均 EUI017「类型是抽象的」）；
 `TextRun`/`ConditionalBlock`/`ForEachBlock<T>` 走 `[UiIgnore]` 完全退出表面，不进 `HiddenTags`。

@@ -85,7 +85,7 @@
 > 测量纵给无穷量出 Extent、视口 = min(extent, 可用)（可用无限 = 不滚动）；`VerticalOffset`/`HorizontalOffset`
 > + `ScrollTo*/ScrollToEnd`（使用点钳制）；滚轮经 `PointerWheelChanged` 冒泡路由（Win32 `WM_MOUSEWHEEL`
 > 已接线，一格 = 48px），容器在冒泡路径上消费并置 Handled；绘制侧强制视口 PushClip + 叠加滚动条拇指。
-> 模板表面 +1 标签（ScrollViewer）/ +2 属性项 / 全元素 +1 滚轮事件（59 事件项）。
+> 模板表面 +1 标签（ScrollViewer，自带 5 属性项）/ 全元素 +1 滚轮事件（33 属性项 / 66 事件项）。
 >
 > **G4 Grid 布局切片已通过（2026-11-09）**：`Grid : Panel` 行列布局——轨道紧凑串
 > `RowDefinitions="Auto,*,2*,120"`（未设置退化单星）、`Gap` 轨道间距；固定轨精确约束、
