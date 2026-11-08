@@ -32,15 +32,14 @@
   `<Slot>` + `<ContentSlot>`（见 [14 §14.12](./14-control-template-contract.md)）。
 - 反应式 S1–S3 ✅：`Invalidate`/`Render`/`U{N}`/`R{N}`、块 `Refresh` 与 Key 复用、`UiBinding` 双向
   （控件侧与组件侧）；旧语法 `:bind`/`:value` 已按 K27 移除并报 `EUI046`（`EUI043` 停用）。
-- 测试：**567 个用例（Headless 274 / Compiler 228 / Rendering 65），566 绿**——唯一红是既有像素 golden
-  `PixelGoldens_MatchBaseline`（`solid-primitives`/`transform-clip` 整图 hash 不符，探针 ±2 全过，与 S6 无关）；
-  编译器测试用快照钉住 C2 变宽后的模板表面（17 属性项 / 9 个事件名），样例 `.ui` 已用 `@bind-P` 新语法。
+- 测试：**643 个用例（Headless 327 / Compiler 241 / Rendering 75），全绿**——既有像素 golden 红
+  （VelloSharp AA 舍入差 1 导致的整图 hash 漂移）已随 D91 基线重生成清零；
+  编译器测试用快照钉住当前模板表面（9 标签 / 38 属性项 / 74 事件项 / 附加属性 2），样例 `.ui` 已用 `@bind-P` 新语法。
 
 **尚不具备**
 
-- retained layer / 合成器 / 真正的局部重绘、像素 golden 自动化。
-- 样式/主题、虚拟化、基础控件库。
-- 文本编辑（字符输入/IME）、多行断行、bidi、字体 fallback。
+- retained layer / 真正的局部重绘（GPU 侧与脏区光栅化）。
+- 样式/主题、TextBox / 完整 ListBox、文本编辑（字符输入/IME）、多行断行、bidi、字体 fallback。
 - LSP / TextMate / VS Code / Rider 插件。
 - 热重载、DevTools、调试映射的 IDE 接入。
 - WebGPU 视口控件（不做 3D 引擎）。
@@ -336,8 +335,17 @@ CPU 侧部分收敛（2026-11-08/D84）：CPU 像素 golden（`PixelGoldenTests`
   边界：原型只是合成层、不减少光栅化工作量，真正局部重绘需 `IRenderBackend.Render` 增加
   脏区/scissor 重载且 VelloSharp 0.5.0-alpha.3 未提供公开 API；GPU surface 的 retained layer
   依赖 HWND + wgpu device，本机无法验证；「稳定 60fps」结论依赖目标机真实显示器
-  （本机 29Hz 虚拟显示），只能给可复现测量程序与报告模板；像素探针 DSL
-  （render-gate-2026-11 backlog #7）仍缺。
+  （本机 29Hz 虚拟显示），只能给可复现测量程序与报告模板。像素探针 DSL 已随 D91 落地（见 ④）。
+  ④ G2 像素探针 DSL 收敛（D91）：`PixelProbe` 流式断言门面——点 `At`/`AlphaAt`、区域
+  `DominantColor`（覆盖率 + 失败时 top3 直方图诊断）/`Contains`/`NotContains`（首命中坐标）/
+  `CountIn`/`Count`、帧间 `SameAs`/`SameAsOutside`（`RenderTarget` 与 byte[] 快照重载，逐字节精确）；
+  失败聚合一次性报告，`Failures` 可外查（golden 聚合诊断用）。`PixelGoldenTests` 升级**双层门禁**：
+  语义探针（期望值自描述于场景定义）先于基线比对，生成模式（`ECLIPSEUI_UPDATE_GOLDEN=1`）
+  写基线前先过语义探针；三个纯图元场景各配区域/计数/禁色断言（描边半覆盖像素
+  `At(4,32) α≈127` 的语义随之显式化）；Damage/Retained 手写像素双循环收敛为
+  `SameAsOutside`/`SameAs`。既有红根因定位：`4,32` 半覆盖像素 `#FFFFFF80`→`#FFFFFF7F`
+  （VelloSharp AA 舍入差 1）+ `transform-clip` 探针点外 AA 边缘漂移，基线重生成后
+  `PixelGoldens_MatchBaseline` 首次全绿；`PixelProbeTests` 8 例（手工帧，不依赖后端）。
 - 属性存储去装箱（`IValueBox`/`ValueBox<T>`，✅ 2026-11-08/D83）；剩失效队列分配预算门槛、
   benchmark 基线、帧预算门槛、CI 配置。
 

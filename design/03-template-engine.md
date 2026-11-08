@@ -887,6 +887,7 @@ v4 换轨后，**S1 已收敛（2026-10-30）、S2 已收敛（2026-10-30）、S
 | D88 | 规范先行（K23 / design/16 §3.1，2026-11-08）：新增 `@* ... *@` 编译器丢弃注释，未闭合报 `EUI100`（顺带关闭 **D12**）；`<!-- -->` 按 spec/01 §8 规则 2 给弃用期，具体形态待 Q6。**当前实现**：只识别 `<!-- -->`，且 `Lexer.SkipComment` 未闭合时静默吞到文件尾（D12 开放）。收敛条件：P1 词法、`TokenizerTests` 与未闭合注释用例、P6 样例迁移；Q6 未拍板前不删除 `<!-- -->` 支持 | K23、D12、design/16 §3.1 | ✅ S6（2026-11-08 收敛） |
 | D89 | ✅ S4/G4：Element.Unmount 卸载链路落地（K33）——UnmountedEvent（Direct，[UiIgnore] 退出事件表面）、Unmount() 子树级钩子与事件、组件根订阅自 Dispose（Dispose 退订防泄漏回归）、FocusManager.ClearFocusIfDetached 接入两个宿主；UnmountTests 9 例，全量 575 例（Rendering 1 既有红除外）全绿 | spec/03 §13.1、design/14/15 | ✅ S4/G4（2026-11-09） |
 | D90 | ✅ G4 布局：**WrapPanel 流式布局**——`Orientation`（Horizontal/Vertical）+ `Gap`；主轴装箱换行、期望尺寸取最长行（首版漏 maxMain 已修）、越界子项独占一行不裁剪；目录表面 5→6 标签、17→22 属性项、37→44 事件项，golden 重生成（+15 行）；`WrapPanelTests` 5 例（水平/竖直换行、Gap+Padding、不换行、越界独占、空面板） | design/09 §9.3 G4 布局补全 | ✅ G4（2026-11-09） |
+| D91 | ✅ G2：**像素探针 DSL**——`PixelProbe` 流式断言门面（点 `At`/`AlphaAt`、区域 `DominantColor`/`Contains`/`NotContains`/`CountIn`/`Count`、帧间 `SameAs`/`SameAsOutside` 逐字节精确，失败聚合 + 直方图/坐标诊断）；`PixelGoldenTests` 双层门禁（语义探针先于基线比对、生成基线前先过语义探针），Damage/Retained 手写双循环收敛；既有红定位为 VelloSharp AA 舍入差 1 并随基线重生成清零，`PixelProbeTests` 8 例，全量 643 例全绿 | spec/02 §12、design/09 §9.3 G2 ④ | ✅ G2（2026-11-09） |
 
 - 每项收敛必须同时删除对应的 v3 路径；不得两套模型并存。
 - 新增偏差必须登记编号（从 D89 起）并注明目标阶段；不得只改代码不改台账。

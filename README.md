@@ -77,10 +77,19 @@
 > 「稳定 60fps」结论依赖物理目标机——本机（60Hz 虚拟链）已完成帧节奏修复与复测（
 > [报告](./design/reports/target-machine-60fps-2026-11-08.md)）：`Immediate` 模式墙钟 59.7–59.8fps 稳定，
 > `Fifo` 上屏受虚拟链 DWM 合成波动（32–60Hz）主导；
-> 像素探针 DSL 仍缺。余项：S4/S5（Element.Unmount 属 G4、AOT/裁剪、旧语法清理、最终审计、
+> 像素探针 DSL 后随 D91 落地。余项：S4/S5（Element.Unmount 属 G4、AOT/裁剪、旧语法清理、最终审计、
 > 帧预算/分配预算门槛、CI）、G2（GPU retained layer/真正局部重绘、目标机稳定 60fps 结论、
-> 像素探针 DSL、CPU/GPU 交叉一致性门禁）、G4（样式/主题；附加属性首批 ✅ 2026-11-09；泛型标签暂缓 K19）、IDE/DevTools。
+> CPU/GPU 交叉一致性门禁）、G4（样式/主题；附加属性首批 ✅ 2026-11-09；泛型标签暂缓 K19）、IDE/DevTools。
 
+> **G2 像素探针 DSL 已落地（2026-11-09，D91）**：`PixelProbe` 流式断言门面——点 `At`/`AlphaAt`、
+> 区域 `DominantColor`（覆盖率 + 直方图诊断）/`Contains`/`NotContains`（首命中坐标）/`CountIn`/`Count`、
+> 帧间 `SameAs`/`SameAsOutside`（`RenderTarget` 与 byte[] 快照重载，逐字节精确）；失败聚合一次性报告。
+> `PixelGoldenTests` 升级双层门禁：语义探针（期望值自描述于场景定义，区域/计数/禁色断言）先于基线比对，
+> `ECLIPSEUI_UPDATE_GOLDEN=1` 写基线前先过语义探针；Damage/Retained 手写像素双循环收敛为 DSL。
+> 既有像素 golden 红（`solid-primitives`/`transform-clip` 整图 hash 漂移）定位为 VelloSharp AA 舍入差 1
+> （`4,32` 描边半覆盖像素 `#FFFFFF80`→`#FFFFFF7F`）并随基线重生成清零。
+> **643 个用例（Headless 327 / Compiler 241 / Rendering 75），全绿**。
+>
 > **表达式语义预检已通过（2026-11-09，EUI049 Warning）**：属性 `{expr}`、`@if` 条件、插值文本段
 > 经探针编译在使用点直接提示「拼错成员/类型不匹配」（CS0103/CS0029），不再等 C# 编译才发现；
 > Warning 不短路生成——类型错误仍经 `#line` 由 C# 报权威错误（spec/02 §2.4 规则 11）。
@@ -117,7 +126,7 @@
 > 流式布局（水平/竖直换行、Gap、越界独占一行，`WrapPanelTests` 5 例）——内置表面 5→6 标签、
 > 17→22 属性项、37→44 事件项。
 > **635 个用例（Headless 327 / Compiler 241 / Rendering 67 → 634 绿）**——唯一红仍是既有像素
-> golden `PixelGoldens_MatchBaseline`。
+> golden `PixelGoldens_MatchBaseline`（已随 D91 定位为 AA 舍入差 1 并清零）。
 >
 > **S6 语法对齐（✅ 已实现 2026-11-08，K23 + K24–K31）**：`.ui` 语法表面向 Blazor/Razor 对齐——
 > 模板 `@using`（内置控件也须导入、生成代码保留 using，K22）、`@using Alias = Ns.Type` 类型别名
@@ -316,7 +325,7 @@ EUI019–021/EUI029 使用点收敛，落地记录见
 EUI024 事件处理器签名匹配 ✅ D82）也已全部通过**，落地记录见
 [14 §14.12.6](./design/14-control-template-contract.md) 与 [09 开发计划](./design/09-development-plan.md)。
 当前优先级是 **G2 剩余部分**：GPU retained layer / 真正局部重绘、目标机稳定 60fps 结论、
-像素探针 DSL、CPU/GPU 交叉一致性门禁（CPU 侧像素 golden 与 retained 合成原型已由 D84 部分落地）；
+CPU/GPU 交叉一致性门禁（CPU 侧像素 golden 与 retained 合成原型已由 D84 部分落地，像素探针 DSL ✅ D91）；
 S4/S5 余项（Element.Unmount 属 G4、AOT/裁剪、旧语法清理、最终审计、帧预算/分配预算门槛、CI）与
 **S6 语法对齐（K23，✅ 已实现 2026-11-08）** 按排期插在 G3 之后、G4 之前；
 G4（样式/主题；附加属性首批 ✅ 2026-11-09；泛型标签暂缓 K19）、IDE/DevTools 随后。
@@ -325,8 +334,8 @@ G4（样式/主题；附加属性首批 ✅ 2026-11-09；泛型标签暂缓 K19�
 [11 G2 第一切片](./design/11-g2-surface-slice.md)、[12 G2 第二切片](./design/12-g2-interactive-slice.md)
 与 [13 G2 第三切片](./design/13-g2-damage-v0.md)。
 
-1. **G2 剩余**：GPU retained layer / 真正局部重绘、目标机稳定 60fps 结论、像素探针 DSL、
-   CPU/GPU 交叉一致性门禁（CPU 侧像素 golden + retained 合成原型 + 60fps 测量程序已由 D84 部分落地）。
+1. **G2 剩余**：GPU retained layer / 真正局部重绘、目标机稳定 60fps 结论、CPU/GPU 交叉一致性门禁
+   （CPU 侧像素 golden + retained 合成原型 + 60fps 测量程序已由 D84 部分落地；~~像素探针 DSL~~ ✅ D91）。
 2. **G3 语义/编译器硬化**（与 G2 并行）——七个小切片全部收敛：~~块布局透明化~~ ✅ D77（2026-11-05）、
    ~~接管失效迁移~~ ✅ D78（2026-11-07）、~~表达式形态判定的正则替代（tokenizer）~~ ✅（2026-11-05）、
    ~~按文件增量~~ ✅（2026-11-08）、~~`#line` 列映射~~ ✅ D79（2026-11-08）、

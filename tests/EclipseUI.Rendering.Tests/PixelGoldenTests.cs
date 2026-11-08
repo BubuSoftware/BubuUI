@@ -15,7 +15,8 @@ namespace EclipseUI.Rendering.Tests;
 ///    避免系统字体差异；CPU 后端 AntialiasingMode.Area 固定，输出跨运行可复现。
 ///  - 基线是仓库内**文本**文件 TestData/PixelGolden.baseline.txt，不提交二进制 PNG，
 ///    规避跨平台编码差异；每行「场景名=ContentHash:X16;x,y=#RRGGBBAA;...」。
-///  - 探针用与 <see cref="Render.AssertColor"/> 一致的 ±2 容差比对；hash 为整幅精确门禁。
+///  - 双层门禁：hash 为整幅精确防漂移；语义探针（<see cref="PixelProbe"/> DSL，区域/颜色/计数断言）
+///    在比对基线**之前**先验证——期望值自描述地写在场景定义里，即使基线被误重生成也能抓住结构性错误。
 ///  - 环境变量 ECLIPSEUI_UPDATE_GOLDEN=1 进入「生成基线」模式，把本次实际值写入基线；
 ///    默认模式严格比对。基线缺失时给出可读失败消息并打印实际值，提示用该开关生成。
 ///  - 失败时把实际图像用 <see cref="PngEncoder"/> 写到 TestResults/（.gitignore 忽略，不进仓库）。
@@ -30,7 +31,8 @@ public class PixelGoldenTests
         int Width,
         int Height,
         Func<DisplayList> Build,
-        IReadOnlyList<(int X, int Y)> Probes);
+        IReadOnlyList<(int X, int Y)> Probes,
+        Action<PixelProbe>? Semantic = null);
 
     private sealed record BaselineEntry(
         string Name,
@@ -39,6 +41,15 @@ public class PixelGoldenTests
 
     private static readonly Size LocalSize = new(64, 64);
     private static readonly Rect LocalRect = new(24, 24, 16, 16);
+
+    // 场景配色（与图元定义一一对应，语义探针复用）。
+    private static readonly Color PrimitiveRed = new(220, 30, 30);
+    private static readonly Color PrimitiveGreen = new(40, 180, 90);
+    private static readonly Color PrimitiveBlue = new(40, 90, 220);
+    private static readonly Color ClipPurple = new(160, 60, 200);
+    private static readonly Color ClipTeal = new(0, 200, 200);
+    private static readonly Color GradientGreen = new(0, 200, 0);
+    private static readonly Color GradientYellow = new(255, 255, 0);
 
     // ---------------------------------------------------------------------
     // 固定场景（纯图元，整数对齐）
@@ -51,19 +62,38 @@ public class PixelGoldenTests
             {
                 (0, 0), (1, 1), (20, 20), (46, 18), (32, 46),
                 (8, 8), (32, 32), (63, 63), (4, 32),
-            }),
+            },
+            Semantic: probe => probe
+                .At(20, 20, PrimitiveRed)                                          // 红矩形内部
+                .At(46, 18, PrimitiveGreen)                                        // 圆角矩形内部
+                .At(32, 46, PrimitiveBlue)                                         // 椭圆中心
+                .At(4, 32, Color.White.WithAlpha(0.5), tolerance: 2)               // 1px 描边中心对齐路径 → 边列像素半覆盖（A≈127）
+                .DominantColor(new Rect(10, 10, 20, 20), PrimitiveRed, 0.95)       // 红矩形内部区域（避开描边与边缘 AA）
+                .Contains(new Rect(36, 8, 20, 20), PrimitiveGreen, minCount: 100)  // 圆角矩形区域出现大量绿
+                .NotContains(new Rect(0, 0, 4, 64), PrimitiveRed)),                // 最左条带无红
         new Scene("linear-gradient", 100, 40, LinearGradientScene,
             new (int X, int Y)[]
             {
                 (0, 20), (5, 20), (50, 20), (99, 20),
                 (20, 20), (80, 20), (0, 0), (99, 39),
-            }),
+            },
+            Semantic: probe => probe
+                .DominantColor(new Rect(12, 12, 16, 16), GradientGreen, 0.95)      // 绿块内部
+                .DominantColor(new Rect(72, 12, 16, 16), GradientYellow, 0.95)     // 黄块内部
+                .CountIn(new Rect(0, 0, 2, 40), new Color(255, 0, 0), 20, 80)      // 渐变左端出现纯红（首列）
+                .NotContains(new Rect(72, 12, 16, 16), new Color(255, 0, 0))),     // 黄块区域无红
         new Scene("transform-clip", 64, 64, TransformClipScene,
             new (int X, int Y)[]
             {
                 (0, 0), (4, 4), (20, 12), (35, 27),
                 (36, 28), (40, 40), (63, 63),
-            }),
+            },
+            Semantic: probe => probe
+                // PushClip 携带当前变换：紫矩形可见区 = (16,8)-(36,28)，收缩取内部。
+                .DominantColor(new Rect(18, 10, 16, 16), ClipPurple, 0.95)
+                .NotContains(new Rect(36, 28, 28, 36), ClipPurple)                 // 裁剪区外无紫
+                .DominantColor(new Rect(0, 0, 8, 8), ClipTeal, 0.95)               // 弹出变换后的青色小块
+                .NotContains(new Rect(0, 0, 16, 8), ClipPurple)),                  // 青块行带无紫
     };
 
     private static DisplayList SolidPrimitives() => new DisplayList(new Size(64, 64))
@@ -153,6 +183,18 @@ public class PixelGoldenTests
             var second = Render.Frame(scene.Build());
             Assert.Equal(first.ContentHash(), second.ContentHash());
             Assert.Equal(first.Pixels, second.Pixels);
+
+            // 语义探针先验证，防止把结构性错误的图写进基线。
+            if (scene.Semantic is not null)
+            {
+                var probe = PixelProbe.On(first, scene.Name);
+                scene.Semantic(probe);
+                Assert.True(
+                    probe.Failures.Count == 0,
+                    "生成基线前语义探针未通过（请勿把错误图像写进基线）：\n" +
+                    string.Join("\n", probe.Failures));
+            }
+
             lines.Add(FormatBaselineLine(scene, first));
         }
 
@@ -191,6 +233,22 @@ public class PixelGoldenTests
             var frame = Render.Frame(scene.Build());
             var actualHash = frame.ContentHash().ToString("X16", CultureInfo.InvariantCulture);
 
+            // 第一层：语义探针（区域/颜色/计数），期望值自描述，结构性错误在这里先暴露。
+            if (scene.Semantic is not null)
+            {
+                var probe = PixelProbe.On(frame, scene.Name);
+                scene.Semantic(probe);
+                if (probe.Failures.Count > 0)
+                {
+                    var png = WriteActualPng(scene, frame);
+                    errors.Add(
+                        $"[{scene.Name}] 语义探针失败：\n    " + string.Join("\n    ", probe.Failures) +
+                        $"\n    实际图像：{png}");
+                    continue;
+                }
+            }
+
+            // 第二层：基线 hash + 点快照防漂移。
             if (!baselines.TryGetValue(scene.Name, out var entry))
             {
                 errors.Add($"[{scene.Name}] 基线缺少该场景（实际 hash={actualHash}）；实际图像：{WriteActualPng(scene, frame)}");
@@ -321,37 +379,13 @@ public class PixelGoldenTests
         Assert.False(damage.IsFull);
         Assert.Single(damage.Rects);
 
-        // 脏区内像素确实变化，且变为预期的新颜色。
-        Render.AssertColor(new Color(200, 40, 40), before.GetPixel(32, 32));
-        Render.AssertColor(new Color(40, 200, 80), after.GetPixel(32, 32));
-
-        int width = (int)LocalSize.Width, height = (int)LocalSize.Height;
-        int changedInside = 0, outsideMismatch = 0, outsideCount = 0;
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                int i = (y * width + x) * 4;
-                bool changed = before.Pixels[i] != after.Pixels[i] ||
-                               before.Pixels[i + 1] != after.Pixels[i + 1] ||
-                               before.Pixels[i + 2] != after.Pixels[i + 2] ||
-                               before.Pixels[i + 3] != after.Pixels[i + 3];
-
-                if (LocalRect.Contains(new Point(x, y)))
-                {
-                    if (changed) changedInside++;
-                }
-                else
-                {
-                    outsideCount++;
-                    if (changed) outsideMismatch++;
-                }
-            }
-        }
-
-        Assert.True(changedInside > 0, "脏区内应出现像素变化");
-        Assert.True(outsideCount > 0);
-        Assert.Equal(0, outsideMismatch);
+        // 中心点旧色/新色；脏区内大面积出现新色；脏区外与上一帧逐字节一致。
+        PixelProbe.On(before, "damage-before").At(32, 32, new Color(200, 40, 40)).Verify();
+        PixelProbe.On(after, "damage-after")
+            .At(32, 32, new Color(40, 200, 80))
+            .Contains(LocalRect, new Color(40, 200, 80), minCount: 200)
+            .SameAsOutside(before, LocalRect)
+            .Verify();
     }
 
     // ---------------------------------------------------------------------
@@ -374,7 +408,7 @@ public class PixelGoldenTests
         var frame0 = compositor.Composite(LocalScene(new Color(200, 40, 40)), full);
         var before = compositor.SnapshotPixels();
         Assert.True(compositor.HasFrame);
-        Render.AssertColor(new Color(200, 40, 40), frame0.GetPixel(32, 32));
+        PixelProbe.On(frame0, "retained-frame0").At(32, 32, new Color(200, 40, 40)).Verify();
 
         var partial = new FrameDamage();
         partial.Add(LocalRect);
@@ -384,24 +418,12 @@ public class PixelGoldenTests
         // 整帧重绘参考帧。
         var reference = Render.Frame(LocalScene(new Color(40, 200, 80)));
 
-        // 与整帧重绘逐像素等价。
-        Assert.Equal(reference.Pixels, frame1.Pixels);
-        Assert.Equal(reference.ContentHash(), frame1.ContentHash());
-
-        // 脏区内变化符合预期。
-        Render.AssertColor(new Color(40, 200, 80), frame1.GetPixel(32, 32));
-
-        // 脏区外与上一帧逐字节完全一致。
-        for (int y = 0; y < h; y++)
-        {
-            for (int x = 0; x < w; x++)
-            {
-                if (LocalRect.Contains(new Point(x, y))) continue;
-                int i = (y * w + x) * 4;
-                for (int k = 0; k < 4; k++)
-                    Assert.Equal(before[i + k], frame1.Pixels[i + k]);
-            }
-        }
+        // 与整帧重绘逐像素等价 + 中心点新色 + 脏区外与上一帧逐字节一致。
+        PixelProbe.On(frame1, "retained-partial")
+            .At(32, 32, new Color(40, 200, 80))
+            .SameAs(reference, new Rect(0, 0, w, h))
+            .SameAsOutside(before, LocalRect)
+            .Verify();
 
         // 空 damage：跳过整帧渲染，返回保留帧。
         var idle = new FrameDamage();

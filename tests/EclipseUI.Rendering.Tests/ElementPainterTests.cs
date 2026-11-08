@@ -360,8 +360,8 @@ public class ElementPainterTests
 
         // 拇指：内缩 4、宽 6；offset 400/400 → 拇指贴轨道底
         // trackHeight = 800-8 = 792，thumbH = 792×800/1200 = 528，y = 4 + (792-528)×1 = 268
-        var thumb = Assert.Single(list.Commands.OfType<FillRoundedRect>()
-            .Where(f => Math.Abs(f.Rect.Width - 6) < 0.5));
+        var thumb = Assert.Single(list.Commands.OfType<FillRoundedRect>(),
+            f => Math.Abs(f.Rect.Width - 6) < 0.5);
         Assert.Equal(390, thumb.Rect.X, 3);
         Assert.Equal(268, thumb.Rect.Y, 3);
     }
