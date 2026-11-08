@@ -371,6 +371,11 @@ CPU 侧部分收敛（2026-11-08/D84）：CPU 像素 golden（`PixelGoldenTests`
   GPU 后端分支的 retained 合成等价（`RetainedFrameCompositor` + GPU 后端，脏区外逐字节
   = 上一帧、全帧 == GPU 整帧参照）。VelloSharp 无 scissor API（D84 结论），光栅化仍整帧、
   构建层 retained 先行；真·脏区光栅化等上游提供裁剪 API。GalleryCheck --selfcheck 全链路 PASS。
+  ⑦ S5 预算门槛扩展收敛（D94）：`RuntimeHardeningTests` +3 例覆盖新增面——附加属性重复赋值
+  不重分配值盒（弱表 ValueBox 复用）、布局热路径逐帧分配常数级（Grid 轨道解析缓存 +
+  cells/`double[]` 缓冲复用 + `ElementCollection` 改 struct enumerator 消除 foreach 装箱）、
+  retained 帧构建每帧分配 ≤512B（锁 D93 段复用收益——段失效逐元素重画会是数 KB/帧）。
+  顺带优化：`Grid.MeasureCore/ArrangeCore` 不再每帧 `string.Split` 解析轨道（引用键缓存）。
 - 属性存储去装箱（`IValueBox`/`ValueBox<T>`，✅ 2026-11-08/D83）；剩失效队列分配预算门槛、
   benchmark 基线、帧预算门槛、CI 配置。
 

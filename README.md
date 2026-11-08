@@ -106,7 +106,10 @@
 > （预算 ~18%）、`Immediate` 墙钟 60.0fps（软限速修复 + D93 保持）；`bench-60fps.ps1` 刷新率采集
 > 改为逐适配器列出并优先物理适配器；`Fifo` 上屏仍受虚拟链合成波动与上游 `frame latency=2`
 > 双重阻塞，稳定 60fps 结论待物理目标机——操作指引见报告 §9。
-> **652 个用例（Headless 327 / Compiler 241 / Rendering 84），全绿**。
+> **S5 预算门槛扩展（2026-11-09，D94）**：`RuntimeHardeningTests` +3——附加属性重复赋值不重分配
+> 值盒、布局热路径分配常数级（Grid 轨道解析缓存 + cells/`double[]` 缓冲复用 + `ElementCollection`
+> struct enumerator 消除 foreach 装箱）、retained 帧构建 ≤512B/帧（锁 D93 段复用收益）。
+> **655 个用例（Headless 330 / Compiler 241 / Rendering 84），全绿**。
 >
 > **表达式语义预检已通过（2026-11-09，EUI049 Warning）**：属性 `{expr}`、`@if` 条件、插值文本段
 > 经探针编译在使用点直接提示「拼错成员/类型不匹配」（CS0103/CS0029），不再等 C# 编译才发现；

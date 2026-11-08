@@ -84,17 +84,53 @@ public class Grid : Panel
         public int Col { get; }
     }
 
+    // ---- S5 布局热路径缓冲（每次 Measure/Arrange 都跑，分配必须常数级）----
+    // 轨道定义解析缓存：属性值字符串实例稳定（存储引用），按 ReferenceEquals 命中；
+    // 解析产物 TrackDef[] 在解算中只读（星号解算写独立 double[]），缓存安全。
+    private string? _rowsCacheKey;
+    private TrackDef[]? _rowsCache;
+    private string? _colsCacheKey;
+    private TrackDef[]? _colsCache;
+
+    private readonly List<Cell> _measureCells = new();
+    private readonly List<Cell> _arrangeCells = new();
+    private double[] _colDesired = Array.Empty<double>();
+    private double[] _rowDesired = Array.Empty<double>();
+    private double[] _colSizes = Array.Empty<double>();
+    private double[] _rowSizes = Array.Empty<double>();
+
+    private TrackDef[] ParseRows() => ParseCached(GetValue(RowDefinitionsProperty), ref _rowsCacheKey, ref _rowsCache);
+
+    private TrackDef[] ParseCols() => ParseCached(GetValue(ColumnDefinitionsProperty), ref _colsCacheKey, ref _colsCache);
+
+    private static TrackDef[] ParseCached(string? definitions, ref string? cacheKey, ref TrackDef[]? cache)
+    {
+        if (cache is not null && ReferenceEquals(cacheKey, definitions)) return cache;
+        var parsed = ParseDefinitions(definitions);
+        cacheKey = definitions;
+        cache = parsed;
+        return parsed;
+    }
+
+    private static double[] EnsureBuffer(double[] buffer, int length)
+    {
+        if (buffer.Length >= length) return buffer;
+        var grown = new double[Math.Max(length, buffer.Length * 2)];
+        return grown;
+    }
+
     protected internal override Size MeasureCore(Size available)
     {
         var padding = Padding;
         var gap = Gap;
-        var rows = ParseDefinitions(GetValue(RowDefinitionsProperty));
-        var cols = ParseDefinitions(GetValue(ColumnDefinitionsProperty));
+        var rows = ParseRows();
+        var cols = ParseCols();
         var innerW = Math.Max(0, available.Width - padding * 2);
         var innerH = Math.Max(0, available.Height - padding * 2);
 
         // 第一遍：全部测量——固定轨道给精确约束，其余给无穷让它量出期望。
-        var cells = new List<Cell>(Children.Count);
+        var cells = _measureCells;
+        cells.Clear();
         foreach (var child in Children)
         {
             var row = ClampIndex(Grid.GetRow(child), rows.Length);
@@ -108,8 +144,10 @@ public class Grid : Panel
         // 空透明块（D77）不占格：测量后期望尺寸已确定，此时剔除。
         cells.RemoveAll(c => IsSkipped(c.Child));
 
-        var colSizes = ResolveTrackSizes(cols, TrackMaxDesired(cols, cells, horizontal: true), innerW, gap);
-        var rowSizes = ResolveTrackSizes(rows, TrackMaxDesired(rows, cells, horizontal: false), innerH, gap);
+        _colSizes = ResolveTrackSizes(cols, TrackMaxDesired(cols, cells, horizontal: true, ref _colDesired), innerW, gap, ref _colSizes);
+        _rowSizes = ResolveTrackSizes(rows, TrackMaxDesired(rows, cells, horizontal: false, ref _rowDesired), innerH, gap, ref _rowSizes);
+        var colSizes = _colSizes;
+        var rowSizes = _rowSizes;
 
         return new Size(
             Sum(colSizes) + GapTotal(cols.Length, gap) + padding * 2,
@@ -120,14 +158,15 @@ public class Grid : Panel
     {
         var padding = Padding;
         var gap = Gap;
-        var rows = ParseDefinitions(GetValue(RowDefinitionsProperty));
-        var cols = ParseDefinitions(GetValue(ColumnDefinitionsProperty));
+        var rows = ParseRows();
+        var cols = ParseCols();
         var innerW = Math.Max(0, final.Width - padding * 2);
         var innerH = Math.Max(0, final.Height - padding * 2);
 
         // 子元素本轮已测量，期望尺寸有效；收集规则与测量期一致（空透明块不占格），
         // 但仍要 arrange 到零矩形：否则 FinalRect 残留上一轮位置，命中测试与脏区会读到过期值。
-        var cells = new List<Cell>(Children.Count);
+        var cells = _arrangeCells;
+        cells.Clear();
         foreach (var child in Children)
         {
             if (IsSkipped(child))
@@ -141,8 +180,10 @@ public class Grid : Panel
                 ClampIndex(Grid.GetColumn(child), cols.Length)));
         }
 
-        var colSizes = ResolveTrackSizes(cols, TrackMaxDesired(cols, cells, horizontal: true), innerW, gap);
-        var rowSizes = ResolveTrackSizes(rows, TrackMaxDesired(rows, cells, horizontal: false), innerH, gap);
+        _colSizes = ResolveTrackSizes(cols, TrackMaxDesired(cols, cells, horizontal: true, ref _colDesired), innerW, gap, ref _colSizes);
+        _rowSizes = ResolveTrackSizes(rows, TrackMaxDesired(rows, cells, horizontal: false, ref _rowDesired), innerH, gap, ref _rowSizes);
+        var colSizes = _colSizes;
+        var rowSizes = _rowSizes;
 
         foreach (var cell in cells)
         {
@@ -160,9 +201,11 @@ public class Grid : Panel
 
     private static int ClampIndex(int index, int count) => Math.Clamp(index, 0, count - 1);
 
-    private static double[] TrackMaxDesired(TrackDef[] tracks, List<Cell> cells, bool horizontal)
+    private double[] TrackMaxDesired(TrackDef[] tracks, List<Cell> cells, bool horizontal, ref double[] buffer)
     {
-        var desired = new double[tracks.Length];
+        buffer = EnsureBuffer(buffer, tracks.Length);
+        var desired = buffer;
+        for (int i = 0; i < tracks.Length; i++) desired[i] = 0;
         foreach (var cell in cells)
         {
             var size = cell.Child.DesiredSize;
@@ -177,9 +220,10 @@ public class Grid : Panel
     /// 轨道尺寸解析：固定轨取定义值；Auto（以及空间无限时的星号轨）取轨道内最大期望；
     /// 星号轨在剩余空间里按权重分配（剩余 = 可用 - 固定 - 内容 - 间隙，钳非负——超约束时星号收缩到 0）。
     /// </summary>
-    private static double[] ResolveTrackSizes(TrackDef[] tracks, double[] maxDesired, double inner, double gap)
+    private double[] ResolveTrackSizes(TrackDef[] tracks, double[] maxDesired, double inner, double gap, ref double[] buffer)
     {
-        var sizes = new double[tracks.Length];
+        buffer = EnsureBuffer(buffer, tracks.Length);
+        var sizes = buffer;
         double fixedSum = 0, contentSum = 0, weightSum = 0;
         for (int i = 0; i < tracks.Length; i++)
         {

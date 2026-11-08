@@ -82,7 +82,11 @@ public sealed class ElementCollection : IReadOnlyList<Element>
         _owner.InvalidateRender();
     }
 
-    public IEnumerator<Element> GetEnumerator() => _items.GetEnumerator();
+    // foreach 走 List<T>.Enumerator struct（S5 预算：不装箱）；接口实现保留给
+    // IReadOnlyList<T> 契约与 LINQ 路径——返回接口会把 struct enumerator 装箱，
+    // 布局/绘制热路径每次 foreach children 都会分配。
+    public List<Element>.Enumerator GetEnumerator() => _items.GetEnumerator();
+    IEnumerator<Element> IEnumerable<Element>.GetEnumerator() => GetEnumerator();
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 }
 

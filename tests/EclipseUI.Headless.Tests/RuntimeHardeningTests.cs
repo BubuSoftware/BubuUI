@@ -25,9 +25,7 @@ public class RuntimeHardeningTests
     // 若每次赋值装箱，SmallIterations=1000 次 double/int/bool 装箱约 24_000 字节，远超此预算。
     private const long ConstantAllocationBudget = 8_192;
 
-    // ---- A1：去装箱 ----
-
-    [Fact]
+    // ---- A1：去装箱 ----    [Fact]
     public void RepeatedSetValue_DoesNotBoxPerAssignment_ForValueTypes()
     {
         AssertNoPerAssignmentBoxing(
@@ -280,5 +278,157 @@ public class RuntimeHardeningTests
             GC.WaitForPendingFinalizers();
         }
         GC.Collect();
+    }
+
+    // ---- S5：预算门槛扩展（D94：附加属性 / 布局热路径 / retained 帧构建）----
+
+    /// <summary>附加属性重复赋值：弱表 ValueBox 盒复用，分配不得随迭代次数增长。</summary>
+    [Fact]
+    public void AttachedProperty_RepeatedSet_DoesNotAllocatePerAssignment()
+    {
+        var element = new FixedBox(10, 10);
+
+        for (var i = 0; i < WarmupIterations; i++)
+            Grid.SetRow(element, i);            // 首次 Add 节点/盒属于一次性分配
+
+        var small = MeasureAttachedSets(element, SmallIterations, WarmupIterations);
+        var large = MeasureAttachedSets(element, LargeIterations, WarmupIterations + SmallIterations);
+
+        Assert.True(small <= ConstantAllocationBudget,
+            $"附加属性：小窗口分配 {small} 字节，疑似每次赋值重分配值盒（预算 {ConstantAllocationBudget}）。");
+        Assert.True(large <= small + ConstantAllocationBudget,
+            $"附加属性：分配量随迭代次数增长（small={small}, large={large}），疑似未复用 ValueBox。");
+    }
+
+    private static long MeasureAttachedSets(FixedBox element, int iterations, int offset)
+    {
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        for (var i = 0; i < iterations; i++)
+            Grid.SetRow(element, offset + i);   // 每次都换值，防止相等短路
+        return GC.GetAllocatedBytesForCurrentThread() - before;
+    }
+
+    /// <summary>
+    /// 布局热路径：反复「强制 measure 失效 → UpdateLayout」的分配不得随次数增长。
+    /// 这条锁住 Grid 轨道解析缓存、cells/double[] 缓冲复用与 ElementCollection 的
+    /// struct enumerator（不装箱）——回退为逐帧 Split/新建数组/接口装箱都会红。
+    /// </summary>
+    [Fact]
+    public void LayoutPass_DoesNotAllocatePerPass()
+    {
+        var root = CreateLayoutProbeTree();
+        var headless = new HeadlessRoot(root) { AvailableSize = new Size(400, 400) };
+        headless.UpdateLayout();
+
+        for (var i = 0; i < WarmupIterations; i++)
+        {
+            root.InvalidateMeasure();
+            headless.UpdateLayout();
+        }
+
+        var small = MeasureLayoutPasses(root, headless, SmallIterations);
+        var large = MeasureLayoutPasses(root, headless, LargeIterations);
+
+        Assert.True(small <= ConstantAllocationBudget,
+            $"布局：小窗口分配 {small} 字节，布局热路径存在逐帧分配（预算 {ConstantAllocationBudget}）。");
+        Assert.True(large <= small + ConstantAllocationBudget,
+            $"布局：分配量随遍数增长（small={small}, large={large}），疑似轨道/缓冲未复用。");
+    }
+
+    private static Grid CreateLayoutProbeTree()
+    {
+        var root = new Grid { RowDefinitions = "Auto,1*", ColumnDefinitions = "120,*" };
+        var wrap = new WrapPanel { Gap = 4 };
+        for (var i = 0; i < 8; i++)
+            wrap.Children.Add(new FixedBox(40, 20));
+        root.Children.Add(wrap);
+        Grid.SetRow(wrap, 0);
+        Grid.SetColumn(wrap, 1);
+
+        var cells = new Grid { RowDefinitions = "*,*,*" };
+        for (var i = 0; i < 6; i++)
+        {
+            var box = new FixedBox(30, 16);
+            cells.Children.Add(box);
+            Grid.SetRow(box, i % 3);
+            Grid.SetColumn(box, i % 2);
+        }
+        root.Children.Add(cells);
+        Grid.SetRow(cells, 1);
+        return root;
+    }
+
+    private static long MeasureLayoutPasses(Grid root, HeadlessRoot headless, int iterations)
+    {
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        for (var i = 0; i < iterations; i++)
+        {
+            root.InvalidateMeasure();
+            headless.UpdateLayout();
+        }
+        return GC.GetAllocatedBytesForCurrentThread() - before;
+    }
+
+    /// <summary>
+    /// retained 帧构建（D93）：静止树第二帧起段全复用，构建分配应保持在常数级
+    /// （仅每帧新 DisplayList 及其内部 List 的固定扩容）。段缓存回退为逐元素重画会红。
+    /// </summary>
+    [Fact]
+    public void RetainedBuildFrame_StaticTree_NearConstantAllocation()
+    {
+        var root = new StackPanel { Gap = 4 };
+        for (var i = 0; i < 6; i++)
+        {
+            var box = new FixedBox(80, 24);
+            root.Children.Add(box);
+        }
+        new HeadlessRoot(root) { AvailableSize = new Size(300, 300) }.UpdateLayout();
+
+        var painter = new EclipseUI.Rendering.ElementPainter(textPainter: new NullTextPainter());
+        painter.BuildFrame(root, new Size(300, 300));   // 首帧：全量画 + 段缓存建立
+        var (_, repainted) = painter.LastBuildStats;
+        Assert.Equal(7, repainted);                     // root + 6 boxes
+
+        // 预热 FrameDamage/字典等一次性结构。
+        for (var i = 0; i < WarmupIterations; i++)
+            painter.BuildFrame(root, new Size(300, 300));
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        const int frames = 1_000;
+        for (var i = 0; i < frames; i++)
+            painter.BuildFrame(root, new Size(300, 300));
+        var perFrame = (GC.GetAllocatedBytesForCurrentThread() - before) / (double)frames;
+
+        // 每帧预算：仅结构性常数（每帧新 DisplayList + FrameDamage 对象与内部 List 扩容，
+        // 实测 ~384B）；段复用下与元素数无关。段缓存失效逐元素重画会是每帧数 KB。
+        Assert.True(perFrame <= 512,
+            $"retained 构建：静止树每帧分配 {perFrame:0.#} 字节，疑似段缓存失效逐元素重画。");
+        var (_, repaintedAfter) = painter.LastBuildStats;
+        Assert.Equal(0, repaintedAfter);                // 构建结果语义：全部复用
+    }
+
+    private sealed class NullTextPainter : EclipseUI.Rendering.ITextPainter
+    {
+        public EclipseUI.Rendering.TextLineMetrics Measure(string text, double fontSize)
+            => new(fontSize, fontSize * 0.4, text.Length * fontSize * 0.5);
+
+        public void Paint(EclipseUI.Rendering.DisplayList list, string text, double fontSize,
+            Point topLeft, EclipseUI.Rendering.Color color)
+        {
+        }
+    }
+
+    /// <summary>固定期望尺寸的探针元素（同 WrapPanelTests 等的口径）。</summary>
+    private sealed class FixedBox : Panel
+    {
+        private readonly Size _size;
+        public FixedBox(double width, double height) => _size = new Size(width, height);
+
+        // 跨程序集重写 protected internal 成员只能收窄为 protected（C# 规则）。
+        protected override Size MeasureCore(Size available) => _size;
+
+        protected override void ArrangeCore(Rect final)
+        {
+        }
     }
 }

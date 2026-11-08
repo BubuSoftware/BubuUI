@@ -890,6 +890,7 @@ v4 换轨后，**S1 已收敛（2026-10-30）、S2 已收敛（2026-10-30）、S
 | D91 | ✅ G2：**像素探针 DSL**——`PixelProbe` 流式断言门面（点 `At`/`AlphaAt`、区域 `DominantColor`/`Contains`/`NotContains`/`CountIn`/`Count`、帧间 `SameAs`/`SameAsOutside` 逐字节精确，失败聚合 + 直方图/坐标诊断）；`PixelGoldenTests` 双层门禁（语义探针先于基线比对、生成基线前先过语义探针），Damage/Retained 手写双循环收敛；既有红定位为 VelloSharp AA 舍入差 1 并随基线重生成清零，`PixelProbeTests` 8 例，全量 643 例全绿 | spec/02 §12、design/09 §9.3 G2 ④ | ✅ G2（2026-11-09） |
 | D92 | ✅ G2：**CPU/GPU 交叉一致性门禁**——`CrossBackendGateTests` 场景矩阵 14 项（实色/圆角/椭圆/路径/三种渐变/裁剪栈/变换/图层透明度/混合模式/阴影/1:1 图像/虚线）；四级容差策略（Tight ±2/0.05%、Edges ±2/0.5%、Gradient ±4/2%、Loose ±16/5%），超阈值失败聚合首违点双侧颜色；无 GPU 自动跳过并写 TestResults 报告留痕（首跑校准 14 场景 0 违例、最大通道差 ≤1） | spec/02 §12、design/09 §9.3 G2 ⑤ | ✅ G2（2026-11-09） |
 | D93 | ✅ G2：**retained 显示列表（段级）**——`ElementPainter` 自绘命令段缓存（ConditionalWeakTable；键 = RenderVersion+绝对位置+尺寸+焦点态；clip/滚动条段外每帧生成）；失效契约与 DamageTracker 一致，arrange 平移由段键位置捕获；金标准 retained 渲染 == 全量渲染（`RetainedPaintTests` 8 例，含 GPU 分支 retained 合成等价）；VelloSharp 无 scissor API、构建层 retained 先行 | spec/02 §12、design/09 §9.3 G2 ⑥ | ✅ G2（2026-11-09） |
+| D94 | ✅ S5：**预算门槛扩展**——`RuntimeHardeningTests` +3（附加属性值盒复用 / 布局热路径常数分配：Grid 轨道缓存+缓冲复用+ElementCollection struct enumerator / retained 帧构建 ≤512B/帧锁 D93 收益） | spec/02 §12、design/09 §9.3 G2 ⑦ | ✅ S5（2026-11-09） |
 
 - 每项收敛必须同时删除对应的 v3 路径；不得两套模型并存。
 - 新增偏差必须登记编号（从 D89 起）并注明目标阶段；不得只改代码不改台账。
