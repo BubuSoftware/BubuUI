@@ -427,7 +427,7 @@ public sealed class UiCatalog
 ### 14.5.5 附加属性与泛型标签（✅ 附加属性 G4 首批 2026-11-09；泛型标签暂缓 K19）
 
 - 附加属性声明：`public static readonly AttachedProperty<T> RowProperty` + `public static GetRow/SetRow`。
-- 模板语法：`Owner.Prop="..."`（如 `Grid.Row="1"`）。目录增加 `UiAttachedPropDef(OwnerTag, Name, ClrTypeDisplayName, SetterMethod)`；实现另带 `OwnerClrName`（生成代码用全限定宿主名）与 `TypeShape`（字面量转换分派）。
+- 模板语法：`Owner.Prop="..."`（如 `Grid.Row="1"`）。目录增加 `UiAttachedPropDef(OwnerTag, Name, ClrTypeDisplayName, SetterMethod)`；实现另带 `OwnerClrName`（生成代码用全限定宿主名）与 `TypeShape`（字面量转换分派）。✅ G4 布局切片（2026-11-09）起宿主 `Grid` 已扩展为 `Panel` 子类（行列布局见 §14.12 迁移表 G4-Grid 行），静态附加成员原样保留。
 - 生成：`global::Ns.Grid.SetRow(el, 1);`；表达式值走动态语句（根级 `U{N}` / 块内 `R{N}`，语句形态即调用本身，不再是赋值左值）。
 - ✅ **G4 首批落地记录（2026-11-09）**：载体 `EclipseUI.Elements.Grid` 静态类（`Row`/`Column`，int）；值存储为 `AttachedProperty<T>` 内的 `ConditionalWeakTable<Element, ValueBox<T>>` 弱表——元素卸载后随 GC 回收，Unmount 无需清理（K33 泄漏口径）；重复赋值复用值盒（A1 去装箱口径）。扫描规则：宿主必须**顶层、public 可见、无 `[UiIgnore]`**（嵌套宿主 v1 静默跳过）；候选 = `public static readonly AttachedProperty<T> XxxProperty` 字段，命名必须 `XxxProperty`，要求配对 `public static GetXxx(Element)` / `SetXxx(Element, T)` 且值类型与字段泛型实参一致（不一致报 EUI019 家族问题、不进目录）；同 `(OwnerTag, Name)` 冲突报 EUI026 家族问题、先声明者胜出；组件标签同样可携带附加属性（组件实例是 Element）。
 - 泛型标签：`<DataGrid<Order>>`，要求类型 public、非抽象、有对应元数据；标签名带元数（`DataGrid\`1`），
@@ -929,6 +929,7 @@ Build(Compilation c):                       // 纯函数：同样的 Compilation
 | **C4** ✅（2026-11-05） | 组件标签：参数元数据（`[UiParameter(Required=true)]`、`{P}Changed`）、委托事件、默认内容、生命周期与作用域释放；生成器集成测试 | 第三方/自定义组件可写入 `.ui`；参数/内容生成与 spec/02 §4.12 一致 —— ✅ 全部落地（落地记录见 §14.12.4） | `TemplateGenerator.cs`、`Emitter.cs`、`Component.cs`、`Metadata/UiCatalogFactory.cs`、`Analyzer.cs` |
 | **C5** ✅ | `Ref`（G3）；保留语法诊断与剩余分析器收敛（**EUI019/EUI020/EUI021** 使用点与 **EUI029**；EUI025/EUI031 已由 C3 落地，EUI033 为 S2 既有） | G3 非反应式缺口收敛；诊断不再落"未知" | `Analyzer.cs`、`Emitter.cs` |
 | **C6** | 具名插槽 + `ContentSlot` 宿主（✅ 2026-11-05，§14.12.6）；附加属性实拆留 G4，泛型标签暂缓（K19） | 与 03 语法表对齐 | 编译器/运行时/样式 |
+| **G4-Grid 布局** ✅（2026-11-09） | `Grid : Panel` 行列布局：`RowDefinitions`/`ColumnDefinitions` 紧凑串（`Auto,*,2*,120`，未设置退化单星）、`Gap` 轨道间距；测量单遍（固定轨精确约束/Auto 取格内最大期望/星号分剩余，可用无限时星号退化按内容）、排列按最终尺寸重解星号；`Grid.Row`/`Grid.Column` 越界钳制；同格叠放；空透明块不占格（D77）；非法定义 `FormatException` fail-fast。不排期：RowSpan/ColumnSpan（后续片） | 固定/Auto/星号/混合/Gap+Padding/钳制/退化 14 例直测 + 模板全管线端到端（`RowDefinitions="60,Auto"` `ColumnDefinitions="*,2*"`） | `Grid.cs`、`GridTests.cs` |
 | **G4-附加属性** ✅（2026-11-09） | 附加属性首批切片（§14.5.5）：`AttachedProperty<T>` 弱表存储 + `Grid` 静态类载体（Row/Column）、目录 `UiAttachedPropDef` + 扫描规则（顶层宿主/访问器配对/冲突）、EUI031 解禁 → 未知点号落 EUI002、生成直调静态 setter（字面量/表达式 U{N}/R{N}）；组件标签可携带；表面快照 +2 项 | 模板 `Grid.Row="1"` → `Grid.GetRow(el)` 取值正确；234 Compiler / 298 Headless 用例绿 | `AttachedProperty.cs`、`Grid.cs`、`UiCatalogModel.cs`、`UiCatalogFactory.cs`、`Analyzer.cs`、`Ast.cs`、`Emitter.cs` |
 
 状态/反应式不在 C1–C6 内重复排期：失效队列/`U{N}`/根级重算属
@@ -956,10 +957,11 @@ C4 只负责组件标签与参数/内容元数据，C5 只保留 `Ref` 与语法
 | `Button` | `Text:Label` | `IsHitTestVisible`、`Label` | `OnClick` |
 | `CheckBox` | `Text:Label` | `Checked`、`IsHitTestVisible`、`Label` | — |
 | `WrapPanel` | `Children:Children` | `ClipToBounds`、`Gap`、`IsHitTestVisible`、`Orientation`、`Padding` | — |
+| `Grid` | `Children:Children` | `ClipToBounds`、`ColumnDefinitions`、`Gap`、`IsHitTestVisible`、`Padding`、`RowDefinitions` | — |
 | `ListBoxItem` | `Children:Children` | `ClipToBounds`、`Gap`、`IsHitTestVisible`、`Padding` | — |
 | `StackPanel` | `Children:Children` | `ClipToBounds`、`Gap`、`IsHitTestVisible`、`Padding` | — |
 | `TextBlock` | `TextRuns:—` | `ClipToBounds`、`FontSize`、`IsHitTestVisible`、`Padding` | — |
-| **合计** | 6 标签 | **22 属性项** | **1 事件项** |
+| **合计** | 7 标签 | **28 属性项** | **1 事件项** |
 
 隐藏标签 4 个（`Component`/`Element`/`Panel`/`StackPanelBase`，均 EUI017「类型是抽象的」）；
 `TextRun`/`ConditionalBlock`/`ForEachBlock<T>` 走 `[UiIgnore]` 完全退出表面，不进 `HiddenTags`。

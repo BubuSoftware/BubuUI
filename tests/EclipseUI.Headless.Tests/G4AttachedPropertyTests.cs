@@ -157,4 +157,21 @@ public class G4AttachedPropertyTests
         Assert.Equal(2, Grid.GetRow(checkbox));    // 另一元素独立取值
         Assert.Equal(0, Grid.GetColumn(checkbox)); // 未写 → 默认值
     }
+
+    [Fact]
+    public void TemplateGridLayout_FlowsThroughFullPipeline()
+    {
+        // G4 布局切片：RowDefinitions 字符串属性 + Grid.Row/Column 附加属性
+        // 经完整管线（模板 → 生成代码 → 运行时布局）落到最终矩形。
+        var probe = new G4AttachedProbe();
+        var root = new HeadlessRoot(probe) { AvailableSize = new Size(1280, 800) };
+        root.UpdateLayout();
+
+        var cell = probe.Root.Descendants<TextBlock>().Single();
+        // 列 "*,2*"：内宽 1280 按 1:2 → 1280/3 与 1280×2/3
+        Assert.Equal(1280d / 3, cell.FinalRect.X, 3);
+        Assert.Equal(1280d * 2 / 3, cell.FinalRect.Width, 3);
+        Assert.Equal(60, cell.FinalRect.Y, 5);                           // 固定首行 60
+        Assert.Equal(cell.DesiredSize.Height, cell.FinalRect.Height, 5); // Auto 行 = 文本期望高
+    }
 }

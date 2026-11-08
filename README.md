@@ -81,6 +81,12 @@
 > 帧预算/分配预算门槛、CI）、G2（GPU retained layer/真正局部重绘、目标机稳定 60fps 结论、
 > 像素探针 DSL、CPU/GPU 交叉一致性门禁）、G4（样式/主题；附加属性首批 ✅ 2026-11-09；泛型标签暂缓 K19）、IDE/DevTools。
 
+> **G4 Grid 布局切片已通过（2026-11-09）**：`Grid : Panel` 行列布局——轨道紧凑串
+> `RowDefinitions="Auto,*,2*,120"`（未设置退化单星）、`Gap` 轨道间距；固定轨精确约束、
+> Auto 取格内最大期望、星号按权重分剩余（可用无限时退化按内容）；`Grid.Row`/`Grid.Column`
+> 落格（越界钳制、同格叠放）；空透明块不占格（D77）；非法定义 fail-fast。表面 +1 标签
+> /+6 属性项；模板全管线端到端（`GridTests` 14 例 + fixture 用例）。
+>
 > **G4 附加属性切片已通过（2026-11-09）**：模板 `Grid.Row="1"`/`Grid.Column={expr}` → 生成代码
 > 直调静态 setter（`global::EclipseUI.Elements.Grid.SetRow(el, 1)`）；`AttachedProperty<T>` 以
 > `ConditionalWeakTable` 弱表存值（元素卸载随 GC 回收，K33 口径）、重复赋值复用值盒；目录新增
@@ -95,7 +101,7 @@
 > （`UnmountTests` 9 例）；手工 `Children.Remove` 保守不触发（契约锁定）。② `WrapPanel`
 > 流式布局（水平/竖直换行、Gap、越界独占一行，`WrapPanelTests` 5 例）——内置表面 5→6 标签、
 > 17→22 属性项、37→44 事件项。
-> **597 个用例（Headless 298 / Compiler 234 / Rendering 65 → 596 绿）**——唯一红仍是既有像素
+> **612 个用例（Headless 313 / Compiler 234 / Rendering 65 → 611 绿）**——唯一红仍是既有像素
 > golden `PixelGoldens_MatchBaseline`。
 >
 > **S6 语法对齐（✅ 已实现 2026-11-08，K23 + K24–K31）**：`.ui` 语法表面向 Blazor/Razor 对齐——

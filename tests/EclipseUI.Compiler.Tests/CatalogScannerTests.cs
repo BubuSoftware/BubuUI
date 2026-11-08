@@ -537,6 +537,8 @@ public class CatalogScannerTests
                 ["ClipToBounds", "Gap", "IsHitTestVisible", "Padding"], inherited),
             ["WrapPanel"] = (UiContentModel.Children, "Children",
                 ["ClipToBounds", "Gap", "IsHitTestVisible", "Orientation", "Padding"], inherited),
+            ["Grid"] = (UiContentModel.Children, "Children",
+                ["ClipToBounds", "ColumnDefinitions", "Gap", "IsHitTestVisible", "Padding", "RowDefinitions"], inherited),
             ["ListBoxItem"] = (UiContentModel.Children, "Children",
                 ["ClipToBounds", "Gap", "IsHitTestVisible", "Padding"], inherited),
             ["Button"] = (UiContentModel.Text, "Label",
@@ -558,8 +560,8 @@ public class CatalogScannerTests
             Assert.Equal(want.Events, element.Events.Keys.ToArray());
         }
 
-        Assert.Equal(22, catalog.Elements.Sum(e => e.Properties.Count));
-        Assert.Equal(44, catalog.Elements.Sum(e => e.Events.Count));
+        Assert.Equal(28, catalog.Elements.Sum(e => e.Properties.Count));
+        Assert.Equal(51, catalog.Elements.Sum(e => e.Events.Count));
         // 9 个不同的事件名：Element 继承 7 个 + Button.OnClick + CheckBox.CheckedChanged
         Assert.Equal(9, catalog.Elements.SelectMany(e => e.Events.Keys).Distinct().Count());
 

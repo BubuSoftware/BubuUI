@@ -1,6 +1,6 @@
 # EclipseUI 内置模板表面（design/14 §14.11.1）。
 # 由 CatalogScannerTests.Surface_MatchesGoldenSnapshotFile 生成/比对；控件 API 变化时必须连同变更记录一起更新。
-# 标签 6 / 属性项 22 / 事件项 44 / 附加属性项 2
+# 标签 7 / 属性项 28 / 事件项 51 / 附加属性项 2
 
 [Button] global::EclipseUI.Elements.Button origin=Control content=Text:Label
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
@@ -19,6 +19,21 @@
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
     prop   Label string declared=global::EclipseUI.Elements.CheckBox field=LabelProperty writable=True
     event  OnCheckedChanged CheckedChanged declared=global::EclipseUI.Elements.CheckBox field=CheckedChangedEvent
+    event  OnGotFocus GotFocus declared=global::EclipseUI.Element field=GotFocusEvent
+    event  OnKeyDown KeyDown declared=global::EclipseUI.Element field=KeyDownEvent
+    event  OnKeyUp KeyUp declared=global::EclipseUI.Element field=KeyUpEvent
+    event  OnLostFocus LostFocus declared=global::EclipseUI.Element field=LostFocusEvent
+    event  OnPointerMoved PointerMoved declared=global::EclipseUI.Element field=PointerMovedEvent
+    event  OnPointerPressed PointerPressed declared=global::EclipseUI.Element field=PointerPressedEvent
+    event  OnPointerReleased PointerReleased declared=global::EclipseUI.Element field=PointerReleasedEvent
+
+[Grid] global::EclipseUI.Elements.Grid origin=Control content=Children:Children
+    prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
+    prop   ColumnDefinitions string declared=global::EclipseUI.Elements.Grid field=ColumnDefinitionsProperty writable=True
+    prop   Gap double declared=global::EclipseUI.Elements.Grid field=GapProperty writable=True
+    prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
+    prop   Padding double declared=global::EclipseUI.Elements.Panel field=PaddingProperty writable=True
+    prop   RowDefinitions string declared=global::EclipseUI.Elements.Grid field=RowDefinitionsProperty writable=True
     event  OnGotFocus GotFocus declared=global::EclipseUI.Element field=GotFocusEvent
     event  OnKeyDown KeyDown declared=global::EclipseUI.Element field=KeyDownEvent
     event  OnKeyUp KeyUp declared=global::EclipseUI.Element field=KeyUpEvent
