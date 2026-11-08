@@ -67,7 +67,7 @@ var theme = new ElementTheme();
 Styling.Provider = StyleRegistry.Instance; // S-B：装配 Class 样式（类名直配 setter 序列）
 GalleryStyles.Define();
 var scene = GalleryScene.Build();
-var galleryRoot = new GalleryRoot(scene.Counter, scene.Tasks, scene.Root);
+var galleryRoot = new GalleryRoot(scene.Counter, scene.Tasks, scene.RootViewer);
 galleryRoot.Mount();
 var gallery = galleryRoot.Root;
 var counter = scene.Counter;

@@ -1,25 +1,40 @@
 using System.Collections.Generic;
 using EclipseUI;
 using EclipseUI.Elements;
+using EclipseUI.Rendering;
 
 namespace Gallery;
 
 /// <summary>
-/// 画廊主场景（平台无关）：标题 + Counter 展示页 + 控件展示区（Grid/WrapPanel）+ 任务列表演示。
-/// 手工元素树 + <see cref="GalleryRoot"/> 组件接管所有权与失效队列（G2 口径）。
+/// 画廊主场景（平台无关，2026-11-09 完全重构）：<see cref="ScrollViewer"/> 作根——内容超出
+/// 窗口即可滚动（窗口根的有限高度使视口生效，见 ScrollViewer 文档），整页分区陈列框架
+/// 当前全部能力：
+/// <list type="bullet">
+/// <item>反应式组件（模板编译管线）：@bind / @if / @foreach / @switch / OnClick</item>
+/// <item>控件：Button（主题/class/inline 三层样式）、CheckBox、TextBlock(TextRun)</item>
+/// <item>布局：StackPanel / WrapPanel / Grid（Auto·固定·星号轨道 + 附加属性）/ ListBoxItem 卡片</item>
+/// <item>滚动：ScrollViewer（滚轮 + 滚动条）、VirtualizingStackPanel（1000 项视口实例化）</item>
+/// <item>样式：S-A 主题令牌切换（宿主接线）、S-B Class 样式 + Visual 覆盖（local &gt; class &gt; theme）</item>
+/// </list>
+/// 根组件 <see cref="GalleryRoot"/> 只承担所有权与失效队列（G2 口径）。
 /// </summary>
 public static class GalleryScene
 {
-    /// <summary>构建场景。返回各可交互部件，供宿主/验证工具驱动。</summary>
-    public static (StackPanel Root, Counter Counter, TaskList Tasks, Button AddButton, Button ThemeButton) Build()
+    /// <summary>构建场景。返回根滚动视图与各可交互部件，供宿主/验证工具驱动。</summary>
+    public sealed record Scene(
+        ScrollViewer RootViewer,
+        Counter Counter,
+        TaskList Tasks,
+        Button AddButton,
+        Button ThemeButton);
+
+    public static Scene Build()
     {
         var counter = new Counter();
         counter.Mount();
-        SetPadding(counter.Root, 16);
 
         var taskList = new TaskList();
-        // 先填数据再 Mount：Build 末尾的 Refresh 会读当前 tasks（spec/03 §2.3），省一次渲染；
-        // 接管前入队的失效如今会由 Adopt 迁移（D78），此处写 Invalidate 也正确。
+        // 先填数据再 Mount：Build 末尾的 Refresh 会读当前 tasks（spec/03 §2.3），省一次渲染。
         taskList.tasks = new List<TaskItem>
         {
             new TaskItem { Id = 1, Name = "Design review" },
@@ -27,12 +42,10 @@ public static class GalleryScene
             new TaskItem { Id = 3, Name = "Golden image test" },
         };
         taskList.Mount();
-        SetPadding(taskList.Root, 16);
 
-        // 控件展示区（G4 布局切片）：Grid 行列布局 + WrapPanel 流式换行 + 滚动 + 虚拟化。
+        // 控件陈列区（模板编译管线）：Grid/WrapPanel/ScrollViewer/虚拟化 + @switch 演示。
         var showcase = new Showcase();
         showcase.Mount();
-        SetPadding(showcase.Root, 16);
         showcase.virtualList.ItemFactory =
             i => new Button { Label = $"virtual item {i + 1}" };   // 1000 行只实例化视口可见
 
@@ -49,21 +62,90 @@ public static class GalleryScene
             taskList.Invalidate();
         });
 
-        var root = new StackPanel { Gap = 14, Padding = 20 };
-        root.Children.Add(Text("EclipseUI G4 Gallery", 26));
-        root.Children.Add(Text("Checkbox reveals +1 · Tab / Space focus · Esc closes", 12));
         // S-A 主题令牌化：切换按钮本体在树里，Click 由宿主接线（SetTheme 换 token 表 → 整帧重绘）。
-        // Classes=["tool"] 演示 S-B Class 样式（静态覆盖色，不随主题）。
         var themeButton = new Button { Label = "Toggle theme", Classes = ["tool"] };
-        root.Children.Add(themeButton);
-        root.Children.Add(counter.Root);
-        // 交互演示（Counter/TaskList）放在控件陈列区之前：G4 showcase 高约 700px，
-        // 排在其后会把 add 按钮与任务卡推出 760px 视口（selfcheck 的 add task 步骤
-        // 点击窗口外坐标会静默丢失——D97 审计发现并复位顺序）。
-        root.Children.Add(addTaskButton);
-        root.Children.Add(taskList.Root);
-        root.Children.Add(showcase.Root);
-        return (root, counter, taskList, addTaskButton, themeButton);
+
+        // ---- 页面组装：根 ScrollViewer + 分区卡片 ----
+        var page = new StackPanel { Gap = 16, Padding = 24 };
+
+        // 头部：标题区 + 主题切换。
+        var header = new StackPanel { Gap = 4 };
+        header.Children.Add(Text("EclipseUI Gallery", 28));
+        header.Children.Add(Text("Reactive UI → scene graph → Vello. Scroll to browse every feature; Tab / Space to focus, Esc to clear focus.", 13));
+        var headerRow = new WrapPanel { Gap = 8 };
+        headerRow.Children.Add(themeButton);
+        header.Children.Add(headerRow);
+        page.Children.Add(header);
+
+        // ① 反应式组件（@bind + @if + OnClick）：checkbox 必须是树中第一个 CheckBox
+        //    （GalleryCheck selfcheck 依赖——其余复选框都排在其后）。
+        page.Children.Add(Section("1. Reactivity - template components: bind / if", counter.Root));
+
+        // ② 任务列表（@foreach + ListBoxItem 卡片 + RoutedEvent 加任务）。
+        var tasksSection = new StackPanel { Gap = 8 };
+        tasksSection.Children.Add(addTaskButton);
+        tasksSection.Children.Add(taskList.Root);
+        page.Children.Add(Section("2. TaskList - foreach + routed events", tasksSection));
+
+        // ③ 控件与布局陈列（模板 Showcase.ui：文本分级 / CheckBox / Grid / WrapPanel /
+        //    ScrollViewer / 虚拟化 / @switch）。
+        page.Children.Add(Section("3. Controls & Layout - template compile pipeline", showcase.Root));
+
+        // ④ 样式系统：有效值分层 local > class > theme 的按钮四连 + Visual 覆盖卡片。
+        page.Children.Add(Section("4. Styles - theme tokens + class/visual layers", BuildStyleSection()));
+
+        page.Children.Add(Text("EclipseUI - retained segment caching (D93) - 668 tests green", 12));
+
+        var rootViewer = new ScrollViewer();
+        rootViewer.Children.Add(page);
+        return new Scene(rootViewer, counter, taskList, addTaskButton, themeButton);
+    }
+
+    /// <summary>样式系统演示区（代码构建——Class/Visual 覆盖尚不支持模板语法 EUI031）。</summary>
+    private static StackPanel BuildStyleSection()
+    {
+        // 按钮四连：主题默认 → class primary → class tool → inline Visual 覆盖（local 层最高）。
+        var row = new WrapPanel { Gap = 8 };
+        row.Children.Add(new Button { Label = "theme default" });
+        row.Children.Add(new Button { Label = "class: primary", Classes = ["primary"] });
+        row.Children.Add(new Button { Label = "class: tool", Classes = ["tool"] });
+        var inline = new Button { Label = "inline: Visual" };
+        Visual.SetBackground(inline, new Color(196, 84, 152));
+        Visual.SetCornerRadius(inline, 18);
+        row.Children.Add(inline);
+
+        // Visual 覆盖卡片：StackPanel 背景/圆角 + 文本前景覆盖（painter 回落主题当未设置）。
+        var card = new StackPanel { Gap = 6, Padding = 14 };
+        Visual.SetBackground(card, new Color(38, 84, 124));
+        Visual.SetCornerRadius(card, 14);
+        var cardTitle = Text("StackPanel + Visual.Background / CornerRadius", 14);
+        Visual.SetForeground(cardTitle, new Color(233, 238, 248));
+        card.Children.Add(cardTitle);
+        var fgText = Text("TextBlock + Visual.Foreground override (local beats muted-by-font-size rule)", 15);
+        Visual.SetForeground(fgText, new Color(126, 220, 180));
+        card.Children.Add(fgText);
+
+        var section = new StackPanel { Gap = 10 };
+        section.Children.Add(row);
+        section.Children.Add(card);
+        return section;
+    }
+
+    /// <summary>
+    /// 分区卡片：面板背景/圆角走 Visual 覆盖（静态强调色）。卡片是静态深色装饰层，
+    /// 标题前景同步固定为浅色——S-B 静态色不随主题重解析（资源查找属 S-C），
+    /// 若标题随主题变深灰会在浅主题下出现深卡深字。
+    /// </summary>
+    private static StackPanel Section(string title, Element content)
+    {
+        var card = new StackPanel { Gap = 10, Padding = 16 };
+        Visual.SetBackground(card, new Color(31, 37, 50));
+        Visual.SetCornerRadius(card, 12);
+        var heading = Text(title, 18);
+        Visual.SetForeground(heading, new Color(233, 238, 248));
+        card.Children.Add(heading);
+        card.Children.Add(content);
+        return card;
     }
 
     private static TextBlock Text(string text, double fontSize)
@@ -71,11 +153,6 @@ public static class GalleryScene
         var block = new TextBlock { FontSize = fontSize };
         block.AddRun(new TextRun(text));
         return block;
-    }
-
-    private static void SetPadding(Element element, double padding)
-    {
-        if (element is Panel panel) panel.Padding = padding;
     }
 }
 

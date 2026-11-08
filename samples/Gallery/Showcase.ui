@@ -1,14 +1,23 @@
 @using EclipseUI.Elements
 
 <StackPanel Gap="10">
-    <TextBlock FontSize="18">Control showcase</TextBlock>
+    <TextBlock FontSize="13">Text scale - runs share one shaping cache</TextBlock>
+    <TextBlock FontSize="20">The quick brown fox · 20px</TextBlock>
+    <TextBlock FontSize="15">The quick brown fox · 15px</TextBlock>
+    <TextBlock FontSize="12">muted caption 12px - secondary color under threshold</TextBlock>
 
-    <TextBlock FontSize="13">Grid - Auto, fixed and star tracks</TextBlock>
-    <Grid RowDefinitions="Auto,56" ColumnDefinitions="110,*,2*" Gap="6">
-        <Button>row 0 / fixed 110</Button>
+    <TextBlock FontSize="13">CheckBox - Checked literal + interaction</TextBlock>
+    <StackPanel Gap="6">
+        <CheckBox Label="checked by default" Checked="true" />
+        <CheckBox Label="unchecked - click or Space to toggle" />
+    </StackPanel>
+
+    <TextBlock FontSize="13">Grid - Auto, fixed and star tracks (Grid.Row / Grid.Column attached)</TextBlock>
+    <Grid RowDefinitions="Auto,44" ColumnDefinitions="120,*,2*" Gap="6">
+        <Button>row 0 / fixed 120</Button>
         <Button Grid.Column="1">row 0 / star</Button>
         <Button Grid.Column="2">row 0 / 2x star</Button>
-        <Button Grid.Row="1">row 1 / fixed 110</Button>
+        <Button Grid.Row="1">row 1 / fixed 120</Button>
         <Button Grid.Row="1" Grid.Column="1">row 1 / star</Button>
         <Button Grid.Row="1" Grid.Column="2">row 1 / 2x star</Button>
     </Grid>
@@ -23,8 +32,8 @@
         <Button>zeta</Button>
     </WrapPanel>
 
-    <TextBlock FontSize="13">ScrollViewer - wheel to scroll</TextBlock>
-    <Grid RowDefinitions="150">
+    <TextBlock FontSize="13">ScrollViewer - wheel to scroll, thumb follows offset</TextBlock>
+    <Grid RowDefinitions="140">
         <ScrollViewer>
             <StackPanel Gap="4">
                 <Button>scroll item 1</Button>
@@ -41,10 +50,28 @@
         </ScrollViewer>
     </Grid>
 
-    <TextBlock FontSize="13">VirtualizingStackPanel - 1000 items, viewport realizes ~10</TextBlock>
-    <Grid RowDefinitions="150">
+    <TextBlock FontSize="13">VirtualizingStackPanel - 1000 items, only the viewport is realized</TextBlock>
+    <Grid RowDefinitions="140">
         <ScrollViewer>
             <VirtualizingStackPanel Ref={virtualList} ItemCount="1000" Gap="4" />
         </ScrollViewer>
     </Grid>
+
+    <TextBlock FontSize="13">SwitchBlock - conditional branches rebuilt on state</TextBlock>
+    <Button OnClick={() => mode = (mode + 1) % 3}>Cycle mode (currently {mode})</Button>
+    @switch (mode) {
+        case 0:
+            <TextBlock>mode 0 · conditional branches rebuilt on state change</TextBlock>
+            break;
+        case 1:
+            <TextBlock>mode 1 · old branch unmounted, new branch mounted</TextBlock>
+            break;
+        default:
+            <TextBlock>mode 2 · default branch</TextBlock>
+            break;
+    }
 </StackPanel>
+
+@code {
+    public int mode;
+}

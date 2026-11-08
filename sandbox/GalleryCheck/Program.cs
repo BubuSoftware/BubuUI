@@ -22,6 +22,7 @@ bool vsync = true;
 bool useCpu = false;
 bool selfCheck = false;
 bool alwaysRender = false;
+bool lightTheme = false;
 int maxFps = 0;
 
 for (int i = 0; i < args.Length; i++)
@@ -52,6 +53,9 @@ for (int i = 0; i < args.Length; i++)
         case "--always-render":
             alwaysRender = true;
             break;
+        case "--light":
+            lightTheme = true;
+            break;
         case "--selfcheck":
             selfCheck = true;
             frames ??= 150;
@@ -70,11 +74,11 @@ ITextPainter textPainter = harfBuzz is null ? new MeasuringTextPainter() : harfB
 // 布局与绘制共用同一个 shaping 缓存（同一字体、同一进距）。
 if (harfBuzz is not null) TextMeasurer.Current = harfBuzz;
 
-var theme = new ElementTheme();
+var theme = lightTheme ? ElementTheme.Light : new ElementTheme();
 Styling.Provider = StyleRegistry.Instance; // S-B：装配 Class 样式（类名直配 setter 序列）
 GalleryStyles.Define();
 var scene = GalleryScene.Build();
-var galleryRoot = new GalleryRoot(scene.Counter, scene.Tasks, scene.Root);
+var galleryRoot = new GalleryRoot(scene.Counter, scene.Tasks, scene.RootViewer);
 galleryRoot.Mount();
 var gallery = galleryRoot.Root;
 var counter = scene.Counter;
@@ -87,7 +91,7 @@ using (galleryRoot)
     if (useCpu || !OperatingSystem.IsWindows())
         return RunCpu();
 
-    using var window = new Win32Window("EclipseUI · Gallery Check (Counter + TaskList)", width, height);
+    using var window = new Win32Window("EclipseUI · Gallery Check", width, height);
     using var presenter = VelloSurfaceBackend.Create(
         window.Handle,
         Math.Max(window.ClientWidth, 1),
@@ -105,15 +109,17 @@ using (galleryRoot)
         AlwaysRender = alwaysRender,
     }, galleryRoot);
 
-    // S-A 亮暗切换：点击换 token 表 → 段缓存失效 → 整帧重绘。
-    var dark = true;
-    themeButton.AddHandler(Button.ClickEvent, () =>
-    {
-        dark = !dark;
-        host.SetTheme(dark ? ElementTheme.Dark : ElementTheme.Light);
-    });
+// S-A 主题令牌化：--light 起始浅色；Toggle theme 按钮换 token 表 → 段缓存失效 → 整帧重绘。
+var dark = !lightTheme;
+themeButton.AddHandler(Button.ClickEvent, () =>
+{
+    dark = !dark;
+    host.SetTheme(dark ? ElementTheme.Dark : ElementTheme.Light);
+});
 
-    var checkBox = gallery.Descendants().OfType<CheckBox>().First();
+    // 根滚动视图（2026-11-09 画廊重构）：交互目标可能被滚出视口，点击前先 EnsureVisible。
+    var rootViewer = scene.RootViewer;
+    var checkBox = gallery.Descendants().OfType<CheckBox>().First(c => c.Label == "Button visible");
     var failures = new List<string>();
     var measured = new List<double>();
     const int warmupFrames = 60;
@@ -121,6 +127,24 @@ using (galleryRoot)
     var fullFrames = 0;
     var partialFrames = 0;
     double partialArea = 0, maxPartialCoverage = 0;
+
+    void EnsureVisible(Element element)
+    {
+        // 元素在根坐标系里的绝对 Y（含当前滚动偏移——内容按 -Offset 平移落进 FinalRect）。
+        double top = element.FinalRect.Y, bottom = top + element.FinalRect.Height;
+        for (var node = element.Parent; node is not null; node = node.Parent)
+        {
+            top += node.FinalRect.Y;
+            bottom += node.FinalRect.Y;
+        }
+        const double margin = 16;
+        var viewportH = rootViewer.ViewportHeight;
+        var offset = rootViewer.VerticalOffset;
+        if (bottom > viewportH)
+            rootViewer.ScrollToVerticalOffset(offset + top - margin);   // 下滚：顶边贴视口上缘
+        else if (top < 0)
+            rootViewer.ScrollToVerticalOffset(offset + bottom - viewportH + margin); // 上滚
+    }
 
     host.FrameTicked += (_, e) =>
     {
@@ -150,37 +174,51 @@ using (galleryRoot)
         if (!selfCheck) return;
 
         // 用真实的 WM_LBUTTONDOWN/UP 消息驱动：覆盖 消息 → InputRouter → 信号 → 重建 全链路。
+        // 每步先 EnsureVisible（滚动生效要等下几帧排列，点击留 ≥5 帧间隔）再点击。
         switch (step)
         {
             case 0 when e.Iteration >= 5:
-                window.PostPointerClick(ToDevice(checkBox, window.ScaleFactor));
+                EnsureVisible(checkBox);
                 step = 1;
                 break;
             case 1 when e.Iteration >= 10:
-                Require("checkbox toggles showButton", counter.showButton);
-                var plus = gallery.Descendants().OfType<Button>().FirstOrDefault(b => b.Label == "+1");
-                Require("conditional +1 button mounted", plus is not null);
-                if (plus is not null) window.PostPointerClick(ToDevice(plus, window.ScaleFactor));
+                window.PostPointerClick(ToDevice(checkBox, window.ScaleFactor));
                 step = 2;
                 break;
             case 2 when e.Iteration >= 15:
-                Require("+1 click increments count", counter.count == 1);
-                window.PostPointerClick(ToDevice(addTaskButton, window.ScaleFactor));
+                Require("checkbox toggles showButton", counter.showButton);
+                var plus = gallery.Descendants().OfType<Button>().FirstOrDefault(b => b.Label == "+1");
+                Require("conditional +1 button mounted", plus is not null);
+                if (plus is not null) EnsureVisible(plus);
                 step = 3;
                 break;
             case 3 when e.Iteration >= 20:
-                Require("add task appends item", taskList.tasks.Count == 4);
-                window.SetClientSize(860, 600);
+                var plusButton = gallery.Descendants().OfType<Button>().First(b => b.Label == "+1");
+                window.PostPointerClick(ToDevice(plusButton, window.ScaleFactor));
                 step = 4;
                 break;
-            case 4 when e.Iteration >= 30:
-                Require("surface follows resize", presenter.Width == window.ClientWidth && presenter.Height == window.ClientHeight);
-                window.SetClientSize(width, height);
+            case 4 when e.Iteration >= 25:
+                Require("+1 click increments count", counter.count == 1);
+                EnsureVisible(addTaskButton);
                 step = 5;
                 break;
-            case 5 when e.Iteration >= 40:
-                Require("surface restored after resize", presenter.Width == window.ClientWidth && presenter.Height == window.ClientHeight);
+            case 5 when e.Iteration >= 30:
+                window.PostPointerClick(ToDevice(addTaskButton, window.ScaleFactor));
                 step = 6;
+                break;
+            case 6 when e.Iteration >= 35:
+                Require("add task appends item", taskList.tasks.Count == 4);
+                window.SetClientSize(860, 600);
+                step = 7;
+                break;
+            case 7 when e.Iteration >= 45:
+                Require("surface follows resize", presenter.Width == window.ClientWidth && presenter.Height == window.ClientHeight);
+                window.SetClientSize(width, height);
+                step = 8;
+                break;
+            case 8 when e.Iteration >= 55:
+                Require("surface restored after resize", presenter.Width == window.ClientWidth && presenter.Height == window.ClientHeight);
+                step = 9;
                 break;
         }
     };
@@ -206,7 +244,7 @@ using (galleryRoot)
 
     if (selfCheck)
     {
-        if (step < 6) failures.Add($"selfcheck stopped at step {step}/6");
+        if (step < 9) failures.Add($"selfcheck stopped at step {step}/9");
         Console.WriteLine(failures.Count == 0
             ? "selfcheck: PASS"
             : $"selfcheck: FAIL ({string.Join("; ", failures)})");
@@ -232,7 +270,7 @@ int RunCpu()
 
     // 走与窗口相同的输入路径：点复选框展开 +1，再点 +1 让计数变化。
     var input = new InputRouter(gallery);
-    var checkBox = gallery.Descendants().OfType<CheckBox>().First();
+    var checkBox = gallery.Descendants().OfType<CheckBox>().First(c => c.Label == "Button visible");
     Click(input, checkBox);
     galleryRoot.ProcessInvalidations();
     Console.WriteLine($"cpu: checkbox -> showButton={counter.showButton}");

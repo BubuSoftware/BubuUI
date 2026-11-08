@@ -140,6 +140,13 @@
 > `Style=` 内联（S-C）与控件模板（S-D）远期。
 > **668 个用例（Headless 332 / Compiler 241 / Rendering 95），全绿**。
 >
+> **画廊完全重构（2026-11-09）**：根 `ScrollViewer` 包整页——内容超出窗口即可滚动（窗口根有限高度
+> 使视口生效）；分区卡片陈列框架全部能力：模板组件（@bind/@if/@foreach/@switch）、Button/CheckBox/
+> TextBlock、StackPanel/WrapPanel/Grid（附加属性）、ScrollViewer、VirtualizingStackPanel（1000 项）、
+> 三层样式按钮（theme/class/inline）+ Visual 覆盖卡片。selfcheck 升级为 9 步（新增 EnsureVisible
+> 滚动后点击，目标按 Label 查找不再依赖树序）；`--light` 参数验证浅主题；帧成本 avg 2.99ms /
+> p95 3.40ms（与重构前持平，retained 段缓存复用帧不受内容增长影响）。
+>
 > **表达式语义预检已通过（2026-11-09，EUI049 Warning）**：属性 `{expr}`、`@if` 条件、插值文本段
 > 经探针编译在使用点直接提示「拼错成员/类型不匹配」（CS0103/CS0029），不再等 C# 编译才发现；
 > Warning 不短路生成——类型错误仍经 `#line` 由 C# 报权威错误（spec/02 §2.4 规则 11）。
