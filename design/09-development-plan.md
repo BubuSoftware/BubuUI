@@ -43,7 +43,7 @@
 - LSP / TextMate / VS Code / Rider 插件。
 - 热重载、DevTools、调试映射的 IDE 接入。
 - WebGPU 视口控件（不做 3D 引擎）。
-- CI、LICENSE、NuGet 打包、benchmark、AOT 冒烟。
+- CI、LICENSE、NuGet 打包、benchmark、~~AOT 冒烟~~（✅ D95：full trimming 试点通过；AOT 运行待上游修复）。
 - 组件作者面的真实样例：`samples/` 里没有任何 `[UiParameter]`/`[UiContent]`/`[UiSlot]` 用法，
   C4–C6 的组件契约只在测试夹具中验证过，尚未经真实 App 检验。
 
@@ -54,12 +54,18 @@
 
 | 视角 | 完成度 | 说明 |
 |---|---:|---|
-| 托管核心（编译器前端 + 生成器 + 运行时 + 无头测试） | **85–90%** | 主链路与组件契约已通（S1–S3、C1–C6、G3 七个小切片含 EUI024 签名匹配 ✅ D82、`#line` 列映射、`EUI045` 冲突诊断、D74 ② 诊断出口，497 例全绿）；S6 语法对齐 ✅（K21–K29 / D85–D88：`@using`、`@code` 单文件、`else`/`@switch`、`@* *@`，样例与约 94 例 golden 补 `@using` 一次性迁移）；S4/S5 运行时硬化与 G2 CPU 侧部分收敛（D83/D84：属性存储去装箱、CPU 像素 golden、retained 合成原型、60fps 测量程序）。剩 S4/S5（AOT/裁剪、最终审计、帧预算/分配预算门槛、CI——旧语法清理已随 S6 提前完成 K27，Element.Unmount 已随 K33/D89 收敛）、G2（GPU retained layer/真正局部重绘、目标机稳定 60fps 结论、像素探针 DSL、CPU/GPU 交叉一致性门禁）与性能基准。 |
-| 0.1 alpha（可交付的 2D 桌面框架） | **55–60%** | 渲染与 Win32 宿主已打通到窗口像素，元素树→display list→上屏、输入路由与 damage v0 可用（G1 门「有条件 Go」，GPU 200 元素 @1280×800 实测 6.36 ms/帧）；仍缺样式/主题、TextBox/ListBox/Grid/ScrollViewer 控件集、layer/合成器。 |
-| 完整设计愿景（含 IDE、3D、多平台、DevTools、1.0 硬化） | **12–17%** | IDE、3D、平台扩展、无障碍与稳定性尚未开始；编译器线的完成度是本次上调的唯一来源。 |
+| 托管核心（编译器前端 + 生成器 + 运行时 + 无头测试） | **85–90%** | 主链路与组件契约已通（S1–S3、C1–C6、G3 七个小切片含 EUI024 签名匹配 ✅ D82、`#line` 列映射、`EUI045` 冲突诊断、D74 ② 诊断出口，497 例全绿）；S6 语法对齐 ✅（K21–K29 / D85–D88：`@using`、`@code` 单文件、`else`/`@switch`、`@* *@`，样例与约 94 例 golden 补 `@using` 一次性迁移）；S4/S5 已收敛（D83 去装箱/Dispose 加固、D94 分配预算门槛、D95 AOT/裁剪试点、D96 死循环上限测试与最终审计；CI 单列未做），G2 四项收敛三项（D91 探针 DSL / D92 交叉一致性门禁 / D93 retained 构建层）。剩 G2 目标机 60fps 结论、上游 scissor 局部重绘、正式性能吞吐基准表与性能基准。 |
+| 0.1 alpha（可交付的 2D 桌面框架） | **60–65%** | 渲染与 Win32 宿主已打通到窗口像素，元素树→display list→上屏、输入路由与 damage v0 可用（G1 门「有条件 Go」，GPU 200 元素 @1280×800 实测 6.36 ms/帧）；Grid/WrapPanel/ScrollViewer/列表虚拟化已落地（2026-11-09），retained 构建层 ✅ D93；仍缺样式/主题、TextBox/ListBox、文本编辑（IME）、脏区光栅化（上游 scissor API）。 |
+| 完整设计愿景（含 IDE、3D、多平台、DevTools、1.0 硬化） | **15–20%** | IDE、3D、平台扩展、无障碍与稳定性尚未开始；编译器/渲染/控件线的完成度是 2026-11-09 重估的上调来源。 |
 
 > **2026-11-08（K23）**：S6 语法对齐已实现（D85–D88 关闭，用例 497 → 548），上述托管核心口径已含
 > 本次收敛；百分比维持 85–90% / 55–60% / 12–17% 不变，避免估算通胀（上调留待 S4/S5、G2 余项收敛时重估）。
+>
+> **2026-11-09（S5 收敛重估）**：S4/S5 出口按 spec/03 §13.1 核对完成（D94 预算门槛 / D95 AOT/裁剪试点 /
+> D96 死循环上限测试与最终审计），G2 四项收敛三项（D91/D92/D93），控件面新增 Grid/WrapPanel/
+> ScrollViewer/列表虚拟化/Unmount/附加属性（用例 548 → 657）。重估：托管核心 **90%**
+> （剩 CI、正式性能吞吐基准表）、0.1 alpha **60–65%**（样式/主题、TextBox/IME、脏区光栅化未开始）、
+> 完整愿景 **15–20%**（编译器/渲染/控件份额上调；IDE/3D/多平台未动）。
 
 ### 分领域状态
 
@@ -67,18 +73,18 @@
 |---|---|---|
 | 模板前端 | 🟢 可用 MVP（v2） | **S6 语法对齐已实现（K23 / D85–D88 ✅ 2026-11-08）**：`@using`、`@code` 单文件、`else`/`@switch`、`@* *@`；其余待办：trivia/pretty-printer、表达式语义分析深化（✅ 最小闭环 EUI049 已落地 2026-11-09，全量流分析留后续）；附加属性 ✅ G4 首批已落地（2026-11-09）；泛型标签暂缓（K19，不排期） |
 | 源生成器 | 🟢 可用 MVP | 组件作者面样例；EUI024 签名匹配 ✅ 2026-11-08/D82（按文件增量 ✅ 2026-11-08、`#line` 列映射 ✅ 2026-11-08/D79、`EUI045` ✅ 2026-11-08/D57、诊断出口 ✅ 2026-11-08/D74 ② 均已落地） |
-| 运行时/属性 | 🟢 可用基础 | 属性存储去装箱、生命周期 Unmount、样式优先级、性能基准 |
+| 运行时/属性 | 🟢 可用基础 | ~~属性存储去装箱~~ ✅ D83、~~生命周期 Unmount~~ ✅ K33/D89、~~失效死循环上限~~ ✅ D96（100 次 Render fail-fast）；剩样式优先级、正式性能基准表 |
 | 布局 | 🟡 部分 | WrapPanel ✅ / Grid ✅ / ScrollViewer ✅ / 列表虚拟化 v1 ✅（2026-11-09）；约束待做（块布局透明化 ✅ 2026-11-05，D77） |
 | 文本 | 🟡 单行 shaping 已接入 | 断行、bidi、fallback、emoji、glyph 缓存、display list 集成 |
 | 输入/焦点 | 🟡 元素路由已通 | 字符输入/IME、滚轮/触摸、Shift+Tab、无障碍 |
-| 渲染/合成器 | 🟡 scene graph + 上屏 + damage v0 | retained layer/合成器、局部重绘、帧预算 |
+| 渲染/合成器 | 🟡 scene graph + 上屏 + damage v0 + retained 构建层（✅ D93） | 脏区光栅化（上游 scissor API）、合成器、帧预算门槛 |
 | 样式/主题 | 🔴 未开始 | 选择器编译、资源查找、亮暗主题、控件模板 |
 | 控件库 | 🟡 极简 | TextBlock/Button/CheckBox/StackPanel/ListBoxItem 之外的基础控件 |
 | IDE | 🔴 未开始 | TextMate、LSP server、VS Code/Rider 壳 |
 | 工具链 | 🔴 基本未开始 | 热重载、断点映射、DevTools、无头测试 SDK |
 | 平台 | 🟡 Win32 宿主已可用 | macOS/Linux、多窗口、设备丢失恢复 |
 | GPU/3D | 🔴 未开始 | WebGPU 视口控件、同 device 纹理混排、输入转发；不做 3D 引擎/拾取 |
-| 工程化 | 🟡 早期 | CI、LICENSE、打包、benchmark、AOT、发布流程 |
+| 工程化 | 🟡 早期 | CI、LICENSE、打包、发布流程（AOT/裁剪试点 ✅ D95 full trimming 0 警告；分配预算门槛 ✅ D94） |
 
 ## 9.3 范围定义
 
@@ -191,7 +197,7 @@ CPU 侧部分收敛（2026-11-08/D84）：CPU 像素 golden（`PixelGoldenTests`
   （软限速修复 + D93 保持）；`Fifo` 上屏节奏受虚拟链合成波动与上游 `frame latency=2`（§7.3）
   限制，稳定 60fps 结论待物理目标机复测——**操作指引已就绪**（报告 §9，bench 脚本已支持
   多适配器刷新率甄别）（[报告](./reports/target-machine-60fps-2026-11-08.md)）。
-- `dotnet test` 含渲染测试且跨机器稳定（容差/探针策略）。—— ✅ 257 个测试（103 无头 + 93 编译器 + 61 渲染），GPU 用例无设备自动跳过。
+- `dotnet test` 含渲染测试且跨机器稳定（容差/探针策略）。—— ✅ 657 个测试（332 无头 + 241 编译器 + 84 渲染），GPU 用例无设备自动跳过。
 
 **已知约束**（2026-11-09 更新）：测量机器已更换为 RTX 2070（物理适配器 59Hz 自报）+ GameViewer 虚拟适配器；`bench-60fps.ps1` 已改为逐适配器列出并优先物理适配器（虚拟链自报值不代表渲染路径有效节奏）。`Immediate` 模式墙钟 60.0fps（代码侧节奏已验证、D93 retained 后保持），`Fifo` 上屏受合成波动与上游 `desired_maximum_frame_latency=2`（VelloSharp 硬编码，C ABI 无字段）双重阻塞。稳定 60fps 结论必须在物理目标机（真实显示器）复测——**操作指引见报告 §9**，两级判定口径（帧成本/墙钟/上屏）已在列。
 
@@ -536,7 +542,10 @@ CPU 侧部分收敛（2026-11-08/D84）：CPU 像素 golden（`PixelGoldenTests`
 - 无障碍（UIA/屏幕阅读器）、IME 完整链路、DPI/多显示器。
 - 本地化/RTL、剪贴板/拖放、多窗口/对话框。
 - 性能预算、内存/启动、AOT/裁剪、API 稳定性与兼容策略。
-- 状态与反应式 S5：基准/预算、AOT 样例、线程断言、`:bind`/`:value` 清理与最终审计（[spec/03 §13.1](../spec/03-reactivity-and-binding.md#131-阶段定义)）；运行时硬化已部分收敛（2026-11-08/D83：`IValueBox`/`ValueBox<T>` 去装箱、`Component.Dispose` 锁内清 pending 队列、`RuntimeHardeningTests` 7 例），`Element.Unmount/Detach` 属 G4 才补，AOT/裁剪配置与门槛仍未做。
+- 状态与反应式 S5：基准/预算、AOT 样例、线程断言、`:bind`/`:value` 清理与最终审计（[spec/03 §13.1](../spec/03-reactivity-and-binding.md#131-阶段定义)）。
+  —— **S5 出口已于 2026-11-09 核对收敛**（D94 分配预算门槛 / D95 AOT/裁剪试点 / D96 死循环上限测试与最终审计；
+  `:bind`/`:value` 清理 ✅ S6/K27，`Element.Unmount` ✅ G4/K33，运行时硬化 ✅ D83）——
+  正式性能吞吐基准表与 CI 随 G8。
 - 文档、示例、迁移指南、发布流程。
 
 **出口标准**

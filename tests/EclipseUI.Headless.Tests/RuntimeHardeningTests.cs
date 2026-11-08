@@ -25,7 +25,8 @@ public class RuntimeHardeningTests
     // 若每次赋值装箱，SmallIterations=1000 次 double/int/bool 装箱约 24_000 字节，远超此预算。
     private const long ConstantAllocationBudget = 8_192;
 
-    // ---- A1：去装箱 ----    [Fact]
+    // ---- A1：去装箱 ----
+    [Fact]
     public void RepeatedSetValue_DoesNotBoxPerAssignment_ForValueTypes()
     {
         AssertNoPerAssignmentBoxing(

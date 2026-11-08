@@ -892,6 +892,7 @@ v4 换轨后，**S1 已收敛（2026-10-30）、S2 已收敛（2026-10-30）、S
 | D93 | ✅ G2：**retained 显示列表（段级）**——`ElementPainter` 自绘命令段缓存（ConditionalWeakTable；键 = RenderVersion+绝对位置+尺寸+焦点态；clip/滚动条段外每帧生成）；失效契约与 DamageTracker 一致，arrange 平移由段键位置捕获；金标准 retained 渲染 == 全量渲染（`RetainedPaintTests` 8 例，含 GPU 分支 retained 合成等价）；VelloSharp 无 scissor API、构建层 retained 先行 | spec/02 §12、design/09 §9.3 G2 ⑥ | ✅ G2（2026-11-09） |
 | D94 | ✅ S5：**预算门槛扩展**——`RuntimeHardeningTests` +3（附加属性值盒复用 / 布局热路径常数分配：Grid 轨道缓存+缓冲复用+ElementCollection struct enumerator / retained 帧构建 ≤512B/帧锁 D93 收益） | spec/02 §12、design/09 §9.3 G2 ⑦ | ✅ S5（2026-11-09） |
 | D95 | ✅ S5：**AOT/裁剪试点**——full trimming 0 警告 + 产物实跑通过（源生成器架构无运行时反射）；AOT ILC 通过、运行阻塞于上游 VelloSharp NativeLibraryLoader（`GetCallingAssembly` 需上游修复）；`-p:` 全局属性传染源生成器 → NETSDK1124，配置固化 csproj + `EnableAot` 自定义开关 | spec/02 §12、design/09 §9.3 G2 ⑧ | ✅ S5（2026-11-09；AOT 待上游） |
+| D96 | ✅ S5：**最终审计与文档同步**——657 例全绿（332/241/84）0 警告；修复 A1 去装箱测试 `[Fact]` 被注释吞掉（D83 起未运行）、补 spec/03 §2.6 死循环上限契约测试（`MaxRenderIterations=100` fail-fast + 上限内收敛）；README/design/09/spec/03 验收清单同步，S5 出口核对关闭 | spec/02 §12、design/09 §9.4 S5、spec/03 §13.1/§2.6 | ✅ S5（2026-11-09） |
 
 - 每项收敛必须同时删除对应的 v3 路径；不得两套模型并存。
 - 新增偏差必须登记编号（从 D89 起）并注明目标阶段；不得只改代码不改台账。

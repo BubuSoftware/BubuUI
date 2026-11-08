@@ -184,4 +184,37 @@ public class InvalidationTests
         Assert.Throws<InvalidOperationException>(() => second.Adopt(child));
         Assert.Throws<InvalidOperationException>(() => first.Adopt(first));
     }
+
+    // spec/03 §2.6：一轮 ProcessInvalidations() 必须有迭代上限（实现定义 100 次 Render），
+    // 超过上限视为渲染死循环并 fail-fast。S5 最终审计（D96）补测试锁住该契约。
+    [Fact]
+    public void RenderLoop_SelfInvalidatingRender_ThrowsAtIterationLimit()
+    {
+        var component = new TestComponent();
+        component.Mount();
+        component.OnRender = component.Invalidate; // 每次渲染再自我失效 → 死循环
+        component.Invalidate();                    // 启动第一次失效
+
+        var ex = Assert.Throws<InvalidOperationException>(() => component.ProcessInvalidations());
+        Assert.Contains("Render loop exceeded", ex.Message);
+        // 上限口径 = 100 次 Render；第 101 次进入前拦截
+        Assert.Equal(100, component.RenderCount);
+    }
+
+    [Fact]
+    public void RenderLoop_ExactlyAtIterationLimit_ConvergesWithoutThrow()
+    {
+        var component = new TestComponent();
+        component.Mount();
+        var remaining = 100; // 前 99 次 Render 各自失效，第 100 次停 → 恰好在上限内收敛
+        component.OnRender = () =>
+        {
+            if (--remaining > 0)
+                component.Invalidate();
+        };
+        component.Invalidate(); // 启动第一次失效
+
+        Assert.True(component.ProcessInvalidations());
+        Assert.Equal(100, component.RenderCount);
+    }
 }
