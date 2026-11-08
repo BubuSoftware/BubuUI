@@ -11,7 +11,7 @@ namespace Gallery;
 public static class GalleryScene
 {
     /// <summary>构建场景。返回各可交互部件，供宿主/验证工具驱动。</summary>
-    public static (StackPanel Root, Counter Counter, TaskList Tasks, Button AddButton) Build()
+    public static (StackPanel Root, Counter Counter, TaskList Tasks, Button AddButton, Button ThemeButton) Build()
     {
         var counter = new Counter();
         counter.Mount();
@@ -52,6 +52,9 @@ public static class GalleryScene
         var root = new StackPanel { Gap = 14, Padding = 20 };
         root.Children.Add(Text("EclipseUI G4 Gallery", 26));
         root.Children.Add(Text("Checkbox reveals +1 · Tab / Space focus · Esc closes", 12));
+        // S-A 主题令牌化：切换按钮本体在树里，Click 由宿主接线（SetTheme 换 token 表 → 整帧重绘）。
+        var themeButton = new Button { Label = "Toggle theme" };
+        root.Children.Add(themeButton);
         root.Children.Add(counter.Root);
         // 交互演示（Counter/TaskList）放在控件陈列区之前：G4 showcase 高约 700px，
         // 排在其后会把 add 按钮与任务卡推出 760px 视口（selfcheck 的 add task 步骤
@@ -59,7 +62,7 @@ public static class GalleryScene
         root.Children.Add(addTaskButton);
         root.Children.Add(taskList.Root);
         root.Children.Add(showcase.Root);
-        return (root, counter, taskList, addTaskButton);
+        return (root, counter, taskList, addTaskButton, themeButton);
     }
 
     private static TextBlock Text(string text, double fontSize)

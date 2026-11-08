@@ -27,7 +27,7 @@ public sealed class ElementPainter
     /// <summary>单元素自绘命令段；缓存后视为只读。</summary>
     private sealed record Segment(long Version, Point Position, Size Size, bool Focused, List<DrawCommand> Commands);
 
-    private readonly ElementTheme _theme;
+    private ElementTheme _theme;
     private readonly ITextPainter? _text;
     private readonly DamageTracker _damageTracker = new();
     private readonly ConditionalWeakTable<Element, Segment> _segments = new();
@@ -45,6 +45,19 @@ public sealed class ElementPainter
     }
 
     public ElementTheme Theme => _theme;
+
+    /// <summary>
+    /// 替换主题（S-A 亮暗切换）：段缓存里的命令持有旧主题的颜色快照，
+    /// 必须整段丢弃；脏区历史同步重置，下一帧按整帧重绘上屏。
+    /// </summary>
+    public void ReplaceTheme(ElementTheme theme)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        if (ReferenceEquals(theme, _theme)) return;
+        _theme = theme;
+        ResetSegments();
+        ResetDamage();
+    }
 
     /// <summary>上一次构建的段复用统计（复用数 / 重画数）。</summary>
     public (int Reused, int Repainted) LastBuildStats { get; private set; }

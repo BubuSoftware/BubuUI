@@ -106,6 +106,17 @@ public sealed class WindowHost : IDisposable
 
     public ElementPainter Painter => _painter;
 
+    /// <summary>
+    /// 运行时切换主题（S-A）：换 token 表 → 段缓存与脏区历史整体失效，
+    /// 下一帧整帧重绘上屏。颜色令牌不影响布局，无需失效 Measure/Arrange。
+    /// </summary>
+    public void SetTheme(ElementTheme theme)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _painter.ReplaceTheme(theme);
+        _painter.ResetDamage(); // 当前帧可能已构建过：再保证下一帧整帧
+    }
+
     public InputRouter Input { get; }
 
     /// <summary>本次 Run 的循环次数（包含跳过上屏的空闲帧）。</summary>

@@ -1,37 +1,69 @@
 namespace EclipseUI.Rendering;
 
 /// <summary>
-/// 场景图绘制的默认视觉参数。G2 的临时主题：样式系统（G4）落地后由选择器解析结果替换。
-/// 刻意保持“数据 + 默认值”，不引入任何布局语义。
+/// 场景图绘制的视觉参数（S-A 主题令牌化）：可替换 token 表——宿主换一套实例即换主题
+/// （<see cref="ElementPainter.ReplaceTheme"/>），亮暗切换 = 换表 + 全树重绘。
+/// 刻意保持「数据 + 默认值」，不引入任何布局语义；控件级覆盖（class/inline）走 S-B 有效值分层。
 /// </summary>
-public sealed class ElementTheme
+public class ElementTheme
 {
+    /// <summary>预置深色主题（原默认值）。</summary>
+    public static ElementTheme Dark { get; } = new();
+
+    /// <summary>预置浅色主题。</summary>
+    public static ElementTheme Light { get; } = new LightTheme();
+
     // ---- 颜色（深色）----
-    public Color Surface { get; init; } = new(15, 17, 25);
-    public Color PanelBackground { get; init; } = new(27, 31, 42);
-    public Color PanelBorder { get; init; } = new(46, 53, 70);
-    public Color ItemBackground { get; init; } = new(35, 41, 55);
-    public Color ItemBorder { get; init; } = new(52, 60, 80);
-    public Color Foreground { get; init; } = new(232, 237, 247);
-    public Color MutedForeground { get; init; } = new(148, 158, 184);
-    public Color Accent { get; init; } = new(96, 152, 255);
-    public Color AccentPressed { get; init; } = new(70, 122, 224);
-    public Color OnAccent { get; init; } = new(255, 255, 255);
-    public Color ControlBackground { get; init; } = new(44, 51, 68);
-    public Color ControlBorder { get; init; } = new(78, 88, 112);
-    public Color FocusRing { get; init; } = new(126, 186, 255);
-    public Color ScrollBarTrack { get; init; } = new(0, 0, 0, 0);
-    public Color ScrollBarThumb { get; init; } = new(96, 106, 132);
+    public virtual Color Surface { get; init; } = new(15, 17, 25);
+    public virtual Color PanelBackground { get; init; } = new(27, 31, 42);
+    public virtual Color PanelBorder { get; init; } = new(46, 53, 70);
+    public virtual Color ItemBackground { get; init; } = new(35, 41, 55);
+    public virtual Color ItemBorder { get; init; } = new(52, 60, 80);
+    public virtual Color Foreground { get; init; } = new(232, 237, 247);
+    public virtual Color MutedForeground { get; init; } = new(148, 158, 184);
+    public virtual Color Accent { get; init; } = new(96, 152, 255);
+    public virtual Color AccentPressed { get; init; } = new(70, 122, 224);
+    public virtual Color OnAccent { get; init; } = new(255, 255, 255);
+    public virtual Color ControlBackground { get; init; } = new(44, 51, 68);
+    public virtual Color ControlBorder { get; init; } = new(78, 88, 112);
+    public virtual Color FocusRing { get; init; } = new(126, 186, 255);
+    public virtual Color ScrollBarTrack { get; init; } = new(0, 0, 0, 0);
+    public virtual Color ScrollBarThumb { get; init; } = new(96, 106, 132);
 
     // ---- 形状 ----
-    public double PanelRadius { get; init; } = 12;
-    public double ItemRadius { get; init; } = 8;
-    public double ButtonRadius { get; init; } = 8;
-    public double CheckBoxRadius { get; init; } = 4;
-    public double BorderWidth { get; init; } = 1;
-    public double FocusRingWidth { get; init; } = 2;
+    public virtual double PanelRadius { get; init; } = 12;
+    public virtual double ItemRadius { get; init; } = 8;
+    public virtual double ButtonRadius { get; init; } = 8;
+    public virtual double CheckBoxRadius { get; init; } = 4;
+    public virtual double BorderWidth { get; init; } = 1;
+    public virtual double FocusRingWidth { get; init; } = 2;
 
     // ---- 文本 ----
     /// <summary>小于该字号用次要文本色（G2 的临时规则，样式系统会替代）。</summary>
-    public double MutedFontSizeBelow { get; init; } = 14;
+    public virtual double MutedFontSizeBelow { get; init; } = 14;
+}
+
+/// <summary>浅色主题（S-A 预置第二套 token 表，验证可替换性）。</summary>
+public sealed class LightTheme : ElementTheme
+{
+    // ---- 颜色（浅色）----
+    public override Color Surface { get; init; } = new(248, 249, 252);
+    public override Color PanelBackground { get; init; } = new(255, 255, 255);
+    public override Color PanelBorder { get; init; } = new(224, 229, 240);
+    public override Color ItemBackground { get; init; } = new(242, 244, 249);
+    public override Color ItemBorder { get; init; } = new(222, 227, 238);
+    public override Color Foreground { get; init; } = new(30, 34, 44);
+    public override Color MutedForeground { get; init; } = new(108, 116, 136);
+    public override Color Accent { get; init; } = new(52, 118, 255);
+    public override Color AccentPressed { get; init; } = new(38, 96, 220);
+    public override Color OnAccent { get; init; } = new(255, 255, 255);
+    public override Color ControlBackground { get; init; } = new(244, 246, 251);
+    public override Color ControlBorder { get; init; } = new(205, 212, 226);
+    public override Color FocusRing { get; init; } = new(52, 118, 255);
+    public override Color ScrollBarThumb { get; init; } = new(176, 183, 198);
+
+    // ---- 形状 ----（沿用深色默认：Radius/BorderWidth/FocusRingWidth 不覆盖）
+
+    // ---- 文本 ----
+    public override double MutedFontSizeBelow { get; init; } = 14;
 }

@@ -78,6 +78,7 @@ var gallery = galleryRoot.Root;
 var counter = scene.Counter;
 var taskList = scene.Tasks;
 var addTaskButton = scene.AddButton;
+var themeButton = scene.ThemeButton;
 
 using (galleryRoot)
 {
@@ -101,6 +102,14 @@ using (galleryRoot)
         MaxFramesPerSecond = maxFps,
         AlwaysRender = alwaysRender,
     }, galleryRoot);
+
+    // S-A 亮暗切换：点击换 token 表 → 段缓存失效 → 整帧重绘。
+    var dark = true;
+    themeButton.AddHandler(Button.ClickEvent, () =>
+    {
+        dark = !dark;
+        host.SetTheme(dark ? ElementTheme.Dark : ElementTheme.Light);
+    });
 
     var checkBox = gallery.Descendants().OfType<CheckBox>().First();
     var failures = new List<string>();
