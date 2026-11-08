@@ -1381,7 +1381,7 @@ public partial class UserCard : Component
 ### 15.13.4 与代码的差距台账（D23–D36）
 
 > 03 v3 的 D1–D36 与本表一致（D23–D36 逐条对应）；D37–D41 是本次 spec 审计新增的**生成文本**差距，
-> 见 design/03 §3.5.3 与 [spec/02 §12](../spec/02-generated-code-contract.md#12-实现偏差台账-d42d79)，不在本表重复。
+> 见 design/03 §3.5.3 与 [spec/02 §12](../spec/02-generated-code-contract.md#12-实现偏差台账-d42d81)，不在本表重复。
 > 本表是代码差距视图；**这些是"文档已定、代码未对齐"**，不是实现声明。
 
 | # | 规范 | 当前实现 | 影响 | 收敛 |

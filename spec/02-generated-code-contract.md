@@ -1335,13 +1335,15 @@ public interface ITextContentHost
 | T16 | 失败回退 | 非法输入不抛异常；输出最小 `Build`；诊断由分析器给出 |
 | T17 | 可空/编译 | `Nullable=enable` 下无新增警告；`warnings-as-errors` 项目可编译 |
 | T18 | 运行时语义 | Build 首评一次；Render 重算；块刷新；Keyed 复用；双向绑定；事件失效 |
+| T19 | 诊断出口 | 源项目元数据 problem 报在 C# 声明处（码/路径/行列精确）、引用程序集仍在用点、多 `.ui` 不重复；标签冲突 → EUI016、不可用按 ReasonCode → EUI017/EUI018/EUI030、未知仍落 EUI001；`MetadataOutletTests` |
 
-- T1–T17 是编译器/golden 测试；T18 是宿主/运行时集成测试（S1–S3）。
+- T1–T17 与 T19 是编译器/golden 测试；T18 是宿主/运行时集成测试（S1–S3）。
 - golden 文本按本章的形态比对，不比对空白行；`#line` 路径可按测试临时目录参数化。
 
 ## 10. `EUI045` 与 code-behind 边界
 
-`EUI045` 守护生成成员与 code-behind 的冲突；原计划 C3，C3 收敛时未落地，2026-11-05 重排 G3（D57）。
+`EUI045` 守护生成成员与 code-behind 的冲突；原计划 C3，C3 收敛时未落地，2026-11-05 重排 G3（D57），
+**2026-11-08 已落地（D57/D80，`CodeBehindConflictTests` 23 例）**。
 
 触发条件：
 
@@ -1357,6 +1359,14 @@ public interface ITextContentHost
 - `EUI045` 不阻止生成器输出；错误诊断已阻断构建。
 - 生成器必须容忍 code-behind 的 `partial` 方法、普通字段/属性/方法，只要不冲突。
 
+实现口径（D80）：诊断位置在 code-behind 的**源声明**——逐文件事实只携带纯数据
+`UiSourceLocation`（路径 + span + 0 基行列），`Report` 用 `Location.Create(path, span, lineSpan)`
+重建外部文件位置，不把 `SyntaxTree`/`Location` 带进增量缓存。生成成员保留名判定为
+`__el`/`__cmp`/`__blk`/`__run`/`__bind`/`U`/`R` + 纯数字后缀；生成代码依赖成员白名单为
+`Invalidate`/`Mount`/`Track`/`TrackContent`/`AddDisposable`；基类白名单为「省略」或
+`Component`/`EclipseUI.Component`/`global::EclipseUI.Component` 原样重复。
+EUI045 是 Error 但不计入生成短路，生成器仍按本文输出；其它错误诊断维持既有短路口径。
+
 ## 11. 与旧契约的差异入口
 
 - v1 的 `UiWatch`/`Subscribe`/`Signal<T>`/`IINCC`/依赖分析/`subs`/`itemSubs`/`upd` 全部作废；
@@ -1370,10 +1380,10 @@ public interface ITextContentHost
 - 旧语法的生成文本与新语法相同，差异只在分析器 `EUI043`；G3 列映射（§2.4 规则 9）后
   该等价口径改为「剥离 `#line` 指令后字节相同」，因为指令携带各自源 span。
 
-## 12. 实现偏差台账 D42–D79
+## 12. 实现偏差台账 D42–D81
 
-**S1 已收敛（2026-10-30）、S2 已收敛（2026-10-30）、S3 已收敛（控件侧 2026-11-02、组件侧随 C4 2026-11-05）、C1 已收敛（2026-11-02，目录派生）、C3 已收敛（2026-11-03，字面量转换器/使用点诊断/保留语法）、C4 已收敛（2026-11-05，组件标签）、C5 已收敛（2026-11-05，Ref/使用点诊断）、C6 已收敛（2026-11-05，具名插槽 §4.12.5）、G3 块布局透明已收敛（2026-11-05，D77）、G3 失效迁移已收敛（2026-11-07，D78）、G3 按文件增量已收敛（2026-11-08）、G3 `#line` 列映射已收敛（2026-11-08，D79）**，
-下表中标 ✅ S1/✅ S2/✅ S3/✅ C1/✅ C4/✅ C5/✅ C6/✅ G3 的条目已关闭；其余偏差按 S4/G3 余项（诊断出口 D57/D74 ②）/G4 收敛。台账之外的差异视为实现缺陷。
+**S1 已收敛（2026-10-30）、S2 已收敛（2026-10-30）、S3 已收敛（控件侧 2026-11-02、组件侧随 C4 2026-11-05）、C1 已收敛（2026-11-02，目录派生）、C3 已收敛（2026-11-03，字面量转换器/使用点诊断/保留语法）、C4 已收敛（2026-11-05，组件标签）、C5 已收敛（2026-11-05，Ref/使用点诊断）、C6 已收敛（2026-11-05，具名插槽 §4.12.5）、G3 块布局透明已收敛（2026-11-05，D77）、G3 失效迁移已收敛（2026-11-07，D78）、G3 按文件增量已收敛（2026-11-08）、G3 `#line` 列映射已收敛（2026-11-08，D79）、G3 EUI045 code-behind 冲突诊断已收敛（2026-11-08，D57/D80）、G3 诊断出口补全已收敛（2026-11-08，D74 ②/D81）**，
+下表中标 ✅ S1/✅ S2/✅ S3/✅ C1/✅ C4/✅ C5/✅ C6/✅ G3 的条目已关闭；其余偏差按 S4/G3 余项（EUI024 事件处理器签名匹配）/G4 收敛。台账之外的差异视为实现缺陷。
 D77 是运行时排布口径，**不改本文的生成形态**（块仍按 §4.9–§4.10 生成），规范条文在 spec/01 §4.10/§4.11。
 D79 改的是 `#line` 指令形态（§2.4），不改 C# 语句本身的生成规则。
 **C1/C2 改元数据来源，不改本文的生成形态**：生成器已改读派生目录（C2，2026-11-02），
@@ -1397,7 +1407,7 @@ D64/D68 ✅ C1。
 | D54 | ✅ C4：组件 `@bind-P` 生成「`{P}Changed` 回调赋值（build-once）+ 推送 `U{N}`/`R{N}`」；组件目标判定/内容体内 `@bind` 禁用已落地（EUI040）；内层推送形态与 §4.3.3 一致。回调 `{P}Changed` 的**类型**与参数严格匹配仍静态不可判，由 C# 编译错误兜底（D73） | §4.4.3/§4.4.4 | ✅ C4 |
 | D55 | ✅ S1：事件生成 `h{N}` 委托局部 + 包装内 `Invalidate()` | §4.6 | ✅ S1 |
 | D56 | ✅ C4：组件默认内容 build-once 落地——`List<Element>` 累加、单根 `content{N}.Count == 0 ? null : content{N}[0]`、内容子组件 `receiver.TrackContent`、内容内 `@if`/`@foreach` 展开为普通 C# 语句、内容内动态属性为 Build 快照、内容内 `@bind`/`Key`/裸文本分别报 EUI040/EUI010/EUI006 | §4.12.3 | ✅ C4 |
-| D57 | `EUI045`（code-behind 与生成成员冲突）未实现，诊断码常量也未分配；C3 已收敛但本项未随其落地，2026-11-05 重排 G3 | §10 | G3（原 C3） |
+| D57 | ✅ G3（2026-11-08）：`EUI045`（code-behind 与生成成员冲突）落地——常量分配、`TemplateGenerator.ProbeCodeBehindConflicts` 覆盖 §10 五类触发、诊断落在 code-behind 源声明、生成器不改名也不跳过输出；`CodeBehindConflictTests` 23 例（含位置/停用码零出现/仍生成源码）。实现载体见 D80 | §10、§12 D80 | ✅ G3 |
 | D58 | ✅ S1：hint name 为 `{ClassName}.{stableHash}.g.cs`（SHA-256 前 16 hex） | §2.1 | ✅ S1 |
 | D59 | ✅ S2：`ITextContentHost.AddRun(string)` 已实现；`TextBlock` 实现该接口，运行时不再需要手建 `TextRun` | §4.8/§7 | ✅ S2 |
 | D60 | ✅ S2：`ForEachBlock.UpdateChildren` 仅在根序列实际变化时改 `Children` | spec/03 §7.3 | ✅ S2 |
@@ -1414,15 +1424,17 @@ D64/D68 ✅ C1。
 | D71 | `[UiIgnore]` 与 `[UiParameter]`/`[UiSlot]` 同时出现时 `[UiIgnore]` 生效并按 **EUI028** 记问题；design/14 §14.6.1 只写「不得」，没为这条分配诊断码，EUI028 原文只覆盖「参数声明非法」。C4 未处理（沿用 EUI028，不复用新码）；需要细化时另起新码并先记台账 | design/14 §14.6.1/§14.9.1 | 开放 |
 | D72 | ✅ C2（语义修订）：golden 快照落成仓库内文件 `TestData/BuiltInSurface.golden.txt`（`ECLIPSEUI_UPDATE_SURFACE_GOLDEN=1` 再生）；原文「固定目录从快照反序列化」不采纳——快照改为扫描结果的**渲染评审门**（显式再生成 + diff 强制评审），纯结构测试各自现扫 `Compilation`（全扫实测 45 ms） | design/14 §14.11.1/§14.12.2 | ✅ C2 |
 | D73 | ✅ C4（残余风险登记）：组件 `@bind-P` 只静态校验「存在 `{P}Changed` 委托参数」（EUI040），不校验其实参类型与 `P` 匹配——恰与 spec/01 §4.14 「缺失/类型不符 → EUI040」中的「类型不符」不可严格一致。类型不匹配由生成代码的 C# 编译错误兜底（经 `#line` 指回 `.ui`）；不要在运行时静默吞掉。若未来 Roslyn 类型推断下放到扫描期，可再收紧 | §4.4.3 规则 1 / spec/01 §4.14 | ✅ C4 |
-| D74 | ✅ C5（部分收敛 + 残余登记）：① 使用点 EUI019/EUI020/EUI021 落地——`UiElementDef.IsFromReferencedAssembly`（新记录字段，进值相等/哈希）区分来源，只有引用程序集控件的 `def.Problems` 在用点暴露，源项目控件仍落 EUI002（design/14 §14.9.1 v2 口径）；② **EUI026 声明处诊断仍无编译期出口**：扫描侧 problem 只进 `HiddenTags`/`def.Problems`/`catalog.Problems`，源项目控件的声明错误靠使用点 EUI002 兜底、引用程序集靠 D74 ① 暴露——声明处报错（属性/特性 span）需要生成器把源声明定位到语法，留后续切片 | design/14 §14.5.4/§14.9.1/§14.12.5 | ✅ C5 ① / G3 ②（原「开放」，2026-11-05 排入 G3 诊断出口补全） |
+| D74 | ✅ G3（2026-11-08，② 收敛）：① 使用点 EUI019/EUI020/EUI021 落地（C5）——`UiElementDef.IsFromReferencedAssembly` 区分来源，只有引用程序集控件的 `def.Problems` 在用点暴露，源项目控件仍落 EUI002/EUI006；`Ref`（EUI029）同切片落地。② 声明处出口落地：`UiMetadataProblem` 携带纯数据 `UiSourceLocation`，生成器注册目录级 `SourceOutput` 把源项目 problem 报在 C# 声明处（成员级取 `def.Problems`、类型级取 `catalog.Problems`）；标签解析失败按类别分流 EUI016（冲突）/EUI017/EUI018/EUI030/EUI031（不可用）/EUI001（未知）。EUI024 仍留后续切片。实现口径见 D81，`MetadataOutletTests` 14 例 | design/14 §14.5.4/§14.9.1/§14.12.5、spec/02 §12 D81 | ✅ C5 ① / ✅ G3 ② |
 | D75 | ✅ C6（解析口径两级）：自身插槽的解析——分析器按「目录显示名与 `.ui` 文件名短名匹配」投影自身 def（静态前端无符号信息）；生成器则用 code-behind **符号**直接沿基类链读 `[UiSlot]` 传给分析器/发射器作权威（code-behind 类在源码里不派生 `Component`——基类由生成注入，目录里不会有它的 def）。两级在正常房间结构下指向同一组插槽；目录匹配失败而符号可用时生成侧仍有效。与既有 `FindCodeBehind` 的近似-符号双口径同型 | §4.12.5 | ✅ C6 |
 | D76 | ✅ C6（契约补写）：基链同名**成员**的胜出规则原文未定。Roslyn 的 `GetAttributes()` 不把特性带进 override（与反射的 `Inherited=true` 语义不同），因此「按名字一律去重」会让 `public override Element? Header`（不写特性）把基类 `[UiSlot("Header")]`/`[UiParameter]` 静默丢掉；「不去重」又会把同一个 override 报成重复插槽（EUI028）。实现定为：**派生侧显式写了模板特性或 `[UiIgnore]` 才算覆盖**，否则基类声明继续生效；`[UiIgnore]` 在 override 上是基类同名声明的显式退出。已回写 design/14 §14.10.2（参数/插槽条目）与 spec/01 §4.15 | design/14 §14.10.2/§14.6.1 | ✅ C6 |
 | D77 | ✅ G3（契约补写 + 实现口径）：块布局透明的机制原文只写「不引入额外间距/尺寸约束」，design/09 的切片描述是「不再作为 StackPanel 参与布局」。实现选择**保留块为被父容器定位的 `StackPanelBase` 节点**，只把它的布局内边距取 0、间距取最近非透明布局祖先的 `Gap`，并让零尺寸透明块整体退出父容器的间距计数——而不是把条目摊平进父容器的子序列。理由：摊平会让块的 `FinalRect` 与子元素坐标系脱钩，`ElementPainter` 的偏移累加、`Element.PointFromRoot`/`HitTest`、`DamageTracker` 都得跟着改；保留节点则这四条路径一行不动，排布结果与摊平等价（`BlockLayoutTests` 10 例 + `TaskListEndToEndTests` 2 例钉住，含命中测试穿块回归）。同时补写三条原文未定的规则：① 块自身 `Gap`/`Padding` 属性值不参与布局；② 空块（含只含空块的嵌套块）不占间距槽；③ 空块仍 arrange 到零矩形，避免 `FinalRect` 残留上一轮位置而被命中/脏区读到。新增 `Element.IsLayoutTransparent`（无 `{Name}Property` 字段，不进模板表面，golden 快照不变）。G4 的 Grid/WrapPanel 需要各自的透明排布口径，届时另记 | spec/01 §4.10/§4.11、design/03 D16 | ✅ G3 |
 | D78 | ✅ G3（契约补写 + 实现）：`Adopt` 接管不迁移子组件原根队列里已入队的失效——所有权变更后该队列不再被排空，接管前的 `Invalidate()` 被静默丢弃（GalleryApp 空 Tasks 卡根因）；且 `Depth` 在接管时缓存，链长变化后残留旧深度，§2.4「同深度按入队顺序」可能把孙排在父前。实现：`Adopt` 按入队顺序 drain 子队列并重入新根（按待渲染标记合并）；`Depth` 改所有权链实时计算。契约补写 spec/03 §2.4/§2.7；`ComponentOwnershipTests` 5 例钉住（含接管前失效、孙随子迁移、父先于子、幂等不重复、合并） | spec/03 §2.4/§2.7 | ✅ G3 |
 | D79 | ✅ G3（契约补写 + 实现）：原文 §2.4 规则 9 只承诺行号、把列映射排到 G3。实测 Roslyn 4.9.2 增强型 `#line (sl, sc) - (el, ec)`：列平移 `sc−1` 只作用于紧接的一行，后续行行号递增、列按生成列；`end` 元组不参与单行诊断换算，但 start 必须严格早于 end，否则报 `CS8939` 且整段映射失效、错误落回 `.g.cs`。实现：`Emitter.Mapped` 统一发射 span 型指令，`sc` 按「生成缩进 + 用户 token 在生成行内的偏移」左移并钳制 ≥ 1（生成前缀长于源列时退化为行映射，行号仍精确），空 span/钳制后给 end 补 1 列宽度；`MappedToken` 从生成文本自动定位用户表达式偏移，35 个调用点全部由行号改为 `TextSpan`。同步补写 §2.4 规则 9/10 与 §11 等价口径（旧/新语法别名的生成文本改为剥离 `#line` 后比对）。`LineSpanMappingTests` 5 例（Roslyn 语义固化 3 例 + 生成指令合法且无 CS8939 + 靠右表达式列精确），`GeneratorContractTests` 3 处断言同步 | §2.4、§11 | ✅ G3 |
+| D80 | ✅ G3（实现口径补写）：§10 只说「诊断位置在 code-behind 声明」，未定载体。实现用纯数据 `UiSourceLocation`（路径 + span + 0 基行列）走逐文件 facts，`Report` 以 `Location.Create(path, span, lineSpan)` 重建外部文件位置（不把 `SyntaxTree`/`Location` 带进增量缓存）；保留名 = `__el/__cmp/__blk/__run/__bind/U/R` + 数字后缀，生成依赖成员白名单 = `Invalidate/Mount/Track/TrackContent/AddDisposable`，基类白名单 = 省略/`Component`/`EclipseUI.Component`/`global::EclipseUI.Component`；EUI045 报 Error 但不阻止生成输出，其它错误诊断仍短路。`CodeBehindConflictTests` 23 例钉住五类触发、位置、零停用码 | §10、§11 T16 | ✅ G3 |
+| D81 | ✅ G3（实现口径补写）：D74 ② 原文只说「声明处报错需要定位源声明语法」，未定载体/去重/码映射。实现：① `UiMetadataProblem` 增加可选纯数据 `UiSourceLocation`（成员符号 `Locations` 优先、类型声明兜底；引用程序集无 `IsInSource` 位置 → null），进 record 值相等/哈希；② 生成器新增目录级 `RegisterSourceOutput(catalogProvider)`，与逐文件管道解耦，同一条 problem 无论 `.ui` 数量只报一次，`Distinct()` 再去重 catalog/def 两处的重复项；③ 源项目控件的 EUI019/EUI020/EUI021 problem 按 §14.9.2 折叠为 EUI026，EUI026/EUI028/EUI031 保持原码；④ 诊断不阻断生成输出（与 EUI045 同口径），`Report` 对无 path 的内存语法树退化为 `Location.None`；⑤ 逐文件管道 `WithTrackingName("PerFileGeneration")`，增量断言不再混读所有 `SourceOutput` step；⑥ 标签码分流只改 `Analyzer.VisitElement` 的诊断码，消息与 span 不变。`MetadataOutletTests` 14 例 | design/14 §14.9.1/§14.9.2、spec/02 §11 | ✅ G3 |
 
 - 每项收敛必须同时删除对应的 v3 路径；不得两套模型并存。
-- 新增偏差必须登记编号（从 D80 起）并注明目标阶段；不得只改代码不改台账。
+- 新增偏差必须登记编号（从 D82 起）并注明目标阶段；不得只改代码不改台账。
 - 台账编号与 design/03 §3.5.4 保持一致；两边冲突以本文为准并回写 design/03。
 
 ## 13. 变更规则

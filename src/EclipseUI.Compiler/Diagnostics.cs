@@ -7,7 +7,26 @@ public enum DiagnosticSeverity
     Error,
 }
 
-public sealed record UiDiagnostic(string Code, string Message, DiagnosticSeverity Severity, TextSpan Span)
+/// <summary>
+/// 诊断位置可指向 code-behind 的 C# 源声明（spec/02 §10 的 EUI045），而非 .ui 文件。
+/// 纯数据记录：增量生成器的缓存边界不能持有 Roslyn Location/SyntaxTree。
+/// 行列是 0 基（与 Roslyn LinePosition 一致）。
+/// </summary>
+public sealed record UiSourceLocation(
+    string Path,
+    int Start,
+    int Length,
+    int StartLine,
+    int StartCharacter,
+    int EndLine,
+    int EndCharacter);
+
+public sealed record UiDiagnostic(
+    string Code,
+    string Message,
+    DiagnosticSeverity Severity,
+    TextSpan Span,
+    UiSourceLocation? Source = null)
 {
     public bool IsError => Severity == DiagnosticSeverity.Error;
 }
@@ -54,12 +73,17 @@ public static class UiDiagnostics
     public const string BindTargetInvalid = "EUI040";
     public const string LegacySyntax = "EUI043";
 
+    // D57（spec/02 §10）：code-behind 与生成成员冲突。编号此前只保留未分配，2026-11-08 落地。
+    public const string CodeBehindConflict = "EUI045";
+
     // 语法诊断
     public const string Syntax = "EUI100";
 
-    public static UiDiagnostic Error(string code, string message, TextSpan span)
-        => new UiDiagnostic(code, message, DiagnosticSeverity.Error, span);
+    public static UiDiagnostic Error(string code, string message, TextSpan span,
+        UiSourceLocation? source = null)
+        => new(code, message, DiagnosticSeverity.Error, span, source);
 
-    public static UiDiagnostic Warning(string code, string message, TextSpan span)
-        => new UiDiagnostic(code, message, DiagnosticSeverity.Warning, span);
+    public static UiDiagnostic Warning(string code, string message, TextSpan span,
+        UiSourceLocation? source = null)
+        => new(code, message, DiagnosticSeverity.Warning, span, source);
 }

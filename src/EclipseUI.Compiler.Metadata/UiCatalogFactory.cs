@@ -117,11 +117,8 @@ public static class UiCatalogFactory
                 {
                     if (IsStaticEventHost(type))
                     {
-                        problems.Add(new UiMetadataProblem(
-                            UiDiagnostics.MetadataDeclarationInvalid,
-                            $"'{Display(type)}' is a static host class declaring RoutedEvent fields; declare them on an Element-derived type",
-                            Display(type),
-                            null));
+                        problems.Add(Problem(UiDiagnostics.MetadataDeclarationInvalid, type, null,
+                            $"'{Display(type)}' is a static host class declaring RoutedEvent fields; declare them on an Element-derived type"));
                         continue;
                     }
 
@@ -866,7 +863,27 @@ public static class UiCatalogFactory
             m => SpecialTypeNames[m.Value]);
 
         private static UiMetadataProblem Problem(string code, INamedTypeSymbol declaringType, string? memberName, string message)
-            => new UiMetadataProblem(code, message, Display(declaringType), memberName);
+            => new UiMetadataProblem(code, message, Display(declaringType), memberName,
+                Locate(declaringType, memberName));
+
+        /// <summary>
+        /// D74 ②：声明处诊断的位置载体。成员优先（属性/方法/特性的标识符 span），否则退回类型声明；
+        /// 引用程序集符号没有 IsInSource 的 Location → null，它们仍只在使用点暴露（design/14 §14.9.2）。
+        /// 只存纯数据，不把 Location/SyntaxTree 带进增量缓存。
+        /// </summary>
+        private static UiSourceLocation? Locate(INamedTypeSymbol declaringType, string? memberName)
+        {
+            var target = (ISymbol)declaringType;
+            if (memberName is not null)
+                target = declaringType.GetMembers(memberName).FirstOrDefault() ?? target;
+            var location = target.Locations.FirstOrDefault(static l => l.IsInSource);
+            if (location is null) return null;
+            var line = location.GetLineSpan();
+            return new UiSourceLocation(
+                line.Path, location.SourceSpan.Start, location.SourceSpan.Length,
+                line.StartLinePosition.Line, line.StartLinePosition.Character,
+                line.EndLinePosition.Line, line.EndLinePosition.Character);
+        }
 
         private static IReadOnlyDictionary<string, T> Sorted<T>(Dictionary<string, T> source)
         {

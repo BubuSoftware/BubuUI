@@ -39,6 +39,11 @@ public sealed class TemplateGenerator : IIncrementalGenerator
         var catalogProvider = context.CompilationProvider
             .Select(static (compilation, _) => UiCatalogFactory.Build(compilation));
 
+        // D74 ②：目录级诊断出口（design/14 §14.9.1）。挂在 catalogProvider 而不是逐文件管道，
+        // 保证同一条元数据问题无论项目里有多少个 .ui 文件都只报一次。
+        context.RegisterSourceOutput(catalogProvider, static (spc, catalog) =>
+            ReportCatalogProblems(spc, catalog));
+
         // 逐文件语义事实（code-behind 表面 + 探针）：输入挂 Compilation 故每轮重建，但输出是值相等
         // record——无关改动下值不变，下游逐文件 SourceOutput 按值命中 Cached/Unchanged
         // （design/14 §14.10.3/§14.11.2 的验收口径）。不再 Collect 成批：单文件变化只重跑该文件。
@@ -46,7 +51,10 @@ public sealed class TemplateGenerator : IIncrementalGenerator
             .Select(static (pair, _) => (
                 Input: pair.Left.Left,
                 Catalog: pair.Left.Right,
-                Facts: ExtractFacts(pair.Left.Left, pair.Left.Right, pair.Right)));
+                Facts: ExtractFacts(pair.Left.Left, pair.Left.Right, pair.Right)))
+            // 命名节点让逐文件生成在 TrackedSteps 里可独立观测：D74 ② 的目录级诊断出口
+            // 是第二个 SourceOutput，不能把所有 "SourceOutput" 混成一组断言（§14.10.3）。
+            .WithTrackingName("PerFileGeneration");
         context.RegisterSourceOutput(perFile, static (spc, data) =>
             ExecuteFile(spc, data.Input, data.Catalog, data.Facts));
     }
@@ -75,6 +83,10 @@ public sealed class TemplateGenerator : IIncrementalGenerator
                     $"code-behind class '{className}' must be declared partial", UiSpan.Zero));
             }
         }
+
+        // D57/EUI045（spec/02 §10）：code-behind 与生成成员/基类成员冲突。
+        if (type is not null)
+            ProbeCodeBehindConflicts(type, codeBehindDiags);
 
         // 自身组件（spec/02 §4.12.5）：code-behind 符号直接派生插槽表——目录里没有
         // code-behind 类的 def（基类由生成注入，源码不派生 Component），这是唯一权威来源。
@@ -134,7 +146,9 @@ public sealed class TemplateGenerator : IIncrementalGenerator
         foreach (var diag in diags)
         {
             Report(spc, input.Path, sourceText, diag);
-            if (diag.IsError) hasErrors = true;
+            // EUI045 只报冲突，不阻止生成器输出（spec/02 §10：生成器不改名、仍按本文生成，
+            // 错误诊断本身已阻断构建）。其它错误诊断维持「不输出」的既有口径。
+            if (diag.IsError && diag.Code != UiDiagnostics.CodeBehindConflict) hasErrors = true;
         }
         if (hasErrors) return;
 
@@ -145,6 +159,36 @@ public sealed class TemplateGenerator : IIncrementalGenerator
 
         spc.AddSource($"{className}.{StableHash(input.Path)}.g.cs", code);
     }
+
+    /// <summary>
+    /// D74 ②：源项目元数据声明问题的编译期出口（design/14 §14.5.4/§14.9.2）。
+    /// 只有带源声明位置的 problem 才在这里报——引用程序集没有语法位置，
+    /// 仍由 D74 ① 的使用点 EUI019/EUI020/EUI021 暴露。诊断不阻断 .ui 的生成输出，
+    /// 与 EUI045 口径一致：Error 本身已阻断构建，生成器不改目录形状。
+    /// </summary>
+    private static void ReportCatalogProblems(SourceProductionContext spc, UiCatalog catalog)
+    {
+        // 类型级问题进 catalog.Problems（静态宿主、保留标签），成员级问题进
+        // UiElementDef.Problems（属性/事件/内容/参数）——两处都要有出口。
+        var problems = catalog.Problems
+            .Concat(catalog.Elements.SelectMany(static element => element.Problems))
+            .Distinct();
+        foreach (var problem in problems)
+        {
+            if (problem.Source is null) continue;
+            // 源项目控件的属性/事件/内容元数据问题统一归 EUI026（design/14 §14.9.2）；
+            // EUI026/EUI028/EUI031 本就是声明处/目录侧的码，保持原样。
+            var code = problem.Code is UiDiagnostics.PropertyNotBindable
+                    or UiDiagnostics.EventFieldMissing
+                    or UiDiagnostics.ContentTargetInvalid
+                ? UiDiagnostics.MetadataDeclarationInvalid
+                : problem.Code;
+            Report(spc, "", EmptySourceText,
+                UiDiagnostics.Error(code, problem.Message, UiSpan.Zero, problem.Source));
+        }
+    }
+
+    private static readonly SourceText EmptySourceText = SourceText.From("");
 
     private static string StableHash(string path)
     {
@@ -161,6 +205,76 @@ public sealed class TemplateGenerator : IIncrementalGenerator
             if (symbol is INamedTypeSymbol type && type.TypeKind == TypeKind.Class)
                 return type;
         return null;
+    }
+
+    /// <summary>
+    /// D57/EUI045（spec/02 §10）：code-behind 与生成成员冲突。生成器不改名、仍按契约输出；
+    /// 诊断落在 code-behind 的源声明，错误诊断本身阻断构建。
+    /// 五类触发：Build/Render 声明、生成成员保留名、非 Component 基类、隐藏生成代码依赖成员。
+    /// </summary>
+    private static void ProbeCodeBehindConflicts(INamedTypeSymbol type, List<UiDiagnostic> diags)
+    {
+        foreach (var member in type.GetMembers())
+        {
+            var name = member.Name;
+            string? reason = null;
+            if (member is IMethodSymbol { MethodKind: MethodKind.Ordinary } && name is "Build" or "Render")
+                reason = $"code-behind must not declare '{name}()'; the generator emits it";
+            else if (IsGeneratedMemberName(name))
+                reason = $"member '{name}' collides with a generated member name";
+            else if (GeneratedDependencyNames.Contains(name))
+                reason = $"member '{name}' hides a Component member used by generated code";
+            if (reason is not null)
+                diags.Add(Conflict(reason, member.Locations.FirstOrDefault(static l => l.IsInSource)));
+        }
+
+        foreach (var reference in type.DeclaringSyntaxReferences)
+        {
+            if (reference.GetSyntax() is not TypeDeclarationSyntax declaration || declaration.BaseList is null)
+                continue;
+            foreach (var baseType in declaration.BaseList.Types)
+            {
+                var text = baseType.Type.ToString();
+                if (!IsComponentBase(text))
+                    diags.Add(Conflict(
+                        $"code-behind base '{text}' must be omitted or exactly Component",
+                        baseType.GetLocation()));
+            }
+        }
+    }
+
+    private static readonly HashSet<string> GeneratedDependencyNames = new(StringComparer.Ordinal)
+    {
+        "Invalidate", "Mount", "Track", "TrackContent", "AddDisposable",
+    };
+
+    private static bool IsComponentBase(string text) => text is
+        "Component" or "EclipseUI.Component" or "global::EclipseUI.Component";
+
+    /// <summary>__el{N}/__cmp{N}/__blk{N}/__run{N}/__bind{N}/U{N}/R{N} 是生成成员保留名。</summary>
+    private static bool IsGeneratedMemberName(string name)
+    {
+        string[] prefixes = { "__el", "__cmp", "__blk", "__run", "__bind", "U", "R" };
+        foreach (var prefix in prefixes)
+            if (name.StartsWith(prefix, StringComparison.Ordinal) &&
+                name.Length > prefix.Length &&
+                name.Skip(prefix.Length).All(char.IsDigit))
+                return true;
+        return false;
+    }
+
+    private static UiDiagnostic Conflict(string message, Location? location)
+    {
+        UiSourceLocation? source = null;
+        if (location is { IsInSource: true })
+        {
+            var line = location.GetLineSpan();
+            source = new UiSourceLocation(
+                line.Path, location.SourceSpan.Start, location.SourceSpan.Length,
+                line.StartLinePosition.Line, line.StartLinePosition.Character,
+                line.EndLinePosition.Line, line.EndLinePosition.Character);
+        }
+        return UiDiagnostics.Error(UiDiagnostics.CodeBehindConflict, message, UiSpan.Zero, source);
     }
 
     /// <summary>
@@ -574,8 +688,23 @@ public sealed class TemplateGenerator : IIncrementalGenerator
 
     private static void Report(SourceProductionContext spc, string path, SourceText text, UiDiagnostic diag)
     {
-        var span = new MsTextSpan(diag.Span.Start, Math.Max(0, diag.Span.Length));
-        var location = Location.Create(path, span, text.Lines.GetLinePositionSpan(span));
+        Location location;
+        if (diag.Source is { } source)
+        {
+            // C# 源声明：用纯数据重建外部文件位置，不把 SyntaxTree 带进增量缓存。
+            // 内存编译的语法树没有 path（测试桩），Location.Create 不接受空路径，退回无位置诊断。
+            var sourceSpan = new MsTextSpan(source.Start, Math.Max(0, source.Length));
+            location = source.Path.Length == 0
+                ? Location.None
+                : Location.Create(source.Path, sourceSpan, new LinePositionSpan(
+                    new LinePosition(source.StartLine, source.StartCharacter),
+                    new LinePosition(source.EndLine, source.EndCharacter)));
+        }
+        else
+        {
+            var span = new MsTextSpan(diag.Span.Start, Math.Max(0, diag.Span.Length));
+            location = Location.Create(path, span, text.Lines.GetLinePositionSpan(span));
+        }
         var descriptor = new DiagnosticDescriptor(
             diag.Code, diag.Code, "{0}", "EclipseUI",
             diag.Severity switch

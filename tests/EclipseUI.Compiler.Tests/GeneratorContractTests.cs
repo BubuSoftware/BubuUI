@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
+using EclipseUI.Compiler;
 using EclipseUI.Compiler.Generator;
 using EclipseUI.Compiler.Metadata;
 using Microsoft.CodeAnalysis;
@@ -78,6 +79,17 @@ public class GeneratorContractTests
     private static string WithoutLineDirectives(string code) =>
         string.Join("\n", code.Replace("\r\n", "\n").Split('\n')
             .Where(line => !line.StartsWith("#line", StringComparison.Ordinal)));
+
+    /// <summary>
+    /// D74 ② 后生成器有两个 SourceOutput：逐文件生成与目录级诊断出口（后者不产出生成文件）。
+    /// 逐文件管道用 WithTrackingName("PerFileGeneration") 命名，增量断言只读这个命名节点，
+    /// 不再把所有 "SourceOutput" 混成一组（§14.10.3）。
+    /// </summary>
+    private static List<IncrementalStepRunReason> GeneratedSourceReasons(GeneratorRunResult result) =>
+        result.TrackedSteps["PerFileGeneration"]
+            .SelectMany(step => step.Outputs)
+            .Select(o => o.Reason)
+            .ToList();
 
     [Fact]
     public void Generation_IsDeterministic_WithStableHint()
@@ -731,7 +743,7 @@ public class GeneratorContractTests
         Assert.Contains("Compilation", second.TrackedSteps.Keys);
         Assert.Contains("AdditionalTexts", second.TrackedSteps.Keys);
         Assert.Contains("SourceOutput", second.TrackedSteps.Keys);
-        var reason = second.TrackedSteps["SourceOutput"].SelectMany(step => step.Outputs).Select(o => o.Reason).Single();
+        var reason = Assert.Single(GeneratedSourceReasons(second));
         Assert.True(reason is IncrementalStepRunReason.Modified or IncrementalStepRunReason.New, $"reason={reason}");
     }
 
@@ -763,7 +775,7 @@ public class GeneratorContractTests
         Assert.Equal(
             first.GeneratedSources.OrderBy(s => s.HintName).Select(s => s.SourceText.ToString()),
             second.GeneratedSources.OrderBy(s => s.HintName).Select(s => s.SourceText.ToString()));
-        var reasons = second.TrackedSteps["SourceOutput"].SelectMany(step => step.Outputs).Select(o => o.Reason).ToList();
+        var reasons = GeneratedSourceReasons(second);
         Assert.Equal(2, reasons.Count);
         Assert.All(reasons, r => Assert.True(
             r is IncrementalStepRunReason.Cached or IncrementalStepRunReason.Unchanged, $"reason={r}"));
@@ -790,7 +802,7 @@ public class GeneratorContractTests
         var second = driver.RunGenerators(compilation).GetRunResult().Results.Single();
 
         Assert.Empty(second.Diagnostics);
-        var reasons = second.TrackedSteps["SourceOutput"].SelectMany(step => step.Outputs).Select(o => o.Reason).ToList();
+        var reasons = GeneratedSourceReasons(second);
         Assert.Equal(2, reasons.Count);
         Assert.Single(reasons, r => r is IncrementalStepRunReason.Cached or IncrementalStepRunReason.Unchanged);
         Assert.Single(reasons, r => r is IncrementalStepRunReason.Modified or IncrementalStepRunReason.New);

@@ -93,12 +93,17 @@ public sealed record UiSlotDef(
     string ClrTypeDisplayName,
     UiSlotCardinality Cardinality);
 
-/// <summary>目录构建不抛异常：声明不合规的候选进这里（design/14 §14.5.4）。</summary>
+/// <summary>
+/// 目录构建不抛异常：声明不合规的候选进这里（design/14 §14.5.4）。
+/// D74 ②：Source 是源项目符号的声明位置（纯数据，可跨增量缓存边界）；
+/// 引用程序集符号没有源位置、保持 null，它们只在使用点暴露（design/14 §14.9.2）。
+/// </summary>
 public sealed record UiMetadataProblem(
     string Code,
     string Message,
     string DeclaringTypeName,
-    string? MemberName);
+    string? MemberName,
+    UiSourceLocation? Source = null);
 
 /// <summary>已进入扫描但不可用的标签，用于使用点诊断与补全过滤。</summary>
 public sealed record UiHiddenTag(

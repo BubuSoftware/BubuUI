@@ -13,10 +13,11 @@
 - 设计文档 01–15（痛点、架构、模板引擎、运行时、布局/渲染/输入、IDE、工具链、里程碑、
   各 G 阶段切片记录、控件契约、状态与反应式）。
 - `.ui` 前端：Lexer / Parser / AST / 字面量转换与建议 / 诊断。已实现的出口：EUI001–EUI013/EUI015、
-  EUI019/020/021/022/023/025/027/029/031、EUI033/037/040/043、EUI100。
+  EUI016/017/018/019/020/021/022/023/025/026/027/028/029/030/031、EUI033/037/040/043/045、EUI100。
   `EclipseUI.Compiler.Metadata` 的目录构建另产出 EUI017/018/019/021/026/028/030 的**元数据问题**
-  （`UiMetadataProblem`，不是 `.ui` 上的诊断）；其中 EUI016/017/018/026/028/030 仍无编译期出口，
-  EUI024（委托签名匹配）未实现 —— 台账 D74 ②。
+  （`UiMetadataProblem`，不是 `.ui` 上的诊断）；✅ 2026-11-08（D74 ②/D81）：源项目问题在 C# 声明处报出、
+  标签使用点分流 EUI016/017/018/030，引用程序集仍只在使用点暴露。
+  EUI024（委托签名匹配）未实现，是 G3 唯一剩余的诊断出口。
 - Roslyn 增量源生成器：code-behind 发现、模板解析与动态点生成、`@foreach` item 类型推断、代码发射、`#line` 映射。
 - 运行时：`Signal<T>`（遗留原语，不参与模板反应式）、`StyledProperty<T>`、元素树、measure/arrange、路由事件、`@if`/`@foreach` 协调器、`Component`、无头宿主。
 - 输入/焦点：HitTest、指针冒泡、按下捕获、Tab 遍历、空格/回车激活；`InputRouter` 无头/窗口共用。
@@ -28,7 +29,7 @@
   `<Slot>` + `<ContentSlot>`（见 [14 §14.12](./14-control-template-contract.md)）。
 - 反应式 S1–S3 ✅：`Invalidate`/`Render`/`U{N}`/`R{N}`、块 `Refresh` 与 Key 复用、`UiBinding` 双向
   （控件侧与组件侧），旧语法 `:bind`/`:value` 报 EUI043 Warning。
-- 测试：433 个测试全绿（207 无头 + 165 编译器 + 61 渲染）；编译器测试用快照钉住 C2 变宽后的
+- 测试：470 个测试全绿（207 无头 + 202 编译器 + 61 渲染）；编译器测试用快照钉住 C2 变宽后的
   模板表面（17 属性项 / 9 个事件名），样例 `.ui` 已用 `@bind-P` 新语法。
 
 **尚不具备**
@@ -50,7 +51,7 @@
 
 | 视角 | 完成度 | 说明 |
 |---|---:|---|
-| 托管核心（编译器前端 + 生成器 + 运行时 + 无头测试） | **80–85%** | 主链路与组件契约已通（S1–S3、C1–C6、块布局透明、按文件增量、`#line` 列映射，433 例全绿）；剩 S4/S5、诊断出口（D57/D74 ②）、属性存储去装箱、性能基准。 |
+| 托管核心（编译器前端 + 生成器 + 运行时 + 无头测试） | **85–90%** | 主链路与组件契约已通（S1–S3、C1–C6、块布局透明、按文件增量、`#line` 列映射、`EUI045` 冲突诊断、D74 ② 诊断出口，470 例全绿）；剩 S4/S5、EUI024 签名匹配、属性存储去装箱、性能基准。 |
 | 0.1 alpha（可交付的 2D 桌面框架） | **55–60%** | 渲染与 Win32 宿主已打通到窗口像素，元素树→display list→上屏、输入路由与 damage v0 可用（G1 门「有条件 Go」，GPU 200 元素 @1280×800 实测 6.36 ms/帧）；仍缺样式/主题、TextBox/ListBox/Grid/ScrollViewer 控件集、layer/合成器。 |
 | 完整设计愿景（含 IDE、3D、多平台、DevTools、1.0 硬化） | **12–17%** | IDE、3D、平台扩展、无障碍与稳定性尚未开始；编译器线的完成度是本次上调的唯一来源。 |
 
@@ -59,7 +60,7 @@
 | 领域 | 状态 | 到 0.1 还差什么 |
 |---|---|---|
 | 模板前端 | 🟢 可用 MVP | `@switch`、附加属性、泛型标签、trivia/pretty-printer、表达式全量 Roslyn 语义分析 |
-| 源生成器 | 🟢 可用 MVP | 诊断出口、组件作者面样例（按文件增量 ✅ 2026-11-08、`#line` 列映射 ✅ 2026-11-08/D79） |
+| 源生成器 | 🟢 可用 MVP | EUI024 签名匹配、组件作者面样例（按文件增量 ✅ 2026-11-08、`#line` 列映射 ✅ 2026-11-08/D79、`EUI045` ✅ 2026-11-08/D57、诊断出口 ✅ 2026-11-08/D74 ②） |
 | 运行时/属性 | 🟢 可用基础 | 属性存储去装箱、生命周期 Unmount、样式优先级、性能基准 |
 | 布局 | 🟡 部分 | Grid/Wrap/Scroll、约束与裁剪、虚拟化（块布局透明化 ✅ 2026-11-05，D77） |
 | 文本 | 🟡 单行 shaping 已接入 | 断行、bidi、fallback、emoji、glyph 缓存、display list 集成 |
@@ -261,8 +262,26 @@ Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-s
   GeneratorContract C6 13 + CatalogScanner C6 15），**409 例全绿（158/190/61）**；
   台账新增 D75（解析两级口径）/D76（基链同名成员胜出规则）；
   落地记录见 [14 §14.12.6](./14-control-template-contract.md)。附加属性与泛型标签实拆留 G4。
-- 按文件增量生成（✅ 2026-11-08）；`#line` 列映射（✅ 2026-11-08，D79）；诊断出口补全
-  EUI016/017/018/024/026/028/030（D74 ②、D57，仍开放）。
+- 按文件增量生成（✅ 2026-11-08）；`#line` 列映射（✅ 2026-11-08，D79）；`EUI045` code-behind
+  冲突诊断（✅ 2026-11-08，D57/D80）；诊断出口补全（✅ 2026-11-08，D74 ②/D81；
+  余 EUI024 事件处理器签名匹配，另片）。
+  —— ✅ **诊断出口补全切片（2026-11-08，G3 小片，D74 ②/D81）**：`UiMetadataProblem` 增加
+  纯数据 `UiSourceLocation`（成员符号声明优先、类型声明兜底），生成器注册目录级
+  `RegisterSourceOutput(catalogProvider)` 消费 `catalog.Problems`（类型级）与
+  `UiElementDef.Problems`（成员级），把源项目元数据问题报在 C# 声明处；引用程序集无源位置，
+  仍走 D74 ① 使用点。源项目 EUI019/020/021 problem 按 §14.9.2 折叠为 EUI026，
+  EUI026/EUI028/EUI031 保持原码。标签使用点按类别分流 EUI016（冲突）/EUI017/EUI018/EUI030/EUI031
+  （不可用）/EUI001（未知）。诊断不阻断生成输出；逐文件管道 `WithTrackingName("PerFileGeneration")`
+  让增量断言只读逐文件 step。`MetadataOutletTests` 14 例。
+  **470 例全绿（207/202/61）**；台账 D74 ② 关闭 / 新增 D81，余 EUI024。
+  —— ✅ **`EUI045` 冲突诊断切片（2026-11-08，G3 小片，D57/D80）**：常量分配 +
+  `TemplateGenerator.ProbeCodeBehindConflicts` 覆盖 spec/02 §10 五类触发（`Build`/`Render`、
+  生成保留名 `__el/__cmp/__blk/__run/__bind/U/R` + 数字、非 `Component` 基类、隐藏
+  `Invalidate/Mount/Track/TrackContent/AddDisposable`）；诊断位置用纯数据 `UiSourceLocation`
+  （路径 + span + 0 基行列）走增量 facts，`Report` 以 `Location.Create` 重建外部文件位置，
+  不把 `SyntaxTree` 带进缓存；EUI045 报 Error 但不阻止生成输出，其它错误诊断仍短路。
+  `CodeBehindConflictTests` 23 例（五类触发、诊断落在 code-behind 行、仍生成源码、停用码零出现）。
+  **该切片 456 例全绿（207/188/61）**；口径正本 spec/02 §10，台账 D57 关闭 / 新增 D80。
   —— ✅ **按文件增量切片（2026-11-08，G3 小片）**：管道根拆为 `AdditionalTexts → UiFileInput` 与
   `Compilation → UiCatalog` 两条，逐文件 `Combine` + `Select` 出值相等 `UiFileFacts`（code-behind 表面 + 探针事实）
   后逐文件 `RegisterSourceOutput`；目录/facts 每轮重建但下游按值命中缓存，单个 `.ui` 变化只重跑该文件。
@@ -299,8 +318,9 @@ Counter/TaskList 真窗口可交互（[12 G2 第二切片](./12-g2-interactive-s
   手写目录已删除（D64），符号派生与 `StyledPropertyRegistry`/事件字段一致性测试通过。
 - 控件/组件标签契约（[14](./14-control-template-contract.md)）C1–C6 落地：自定义控件与组件可写入 `.ui`，
   元数据错误在声明处或使用点报 EUI016–EUI031、EUI033/EUI037/EUI040/EUI043/EUI045（停用码零出现）。
-  —— 🟡 **部分**：C1–C6 切片均已收敛，但 EUI016/017/018/024/026/028/030 无编译期出口、EUI045 未实现
-  （D57/D74 ②，见上文「诊断出口补全」），本条出口尚未达成。
+  —— ✅ **已达成**：C1–C6 切片收敛，`EUI045` 已实现（✅ D57/D80，`CodeBehindConflictTests` 23 例），
+  D74 ② 把 EUI016/017/018/026/028/030 接上编译期出口（✅ D81，`MetadataOutletTests` 14 例）；
+  仅 EUI024 事件处理器签名匹配仍留后续切片，不影响本条的码表覆盖口径。
 - 状态与反应式 S1–S3 出口按 [spec/03 §13.1](../spec/03-reactivity-and-binding.md#131-阶段定义) 执行：`dotnet test` 全绿、
   失效合并、无泄漏、普通状态驱动的 Gallery/TaskList、无 `SetValue` 生成。
 - 生成器增量口径按 14.10.3 实测确立：目录每轮重建（14 程序集 / 688 类型全扫 45.1 ms），

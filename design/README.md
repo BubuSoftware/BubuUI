@@ -6,7 +6,8 @@
 > 模板语义已切换为 **v4 失效重算模型**（普通 CLR 状态 + 组件级 `Invalidate`/`Render` + 保留元素树 + 块 `Refresh`，
 > 不做依赖订阅）：[spec/01](../spec/01-template-syntax.md) v2、[spec/02](../spec/02-generated-code-contract.md) v2、
 > [spec/03](../spec/03-reactivity-and-binding.md) v1；反应式 **S1–S3 已落地**、控件/组件契约 **C1–C6 已落地**、
-> G3 块布局透明、接管失效迁移、按文件增量、`#line` 列映射均已落地（433 个测试全绿）；
+> G3 块布局透明、接管失效迁移、按文件增量、`#line` 列映射、`EUI045` code-behind 冲突诊断、
+> 诊断出口补全均已落地（470 个测试全绿；余 EUI024 签名匹配）；
 > 控件/模板元数据见 14（v4 换轨），15 已停止 · 日期：2026-11-08
 >
 > **规范正本已迁至 [spec/](../spec/README.md)**：`.ui` 语法以 [spec/01](../spec/01-template-syntax.md) 为准，
@@ -19,7 +20,7 @@
 |---|------|------|
 | 1 | [Blazonia 痛点分析](./01-pain-points.md) | 现状架构概述与 8 条痛点（含代码位置证据） |
 | 2 | [总体架构](./02-architecture.md) | 分层架构、单向管线、与 Blazor 的根本分岔 |
-| 3 | [模板引擎（语言规范）](./03-template-engine.md) | 词法/句法/语义、字面量、诊断映射、编译管线与逃生舱；v3 历史，含实现偏差台账 D1–D41（§3.5.3）、v4 台账 D42–D79（§3.5.4）与附录 A |
+| 3 | [模板引擎（语言规范）](./03-template-engine.md) | 词法/句法/语义、字面量、诊断映射、编译管线与逃生舱；v3 历史，含实现偏差台账 D1–D41（§3.5.3）、v4 台账 D42–D81（§3.5.4）与附录 A |
 | 4 | [运行时与元素系统](./04-runtime-and-elements.md) | 组件实例模型、元素树、属性引擎、事件、组件注册表 |
 | 5 | [布局、渲染与输入](./05-layout-rendering-input.md) | measure/arrange、合成器、hit test / 焦点 / IME |
 | 6 | [IDE 支持](./06-ide-support.md) | VS Code + Rider 第一优先；LSP + Roslyn 投影 |

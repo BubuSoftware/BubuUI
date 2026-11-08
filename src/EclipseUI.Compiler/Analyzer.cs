@@ -354,7 +354,16 @@ public static class TemplateAnalyzer
         var resolution = catalog.Resolve(element.Tag);
         if (resolution.Kind != UiTagResolutionKind.Found)
         {
-            diags.Add(UiDiagnostics.Error(UiDiagnostics.UnknownTag,
+            // D74 ②：标签解析失败的专属出口（design/14 §14.9.1）。冲突报 EUI016；
+            // 不可用标签按目录给出的 ReasonCode 报 EUI017/EUI018/EUI030/EUI031；
+            // 只有真正未知的标签才落 EUI001，消息与 span 保持原样。
+            var code = resolution.Kind switch
+            {
+                UiTagResolutionKind.Ambiguous => UiDiagnostics.TagConflict,
+                UiTagResolutionKind.Unavailable => resolution.Hidden!.ReasonCode,
+                _ => UiDiagnostics.UnknownTag,
+            };
+            diags.Add(UiDiagnostics.Error(code,
                 UnknownTagMessage(element.Tag, resolution, catalog), element.TagSpan));
             element.ResolvedDef = null;
             foreach (var child in element.Children)

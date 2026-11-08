@@ -419,7 +419,10 @@ public sealed class UiCatalog
 
 目录构建不抛异常。无法满足声明规则的候选（缺字段、目标缺失、特性值未知等）进入 `Problems`：
 
-- 源项目中的控件：在声明处报 EUI026（属性/特性 span 可用时）。
+- 源项目中的控件：在声明处报 EUI026（属性/特性 span 可用时）。✅ 2026-11-08（D74 ②/D81）：
+  `UiMetadataProblem` 携带纯数据 `UiSourceLocation`，生成器的目录级出口同时消费
+  `catalog.Problems`（类型级）与 `def.Problems`（成员级），成员符号声明优先、类型声明兜底；
+  源项目 EUI019/020/021 problem 折叠为 EUI026，EUI026/EUI028/EUI031 保持原码。
 - 引用程序集中的控件：无法定位源码，按使用点报 EUI019/EUI020/EUI021，消息带完整类型名。
 - 特性枚举值来自更新版本运行时而当前生成器不认识：降级为 `None` + 问题，不崩溃（前向兼容）。
 - 已进入目录但声明非法的三类（v2 补充）：事件字段声明在非元素类型/静态宿主类上、
@@ -711,6 +714,21 @@ v3 的 EUI014/EUI032/EUI034–EUI036/EUI038–EUI039/EUI041–EUI042/EUI044 已�
 | EUI043 | 旧语法 `:bind`/`:value` 弃用 | 属性名 | Warning |
 | EUI044 | **停用**：v3 非可观察组件参数不刷新；v4 所有参数推送 + `Invalidate()` | — | — |
 | EUI045 | code-behind 与生成代码冲突（`Build`/`Render`/`U{N}`/`__` 字段/基类/隐藏 `Invalidate`） | code-behind 声明 | Error |
+
+**EUI045 已落地（2026-11-08，D57/D80）**：`TemplateGenerator.ProbeCodeBehindConflicts` 覆盖
+spec/02 §10 五类触发，诊断用纯数据 `UiSourceLocation` 定位到 code-behind 源声明，
+生成器不改名也不跳过输出；`CodeBehindConflictTests` 23 例。口径正本在
+[spec/02 §10](../spec/02-generated-code-contract.md#10-eui045-与-code-behind-边界)，
+台账见 [spec/02 §12 D80](../spec/02-generated-code-contract.md#12-实现偏差台账-d42d81)。
+**D74 ② 已落地（2026-11-08，D81）**：`UiMetadataProblem` 携带纯数据 `UiSourceLocation`
+（成员符号声明优先、类型声明兜底；引用程序集无源位置 → null），生成器注册目录级
+`RegisterSourceOutput(catalogProvider)` 把源项目 problem 报在 C# 声明处，成员级取
+`def.Problems`、类型级取 `catalog.Problems`，与逐文件管道解耦、每条只报一次；
+源项目控件的 EUI019/EUI020/EUI021 problem 按 §14.9.2 折叠为 EUI026，EUI026/EUI028/EUI031 保持原码。
+标签使用点按类别分流：冲突 → EUI016，不可用按 `HiddenTag.ReasonCode` → EUI017/EUI018/EUI030/EUI031，
+只有真正未知才落 EUI001。`MetadataOutletTests` 14 例；口径正本见
+[spec/02 §12 D81](../spec/02-generated-code-contract.md#12-实现偏差台账-d42d81)。
+EUI024 事件处理器签名匹配仍开放（后续切片）。
 
 ### 14.9.2 责任划分
 
@@ -1044,7 +1062,7 @@ Roslyn 4.9.2 的公开 API 没有这个成员（公开的是 `IModuleSymbol.Refe
 | EUI021 使用点 | 内容被降级为 None 且 def 带 `ContentTargetInvalid` 问题（引用程序集）时，用点 children 接管既有 EUI006 指引 → **EUI021**；源项目控件保留 EUI006 指引不变 |
 | 测试 | `C5UseSiteTests`（Headless 15 例：Ref 合成标识符/字面量/成员访问/裸 token（EUI100×2+EUI029）/重复/`@bind-Ref`；引用程序集 EUI019/EUI020/EUI021 + 源项目对照（仍 EUI002/EUI006）+ 自闭合不触发）+ `GeneratorContractTests` 12 例（Ref 控件/组件生成形态、缺失/类型/readonly/静态探针、非标识符/字面量 EUI029、**真实 Emit 引用程序集**端到端 EUI019/EUI020/EUI021 与干净不触发）|
 
-**范围说明（C5 后仍开放）**：EUI026 声明处诊断仍**未消费**（目录 problem 只进 `HiddenTags`/`def.Problems`，源项目控件的声明错误靠使用点 EUI002 兜底；`catalog.Problems`/`StaticEventHost` 诊断至今没有编译期出口——留作后续切片或 D74 登记）；Roslyn tokenizer 已落地（2026-11-05：`@foreach` 头与事件委托形态判定从正则换成解析/深度感知扫描；EUI024 签名匹配另片）；EUI024 处理器签名匹配、G4 样式不变（插槽项已由 §14.12.6 的 C6 关闭）。
+**范围说明（C5 后仍开放）**：EUI026 声明处诊断在 D74 ② 之前确实未消费（目录 problem 只进 `HiddenTags`/`def.Problems`/`catalog.Problems`），**2026-11-08 已由 D74 ②/D81 消费**（见 §14.9.1 后说明）；Roslyn tokenizer 已落地（2026-11-05：`@foreach` 头与事件委托形态判定从正则换成解析/深度感知扫描；EUI024 签名匹配另片）；EUI024 处理器签名匹配、G4 样式不变（插槽项已由 §14.12.6 的 C6 关闭）。
 
 ### 14.12.6 C6 落地记录（2026-11-05）
 
@@ -1064,7 +1082,7 @@ Roslyn 4.9.2 的公开 API 没有这个成员（公开的是 `IModuleSymbol.Refe
 附加属性（`Grid.Row`，EUI031）与泛型标签（`DataGrid<Order>`，契约 EUI030、当前 `EUI100`，D5）仍留 G4；
 插槽转发（把收到的槽再传给下一层，`<Slot>` 内 `<ContentSlot>`）不支持 → EUI022；
 槽内容随接收方 `TrackContent` 释放、build-once 不随父渲染重算（§14.6.6 口径不变）；
-EUI026 声明处诊断（D74 ②）与 EUI024 处理器签名匹配仍开放。
+EUI026 声明处诊断（D74 ②）已落地（2026-11-08，D81）；EUI024 处理器签名匹配仍开放。
 
 ## 14.13 风险与开放问题
 
