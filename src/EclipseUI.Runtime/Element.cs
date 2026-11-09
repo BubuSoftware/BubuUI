@@ -109,6 +109,7 @@ public abstract class Element
     private bool _isHovered;
     private bool _isPressed;
     private bool _isFocused;
+    private bool _isEnabled = true;
     private Dictionary<RoutedEvent, List<Action<RoutedEventArgs>>>? _handlers;
 
     public Element? Parent => _parent;
@@ -245,11 +246,14 @@ public abstract class Element
     /// 伪类状态掩码（D102，CSS 伪类对应物）：<see cref="IsHovered"/>/<see cref="IsPressed"/>/
     /// <see cref="IsFocused"/> 三位的合成，供样式匹配与绘制段键使用。变化即失效：
     /// 渲染重算 + class 层样式重应用（伪类变体按当前状态重选）。
+    /// E3：<see cref="PseudoStates.Disabled"/> 位在此合成（**有效值**——沿祖先链继承，
+    /// 父禁用则子也禁用），使变体匹配与段键对其零特殊处理。
     /// </summary>
     public PseudoStates PseudoStates =>
         (_isHovered ? PseudoStates.Hover : PseudoStates.None) |
         (_isPressed ? PseudoStates.Pressed : PseudoStates.None) |
-        (_isFocused ? PseudoStates.Focused : PseudoStates.None);
+        (_isFocused ? PseudoStates.Focused : PseudoStates.None) |
+        (IsEffectiveEnabled ? PseudoStates.None : PseudoStates.Disabled);
 
     /// <summary>指针悬停（CSS :hover）。由 <see cref="InputRouter"/> 在命中目标变化时维护。</summary>
     public bool IsHovered
@@ -270,6 +274,41 @@ public abstract class Element
     {
         get => _isFocused;
         internal set => SetPseudoState(PseudoStates.Focused, value, ref _isFocused);
+    }
+
+    /// <summary>
+    /// 自身启用声明值（E3，默认 true）。**有效值沿祖先链继承**——任一祖先为 false 则
+    /// 后代全部有效禁用（桌面标准语义：禁用面板 = 面板内全部控件禁用）。
+    /// 变化传播：有效状态变化影响整棵子树的 <see cref="PseudoStates.Disabled"/> 位，
+    /// 逐后代渲染失效 + class 层重应用（变体按新掩码重选，段键含状态位自动重建）。
+    /// </summary>
+    public bool IsEnabled
+    {
+        get => _isEnabled;
+        set
+        {
+            if (_isEnabled == value) return;
+            _isEnabled = value;
+            InvalidateRender();
+            ReapplyStyles();
+            foreach (var descendant in Descendants())
+            {
+                descendant.InvalidateRender();
+                descendant.ReapplyStyles();
+            }
+        }
+    }
+
+    /// <summary>有效启用状态：<see cref="IsEnabled"/> 沿祖先链的合取（E3）。</summary>
+    public bool IsEffectiveEnabled
+    {
+        get
+        {
+            for (Element? node = this; node is not null; node = node._parent)
+                if (!node._isEnabled)
+                    return false;
+            return true;
+        }
     }
 
     private void SetPseudoState(PseudoStates state, bool value, ref bool field)

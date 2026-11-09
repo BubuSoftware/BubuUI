@@ -17,11 +17,12 @@ public sealed class FocusManager
     public Element? Focused { get; private set; }
 
     public IReadOnlyList<Element> Focusables
-        => _root.Descendants().Where(e => e.IsFocusable).ToList();
+        => _root.Descendants().Where(e => e.IsFocusable && e.IsEffectiveEnabled).ToList();
 
     public bool Focus(Element? element)
     {
         if (element is null || !element.IsFocusable) return false;
+        if (!element.IsEffectiveEnabled) return false; // E3：禁用元素不接受焦点（含祖先禁用的继承情形）
         if (ReferenceEquals(Focused, element)) return true;
 
         var old = Focused;

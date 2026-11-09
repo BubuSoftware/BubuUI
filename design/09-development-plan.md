@@ -78,7 +78,7 @@
 | 文本 | 🟡 单行 shaping 已接入 | 断行、bidi、fallback、emoji、glyph 缓存、display list 集成 |
 | 输入/焦点 | 🟡 元素路由已通 | 字符输入/IME、滚轮/触摸、Shift+Tab、无障碍 |
 | 渲染/合成器 | 🟡 scene graph + 上屏 + damage v0 + retained 构建层（✅ D93） | 脏区光栅化（上游 scissor API）、合成器、帧预算门槛 |
-| 样式/主题 | 🟡 令牌 + Class 样式 + 主题资源 + 伪类变体已落（2026-11-09，D98–D102） | 模板 `Class` 语法与编译期类名校验、资源字典/`Style=` 模板语法（S-C 后续）、`:disabled`（需 Enabled 概念）、后代/子代选择器组合、控件模板（S-D） |
+| 样式/主题 | 🟡 令牌 + Class 样式 + 主题资源 + 伪类变体 + `:disabled` 已落（2026-11-09，D98–D103） | 模板 `Class` 语法与编译期类名校验（E2）、样式表编译器（E1）、嵌套塌缩（E4）、注册位（E5）——design/17 执行计划；资源字典/`Style=` 模板语法（S-C 后续）、后代/子代选择器组合、控件模板（S-D） |
 | 控件库 | 🟡 极简 | TextBlock/Button/CheckBox/StackPanel/ListBoxItem 之外的基础控件 |
 | IDE | 🔴 未开始 | TextMate、LSP server、VS Code/Rider 壳 |
 | 工具链 | 🔴 基本未开始 | 热重载、断点映射、DevTools、无头测试 SDK |
@@ -478,8 +478,12 @@ CPU 侧部分收敛（2026-11-08/D84）：CPU 像素 golden（`PixelGoldenTests`
 - **伪类状态样式（✅ 2026-11-09，D102）**：`PseudoStates` 掩码（Hover/Pressed/Focused）由
   InputRouter/FocusManager 维护，状态变化 = 渲染失效 + class 层重应用；定义侧链式语法
   `Define("primary", s => s.Background(...)).Hover(s => ...).Pressed(s => ...)`——变体按声明
-  顺序应用、同开时后声明胜；段键含状态位（状态翻转段重建）。`:disabled` 需先落 Enabled
-  概念、后代/子代选择器组合留后续。
+  顺序应用、同开时后声明胜；段键含状态位（状态翻转段重建）。
+- **:disabled + IsEnabled（✅ 2026-11-09，D103，design/17 执行计划 E3 片）**：`PseudoStates.Disabled`
+  第 4 位为**有效值**（`IsEnabled` 沿祖先链继承合成进掩码——父禁用子禁用，变体/段键零特殊处理）；
+  Router 吞禁用按下/滚轮/移动（按住中途禁用释放吞 Click）、Focus 拒绝、Tab 跳过；painter 置灰
+  令牌回落（class `.Disabled(...)` 变体优先）；`Visual.FocusRingWidth` 环宽进样式。样式系统
+  完整设计 + 执行计划（E3✅→E1→E2→E4→E5）见 design/17。
 - 宿主启动形态：**AppBuilder + 依赖注入（✅ 2026-11-09，D101）**：Avalonia 式启动——
   `AppBuilder.Configure<TApp>().UseWindows().UseVello().UseHarfBuzzText().UseTheme(...).
   UseStyles(StyleRegistry.Instance, styles.Define).ConfigureServices(...).Start(args)`；

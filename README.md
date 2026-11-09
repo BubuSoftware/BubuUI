@@ -146,6 +146,15 @@
 > （无需新增失效维度）。画廊分区卡/标题/primary/tool 样式全改双色资源——**亮暗切换整页跟随**，
 > inline 静态色保留以并示「静态覆盖 vs 主题跟随」。**670 个用例（332/241/97），全绿**。
 >
+> **:disabled 已通过（2026-11-09，D103，样式系统 E3 片）**：`PseudoStates.Disabled` 第 4 位
+> （**有效值**——`IsEnabled` 沿祖先链继承合成进掩码，父禁用则子禁用，变体匹配/段键零特殊处理）；
+> `InputRouter` 对禁用元素吞按下/滚轮/移动（不悬停不聚焦）、按住中途禁用时释放吞 Click；
+> `FocusManager` 拒绝禁用聚焦、Tab 遍历跳过；painter `Resolve*` 置灰令牌回落
+> （`DisabledForeground/DisabledBackground`，class 变体优先）；`StyleRegistry` 增 `.Disabled(...)`
+> 变体链；`Visual.FocusRingWidth` class 覆盖（环宽进样式，回落令牌）；画廊样式区加 `:disabled`
+> 演示按钮。执行计划见 design/17（E3 → E1 → E2 → E4 → E5）。`StyleTests` +5、`PseudoStateTests` +6；
+> **699 个用例（352/241/106），全绿**；selfcheck PASS；深浅双主题出图核对通过（disabled 置灰正确）。
+>
 > **伪类状态样式已通过（2026-11-09，D102）**：CSS `:hover/:active/:focus` 对应物——`PseudoStates`
 > 掩码由 InputRouter/FocusManager 维护（hover 跟随命中、捕获冻结、pressed 先路由后清保 Click 门控），
 > 状态变化 = 渲染失效 + class 层重应用；定义侧链式语法

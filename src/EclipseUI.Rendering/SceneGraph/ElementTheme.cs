@@ -33,6 +33,8 @@ public class ElementTheme : IHostTheme
     public virtual Color ControlBackground { get; init; } = new(44, 51, 68);
     public virtual Color ControlBorder { get; init; } = new(78, 88, 112);
     public virtual Color FocusRing { get; init; } = new(126, 186, 255);
+    public virtual Color DisabledForeground { get; init; } = new(122, 128, 148);
+    public virtual Color DisabledBackground { get; init; } = new(60, 66, 84);
     public virtual Color ScrollBarTrack { get; init; } = new(0, 0, 0, 0);
     public virtual Color ScrollBarThumb { get; init; } = new(96, 106, 132);
 
@@ -66,6 +68,8 @@ public sealed class LightTheme : ElementTheme
     public override Color ControlBackground { get; init; } = new(244, 246, 251);
     public override Color ControlBorder { get; init; } = new(205, 212, 226);
     public override Color FocusRing { get; init; } = new(52, 118, 255);
+    public override Color DisabledForeground { get; init; } = new(158, 164, 180);
+    public override Color DisabledBackground { get; init; } = new(226, 229, 236);
     public override Color ScrollBarThumb { get; init; } = new(176, 183, 198);
 
     // ---- 形状 ----（沿用深色默认：Radius/BorderWidth/FocusRingWidth 不覆盖）

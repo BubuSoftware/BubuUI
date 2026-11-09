@@ -19,4 +19,12 @@ public enum PseudoStates
 
     /// <summary>键盘焦点（CSS :focus）。仅 <see cref="Element.IsFocusable"/> 元素成立。</summary>
     Focused = 4,
+
+    /// <summary>
+    /// 有效禁用（CSS :disabled，E3）：**有效值**——<see cref="Element.IsEnabled"/> 沿祖先链
+    /// 继承合成（父禁用则子也禁用），与 Hover/Pressed 的「自身事件位」不同源。
+    /// 合成进掩码意味着样式变体匹配与段键零特殊处理；祖先启用状态变化需逐后代失效重算
+    /// （见 <see cref="Element.IsEnabled"/> setter）。
+    /// </summary>
+    Disabled = 8,
 }

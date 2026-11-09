@@ -134,10 +134,12 @@ public sealed class ElementPainter
         if (ReferenceEquals(element, _focused) && element.IsFocusable)
             states |= PseudoStates.Focused;
         var focused = (states & PseudoStates.Focused) != 0;
-        // 焦点环 stroke 居中于 ring（rect 外扩 FocusRingWidth）路径：外缘达 1.5×FocusRingWidth，
+        // E3：焦点环宽度可被 class/inline 覆盖（Visual.FocusRingWidth），null 回落主题令牌。
+        var ringWidth = Visual.GetFocusRingWidth(element) ?? _theme.FocusRingWidth;
+        // 焦点环 stroke 居中于 ring（rect 外扩 ringWidth）路径：外缘达 1.5×ringWidth，
         // AA 半覆盖再 +1——脏区必须覆盖全部环像素（D102 抓出的既有覆盖不足：旧式 1× 膨胀下
         // 环外缘 ~1px 带留在脏区外，GPU retained 合成与整帧参照逐像素比对时暴露）。
-        var visualBounds = focused ? Inflate(rect, _theme.FocusRingWidth * 1.5 + 1) : rect;
+        var visualBounds = focused ? Inflate(rect, ringWidth * 1.5 + 1) : rect;
         tracker?.Visit(element, visualBounds);
 
         // retained 段：自绘命令（类型绘制 + 卡片 + 焦点环）按失效键复用。
@@ -263,14 +265,23 @@ public sealed class ElementPainter
     // ---- S-C 有效色解析：主题资源 > 静态覆盖 > 主题令牌（解析发生在段构建期，
     // 换主题 ReplaceTheme 丢段重建即随新表刷新）----
 
-    /// <summary>前景覆盖探测（可空）：null = 未设置，调用方回落自身规则（如字号次色）。</summary>
-    private Color? PeekForeground(Element element) =>
-        Visual.GetForegroundResource(element)?.Resolve(_theme) ?? Visual.GetForeground(element);
+    /// <summary>前景覆盖探测（可空）：null = 未设置，调用方回落自身规则（如字号次色）。
+    /// E3：有效禁用且无显式覆盖时返回置灰令牌——class 变体（.Disabled 写入 class 层）优先于令牌。</summary>
+    private Color? PeekForeground(Element element)
+    {
+        var foreground = Visual.GetForegroundResource(element)?.Resolve(_theme) ?? Visual.GetForeground(element);
+        if (foreground is not null) return foreground;
+        return element.IsEffectiveEnabled ? null : (Color?)_theme.DisabledForeground;
+    }
 
     private Color ResolveForeground(Element element, Color fallback) => PeekForeground(element) ?? fallback;
 
-    private Color ResolveBackground(Element element, Color fallback) =>
-        Visual.GetBackgroundResource(element)?.Resolve(_theme) ?? Visual.GetBackground(element) ?? fallback;
+    private Color ResolveBackground(Element element, Color fallback)
+    {
+        var background = Visual.GetBackgroundResource(element)?.Resolve(_theme) ?? Visual.GetBackground(element);
+        if (background is not null) return background.Value;
+        return element.IsEffectiveEnabled ? fallback : _theme.DisabledBackground;
+    }
 
     private void PaintTextBlock(TextBlock block, Rect rect)
     {
@@ -382,11 +393,12 @@ public sealed class ElementPainter
             _ => _theme.PanelRadius,
         };
 
-        var ring = Inflate(rect, _theme.FocusRingWidth);
+        var ringWidth = Visual.GetFocusRingWidth(element) ?? _theme.FocusRingWidth;
+        var ring = Inflate(rect, ringWidth);
         _paintList.Add(new StrokePath(
-            PathGeometry.RoundedRectangle(ring, radius + _theme.FocusRingWidth),
+            PathGeometry.RoundedRectangle(ring, radius + ringWidth),
             _theme.FocusRing,
-            _theme.FocusRingWidth));
+            ringWidth));
     }
 
     private static Rect Inset(Rect rect, double amount) => new(

@@ -25,7 +25,10 @@ public static class GalleryStyles
                 Light: new Color(38, 162, 104))))
             .Pressed(s => s.Background(new ThemeColor(      // :active 压暗
                 Dark: new Color(24, 126, 78),
-                Light: new Color(20, 110, 68))));
+                Light: new Color(20, 110, 68))))
+            .Disabled(s => s.Background(new ThemeColor(     // :disabled（E3）：显式变体
+                Dark: new Color(46, 62, 58),
+                Light: new Color(206, 214, 210))));
 
         registry.Define("tool", s => s
                 .Background(new ThemeColor(                 // 工具按钮：中性灰（暗亮两档）

@@ -77,7 +77,7 @@ local（inline / 属性直赋）
 
 ```csharp
 [Flags]
-public enum PseudoStates { None = 0, Hover = 1, Pressed = 2, Focused = 4 /*, Disabled = 8 (E3) */ }
+public enum PseudoStates { None = 0, Hover = 1, Pressed = 2, Focused = 4, Disabled = 8 /* E3 ✅ D103 */ }
 ```
 
 - 元素持有三 bool（`IsHovered/IsPressed/IsFocused`，setter 为 **internal**——写入者受控），
@@ -91,7 +91,7 @@ public enum PseudoStates { None = 0, Hover = 1, Pressed = 2, Focused = 4 /*, Dis
 | 来源 | 状态位 | 维护者 | 落地 |
 |------|--------|--------|------|
 | 平台通用位 | `:hover` `:pressed` `:focus`（`:focus-within` 远期） | InputRouter / FocusManager | ✅ D102 |
-| 平台通用位 | `:disabled` | `IsEnabled` 属性 + 属性系统（E3 先落 Enabled 概念） | E3 |
+| 平台通用位 | `:disabled` | `IsEnabled` 属性 + 属性系统（有效值沿树继承） | ✅ D103（E3） |
 | 控件语义位 | `:checked` `:indeterminate` `:valid`… | **控件自身**（属性变化回调里翻转自己的位） | 需要样式化时逐控件加 |
 | 第三方注册位 | 任意（`:loading` 等） | `PseudoStates.Register(":loading")` → 返回掩码；注册者经 `SetRegisteredState(mask, bool)` 翻转 | E5 |
 
@@ -336,8 +336,8 @@ E4 依赖 E1+E2；E5 收尾开放性。0.1 alpha 出口只需 E3（+ 可选 E1�
 
 | 片 | 状态 |
 |----|------|
-| E3 | 🔄 进行中（2026-11-12 开工） |
-| E1–E5 | ⏳ 排队 |
+| E3 | ✅ 完成（2026-11-09，D103）：Disabled 位 + IsEnabled 继承 + 路由/焦点门控 + 置灰令牌 + `.Disabled()` 变体 + FocusRingWidth；699 例全绿 |
+| E1–E5 | ⏳ 排队（E1 下一片） |
 
 ---
 

@@ -33,10 +33,15 @@ public sealed class InputRouter
     /// 捕获元素随后被卸载时，释放不会路由到树外（见 Headless 回归测试）。
     /// 按下即置 <see cref="Element.IsPressed"/>（事件路由**之前**——handler 可读到按下态），
     /// 释放时**先路由后清除**（D102：Button 的 Click 门控读 <see cref="Element.IsPressed"/>）。
+    /// E3：命中有效禁用元素时整体吞掉——不捕获、不悬停、不聚焦、不路由。
     /// </summary>
     public void PointerPress(Point point)
     {
-        Captured = _root.HitTest(point);
+        var hit = _root.HitTest(point);
+        if (hit is not null && !hit.IsEffectiveEnabled)
+            return; // :disabled 吞按下
+
+        Captured = hit;
         UpdateHover(Captured);
 
         var focusable = Captured;
@@ -50,14 +55,17 @@ public sealed class InputRouter
         Captured.RaiseEvent(new PointerEventArgs(Element.PointerPressedEvent, point) { Source = Captured });
     }
 
-    /// <summary>指针释放：优先路由给捕获元素（先于清 <see cref="Element.IsPressed"/>），随后解除捕获。</summary>
+    /// <summary>指针释放：优先路由给捕获元素（先于清 <see cref="Element.IsPressed"/>），随后解除捕获。
+    /// E3：按下后中途被禁用（捕获期间父级 <see cref="Element.IsEnabled"/> 翻转）时，
+    /// 只清按下位、不路由事件——禁用元素的 Released 不产生 Click。</summary>
     public void PointerRelease(Point point)
     {
         var target = Captured ?? _root.HitTest(point);
         Captured = null;
         if (target is not null)
         {
-            target.RaiseEvent(new PointerEventArgs(Element.PointerReleasedEvent, point) { Source = target });
+            if (target.IsEffectiveEnabled)
+                target.RaiseEvent(new PointerEventArgs(Element.PointerReleasedEvent, point) { Source = target });
             target.IsPressed = false; // 事件之后清除：Released handler 内「按下才触发」门控仍成立
         }
         UpdateHover(_root.HitTest(point)); // 释放后重算悬停（指针可能在按住期间移出）
@@ -67,13 +75,16 @@ public sealed class InputRouter
     {
         var target = Captured ?? _root.HitTest(point);
         UpdateHover(target);
-        if (target is null) return;
+        if (target is null || !target.IsEffectiveEnabled) return; // 禁用元素不路由移动事件
         target.RaiseEvent(new PointerEventArgs(Element.PointerMovedEvent, point) { Source = target });
     }
 
-    /// <summary>悬停目标变化时翻转 <see cref="Element.IsHovered"/>（同目标 no-op，指针移动零开销）。</summary>
+    /// <summary>悬停目标变化时翻转 <see cref="Element.IsHovered"/>（同目标 no-op，指针移动零开销）。
+    /// E3：有效禁用的目标视为无悬停目标——:disabled 不触发 :hover。</summary>
     private void UpdateHover(Element? target)
     {
+        if (target is not null && !target.IsEffectiveEnabled)
+            target = null;
         if (ReferenceEquals(Hovered, target)) return;
         var old = Hovered;
         Hovered = target;
@@ -83,16 +94,17 @@ public sealed class InputRouter
 
     /// <summary>
     /// 滚轮：从命中元素起冒泡路由（<see cref="Element.PointerWheelChangedEvent"/>）。
-    /// 滚轮不做捕获——命中谁就路由给谁，可滚动容器在冒泡路径上消费。
+    /// 滚轮不做捕获——命中谁就路由给谁，可滚动容器在冒泡路径上消费。E3：禁用元素吞滚轮。
     /// </summary>
     public void PointerWheel(Point point, double delta)
     {
         var target = _root.HitTest(point);
-        if (target is null) return;
+        if (target is null || !target.IsEffectiveEnabled) return;
         target.RaiseEvent(new WheelEventArgs(Element.PointerWheelChangedEvent, point, delta) { Source = target });
     }
 
-    /// <summary>按键。Tab 由焦点系统拦截做遍历；其余 KeyDown 从焦点元素（或根）路由。</summary>
+    /// <summary>按键。Tab 由焦点系统拦截做遍历；其余 KeyDown 从焦点元素（或根）路由。
+    /// E3：焦点元素被禁用（中途 <see cref="Element.IsEnabled"/> 翻转）时吞键。</summary>
     public void KeyPress(Key key)
     {
         if (key == Key.Tab)
@@ -102,6 +114,7 @@ public sealed class InputRouter
         }
 
         var target = Focus.Focused ?? _root;
+        if (!target.IsEffectiveEnabled) return;
         target.RaiseEvent(new KeyEventArgs(Element.KeyDownEvent, key) { Source = target });
     }
 }

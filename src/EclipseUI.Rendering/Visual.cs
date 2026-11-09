@@ -40,6 +40,10 @@ public static class Visual
     public static readonly StyledProperty<ThemeColor?> ForegroundResourceProperty =
         StyledProperty<ThemeColor?>.Register<Element>("Visual.ForegroundResource", null);
 
+    /// <summary>焦点环宽度覆盖（E3）：null 回落主题令牌 <see cref="ElementTheme.FocusRingWidth"/>。</summary>
+    public static readonly StyledProperty<double?> FocusRingWidthProperty =
+        StyledProperty<double?>.Register<Element>("Visual.FocusRingWidth", null);
+
     public static Color? GetBackground(Element element) => element.GetValue(BackgroundProperty);
 
     /// <summary>null 表示取消覆盖（清除 local 层，回落 class 样式/主题）。</summary>
@@ -83,5 +87,14 @@ public static class Visual
     {
         if (resource is null) element.ClearLocalValue(ForegroundResourceProperty);
         else element.SetValue(ForegroundResourceProperty, resource);
+    }
+
+    public static double? GetFocusRingWidth(Element element) => element.GetValue(FocusRingWidthProperty);
+
+    /// <summary>焦点环宽度覆盖（null 清除，回落主题令牌）。</summary>
+    public static void SetFocusRingWidth(Element element, double? width)
+    {
+        if (width is null) element.ClearLocalValue(FocusRingWidthProperty);
+        else element.SetValue(FocusRingWidthProperty, width);
     }
 }

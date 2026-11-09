@@ -94,7 +94,7 @@ public static class GalleryScene
         // ④ 样式系统：有效值分层 local > class > theme 的按钮四连 + Visual 覆盖卡片。
         page.Children.Add(Section("4. Styles - theme tokens + class/visual layers", BuildStyleSection()));
 
-        page.Children.Add(Text("EclipseUI - retained segment caching (D93) - 668 tests green", 12));
+        page.Children.Add(Text("EclipseUI - retained segment caching (D93) - 699 tests green", 12));
 
         var rootViewer = new ScrollViewer();
         rootViewer.Children.Add(page);
@@ -107,7 +107,8 @@ public static class GalleryScene
     /// </summary>
     private static StackPanel BuildStyleSection()
     {
-        // 按钮四连：主题默认 → class primary（主题资源）→ class tool（主题资源）→ inline Visual 静态覆盖。
+        // 按钮五连：主题默认 → class primary（主题资源）→ class tool（主题资源）→
+        // inline Visual 静态覆盖 → :disabled（E3：class 变体 + 有效值禁用，点击/焦点被路由吞掉）。
         var row = new WrapPanel { Gap = 8 };
         row.Children.Add(new Button { Label = "theme default" });
         row.Children.Add(new Button { Label = "class: primary", Classes = ["primary"] });
@@ -116,6 +117,7 @@ public static class GalleryScene
         Visual.SetBackground(inline, new Color(196, 84, 152));
         Visual.SetCornerRadius(inline, 18);
         row.Children.Add(inline);
+        row.Children.Add(new Button { Label = ":disabled", Classes = ["primary"], IsEnabled = false });
 
         // Visual 覆盖卡片：StackPanel 背景/圆角 + 文本前景覆盖（painter 回落主题当未设置）。
         var card = new StackPanel { Gap = 6, Padding = 14 };

@@ -92,6 +92,9 @@ public sealed class ClassStyleVariants
     /// <summary>键盘焦点变体（CSS :focus）。</summary>
     public ClassStyleVariants Focus(Action<StyleBuilder> build) => AddVariant(PseudoStates.Focused, build);
 
+    /// <summary>有效禁用变体（CSS :disabled，E3）：祖先禁用同样命中（有效值沿树继承）。</summary>
+    public ClassStyleVariants Disabled(Action<StyleBuilder> build) => AddVariant(PseudoStates.Disabled, build);
+
     private ClassStyleVariants AddVariant(PseudoStates state, Action<StyleBuilder> build)
     {
         if (build is null) throw new ArgumentNullException(nameof(build));
@@ -135,6 +138,9 @@ public sealed class StyleBuilder
     public StyleBuilder FontSize(double size) => Set(TextBlock.FontSizeProperty, size);
 
     public StyleBuilder Padding(double uniform) => Set(Panel.PaddingProperty, uniform);
+
+    /// <summary>焦点环宽度覆盖（E3）：绘制时回落主题令牌 <see cref="ElementTheme.FocusRingWidth"/>。</summary>
+    public StyleBuilder FocusRingWidth(double width) => Set(Visual.FocusRingWidthProperty, (double?)width);
 
     private sealed class StyleSetter<T>(StyledProperty<T> property, T value) : IStyleSetter
     {
