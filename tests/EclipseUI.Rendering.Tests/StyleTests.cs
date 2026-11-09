@@ -15,6 +15,9 @@ public class StyleTests : IDisposable
 {
     private static readonly Size Surface = new(240, 160);
     private static readonly Color ClassColor = new(34, 160, 100);
+    private static readonly Color HoverColor = new(70, 200, 140);
+    private static readonly Color PressedColor = new(20, 110, 60);
+    private static readonly Color FocusFg = new(255, 210, 90);
 
     private readonly StyleRegistry _registry = new();
 
@@ -23,6 +26,10 @@ public class StyleTests : IDisposable
         Styling.Provider = _registry;
         _registry.Define("accent", s => s.Background(ClassColor));
         _registry.Define("text", s => s.Foreground(new Color(10, 10, 10)));
+        _registry.Define("papi", s => s.Background(ClassColor))
+                 .Hover(s => s.Background(HoverColor))
+                 .Pressed(s => s.Background(PressedColor))
+                 .Focus(s => s.Foreground(FocusFg));
     }
 
     public void Dispose() => Styling.Provider = null;
@@ -114,5 +121,90 @@ public class StyleTests : IDisposable
         Assert.Equal((2, 0), painter.LastBuildStats);
         Assert.Contains(reused.Commands.OfType<FillRoundedRect>(),
             f => f.Brush is SolidColorBrush { Color: var c } && c == ClassColor);
+    }
+
+    // ---- D102 伪类状态样式 ----
+
+    private static (HeadlessRoot Headless, Button Button) BuildButtonTree(StyleRegistry registry)
+    {
+        var root = new StackPanel();
+        var button = new Button { Label = "Go", Classes = ["papi"] };
+        root.Children.Add(button);
+        var headless = new HeadlessRoot(root) { AvailableSize = Surface };
+        headless.UpdateLayout();
+        return (headless, button);
+    }
+
+    private static Point CenterOf(Element element)
+        => new(element.FinalRect.X + element.FinalRect.Width / 2,
+               element.FinalRect.Y + element.FinalRect.Height / 2);
+
+    [Fact]
+    public void HoverVariant_AppliesOnEnter_RevertsOnLeave()
+    {
+        var (headless, button) = BuildButtonTree(_registry);
+        var center = CenterOf(button);
+        Assert.Equal(ClassColor, Visual.GetBackground(button)); // 无状态：base
+
+        headless.PointerMove(center);
+        Assert.True(button.IsHovered);
+        Assert.Equal(HoverColor, Visual.GetBackground(button)); // :hover 变体生效
+
+        headless.PointerMove(new Point(Surface.Width + 500, Surface.Height + 500));
+        Assert.False(button.IsHovered);
+        Assert.Equal(ClassColor, Visual.GetBackground(button)); // 离开回落 base
+    }
+
+    [Fact]
+    public void PressedVariant_WinsOverHover_ByDeclarationOrder()
+    {
+        var (headless, button) = BuildButtonTree(_registry);
+        headless.PointerPress(CenterOf(button)); // 按下：hover+pressed 同开
+
+        Assert.True(button.IsHovered);
+        Assert.True(button.IsPressed);
+        Assert.Equal(PressedColor, Visual.GetBackground(button)); // pressed 后声明 → 覆盖 hover
+
+        headless.PointerRelease(CenterOf(button));
+        Assert.False(button.IsPressed);
+        Assert.Equal(HoverColor, Visual.GetBackground(button)); // 只剩 hover
+    }
+
+    [Fact]
+    public void FocusVariant_AppliesOnlyToFocusable()
+    {
+        var (headless, button) = BuildButtonTree(_registry);
+
+        headless.Focus.Focus(button);
+        Assert.True(button.IsFocused);
+        Assert.Equal(FocusFg, Visual.GetForeground(button)); // :focus 变体
+
+        headless.Focus.ClearFocus();
+        Assert.False(button.IsFocused);
+        Assert.Null(Visual.GetForeground(button)); // 回落（无 base 前景）
+
+        var panel = new StackPanel(); // 非 focusable：Focus 拒绝、状态不置位
+        Assert.False(headless.Focus.Focus(panel));
+        Assert.False(panel.IsFocused);
+    }
+
+    [Fact]
+    public void PseudoState_Change_RebuildsSegment_ThenReuses()
+    {
+        var (headless, button) = BuildButtonTree(_registry);
+        var painter = new ElementPainter(ElementTheme.Dark);
+
+        painter.Build(headless.Content, Surface); // 首帧全画
+        painter.Build(headless.Content, Surface);
+        Assert.Equal((2, 0), painter.LastBuildStats); // 稳定后全复用
+
+        headless.PointerMove(CenterOf(button)); // IsHovered → InvalidateRender → Version++
+        var hoveredList = painter.Build(headless.Content, Surface);
+        Assert.Equal((1, 1), painter.LastBuildStats); // button 段重建（含 hover 变体色）
+        Assert.Contains(hoveredList.Commands.OfType<FillRoundedRect>(),
+            f => f.Brush is SolidColorBrush { Color: var c } && c == HoverColor);
+
+        painter.Build(headless.Content, Surface);
+        Assert.Equal((2, 0), painter.LastBuildStats); // 状态稳定后恢复全复用
     }
 }

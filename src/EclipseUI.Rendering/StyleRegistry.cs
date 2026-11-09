@@ -14,16 +14,27 @@ public sealed class StyleRegistry : IStyleProvider
 {
     public static StyleRegistry Instance { get; } = new();
 
-    private readonly Dictionary<string, List<IStyleSetter>> _styles = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, ClassStyle> _styles = new(StringComparer.Ordinal);
 
-    /// <summary>注册一个样式类；重复注册覆盖（宿主启动期一次性配置）。</summary>
-    public void Define(string className, Action<StyleBuilder> build)
+    /// <summary>
+    /// 注册一个样式类（可续接伪类变体，D102）：重复注册覆盖（宿主启动期一次性配置）。
+    /// <code>
+    /// registry.Define("primary", s => s.Background(accent))
+    ///         .Hover(s => s.Background(accentHover))
+    ///         .Pressed(s => s.Background(accentPressed));
+    /// </code>
+    /// </summary>
+    public ClassStyleVariants Define(string className, Action<StyleBuilder> build)
     {
         if (string.IsNullOrWhiteSpace(className))
             throw new ArgumentException("Style class name must not be empty.", nameof(className));
+        if (build is null) throw new ArgumentNullException(nameof(build));
+        var style = new ClassStyle();
         var builder = new StyleBuilder();
         build(builder);
-        _styles[className] = builder.Build();
+        style.Base.AddRange(builder.Build());
+        _styles[className] = style;
+        return new ClassStyleVariants(style);
     }
 
     /// <summary>查询类是否已注册（测试与诊断用）。</summary>
@@ -31,13 +42,64 @@ public sealed class StyleRegistry : IStyleProvider
 
     public void ApplyClass(Element element, string className)
     {
-        if (!_styles.TryGetValue(className, out var setters))
+        if (!_styles.TryGetValue(className, out var style))
             return;
-        foreach (var setter in setters)
+        var states = element.PseudoStates;
+        foreach (var setter in style.Base)
             setter.Apply(element);
+        // 变体按声明顺序应用：同时匹配多个伪类时，后声明覆盖先声明
+        // （与 CSS「同优先级按源顺序」一致，如 hover+pressed 同开时 pressed 胜）。
+        foreach (var (state, setters) in style.Variants)
+        {
+            if ((states & state) != state)
+                continue;
+            foreach (var setter in setters)
+                setter.Apply(element);
+        }
     }
 
     public void ClearStyles(Element element) => element.ClearStyleValues();
+}
+
+/// <summary>一个样式类的完整定义：基础 setter 序列 + 各伪类状态变体（D102）。</summary>
+public sealed class ClassStyle
+{
+    internal List<IStyleSetter> Base { get; } = [];
+
+    internal List<(PseudoStates State, List<IStyleSetter> Setters)> Variants { get; } = [];
+}
+
+/// <summary>
+/// 伪类变体声明器（D102，<see cref="StyleRegistry.Define"/> 的返回值）：链式追加
+/// <see cref="PseudoStates"/> 变体——应用时提供者读元素当前状态选择匹配变体，
+/// 无状态元素只应用基础序列。变体语义对应 CSS 伪类：
+/// <see cref="ClassStyleVariants.Hover"/>=<c>:hover</c>、
+/// <see cref="ClassStyleVariants.Pressed"/>=<c>:active</c>、
+/// <see cref="ClassStyleVariants.Focus"/>=<c>:focus</c>。
+/// </summary>
+public sealed class ClassStyleVariants
+{
+    private readonly ClassStyle _style;
+
+    internal ClassStyleVariants(ClassStyle style) => _style = style;
+
+    /// <summary>指针悬停变体（CSS :hover）。</summary>
+    public ClassStyleVariants Hover(Action<StyleBuilder> build) => AddVariant(PseudoStates.Hover, build);
+
+    /// <summary>指针按下变体（CSS :active / WPF IsPressed）。</summary>
+    public ClassStyleVariants Pressed(Action<StyleBuilder> build) => AddVariant(PseudoStates.Pressed, build);
+
+    /// <summary>键盘焦点变体（CSS :focus）。</summary>
+    public ClassStyleVariants Focus(Action<StyleBuilder> build) => AddVariant(PseudoStates.Focused, build);
+
+    private ClassStyleVariants AddVariant(PseudoStates state, Action<StyleBuilder> build)
+    {
+        if (build is null) throw new ArgumentNullException(nameof(build));
+        var builder = new StyleBuilder();
+        build(builder);
+        _style.Variants.Add((state, builder.Build()));
+        return this;
+    }
 }
 
 internal interface IStyleSetter

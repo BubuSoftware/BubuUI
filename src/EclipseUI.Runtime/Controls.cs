@@ -13,19 +13,15 @@ public sealed class Button : Element
 
     private const double HPad = 12, VPad = 6;
 
-    private bool _pressed;
-
     public Button()
     {
-        AddHandler(Element.PointerPressedEvent, OnPointerPressed);
         AddHandler(Element.PointerReleasedEvent, OnPointerReleased);
         AddHandler(Element.KeyDownEvent, OnKeyDown);
     }
 
     public override bool IsFocusable => true;
 
-    /// <summary>指针按下未释放（绘制按下态用）。</summary>
-    public bool IsPressed => _pressed;
+    /// <summary>指针按下未释放（D102）：继承 <see cref="Element.IsPressed"/>（InputRouter 维护）。</summary>
 
     public string Label
     {
@@ -35,18 +31,11 @@ public sealed class Button : Element
 
     public void Click() => RaiseEvent(new RoutedEventArgs(ClickEvent));
 
-    private void OnPointerPressed()
-    {
-        if (_pressed) return;
-        _pressed = true;
-        InvalidateRender();
-    }
-
     private void OnPointerReleased()
     {
-        if (!_pressed) return;
-        _pressed = false;
-        InvalidateRender();
+        // 门控：收到 Released 但未处于按下态（如手工路由）不触发。
+        // InputRouter 释放时先路由后清状态，这里读到的仍是按下末尾（D102 时序契约）。
+        if (!IsPressed) return;
         Click();
     }
 
@@ -78,19 +67,15 @@ public sealed class CheckBox : Element
         StyledProperty<string>.Register<CheckBox>("Label", "",
             new PropertyOptions { Invalidate = InvalidateKind.Measure });
 
-    private bool _pressed;
-
     public CheckBox()
     {
-        AddHandler(Element.PointerPressedEvent, OnPointerPressed);
         AddHandler(Element.PointerReleasedEvent, OnPointerReleased);
         AddHandler(Element.KeyDownEvent, OnKeyDown);
     }
 
     public override bool IsFocusable => true;
 
-    /// <summary>指针按下未释放（绘制按下态用）。</summary>
-    public bool IsPressed => _pressed;
+    /// <summary>指针按下未释放（D102）：继承 <see cref="Element.IsPressed"/>（InputRouter 维护）。</summary>
 
     public bool Checked
     {
@@ -111,18 +96,10 @@ public sealed class CheckBox : Element
         RaiseEvent(new RoutedEventArgs(CheckedChangedEvent) { Source = this });
     }
 
-    private void OnPointerPressed()
-    {
-        if (_pressed) return;
-        _pressed = true;
-        InvalidateRender();
-    }
-
     private void OnPointerReleased()
     {
-        if (!_pressed) return;
-        _pressed = false;
-        InvalidateRender();
+        // 门控与 Button 相同（D102）：InputRouter 先路由后清 IsPressed，按下末尾触发 Toggle。
+        if (!IsPressed) return;
         Toggle();
     }
 

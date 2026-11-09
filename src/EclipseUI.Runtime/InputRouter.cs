@@ -22,15 +22,22 @@ public sealed class InputRouter
     /// <summary>当前指针捕获元素（按下后到释放前）。</summary>
     public Element? Captured { get; private set; }
 
+    /// <summary>当前悬停元素（D102 伪类）：<see cref="Element.IsHovered"/> 随命中目标翻转；
+    /// 捕获期间冻结在捕获元素上，释放后重算。</summary>
+    public Element? Hovered { get; private set; }
+
     public Element? HitTest(Point point) => _root.HitTest(point);
 
     /// <summary>
     /// 指针按下：捕获命中元素，并把键盘焦点交给最近的可聚焦祖先（平台标准行为）。
     /// 捕获元素随后被卸载时，释放不会路由到树外（见 Headless 回归测试）。
+    /// 按下即置 <see cref="Element.IsPressed"/>（事件路由**之前**——handler 可读到按下态），
+    /// 释放时**先路由后清除**（D102：Button 的 Click 门控读 <see cref="Element.IsPressed"/>）。
     /// </summary>
     public void PointerPress(Point point)
     {
         Captured = _root.HitTest(point);
+        UpdateHover(Captured);
 
         var focusable = Captured;
         while (focusable is not null && !focusable.IsFocusable)
@@ -39,23 +46,39 @@ public sealed class InputRouter
             Focus.Focus(focusable);
 
         if (Captured is null) return;
+        Captured.IsPressed = true;
         Captured.RaiseEvent(new PointerEventArgs(Element.PointerPressedEvent, point) { Source = Captured });
     }
 
-    /// <summary>指针释放：优先路由给捕获元素，随后解除捕获。</summary>
+    /// <summary>指针释放：优先路由给捕获元素（先于清 <see cref="Element.IsPressed"/>），随后解除捕获。</summary>
     public void PointerRelease(Point point)
     {
         var target = Captured ?? _root.HitTest(point);
         Captured = null;
-        if (target is null) return;
-        target.RaiseEvent(new PointerEventArgs(Element.PointerReleasedEvent, point) { Source = target });
+        if (target is not null)
+        {
+            target.RaiseEvent(new PointerEventArgs(Element.PointerReleasedEvent, point) { Source = target });
+            target.IsPressed = false; // 事件之后清除：Released handler 内「按下才触发」门控仍成立
+        }
+        UpdateHover(_root.HitTest(point)); // 释放后重算悬停（指针可能在按住期间移出）
     }
 
     public void PointerMove(Point point)
     {
         var target = Captured ?? _root.HitTest(point);
+        UpdateHover(target);
         if (target is null) return;
         target.RaiseEvent(new PointerEventArgs(Element.PointerMovedEvent, point) { Source = target });
+    }
+
+    /// <summary>悬停目标变化时翻转 <see cref="Element.IsHovered"/>（同目标 no-op，指针移动零开销）。</summary>
+    private void UpdateHover(Element? target)
+    {
+        if (ReferenceEquals(Hovered, target)) return;
+        var old = Hovered;
+        Hovered = target;
+        if (old is not null) old.IsHovered = false;
+        if (target is not null) target.IsHovered = true;
     }
 
     /// <summary>

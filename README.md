@@ -146,6 +146,15 @@
 > （无需新增失效维度）。画廊分区卡/标题/primary/tool 样式全改双色资源——**亮暗切换整页跟随**，
 > inline 静态色保留以并示「静态覆盖 vs 主题跟随」。**670 个用例（332/241/97），全绿**。
 >
+> **伪类状态样式已通过（2026-11-09，D102）**：CSS `:hover/:active/:focus` 对应物——`PseudoStates`
+> 掩码由 InputRouter/FocusManager 维护（hover 跟随命中、捕获冻结、pressed 先路由后清保 Click 门控），
+> 状态变化 = 渲染失效 + class 层重应用；定义侧链式语法
+> `Define("primary", s => s.Background(...)).Hover(s => ...).Pressed(s => ...)`（变体按声明序应用，
+> 同开时后声明胜，与 CSS 同优先级按源顺序一致）；绘制段键含状态位——状态翻转段重建、复用帧正确。
+> 画廊 primary/tool 全部带 hover 提亮/active 压暗变体；顺带修复焦点环脏区覆盖不足（1×→1.5×+1，
+> GPU 逐像素比对抓出环外缘泄漏）。`StyleTests` +4、`PseudoStateTests` +6；**688 个用例
+> （346/241/101），全绿**；selfcheck PASS；静态出图 hash 与 D101 一致（无状态变化零漂移）。
+>
 > **AppBuilder + 依赖注入已通过（2026-11-09，D101）**：Avalonia 式启动形态——`AppBuilder.Configure<TApp>()`
 > 链式装配（`.UseWindows().UseVello().UseHarfBuzzText().UseTheme(...).UseStyles(...).ConfigureServices(...)`
 > `.Start(args)`）；`Application` 基类（`Services` 容器 / `MainWindow` 描述式 `Window` / `OnFrameworkInitializationCompleted`），

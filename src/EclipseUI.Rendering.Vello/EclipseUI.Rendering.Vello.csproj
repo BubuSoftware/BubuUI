@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\EclipseUI.Rendering\EclipseUI.Rendering.csproj" />
+    <ProjectReference Include="..\EclipseUI.Text.Shaping\EclipseUI.Text.Shaping.csproj" />
   </ItemGroup>
 
   <ItemGroup>

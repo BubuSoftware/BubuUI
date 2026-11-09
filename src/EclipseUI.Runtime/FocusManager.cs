@@ -27,11 +27,11 @@ public sealed class FocusManager
         var old = Focused;
         if (old is not null)
         {
-            old.InvalidateRender();
+            old.IsFocused = false; // 状态变化自带失效（D102）：重算焦点视觉 + 重应用伪类样式
             old.RaiseEvent(new RoutedEventArgs(Element.LostFocusEvent) { Source = old });
         }
         Focused = element;
-        element.InvalidateRender();
+        element.IsFocused = true;
         element.RaiseEvent(new RoutedEventArgs(Element.GotFocusEvent) { Source = element });
         return true;
     }
@@ -41,7 +41,7 @@ public sealed class FocusManager
         var old = Focused;
         if (old is null) return;
         Focused = null;
-        old.InvalidateRender();
+        old.IsFocused = false;
         old.RaiseEvent(new RoutedEventArgs(Element.LostFocusEvent) { Source = old });
     }
 

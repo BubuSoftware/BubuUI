@@ -106,6 +106,9 @@ public abstract class Element
     private Dictionary<StyledProperty, IValueBox>? _localValues;
     private Dictionary<StyledProperty, IValueBox>? _styleValues;
     private IReadOnlyList<string>? _classes;
+    private bool _isHovered;
+    private bool _isPressed;
+    private bool _isFocused;
     private Dictionary<RoutedEvent, List<Action<RoutedEventArgs>>>? _handlers;
 
     public Element? Parent => _parent;
@@ -239,9 +242,49 @@ public abstract class Element
     }
 
     /// <summary>
+    /// 伪类状态掩码（D102，CSS 伪类对应物）：<see cref="IsHovered"/>/<see cref="IsPressed"/>/
+    /// <see cref="IsFocused"/> 三位的合成，供样式匹配与绘制段键使用。变化即失效：
+    /// 渲染重算 + class 层样式重应用（伪类变体按当前状态重选）。
+    /// </summary>
+    public PseudoStates PseudoStates =>
+        (_isHovered ? PseudoStates.Hover : PseudoStates.None) |
+        (_isPressed ? PseudoStates.Pressed : PseudoStates.None) |
+        (_isFocused ? PseudoStates.Focused : PseudoStates.None);
+
+    /// <summary>指针悬停（CSS :hover）。由 <see cref="InputRouter"/> 在命中目标变化时维护。</summary>
+    public bool IsHovered
+    {
+        get => _isHovered;
+        internal set => SetPseudoState(PseudoStates.Hover, value, ref _isHovered);
+    }
+
+    /// <summary>指针按下未释放（CSS :active）。由 <see cref="InputRouter"/> 在捕获期间维护。</summary>
+    public bool IsPressed
+    {
+        get => _isPressed;
+        internal set => SetPseudoState(PseudoStates.Pressed, value, ref _isPressed);
+    }
+
+    /// <summary>键盘焦点（CSS :focus）。由 <see cref="FocusManager"/> 维护；仅可聚焦元素成立。</summary>
+    public bool IsFocused
+    {
+        get => _isFocused;
+        internal set => SetPseudoState(PseudoStates.Focused, value, ref _isFocused);
+    }
+
+    private void SetPseudoState(PseudoStates state, bool value, ref bool field)
+    {
+        if (field == value) return;
+        field = value;
+        InvalidateRender(); // 显式失效兜底：变体移除时重应用可能值相等短路（SetStyleValue 同值不触发）
+        ReapplyStyles();
+    }
+
+    /// <summary>
     /// 样式类（S-B）：经 <see cref="Styling.Provider"/> 应用样式表；类集变化时
     /// 先清 class 层值再重新应用（local 值不受影响）。Provider 未装配时记录声明、
-    /// 装配后补应用（宿主可晚于建树装配）。
+    /// 装配后补应用（宿主可晚于建树装配）。伪类变体（D102）由提供者按
+    /// <see cref="PseudoStates"/> 当前值选择——状态变化走 <see cref="ReapplyStyles"/> 重选。
     /// </summary>
     public IReadOnlyList<string> Classes
     {
@@ -252,17 +295,24 @@ public abstract class Element
             if (_classes is not null && _classes.SequenceEqual(next))
                 return;
             _classes = next.Count == 0 ? null : next.ToArray();
-            var provider = Styling.Provider;
-            if (provider is null)
+            if (Styling.Provider is null)
             {
                 if (!Styling.PendingClasses.Any(p => ReferenceEquals(p.Element, this)))
                     Styling.PendingClasses.Add((this, _classes ?? Array.Empty<string>()));
                 return;
             }
-            provider.ClearStyles(this);
-            foreach (var cls in _classes ?? Array.Empty<string>())
-                provider.ApplyClass(this, cls);
+            ReapplyStyles();
         }
+    }
+
+    /// <summary>清 class 层并按当前类集重应用（类集变化与伪类状态变化共用）。</summary>
+    private void ReapplyStyles()
+    {
+        var provider = Styling.Provider;
+        if (provider is null || _classes is null) return;
+        provider.ClearStyles(this);
+        foreach (var cls in _classes)
+            provider.ApplyClass(this, cls);
     }
 
     private void NotifyInheritedChange(StyledProperty property)

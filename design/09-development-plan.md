@@ -78,7 +78,7 @@
 | 文本 | 🟡 单行 shaping 已接入 | 断行、bidi、fallback、emoji、glyph 缓存、display list 集成 |
 | 输入/焦点 | 🟡 元素路由已通 | 字符输入/IME、滚轮/触摸、Shift+Tab、无障碍 |
 | 渲染/合成器 | 🟡 scene graph + 上屏 + damage v0 + retained 构建层（✅ D93） | 脏区光栅化（上游 scissor API）、合成器、帧预算门槛 |
-| 样式/主题 | 🟡 令牌 + Class 样式 + 最小主题资源已落（2026-11-09，D98–D100） | 模板 Class 语法与编译期类名校验、资源字典/`Style=` 模板语法（S-C 后续）、控件模板（S-D） |
+| 样式/主题 | 🟡 令牌 + Class 样式 + 主题资源 + 伪类变体已落（2026-11-09，D98–D102） | 模板 `Class` 语法与编译期类名校验、资源字典/`Style=` 模板语法（S-C 后续）、`:disabled`（需 Enabled 概念）、后代/子代选择器组合、控件模板（S-D） |
 | 控件库 | 🟡 极简 | TextBlock/Button/CheckBox/StackPanel/ListBoxItem 之外的基础控件 |
 | IDE | 🔴 未开始 | TextMate、LSP server、VS Code/Rider 壳 |
 | 工具链 | 🔴 基本未开始 | 热重载、断点映射、DevTools、无头测试 SDK |
@@ -475,6 +475,11 @@ CPU 侧部分收敛（2026-11-08/D84）：CPU 像素 golden（`PixelGoldenTests`
   `ReplaceTheme` 丢段重建即随新表刷新，无需新增失效维度；Gallery 分区卡/样式表全改双色资源
   （inline 静态色并示两种语义）。完整资源字典、`Style=` 内联与模板 `Class` 语法（目录/生成器/
   编译期类名校验）留 S-C 后续片；控件模板（S-D）远期。
+- **伪类状态样式（✅ 2026-11-09，D102）**：`PseudoStates` 掩码（Hover/Pressed/Focused）由
+  InputRouter/FocusManager 维护，状态变化 = 渲染失效 + class 层重应用；定义侧链式语法
+  `Define("primary", s => s.Background(...)).Hover(s => ...).Pressed(s => ...)`——变体按声明
+  顺序应用、同开时后声明胜；段键含状态位（状态翻转段重建）。`:disabled` 需先落 Enabled
+  概念、后代/子代选择器组合留后续。
 - 宿主启动形态：**AppBuilder + 依赖注入（✅ 2026-11-09，D101）**：Avalonia 式启动——
   `AppBuilder.Configure<TApp>().UseWindows().UseVello().UseHarfBuzzText().UseTheme(...).
   UseStyles(StyleRegistry.Instance, styles.Define).ConfigureServices(...).Start(args)`；

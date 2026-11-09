@@ -25,7 +25,7 @@ namespace EclipseUI.Rendering;
 public sealed class ElementPainter
 {
     /// <summary>单元素自绘命令段；缓存后视为只读。</summary>
-    private sealed record Segment(long Version, Point Position, Size Size, bool Focused, List<DrawCommand> Commands);
+    private sealed record Segment(long Version, Point Position, Size Size, PseudoStates States, List<DrawCommand> Commands);
 
     private ElementTheme _theme;
     private readonly ITextPainter? _text;
@@ -127,9 +127,17 @@ public sealed class ElementPainter
         var final = element.FinalRect;
         var rect = new Rect(offset.X + final.X, offset.Y + final.Y, final.Width, final.Height);
 
-        // 焦点环画在元素矩形之外，脏区必须包含它。
-        var focused = ReferenceEquals(element, _focused) && element.IsFocusable;
-        var visualBounds = focused ? Inflate(rect, _theme.FocusRingWidth) : rect;
+        // 伪类状态（D102）：hover/pressed/focused 读元素自身（FocusManager/InputRouter 维护
+        // IsFocused）；Build 的 focused 参数是 headless 手工传焦点的兼容入口。两来源并集，
+        // 段键与焦点环绘制同源——否则 retained 复用键与全量重画判定会分叉。
+        var states = element.PseudoStates;
+        if (ReferenceEquals(element, _focused) && element.IsFocusable)
+            states |= PseudoStates.Focused;
+        var focused = (states & PseudoStates.Focused) != 0;
+        // 焦点环 stroke 居中于 ring（rect 外扩 FocusRingWidth）路径：外缘达 1.5×FocusRingWidth，
+        // AA 半覆盖再 +1——脏区必须覆盖全部环像素（D102 抓出的既有覆盖不足：旧式 1× 膨胀下
+        // 环外缘 ~1px 带留在脏区外，GPU retained 合成与整帧参照逐像素比对时暴露）。
+        var visualBounds = focused ? Inflate(rect, _theme.FocusRingWidth * 1.5 + 1) : rect;
         tracker?.Visit(element, visualBounds);
 
         // retained 段：自绘命令（类型绘制 + 卡片 + 焦点环）按失效键复用。
@@ -137,7 +145,7 @@ public sealed class ElementPainter
             segment.Version == element.RenderVersion &&
             segment.Position == rect.Location &&
             segment.Size == rect.Size &&
-            segment.Focused == focused)
+            segment.States == states)
         {
             _list.AddRange(segment.Commands);
             _reusedSegments++;
@@ -149,7 +157,7 @@ public sealed class ElementPainter
             PaintSelf(element, rect, focused, isRoot);
             _paintList = _list;
             _segments.Remove(element);
-            _segments.Add(element, new Segment(element.RenderVersion, rect.Location, rect.Size, focused, buffer.Commands));
+            _segments.Add(element, new Segment(element.RenderVersion, rect.Location, rect.Size, states, buffer.Commands));
             _list.AddRange(buffer.Commands);
             _repaintedSegments++;
         }
