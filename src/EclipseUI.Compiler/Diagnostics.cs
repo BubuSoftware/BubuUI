@@ -66,7 +66,10 @@ public static class UiDiagnostics
     public const string ParameterDeclarationInvalid = "EUI028";
     public const string RefTargetInvalid = "EUI029";
     public const string GenericTagNotSupported = "EUI030";
-    public const string ReservedSyntax = "EUI031";
+    // E2 转正（design/17 §5）：EUI031 从「Class/Style 保留未实现」改为「Class/Style 属性不合法」
+    // ——未知类名（样式目录查无）、Class 表达式形态不符、Style= 表达式（只允许静态值）、
+    // @bind-Class/@bind-Style。同一码仍服务于 <Class>/<Style> **标签**形态保留（UiCatalogFactory）。
+    public const string StyleAttributeInvalid = "EUI031";
 
     public const string SameTargetDuplicate = "EUI033";
     public const string BindSourceInvalid = "EUI037";

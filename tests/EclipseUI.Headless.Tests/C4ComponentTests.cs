@@ -254,12 +254,15 @@ public class C4ComponentTests
     }
 
     [Fact]
-    public void Component_ClassAndStyleStillReserved()
+    public void Component_ClassLiteral_ParsesClassNames()
     {
+        // E2 转正：组件实例同为 Element，Class= 语义与控件一致（无目录语境宽松回写）。
         var catalog = CatalogWithComponent();
-        var (_, diags) = ParseAnalyze(catalog, "@using Probe\n" + """<ProbeCard Count="1" Class="big" />""");
-        var diag = Assert.Single(diags);
-        Assert.Equal(UiDiagnostics.ReservedSyntax, diag.Code);
+        var (doc, diags) = ParseAnalyze(catalog, "@using Probe\n" + """<ProbeCard Count="1" Class="big" />""");
+        Assert.Empty(diags);
+        var attr = doc.Nodes.OfType<UiElement>().First(e => e.Tag == "ProbeCard").Attributes
+            .Single(a => a.Name == "Class");
+        Assert.Equal(new[] { "big" }, attr.ClassNames);
     }
 
     [Fact]

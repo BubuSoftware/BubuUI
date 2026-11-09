@@ -162,19 +162,27 @@ public class C3LiteralAndDiagnosticsTests
     }
 
     [Fact]
-    public void ClassAttribute_IsReservedSyntax()
+    public void ClassAttribute_ParsesClassNames_WithoutCatalogContext()
     {
-        var (_, diags) = ParseAnalyze(UiTestCatalogs.BuiltIn(), "@using EclipseUI.Elements\n" + """<StackPanel Class="elevated" />""");
-        var diag = Assert.Single(diags);
-        Assert.Equal(UiDiagnostics.ReservedSyntax, diag.Code);
-        Assert.Contains("G4", diag.Message);
+        // E2 转正（design/17 §4.8）：Class= 是合法属性。无目录语境（本测试直调 Analyzer、
+        // styleClasses=null）宽松不校验类名——生成器语境传真实目录，未知类名报 EUI031
+        // （见 EustyleTests 的管线用例）。这里只验证解析与回写。
+        var (doc, diags) = ParseAnalyze(UiTestCatalogs.BuiltIn(), "@using EclipseUI.Elements\n" + """<StackPanel Class="elevated flat-card" />""");
+        Assert.Empty(diags);
+        var attr = doc.Nodes.OfType<UiElement>().Single().Attributes.Single();
+        Assert.NotNull(attr.ClassNames);
+        Assert.Equal(new[] { "elevated", "flat-card" }, attr.ClassNames);
     }
 
     [Fact]
-    public void StyleAttribute_IsReservedSyntax()
+    public void StyleAttribute_MalformedDeclarations_ReportEUI050()
     {
+        // E2 转正：Style= 是合法属性入口，但值必须是声明序列（prop: value; ...）——
+        // 旧保留语义的裸词 "flat" 现在按样式语法解析报 EUI050。
         var (_, diags) = ParseAnalyze(UiTestCatalogs.BuiltIn(), "@using EclipseUI.Elements\n" + """<StackPanel Style="flat" />""");
-        Assert.Contains(diags, d => d.Code == UiDiagnostics.ReservedSyntax);
+        var diag = Assert.Single(diags);
+        Assert.Equal(UiDiagnostics.StyleSyntax, diag.Code);
+        Assert.Contains("flat", diag.Message);
     }
 
     [Fact]

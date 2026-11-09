@@ -44,3 +44,9 @@ public sealed record EustyleSetter(
 
 /// <summary>解析产物：全部类规则（按源顺序）。</summary>
 public sealed record EustyleStylesheet(IReadOnlyList<EustyleRule> Rules);
+
+/// <summary>
+/// 元素级 <c>Style="…"</c> 的解析产物（E2，design/17 §4.8②）：无类语境的声明序列，
+/// 全部 <see cref="EustyleVariant.None"/>——元素属性没有「状态」语境，变体一律走类名通道。
+/// </summary>
+public sealed record EustyleDeclarations(IReadOnlyList<EustyleSetter> Setters);

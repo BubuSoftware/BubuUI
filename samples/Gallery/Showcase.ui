@@ -2,8 +2,8 @@
 
 @style {
     // Component-scoped stylesheet (E1, design/17 4.8): class names compile to
-    // Showcase__-prefixed registrations at component initialization. E2 will
-    // expose them to templates via Class="..." with local-first resolution.
+    // Showcase__-prefixed registrations at component initialization. E2 lets
+    // templates reference them via Class="..." (local-first resolution).
     .demo-scope {
         corner-radius: 12;
 
@@ -12,7 +12,7 @@
 }
 
 <StackPanel Gap="10">
-    <TextBlock FontSize="13">Text scale - runs share one shaping cache</TextBlock>
+    <TextBlock Class="demo-scope" FontSize="13">Text scale - runs share one shaping cache (this line is scoped by the component style block)</TextBlock>
     <TextBlock FontSize="20">The quick brown fox · 20px</TextBlock>
     <TextBlock FontSize="15">The quick brown fox · 15px</TextBlock>
     <TextBlock FontSize="12">muted caption 12px - secondary color under threshold</TextBlock>
@@ -22,6 +22,10 @@
         <CheckBox Label="checked by default" Checked="true" />
         <CheckBox Label="unchecked - click or Space to toggle" />
     </StackPanel>
+
+    <TextBlock FontSize="13">Styles - Class= resolves through the shared catalog; Style= writes the local layer (local beats class)</TextBlock>
+    <Button Class="primary" Style="corner-radius: 18">class=primary paint + inline corner-radius override</Button>
+    <Button Class="tool primary">tool + primary stacked (array order: later wins)</Button>
 
     <TextBlock FontSize="13">Grid - Auto, fixed and star tracks (Grid.Row / Grid.Column attached)</TextBlock>
     <Grid RowDefinitions="Auto,44" ColumnDefinitions="120,*,2*" Gap="6">

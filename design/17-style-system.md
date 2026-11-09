@@ -1,6 +1,6 @@
 # 17 · 样式系统完整设计（Styling System）
 
-> 状态：**D98–D102 已落地 + E1–E5 提案**（2026-11-09）
+> 状态：**D98–D102 + E1(E3)–E2(D105) 已落地，E4/E5 提案**（2026-11-09）
 > 关联：design/03（模板引擎，§3.3.9 `Class`/`Style` 保留）、design/09 §9.3 G4（样式/主题行）、
 > design/04（Runtime 属性引擎）、design/05（绘制与段缓存）
 > 台账：已落部分见 spec/02 §12 D98–D102；提案部分实现时逐片登记（E1–E5）
@@ -306,7 +306,7 @@ public static class StyleBootstrap
   块形态只是 UiCompiler 侧的接入薄层（解析产物→生成 `Define` 调用挂到组件初始化）。
 - 分工约定：**组件私有样式进 `@style`，跨组件复用进 `.eustyle`**（SCSS 的局部/全局惯例同款）。
 
-**② 元素级 `Style="…"` 属性**（HTML `style=""` 的对应物）——E2 转正（EUI031 原保留语义之一）：
+**② 元素级 `Style="…"` 属性**（HTML `style=""` 的对应物）——✅ E2 落地（EUI031 原保留语义之一）：
 
 ```html
 <Button Style="background: #c45499; corner-radius: 18">inline</Button>
@@ -333,7 +333,7 @@ app.eustyle ──► EustyleCompiler ──► StyleBootstrap.g.cs ─┐
              样式目录（内存/中间文件）                     │
                  │                                       │
 *.ui ──► UiCompiler ──► *.g.cs ──────────────────────────┘
-            │  ① Class="…" 逐个查目录 → 未知类名 EUI031（解禁）
+            │  ① Class="…" 逐个查目录 → 未知类名 EUI031（✅ E2 已落）
             │  ② E4：静态子树匹配 → 子元素注入派生类
             └ ③ 注册位（E5）同目录校验 :state 名
 ```
@@ -343,7 +343,7 @@ app.eustyle ──► EustyleCompiler ──► StyleBootstrap.g.cs ─┐
 
 | 码 | 语义 | 级别 |
 |----|------|------|
-| `EUI031` | **转正**：模板 `Class="…"` 引用样式目录中不存在的类（原「保留未实现」语义终止） | Error |
+| `EUI031` | **已转正（E2）**：模板 `Class="…"` 引用目录外类名 / `Class={expr}` 形态不符 / `Style=` 表达式 / `@bind-Class`（原「保留未实现」语义终止；`<Class>` 标签形态保留不变） | Error |
 | `EUI050` | 样式表语法错误 / 不支持的选择器形态 | Error |
 | `EUI051` | 未知属性名（不在 StyleBuilder setter 目录） | Error |
 | `EUI052` | 值类型不匹配（color/length/theme 形态不符、未定义变量、单位后缀） | Error |
@@ -392,7 +392,8 @@ E4 依赖 E1+E2；E5 收尾开放性。0.1 alpha 出口只需 E3（+ 可选 E1�
 |----|------|
 | E3 | ✅ 完成（2026-11-09，D103）：Disabled 位 + IsEnabled 继承 + 路由/焦点门控 + 置灰令牌 + `.Disabled()` 变体 + FocusRingWidth；699 例全绿 |
 | E1 | ✅ 完成（2026-11-09，D104）：EustyleParser/Generator + EUI050–052 + `.eustyle` → StyleBootstrap.g.cs + `@style` 组件块（前缀注册）；画廊迁移 app.eustyle；722 例全绿（352/264/106） |
-| E2/E4/E5 | ⏳ 排队（E2 下一片） |
+| E2 | ✅ 完成（2026-11-09，D105）：类名目录管道（StyleClassCatalog 值相等跨管道）+ `Class=` 转正（本地 @style 优先解析、未知类名 EUI031、表达式 Split/ToArray 探针形态）+ `Style=` local 直赋（ParseDeclarations + Visual.SetXxx/SetValue）；739 例全绿（352/281/106） |
+| E4/E5 | ⏳ 排队（E4 下一片） |
 
 ---
 

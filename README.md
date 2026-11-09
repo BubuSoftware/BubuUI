@@ -138,6 +138,20 @@
 > `Visual` 覆盖属性（Background/Foreground/CornerRadius）+ painter 读覆盖回落主题（未设置零漂移）；
 > Gallery primary/tool 双 class 演示。模板 `Class` 语法与编译期类名校验、按主题资源查找留下一片；
 > `Style=` 内联（S-C）与控件模板（S-D）远期。
+>
+> **Eustyle 样式表编译器已通过（2026-11-09，D104，样式系统 E1 片）**：`.eustyle` 全局样式表 +
+> `@style` 组件块（`{Component}__` 前缀注册、静态幂等 `__RegisterStyles`）——SCSS 子集（类规则 +
+> `&:hover`/`.card:hover` 双形态变体、`$变量`、`theme(d,l)`、hex 三形态）编译期编译为
+> `StyleRegistry.Define` 调用，运行时零引擎；诊断 EUI050/051/052（EUI048/049 已占用顺延修正）。
+> 画廊 GalleryStyles.cs → app.eustyle 全量迁移。
+>
+> **模板 `Class`/`Style` 转正已通过（2026-11-09，D105，样式系统 E2 片）**：类名目录
+> （`.eustyle` + `@style` 块）combine 进模板管道——`Class="a b"` 编译期查目录（本文件 `@style`
+> 优先解析），未知类名 **EUI031** 转正报错（原「保留未实现」终止）；`Class={expr}` 支持 string
+> （Split）与 `IEnumerable<string>`（ToArray）经 U/R 定向推送；`Style="prop: value; ..."` 只允许
+> 静态声明序列（Eustyle 解析，EUI050–052 定位值 span），生成 local 层直赋（`Visual.SetXxx`/
+> `SetValue`，theme() 升级 Resource 属性）。Showcase.ui 演示本文件 `@style` 闭环 +
+> local>class 层级覆盖。**739 个用例（Headless 352 / Compiler 281 / Rendering 106），全绿**。
 > **668 个用例（Headless 332 / Compiler 241 / Rendering 95），全绿**。
 >
 > **S-C 最小主题资源已通过（2026-11-09，D100）**：`ThemeColor` 暗亮双色——`Visual.BackgroundResource/
@@ -419,8 +433,9 @@ public partial class Counter
   scene graph 与元素级 damage（空闲跳帧）已落地（G2 第二/三切片）；
   **retained 构建层已落地（D93 段级缓存，帧间命令构造趋零）**；真正的局部重绘（脏区光栅化）
   等 VelloSharp 提供 scissor API，合成器仍未实现；
-  样式系统首批已落（D98/D99：主题 token 可替换 + 亮暗切换、Class 样式 + 有效值分层）——
-  模板 Class 语法、按主题资源查找、`Style=` 内联与控件模板留后续片。
+  样式系统已落（D98/D99 主题 token + Class 样式分层、D100 ThemeColor、D102 伪类、D103 :disabled、
+  D104 样式表编译器 `.eustyle`/`@style`、D105 模板 `Class`/`Style` 转正）——
+  嵌套塌缩（E4）、注册制伪类（E5）与控件模板（S-D）留后续片。
 - 字体 fallback 未实现（缺字显示 `.notdef`）；CPU 光栅化每次约 60 ms 固定开销，仅用于 CI/离线导出。
 - 3D：**不提供 3D 引擎**。规划为 WebGPU 视口控件——应用自带渲染器，框架负责布局、
   裁剪、DPI、输入与纹理合成（见 [05 布局、渲染与输入](./design/05-layout-rendering-input.md) 与 G7）。
@@ -465,6 +480,7 @@ IDE/DevTools 随后。
    出口标准 = D85–D88 关闭 + 样例与 golden 迁移 + 用例基线全绿（497 → 548）；计划见 [16](./design/16-blazor-alignment-plan.md)。
 4. **G4 样式/控件/虚拟化**：~~`VirtualizingPanel`~~ ✅（2026-11-09，窗口虚拟化 + 均匀行 extent）；
    基础控件集首批 ✅（WrapPanel/Grid/ScrollViewer/附加属性/Unmount，2026-11-09）；
-   ~~主题切换~~ ✅ D98、~~Class 样式 + 有效值分层~~ ✅ D99（2026-11-09）；
-   余模板 Class 语法、按主题资源查找、`Style=` 内联（S-C）、控件模板（S-D）。
+   ~~主题切换~~ ✅ D98、~~Class 样式 + 有效值分层~~ ✅ D99、~~按主题资源查找~~ ✅ D100、
+   ~~伪类~~ ✅ D102/D103、~~样式表编译器~~ ✅ D104（E1）、~~模板 Class/Style 转正~~ ✅ D105（E2，2026-11-09）；
+   余嵌套塌缩（E4）、注册制伪类（E5）、控件模板（S-D）。
 5. **G5 IDE P0–P1**：TextMate grammar + LSP server（表达式投影进 Roslyn）+ VS Code/Rider 壳。

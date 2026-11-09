@@ -63,8 +63,6 @@ public sealed class TemplateGenerator : IIncrementalGenerator
             // 命名节点让逐文件生成在 TrackedSteps 里可独立观测：D74 ② 的目录级诊断出口
             // 是第二个 SourceOutput，不能把所有 "SourceOutput" 混成一组断言（§14.10.3）。
             .WithTrackingName("PerFileGeneration");
-        context.RegisterSourceOutput(perFile, static (spc, data) =>
-            ExecuteFile(spc, data.Input, data.Catalog, data.Facts));
 
         // E1（design/17 §4.1）：.eustyle → StyleBootstrap.g.cs。样式表文件数少且全局单源，
         // Collect 成批处理（一个 Apply 出口、AppBuilder.UseStyles 直连）；诊断逐文件定位，
@@ -76,6 +74,21 @@ public sealed class TemplateGenerator : IIncrementalGenerator
             .Combine(rootNamespace);
         context.RegisterSourceOutput(styleSheets, static (spc, data) =>
             ExecuteStylesheet(spc, data.Left, data.Right));
+
+        // E2（design/17 §5）：全局样式类名目录——.eustyle 的类名 + 各 .ui 的 @style 块类名
+        // （组件前缀 {Component}__）。产出是值相等 record，combine 进逐文件管道供
+        // Class="…" 编译期校验（EUI031 转正）。目录管道不报诊断——解析错误由各自主管道
+        // 报告（.eustyle → ExecuteStylesheet，@style → ExecuteFile），此处按「有错即空」处理。
+        var styleClasses = context.AdditionalTextsProvider
+            .Where(static file => Path.GetExtension(file.Path) is ".eustyle" or ".ui")
+            .Select(static (file, ct) => new UiFileInput(file.Path, file.GetText(ct)?.ToString() ?? ""))
+            .Select(static (input, _) => ExtractStyleClasses(input))
+            .Collect()
+            .Select(static (facts, _) => StyleClassCatalog.Build(facts))
+            .WithTrackingName("StyleClassCatalog");
+        var perFileWithStyles = perFile.Combine(styleClasses);
+        context.RegisterSourceOutput(perFileWithStyles, static (spc, data) =>
+            ExecuteFile(spc, data.Left.Input, data.Left.Catalog, data.Left.Facts, data.Right));
     }
 
     private static UiFileFacts ExtractFacts(UiFileInput input, UiCatalog catalog, Compilation compilation,
@@ -145,9 +158,10 @@ public sealed class TemplateGenerator : IIncrementalGenerator
         var probe = new TemplateProbe(compilation, type, className, effectiveNamespace, memberTrees, usings);
         var probeDiags = new List<UiDiagnostic>();
         var switchTypes = new List<SwitchTypeFact>();
+        var classKinds = new List<ClassKindFact>();
         if (type is not null || codeBlocks.Count > 0)
         {
-            var itemTypes = ProbeSemantics(doc, probe, compilation, probeDiags, switchTypes)
+            var itemTypes = ProbeSemantics(doc, probe, compilation, probeDiags, switchTypes, classKinds)
                 .Select(kv => new ItemTypeFact(kv.Key.CollectionSpan.Start, kv.Value))
                 .OrderBy(fact => fact.SpanStart)
                 .ToImmutableArray();
@@ -160,7 +174,8 @@ public sealed class TemplateGenerator : IIncrementalGenerator
                 codeBehindDiags.ToImmutableArray(),
                 probeDiags.ToImmutableArray(),
                 itemTypes,
-                switchTypes.OrderBy(fact => fact.SpanStart).ToImmutableArray());
+                switchTypes.OrderBy(fact => fact.SpanStart).ToImmutableArray(),
+                classKinds.OrderBy(fact => fact.SpanStart).ToImmutableArray());
         }
 
         return new UiFileFacts(
@@ -168,7 +183,8 @@ public sealed class TemplateGenerator : IIncrementalGenerator
             codeBehindDiags.ToImmutableArray(),
             probeDiags.ToImmutableArray(),
             ImmutableArray<ItemTypeFact>.Empty,
-            ImmutableArray<SwitchTypeFact>.Empty);
+            ImmutableArray<SwitchTypeFact>.Empty,
+            ImmutableArray<ClassKindFact>.Empty);
     }
 
     /// <summary>K22/K31：根层 @using 的 using 子句正文（命名空间 + 别名，按文档顺序去重）。</summary>
@@ -266,7 +282,7 @@ public sealed class TemplateGenerator : IIncrementalGenerator
     }
 
     private static void ExecuteFile(SourceProductionContext spc, UiFileInput input,
-        UiCatalog catalog, UiFileFacts facts)
+        UiCatalog catalog, UiFileFacts facts, StyleClassCatalog styleClasses)
     {
         var sourceText = SourceText.From(input.Text);
         var className = Path.GetFileNameWithoutExtension(input.Path);
@@ -282,16 +298,10 @@ public sealed class TemplateGenerator : IIncrementalGenerator
         var doc = FrontEnd.Parse(input.Text, input.Path, diags);
         diags.AddRange(facts.CodeBehindDiags);
 
-        var ownSlots = facts.DisplayName.Length == 0
-            ? null
-            : facts.Slots.ToDictionary(slot => slot.Name, StringComparer.Ordinal);
-        FrontEnd.Analyze(doc, catalog, diags, ownSlots, facts.DisplayName.Length == 0 ? null : facts.DisplayName);
-        diags.AddRange(facts.ProbeDiags);
-
-        // E1（design/17 §4.8）：@style 组件块——Eustyle 解析，类名加组件前缀后交 Emitter
-        // 在组件初始化注册。块内诊断 span 经 CodeSpan 偏移映射回 .ui 绝对位置；样式错误
-        // 是 Error（短路生成，与 .ui 管道口径一致），健康块的规则仍进产物。
+        // E2（design/17 §4.8①）：先解析本文件 @style 块——产物除 styleRules 外还提供
+        // 裸名 → 注册名映射（Probe__demo），供 Class="…" 的「先本文件、再全局」解析序。
         var styleRules = new List<EustyleRule>();
+        var localStyleClasses = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var block in doc.Nodes.OfType<UiStyleBlock>())
         {
             var blockDiags = new List<UiDiagnostic>();
@@ -299,7 +309,33 @@ public sealed class TemplateGenerator : IIncrementalGenerator
             diags.AddRange(blockDiags);
             if (blockDiags.Exists(static d => d.IsError)) continue;
             foreach (var rule in sheet.Rules)
+            {
                 styleRules.Add(new EustyleRule(className + "__" + rule.ClassName, rule.NameSpan, rule.Setters));
+                // 前块健康即可用；同名裸名取先声明（与运行时「后注册覆盖」口径不同——
+                // 编译期闭环要确定性，声明序后者胜留给运行时重叠注册的既有语义）
+                if (!localStyleClasses.ContainsKey(rule.ClassName))
+                    localStyleClasses[rule.ClassName] = className + "__" + rule.ClassName;
+            }
+        }
+
+        var ownSlots = facts.DisplayName.Length == 0
+            ? null
+            : facts.Slots.ToDictionary(slot => slot.Name, StringComparer.Ordinal);
+        // E2：样式目录传真实集合（空目录 = 项目无样式类 → Class= 一律报未知；宽松 null 仅供探针）。
+        FrontEnd.Analyze(doc, catalog, diags, ownSlots,
+            facts.DisplayName.Length == 0 ? null : facts.DisplayName,
+            new HashSet<string>(styleClasses.ClassNames, StringComparer.Ordinal),
+            localStyleClasses);
+        diags.AddRange(facts.ProbeDiags);
+
+        // E2：探针推断的 Class={expr} 集合形态按 ValueSpan.Start 定位回写（与 ItemTypes 同款跨 doc 模式）。
+        if (facts.ClassKinds.Length > 0)
+        {
+            var kindsByStart = facts.ClassKinds.ToDictionary(fact => fact.SpanStart, fact => fact.Kind);
+            foreach (var element in WalkElements(doc.Nodes))
+                foreach (var attr in element.Attributes)
+                    if (attr.Name == "Class" && kindsByStart.TryGetValue(attr.ValueSpan.Start, out var kind))
+                        attr.ClassListKind = kind;
         }
 
         bool hasErrors = false;
@@ -324,6 +360,79 @@ public sealed class TemplateGenerator : IIncrementalGenerator
             styleRules).Emit();
 
         spc.AddSource($"{className}.{StableHash(input.Path)}.g.cs", code);
+    }
+
+    /// <summary>
+    /// E2：单文件的样式类名提取——.eustyle 取全部类规则名；.ui 只取 @style 块的规则名
+    /// （加 <c>{Component}__</c> 前缀，与 ExecuteFile 注册侧同规则）。诊断丢弃（各自主管道报告），
+    /// 任一解析 Error 则该文件产出空集——主管道 Error 已短路生成，半成品目录没有意义。
+    /// </summary>
+    private static StyleClassFact ExtractStyleClasses(UiFileInput input)
+    {
+        var extension = Path.GetExtension(input.Path);
+        if (extension == ".eustyle")
+        {
+            var diags = new List<UiDiagnostic>();
+            var sheet = Eustyle.Parse(input.Text, input.Path, diags);
+            return new StyleClassFact(input.Path,
+                diags.Exists(static d => d.IsError)
+                    ? ImmutableArray<string>.Empty
+                    : sheet.Rules.Select(static r => r.ClassName).ToImmutableArray());
+        }
+
+        // .ui：@style 块类名。组件名 = 文件名（ExecuteFile 同口径）。
+        var className = Path.GetFileNameWithoutExtension(input.Path);
+        if (!SyntaxFacts.IsValidIdentifier(className))
+            return new StyleClassFact(input.Path, ImmutableArray<string>.Empty);
+        var parseDiags = new List<UiDiagnostic>();
+        var doc = FrontEnd.Parse(input.Text, input.Path, parseDiags);
+        var names = new List<string>();
+        foreach (var block in doc.Nodes.OfType<UiStyleBlock>())
+        {
+            var blockDiags = new List<UiDiagnostic>();
+            var sheet = Eustyle.Parse(block.Code, input.Path, blockDiags, block.CodeSpan.Start);
+            if (blockDiags.Exists(static d => d.IsError)) continue;
+            names.AddRange(sheet.Rules.Select(static r => r.ClassName));
+        }
+        return new StyleClassFact(input.Path,
+            names.Select(n => className + "__" + n).ToImmutableArray());
+    }
+
+    /// <summary>E2：深度遍历模板树的全部元素节点（含 @if/@foreach/@switch 块与插槽填充内容）。</summary>
+    private static IEnumerable<UiElement> WalkElements(IEnumerable<UiNode> nodes)
+    {
+        foreach (var node in nodes)
+        {
+            switch (node)
+            {
+                case UiElement element:
+                    yield return element;
+                    foreach (var descendant in WalkElements(element.Children))
+                        yield return descendant;
+                    break;
+                case UiIf ifNode:
+                    foreach (var descendant in WalkElements(ifNode.Children))
+                        yield return descendant;
+                    foreach (var elseIf in ifNode.ElseIfs)
+                        foreach (var d in WalkElements(elseIf.Children)) yield return d;
+                    if (ifNode.ElseChildren is not null)
+                        foreach (var d in WalkElements(ifNode.ElseChildren)) yield return d;
+                    break;
+                case UiForeach foreachNode:
+                    foreach (var descendant in WalkElements(foreachNode.Children))
+                        yield return descendant;
+                    break;
+                case UiSwitch switchNode:
+                    foreach (var section in switchNode.Sections)
+                        foreach (var descendant in WalkElements(section.Children))
+                            yield return descendant;
+                    break;
+                case UiSlotNode fill:
+                    foreach (var descendant in WalkElements(fill.Children))
+                        yield return descendant;
+                    break;
+            }
+        }
     }
 
     /// <summary>
@@ -595,7 +704,7 @@ public sealed class TemplateGenerator : IIncrementalGenerator
     /// </summary>
     private static Dictionary<UiForeach, string> ProbeSemantics(
         UiDocument doc, TemplateProbe probe, Compilation compilation, List<UiDiagnostic> diags,
-        List<SwitchTypeFact> switchTypes)
+        List<SwitchTypeFact> switchTypes, List<ClassKindFact> classKinds)
     {
         var itemTypes = new Dictionary<UiForeach, string>();
         var env = new List<(ITypeSymbol Type, string Name)>();
@@ -615,6 +724,7 @@ public sealed class TemplateGenerator : IIncrementalGenerator
                             ValidateRefTarget(element, attr, probe, scope, diags);
                             ValidateEventHandlerSignature(attr, probe, scope, diags);
                             ValidateExpressionValue(attr, probe, scope, diags);
+                            ValidateClassExpression(attr, probe, scope, diags, classKinds);
                         }
                         Walk(element.Children, scope);
                         break;
@@ -708,12 +818,48 @@ public sealed class TemplateGenerator : IIncrementalGenerator
         ProbeExpression(attr.Value, attr.ValueSpan, probe, env, diags, targetClrType);
     }
 
+    /// <summary>
+    /// E2：Class={expr} 的形态探针（design/17 §4.8）——string（空白分隔类名）为默认形态，
+    /// IEnumerable&lt;string&gt; 记入 <paramref name="classKinds"/> 供发射 ToArray；
+    /// 确定类型且两者皆非的报 EUI031。推断失败/dynamic 不报（C# 经 #line 兜底）。
+    /// </summary>
+    private static void ValidateClassExpression(UiAttribute attr, TemplateProbe probe,
+        IReadOnlyList<(ITypeSymbol Type, string Name)> env, List<UiDiagnostic> diags,
+        List<ClassKindFact> classKinds)
+    {
+        if (attr.Name != "Class" || attr.IsBind || attr.Kind != AttrValueKind.Expression) return;
+
+        var type = probe.InferType(attr.Value, env);
+        if (type is null || type.TypeKind == TypeKind.Error || type is IDynamicTypeSymbol) return;
+        if (type.SpecialType == SpecialType.System_String) return; // 默认形态：Split
+        if (IsStringEnumerable(type))
+        {
+            classKinds.Add(new ClassKindFact(attr.ValueSpan.Start, UiClassListKind.Collection));
+            return;
+        }
+
+        diags.Add(UiDiagnostics.Error(UiDiagnostics.StyleAttributeInvalid,
+            $"Class={{…}} expression must be a string (space-separated class names) or a string collection; " +
+            $"'{attr.Value.Trim()}' is '{type.ToDisplayString()}'", attr.ValueSpan));
+    }
+
+    private static bool IsStringEnumerable(ITypeSymbol type)
+    {
+        foreach (var iface in type.AllInterfaces)
+        {
+            if (iface.OriginalDefinition.SpecialType != SpecialType.System_Collections_Generic_IEnumerable_T) continue;
+            if (iface.TypeArguments.Length == 1 &&
+                iface.TypeArguments[0].SpecialType == SpecialType.System_String)
+                return true;
+        }
+        return false;
+    }
+
     /// <summary>EUI049 共用入口：表达式原文放探针编译，句内 CS 错误逐条升级为模板诊断。</summary>
     private static void ProbeExpression(string expression, TextSpan span, TemplateProbe probe,
         IReadOnlyList<(ITypeSymbol Type, string Name)> env, List<UiDiagnostic> diags,
         string? targetClrType = null)
-    {
-        var trimmed = expression.Trim();
+    {        var trimmed = expression.Trim();
         if (trimmed.Length == 0) return;
         foreach (var error in probe.ProbeExpressionErrors(trimmed, env, targetClrType))
             diags.Add(UiDiagnostics.Warning(UiDiagnostics.ExpressionSemantic,
@@ -1200,6 +1346,38 @@ public sealed class TemplateGenerator : IIncrementalGenerator
 
 internal sealed record UiFileInput(string Path, string Text);
 
+/// <summary>E2：单文件提取的样式类名（路径 + 有序类名；值相等供增量缓存）。</summary>
+internal sealed record StyleClassFact(string Path, ImmutableArray<string> Classes)
+{
+    public bool Equals(StyleClassFact? other) =>
+        other is not null && Path == other.Path && Classes.SequenceEqual(other.Classes);
+
+    public override int GetHashCode() => unchecked(Path.GetHashCode() * 397 + Classes.Length);
+}
+
+/// <summary>
+/// E2：全局样式类名目录（.eustyle 全部类名 + 各 .ui @style 块前缀类名的有序去重集）。
+/// 值相等是增量缓存前提：任何样式文件变化都会重建，但内容不变时下游逐文件管道按值命中。
+/// </summary>
+internal sealed record StyleClassCatalog(ImmutableArray<string> ClassNames)
+{
+    public static StyleClassCatalog Build(ImmutableArray<StyleClassFact> facts) => new(
+        facts.SelectMany(static f => f.Classes)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(static n => n, StringComparer.Ordinal)
+            .ToImmutableArray());
+
+    public bool Contains(string className) => ClassNames.IndexOf(className, StringComparer.Ordinal) >= 0;
+
+    public bool Equals(StyleClassCatalog? other) =>
+        other is not null && ClassNames.SequenceEqual(other.ClassNames, StringComparer.Ordinal);
+
+    public override int GetHashCode() => ClassNames.Length;
+}
+
+/// <summary>E2：Class={expr} 的集合形态事实（ValueSpan.Start → 形态；String 形态为默认不记录）。</summary>
+internal sealed record ClassKindFact(int SpanStart, UiClassListKind Kind);
+
 internal sealed record ItemTypeFact(int SpanStart, string Type);
 
 /// <summary>@switch selector 的值类型事实（K29）：ValueSpan.Start → 全限定类型名。</summary>
@@ -1214,7 +1392,8 @@ internal sealed record UiFileFacts(
     ImmutableArray<UiDiagnostic> CodeBehindDiags,
     ImmutableArray<UiDiagnostic> ProbeDiags,
     ImmutableArray<ItemTypeFact> ItemTypes,
-    ImmutableArray<SwitchTypeFact> SwitchTypes)
+    ImmutableArray<SwitchTypeFact> SwitchTypes,
+    ImmutableArray<ClassKindFact> ClassKinds)
 {
     public bool Equals(UiFileFacts? other) =>
         other is not null &&
@@ -1225,7 +1404,8 @@ internal sealed record UiFileFacts(
         CodeBehindDiags.SequenceEqual(other.CodeBehindDiags) &&
         ProbeDiags.SequenceEqual(other.ProbeDiags) &&
         ItemTypes.SequenceEqual(other.ItemTypes) &&
-        SwitchTypes.SequenceEqual(other.SwitchTypes);
+        SwitchTypes.SequenceEqual(other.SwitchTypes) &&
+        ClassKinds.SequenceEqual(other.ClassKinds);
 
     public override int GetHashCode()
     {
@@ -1238,6 +1418,7 @@ internal sealed record UiFileFacts(
         foreach (var diag in ProbeDiags) hash = Add(hash, diag);
         foreach (var fact in ItemTypes) hash = Add(hash, fact);
         foreach (var fact in SwitchTypes) hash = Add(hash, fact);
+        hash = Add(hash, ClassKinds.Length);
         return hash;
 
         // netstandard2.0 没有 System.HashCode，与 CatalogValueEq 同口径累加。

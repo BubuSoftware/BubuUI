@@ -136,10 +136,10 @@ public static class UiCatalogFactory
                     var exposedTag = type.Name;
                     if (exposedTag is "Slot" or "ContentSlot")
                     {
-                        hidden.Add(new UiHiddenTag(exposedTag, Display(type), UiDiagnostics.ReservedSyntax,
+                        hidden.Add(new UiHiddenTag(exposedTag, Display(type), UiDiagnostics.StyleAttributeInvalid,
                             $"'{exposedTag}' is a reserved template tag (named slots, spec/01 §4.15); " +
                             "rename the type"));
-                        problems.Add(Problem(UiDiagnostics.ReservedSyntax, type, null,
+                        problems.Add(Problem(UiDiagnostics.StyleAttributeInvalid, type, null,
                             $"'{Display(type)}' registers the reserved template tag '{exposedTag}' (named slots); " +
                             "rename the type"));
                         continue;

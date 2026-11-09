@@ -26,6 +26,20 @@ public enum UiBindForm
     LegacyTwoWay,
 }
 
+/// <summary>
+/// <c>Class={expr}</c> 的目标形态（E2，探针推断后回写）：string 走空白拆分，
+/// string 集合走 ToArray，其它形态在探针报 EUI031。
+/// </summary>
+public enum UiClassListKind
+{
+    /// <summary>未推断（探针未跑/推断失败——C# 经 #line 兜底）。</summary>
+    Unknown,
+    /// <summary>表达式是 string：空白分隔类名，发射 <c>Split</c>。</summary>
+    String,
+    /// <summary>表达式是 IEnumerable&lt;string&gt;（含数组/List）：发射 ToArray。</summary>
+    Collection,
+}
+
 public sealed class UiAttribute
 {
     public string Name { get; set; } = "";
@@ -49,6 +63,18 @@ public sealed class UiAttribute
 
     /// <summary>Ref 的目标字段名（仅 <c>Ref={ident}</c> 且 ident 是简单标识符时设置；Analyzer 填充，C5）。</summary>
     public string? RefTarget { get; set; }
+
+    /// <summary>
+    /// E2（design/17 §4.8）：Class= 字面量拆分并经样式目录校验的类名序列（Analyzer 填充；
+    /// 目录命中为 null（宽松模式）或存在未知类名时报错不回写，生成侧跳过）。
+    /// </summary>
+    public IReadOnlyList<string>? ClassNames { get; set; }
+
+    /// <summary>E2：Class={expr} 的目标形态（探针回写到 facts，经 spanStart 定位应用；String/Collection 才发射）。</summary>
+    public UiClassListKind ClassListKind { get; set; }
+
+    /// <summary>E2：Style="…" 解析出的声明序列（Analyzer 填充；解析失败或表达式形态为 null）。</summary>
+    public IReadOnlyList<EustyleSetter>? StyleSetters { get; set; }
 }
 
 public sealed class UiElement : UiNode

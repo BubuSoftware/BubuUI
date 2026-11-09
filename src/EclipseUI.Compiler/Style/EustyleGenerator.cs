@@ -25,6 +25,51 @@ public static class EustyleGenerator
         return sb.ToString();
     }
 
+    /// <summary>
+    /// 元素级 <c>Style="…"</c> 的 local 直赋语句（E2，design/17 §4.8②）：每条声明一行
+    /// 写 local 层（四层级联的最高层）——background/foreground/corner-radius/focus-ring-width
+    /// 直调 <c>Visual.SetXxx</c> 静态 setter（theme() 双色升级为 Resource 变体属性），
+    /// padding/font-size 落 Panel/TextBlock 的 StyledProperty 字段。返回 (语句, 值 span)
+    /// 序列，调用方逐条做 #line 映射（诊断与断点跟回 .ui 属性值）。
+    /// </summary>
+    public static IReadOnlyList<(string Statement, TextSpan Span)> EmitLocalSetters(
+        IReadOnlyList<EustyleSetter> setters, string target)
+    {
+        var statements = new List<(string, TextSpan)>(setters.Count);
+        foreach (var setter in setters)
+        {
+            var number = setter.Value as EustyleNumber;
+            var statement = setter.Property switch
+            {
+                "Background" when setter.Value is EustyleTheme theme =>
+                    $"{VisualSetter("SetBackgroundResource", target)}{ThemeLiteral(theme)});",
+                "Background" =>
+                    $"{VisualSetter("SetBackground", target)}{ValueLiteral(setter.Value)});",
+                "Foreground" when setter.Value is EustyleTheme theme =>
+                    $"{VisualSetter("SetForegroundResource", target)}{ThemeLiteral(theme)});",
+                "Foreground" =>
+                    $"{VisualSetter("SetForeground", target)}{ValueLiteral(setter.Value)});",
+                "CornerRadius" =>
+                    $"{VisualSetter("SetCornerRadius", target)}{NumberLiteral(number)});",
+                "FocusRingWidth" =>
+                    $"{VisualSetter("SetFocusRingWidth", target)}{NumberLiteral(number)});",
+                "Padding" =>
+                    $"{target}.SetValue(global::EclipseUI.Elements.Panel.PaddingProperty, {NumberLiteral(number)});",
+                "FontSize" =>
+                    $"{target}.SetValue(global::EclipseUI.Elements.TextBlock.FontSizeProperty, {NumberLiteral(number)});",
+                _ => throw new InvalidOperationException(
+                    $"unknown style property '{setter.Property}' in local setter emission"),
+            };
+            statements.Add((statement, setter.ValueSpan));
+        }
+        return statements;
+    }
+
+    /// <summary>调用形态的 Visual 静态 setter 前缀：与手写 C# 的
+    /// <c>Visual.SetBackground(el, color)</c> 同一 API（非 null 值即 local 层直写）。</summary>
+    private static string VisualSetter(string method, string target) =>
+        $"global::EclipseUI.Rendering.Visual.{method}({target}, ";
+
     private static void EmitRule(StringBuilder sb, EustyleRule rule, string registry, string indent)
     {
         // 变体按首次出现顺序分组（None 组最前，进 Define 体）；组内保持属性声明序。
@@ -119,12 +164,18 @@ public static class EustyleGenerator
     private static string ValueLiteral(EustyleValue value) => value switch
     {
         EustyleColor color => ColorLiteral(color.R, color.G, color.B, color.A),
-        EustyleTheme theme => "new global::EclipseUI.Rendering.ThemeColor("
-            + ColorLiteral(theme.Dark.R, theme.Dark.G, theme.Dark.B, theme.Dark.A) + ", "
-            + ColorLiteral(theme.Light.R, theme.Light.G, theme.Light.B, theme.Light.A) + ")",
-        EustyleNumber number => number.Value.ToString("0.################", CultureInfo.InvariantCulture),
+        EustyleTheme theme => ThemeLiteral(theme),
+        EustyleNumber number => NumberLiteral(number),
         _ => throw new InvalidOperationException("unknown value kind"),
     };
+
+    private static string ThemeLiteral(EustyleTheme theme) => "new global::EclipseUI.Rendering.ThemeColor("
+        + ColorLiteral(theme.Dark.R, theme.Dark.G, theme.Dark.B, theme.Dark.A) + ", "
+        + ColorLiteral(theme.Light.R, theme.Light.G, theme.Light.B, theme.Light.A) + ")";
+
+    private static string NumberLiteral(EustyleNumber? number) =>
+        (number ?? throw new InvalidOperationException("expected a number value"))
+            .Value.ToString("0.################", CultureInfo.InvariantCulture);
 
     private static string ColorLiteral(byte r, byte g, byte b, byte a) =>
         a == 255

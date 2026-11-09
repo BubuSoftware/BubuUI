@@ -1224,9 +1224,9 @@ public class CatalogScannerTests
             """);
         Assert.DoesNotContain(catalog.Elements, e => e.Tag == tag);
         var hidden = Assert.Single(catalog.HiddenTags, h => h.Tag == tag);
-        Assert.Equal(UiDiagnostics.ReservedSyntax, hidden.ReasonCode);
+        Assert.Equal(UiDiagnostics.StyleAttributeInvalid, hidden.ReasonCode);
         Assert.Contains("reserved template tag", hidden.Reason);
-        Assert.Contains(catalog.Problems, p => p.Code == UiDiagnostics.ReservedSyntax &&
+        Assert.Contains(catalog.Problems, p => p.Code == UiDiagnostics.StyleAttributeInvalid &&
             p.Message.Contains("rename the type"));
     }
 }

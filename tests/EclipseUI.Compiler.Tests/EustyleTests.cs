@@ -258,6 +258,9 @@ public class EustyleTests
     }
 
     private static GeneratorRunResult Run(params AdditionalText[] texts)
+        => RunWith("public partial class Probe { }", texts);
+
+    private static GeneratorRunResult RunWith(string codeBehind, params AdditionalText[] texts)
     {
         var references = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!)
             .Split(Path.PathSeparator)
@@ -266,7 +269,7 @@ public class EustyleTests
             .ToList();
         var compilation = CSharpCompilation.Create(
             "StyleProbe",
-            new[] { CSharpSyntaxTree.ParseText("public partial class Probe { }") },
+            new[] { CSharpSyntaxTree.ParseText(codeBehind) },
             references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
@@ -386,5 +389,296 @@ public class EustyleTests
         Assert.Null(result.Exception);
         Assert.Contains(result.Diagnostics, d => d.Id == UiDiagnostics.StyleUnknownProperty);
         Assert.Empty(result.GeneratedSources);
+    }
+
+    // ---------- E2：元素级 Style= 声明序列（design/17 §4.8②） ----------
+
+    private static (EustyleDeclarations Decl, List<UiDiagnostic> Diags) ParseDeclarations(string source, int offset = 0)
+    {
+        var diags = new List<UiDiagnostic>();
+        var decl = Eustyle.ParseDeclarations(source, "test.ui", diags, offset);
+        return (decl, diags);
+    }
+
+    [Fact]
+    public void StyleDeclarations_ParseColorsAndNumbers()
+    {
+        var (decl, diags) = ParseDeclarations("background: #c45499; corner-radius: 18");
+
+        Assert.Empty(diags);
+        Assert.Equal(2, decl.Setters.Count);
+        Assert.Equal("Background", decl.Setters[0].Property);
+        Assert.Equal((byte)196, Assert.IsType<EustyleColor>(decl.Setters[0].Value).R);
+        Assert.Equal("CornerRadius", decl.Setters[1].Property);
+        Assert.Equal(18, Assert.IsType<EustyleNumber>(decl.Setters[1].Value).Value);
+        Assert.All(decl.Setters, s => Assert.Equal(EustyleVariant.None, s.Variant));
+    }
+
+    [Fact]
+    public void StyleDeclarations_ThemeValue_ParsesPair()
+    {
+        var (decl, diags) = ParseDeclarations("foreground: theme(#2a3040, #ffffff);");
+
+        Assert.Empty(diags);
+        var theme = Assert.IsType<EustyleTheme>(Assert.Single(decl.Setters).Value);
+        Assert.Equal((byte)255, theme.Light.R);
+    }
+
+    [Fact]
+    public void StyleDeclarations_ClassRule_ReportsEUI050()
+    {
+        var (_, diags) = ParseDeclarations(".card { background: #fff; }");
+        var diag = Assert.Single(diags);
+        Assert.Equal(UiDiagnostics.StyleSyntax, diag.Code);
+        Assert.Contains("class rules are not allowed", diag.Message);
+    }
+
+    [Fact]
+    public void StyleDeclarations_Variable_ReportsEUI050()
+    {
+        var (_, diags) = ParseDeclarations("$pad: 8; padding: $pad;");
+        Assert.Contains(diags, d => d.Code == UiDiagnostics.StyleSyntax && d.Message.Contains("'$variable'"));
+    }
+
+    [Fact]
+    public void StyleDeclarations_Empty_IsLegal()
+    {
+        var (decl, diags) = ParseDeclarations("");
+        Assert.Empty(diags);
+        Assert.Empty(decl.Setters);
+    }
+
+    [Fact]
+    public void StyleDeclarations_Spans_OffsetToHostFile()
+    {
+        // attr.ValueSpan.Start 传入 offset——诊断与 setter 值 span 都是宿主 .ui 绝对位置
+        var (decl, diags) = ParseDeclarations("padding: 4px;", offset: 37);
+        Assert.Equal(UiDiagnostics.StyleValueType, Assert.Single(diags).Code);
+
+        var (ok, _) = ParseDeclarations("padding: 4;", offset: 37);
+        Assert.Equal(37 + "padding: ".Length, Assert.Single(ok.Setters).ValueSpan.Start);
+    }
+
+    [Fact]
+    public void LocalSetters_EmitVisualCallsAndPropertyFields()
+    {
+        var (decl, diags) = ParseDeclarations(
+            "background: #c45499; foreground: theme(#10131a, #f5f7fb); corner-radius: 18; focus-ring-width: 2; padding: 16; font-size: 20");
+        Assert.Empty(diags);
+
+        var code = EustyleGenerator.EmitLocalSetters(decl.Setters, "__el3");
+
+        Assert.Contains("global::EclipseUI.Rendering.Visual.SetBackground(__el3, new global::EclipseUI.Rendering.Color(196, 84, 153));", code.Select(c => c.Statement));
+        Assert.Contains("global::EclipseUI.Rendering.Visual.SetForegroundResource(__el3, new global::EclipseUI.Rendering.ThemeColor(new global::EclipseUI.Rendering.Color(16, 19, 26), new global::EclipseUI.Rendering.Color(245, 247, 251)));", code.Select(c => c.Statement));
+        Assert.Contains("global::EclipseUI.Rendering.Visual.SetCornerRadius(__el3, 18);", code.Select(c => c.Statement));
+        Assert.Contains("global::EclipseUI.Rendering.Visual.SetFocusRingWidth(__el3, 2);", code.Select(c => c.Statement));
+        Assert.Contains("__el3.SetValue(global::EclipseUI.Elements.Panel.PaddingProperty, 16);", code.Select(c => c.Statement));
+        Assert.Contains("__el3.SetValue(global::EclipseUI.Elements.TextBlock.FontSizeProperty, 20);", code.Select(c => c.Statement));
+
+        // 语句必须语法成立（E1 教训：Contains 拦不住缺括号，画廊真实构建才暴露）
+        AssertGeneratedCodeParses(
+            "class __EuiProbe { void M(global::EclipseUI.Element __el3) {\n" +
+            string.Join("\n", code.Select(c => c.Statement)) + "\n} }");
+    }
+
+    // ---------- E2：模板 Class=/Style= 管线（EUI031 转正） ----------
+
+    private const string SheetWithCard = """
+        .card {
+            background: theme(#2a3040, #ffffff);
+            corner-radius: 12;
+        }
+        .primary { foreground: #e8ecf4; }
+        """;
+
+    private const string TemplateWithCard = """
+        @using EclipseUI.Elements
+        <StackPanel>
+            <Button Class="card primary" Style="corner-radius: 18; padding: 8">go</Button>
+        </StackPanel>
+        """;
+
+    [Fact]
+    public void ClassLiteral_KnownClasses_GenerateClassesArray_AndStyleGeneratesLocalSetters()
+    {
+        var result = Run(new TestAdditionalText("app.eustyle", SheetWithCard),
+                         new TestAdditionalText("Probe.ui", TemplateWithCard));
+        Assert.Null(result.Exception);
+        Assert.Empty(result.Diagnostics);
+
+        var code = SourceOf(result, hint => hint.Contains("Probe."));
+        AssertGeneratedCodeParses(code);
+
+        Assert.Contains("el1.Classes = new global::System.String[] { \"card\", \"primary\" };", code);
+        Assert.Contains("global::EclipseUI.Rendering.Visual.SetCornerRadius(el1, 18);", code);
+        Assert.Contains("el1.SetValue(global::EclipseUI.Elements.Panel.PaddingProperty, 8);", code);
+    }
+
+    [Fact]
+    public void ClassLiteral_UnknownClass_ReportsEUI031()
+    {
+        var result = Run(new TestAdditionalText("app.eustyle", SheetWithCard),
+                         new TestAdditionalText("Probe.ui", """
+            @using EclipseUI.Elements
+            <StackPanel>
+                <Button Class="card" />
+                <Button Class="carrd" />
+            </StackPanel>
+            """));
+
+        Assert.Null(result.Exception);
+        var diag = Assert.Single(result.Diagnostics);
+        Assert.Equal(UiDiagnostics.StyleAttributeInvalid, diag.Id);
+        Assert.Contains("'carrd'", diag.GetMessage());
+        // Error 短路的是该 .ui 的组件产物；StyleBootstrap（.eustyle 管道）不受影响
+        Assert.DoesNotContain(result.GeneratedSources, s => s.HintName.Contains("Probe."));
+    }
+
+    [Fact]
+    public void ClassLiteral_WithoutAnyStylesheet_IsUnknown()
+    {
+        // 空目录 = 项目无任何样式类：写了 Class= 就报——编译期闭环的意义所在。
+        var result = Run(new TestAdditionalText("Probe.ui", """
+            @using EclipseUI.Elements
+            <StackPanel>
+                <Button Class="card" />
+            </StackPanel>
+            """));
+
+        Assert.Null(result.Exception);
+        Assert.Contains(result.Diagnostics, d =>
+            d.Id == UiDiagnostics.StyleAttributeInvalid && d.GetMessage().Contains("'card'"));
+    }
+
+    [Fact]
+    public void ClassLiteral_AtStyleBlockClass_ResolvesLocally()
+    {
+        // §4.8① 闭环：本文件 @style 块的类名（带组件前缀）对本文件 Class= 可见。
+        const string ui = """
+            @using EclipseUI.Elements
+            <StackPanel>
+                <Button Class="demo" />
+            </StackPanel>
+            @style {
+                .demo { corner-radius: 12; }
+            }
+            """;
+
+        var result = Run(new TestAdditionalText("Probe.ui", ui));
+        Assert.Null(result.Exception);
+        Assert.Empty(result.Diagnostics);
+
+        var code = SourceOf(result, hint => hint.Contains("Probe."));
+        // §4.8① 解析序：本文件 @style 类按注册名（组件前缀）发射
+        Assert.Contains("el1.Classes = new global::System.String[] { \"Probe__demo\" };", code);
+        Assert.Contains("Define(\"Probe__demo\"", code); // 注册侧同名
+    }
+
+    [Fact]
+    public void ClassExpression_String_GeneratesSplitUpdate()
+    {
+        var result = RunWith("public partial class Probe { public string kind = \"card\"; }",
+            new TestAdditionalText("app.eustyle", SheetWithCard),
+            new TestAdditionalText("Probe.ui", """
+                @using EclipseUI.Elements
+                <StackPanel>
+                    <Button Class={kind} />
+                </StackPanel>
+                """));
+
+        Assert.Null(result.Exception);
+        Assert.Empty(result.Diagnostics);
+        var code = SourceOf(result, hint => hint.Contains("Probe."));
+        AssertGeneratedCodeParses(code);
+        Assert.Contains(".Classes = kind.Split(new[] { ' ', '\\t', '\\r', '\\n' }, global::System.StringSplitOptions.RemoveEmptyEntries);", code);
+        Assert.Contains("private void U0()", code); // 根级动态 → U 方法 + Render 登记
+        Assert.Contains("protected override void Render()", code);
+    }
+
+    [Fact]
+    public void ClassExpression_Collection_GeneratesToArray()
+    {
+        var result = RunWith("""
+            using System.Collections.Generic;
+            public partial class Probe { public List<string> kinds = new(); }
+            """,
+            new TestAdditionalText("app.eustyle", SheetWithCard),
+            new TestAdditionalText("Probe.ui", """
+                @using EclipseUI.Elements
+                <StackPanel>
+                    <Button Class={kinds} />
+                </StackPanel>
+                """));
+
+        Assert.Null(result.Exception);
+        Assert.Empty(result.Diagnostics);
+        var code = SourceOf(result, hint => hint.Contains("Probe."));
+        Assert.Contains("global::System.Linq.Enumerable.ToArray(kinds)", code);
+    }
+
+    [Fact]
+    public void ClassExpression_InvalidType_ReportsEUI031()
+    {
+        var result = RunWith("public partial class Probe { public int kind = 4; }",
+            new TestAdditionalText("app.eustyle", SheetWithCard),
+            new TestAdditionalText("Probe.ui", """
+                @using EclipseUI.Elements
+                <StackPanel>
+                    <Button Class={kind} />
+                </StackPanel>
+                """));
+
+        Assert.Null(result.Exception);
+        var diag = Assert.Single(result.Diagnostics);
+        Assert.Equal(UiDiagnostics.StyleAttributeInvalid, diag.Id);
+        Assert.Contains("string collection", diag.GetMessage());
+    }
+
+    [Fact]
+    public void BindClass_ReportsEUI040()
+    {
+        var result = Run(new TestAdditionalText("Probe.ui", """
+            @using EclipseUI.Elements
+            <StackPanel>
+                <Button @bind-Class={x} />
+            </StackPanel>
+            """));
+
+        Assert.Null(result.Exception);
+        Assert.Contains(result.Diagnostics, d => d.Id == UiDiagnostics.BindTargetInvalid);
+    }
+
+    [Fact]
+    public void StyleExpression_ReportsEUI031()
+    {
+        var result = Run(new TestAdditionalText("Probe.ui", """
+            @using EclipseUI.Elements
+            <StackPanel>
+                <Button Style={expr} />
+            </StackPanel>
+            """));
+
+        Assert.Null(result.Exception);
+        var diag = Assert.Single(result.Diagnostics);
+        Assert.Equal(UiDiagnostics.StyleAttributeInvalid, diag.Id);
+        Assert.Contains("static declaration list", diag.GetMessage());
+    }
+
+    [Fact]
+    public void StyleLiteral_UnknownProperty_ReportsEUI051_AtValueSpan()
+    {
+        const string ui = """
+            @using EclipseUI.Elements
+            <StackPanel>
+                <Button Style="colour: #fff" />
+            </StackPanel>
+            """;
+
+        var result = Run(new TestAdditionalText("Probe.ui", ui));
+        Assert.Null(result.Exception);
+        var diag = Assert.Single(result.Diagnostics);
+        Assert.Equal(UiDiagnostics.StyleUnknownProperty, diag.Id);
+        Assert.Contains("colour", diag.GetMessage());
+        Assert.Contains("Probe.ui", diag.Location.GetLineSpan().Path);
     }
 }

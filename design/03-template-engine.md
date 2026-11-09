@@ -351,7 +351,8 @@ string        ::= '"' raw-char* '"'
 | `OnE={expr}` | Build 时 `AddHandler` | 否 | 无 | `Action` / `Action<RoutedEventArgs>` | ✅（控件）/ C4 组件 |
 | `Key={expr}` | 条目创建 | 身份 | 无 | 第一个元素根；不得可观察（`EUI039`） | ✅（S2 加严） |
 | `Ref={ident}` | Build 时赋给字段 | 否 | 无 | 简单标识符、字段可写 | G3 / 保留 `EUI029` |
-| `Class`/`Style` | — | — | — | — | G4 / 保留 `EUI031` |
+| `Class="a b"` / `Class={expr}` | Build（表达式 + U/R 推送） | 是（表达式） | 无（类变化经 `Classes` setter 重应用样式） | 类名编译期查样式目录；`@style` 本文件优先 | ✅ E2（2026-11-09） |
+| `Style="prop: value; ..."` | Build 直赋 local 层 | 否（只允许静态值） | 无 | 声明序列经 Eustyle 解析，`theme()` 升级 Resource 属性 | ✅ E2（2026-11-09） |
 
 #### 3.3.3.1 单向反应式 `P={expr}`
 
@@ -636,8 +637,8 @@ parent0.Children.Add(c0.Root);   // 最后挂到父级
 |---|---|---|---|
 | `Key={expr}` | `@foreach` 条目身份 | ✅ | `EUI010`（位置/形式）/ `EUI039`（可观察） |
 | `Ref={ident}` | 元素/组件实例赋给 code-behind 字段 | G3 | 当前 `EUI002`（D4） |
-| `Class="..."` | 样式类 | G4 | 当前 `EUI002`（D2） |
-| `Style="..."` | 内联样式 | G4 | 当前 `EUI002`（D2） |
+| `Class="..."` | 样式类（design/17 §4.8） | ✅ E2（2026-11-09） | 未知类名/表达式形态不符 `EUI031`（转正语义）；类名经目录解析（本文件 `@style` 先、全局 `.eustyle` 后），生成 `Classes` 赋值 |
+| `Style="..."` | 内联样式（design/17 §4.8②） | ✅ E2（2026-11-09） | 只允许静态声明序列：表达式 `EUI031`；声明经 Eustyle 解析（`EUI050`/`EUI051`/`EUI052`），生成 local 层直赋 |
 | `P:bind={expr}` | 旧双向绑定（≡ `@bind-P`） | ✅ → 弃用 | S3 起 `EUI043` Warning |
 | `P:value={expr}` | 旧单向别名（≡ `P={expr}`） | 未实现 → 弃用 | 当前 `EUI002`（D1）；S3 起 `EUI043` |
 | `<Slot Name="...">` | 具名插槽（消费侧） | G4 | 当前 `EUI001`（D3） |
@@ -650,6 +651,9 @@ parent0.Children.Add(c0.Root);   // 最后挂到父级
 - 不得把保留名用作普通控件/组件属性（控件作者侧 `EUI026`）；
 - 使用保留语法时**必须**报"已保留、未实现"类诊断（`EUI031`/`EUI029`/`EUI030`；插槽错误从 G4 起用 `EUI022`），
   不得退化成 `EUI001`/`EUI002` 的拼写建议；
+- **E2 修订（2026-11-09）**：`Class=`/`Style=` 属性形态已转正（design/17 §4.8），`EUI031` 语义改为
+  「Class/Style 属性不合法」（未知类名 / 表达式形态不符 / `Style=` 表达式 / `@bind-Class`）；
+  标签形态 `<Class>` 保留不变（目录侧仍报 `EUI031`）；
 - `@bind-` 不是保留语法：它是双向绑定的语法形态；目标/源非法分别报 `EUI040`/`EUI037`，不得退化成 `EUI001`/`EUI002`；
 - 实现保留语法时只在本文/14 增加状态，不改变已有语法的含义。
 
@@ -747,7 +751,7 @@ parent0.Children.Add(c0.Root);   // 最后挂到父级
 | `@foreach` | 3.3.6.2 | ✅ / S2–S4 | 当前集合必须是信号名；S2 支持可观察属性，S4 INCC/嵌套 |
 | `Key` | 3.3.6.3 | ✅ / S2 | S2 起同 Key 不同 item 重建；`EUI039` |
 | `Ref` | 3.3.9 | G3 | 当前 `EUI002`（D4） |
-| `Class`/`Style` | 3.3.9 | G4 | 保留 `EUI031`；当前 `EUI002`（D2） |
+| `Class`/`Style` | 3.3.9 | ✅ E2（2026-11-09，D105） | 转正：目录校验 + local 直赋（design/17 §4.8） |
 | 具名插槽/`ContentSlot` | 3.3.9 | G4 | 当前 `EUI001`（D3） |
 | 泛型标签 | 3.3.9 | G4 | 当前 `EUI100`（D5） |
 | 附加属性 | 3.3.9 | ✅ G4（2026-11-09） | 已注册正常解析；未注册 `EUI002`（D19） |

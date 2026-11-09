@@ -10,7 +10,9 @@ public static class TemplateAnalyzer
     private enum Ctx { Root, Container, TextRuns, Label, None, ContentSingle, ContentMulti }
 
     public static void Analyze(UiDocument doc, UiCatalog catalog, List<UiDiagnostic> diags,
-        IReadOnlyDictionary<string, UiSlotDef>? ownSlots = null, string? ownTypeDisplay = null)
+        IReadOnlyDictionary<string, UiSlotDef>? ownSlots = null, string? ownTypeDisplay = null,
+        IReadOnlyCollection<string>? styleClasses = null,
+        IReadOnlyDictionary<string, string>? localStyleClasses = null)
     {
         int roots = doc.Nodes.Count(n => n is UiElement);
         if (roots != 1)
@@ -42,7 +44,7 @@ public static class TemplateAnalyzer
             ValidateContentSlot(host, own, doc, diags, placed);
 
         foreach (var node in doc.Nodes)
-            Visit(node, Ctx.Root, catalog, diags, allowKey: false, scope);
+            Visit(node, Ctx.Root, catalog, diags, allowKey: false, scope, styleClasses, localStyleClasses);
     }
 
     /// <summary>
@@ -280,7 +282,8 @@ public static class TemplateAnalyzer
     /// 子内容按插槽基数走建立 once 内容上下文（继承 EUI040/@bind、EUI010/Key、EUI006/裸文本）。
     /// </summary>
     private static void ValidateSlotFill(UiElement parent, UiElementDef def, UiSlotNode fill,
-        UiCatalog catalog, List<UiDiagnostic> diags, TagScope scope)
+        UiCatalog catalog, List<UiDiagnostic> diags, TagScope scope, IReadOnlyCollection<string>? styleClasses,
+        IReadOnlyDictionary<string, string>? localStyleClasses)
     {
         UiAttribute? nameAttr = null;
         foreach (var attr in fill.Attributes)
@@ -357,15 +360,17 @@ public static class TemplateAnalyzer
         fill.ResolvedSlot = slot;
         var childCtx = slot.Cardinality == UiSlotCardinality.Single ? Ctx.ContentSingle : Ctx.ContentMulti;
         foreach (var child in fill.Children)
-            Visit(child, childCtx, catalog, diags, allowKey: false, scope);
+            Visit(child, childCtx, catalog, diags, allowKey: false, scope, styleClasses, localStyleClasses);
     }
 
-    private static void Visit(UiNode node, Ctx ctx, UiCatalog catalog, List<UiDiagnostic> diags, bool allowKey, TagScope scope)
+    private static void Visit(UiNode node, Ctx ctx, UiCatalog catalog, List<UiDiagnostic> diags, bool allowKey,
+        TagScope scope, IReadOnlyCollection<string>? styleClasses,
+        IReadOnlyDictionary<string, string>? localStyleClasses)
     {
         switch (node)
         {
             case UiElement element:
-                VisitElement(element, ctx, catalog, diags, allowKey, scope);
+                VisitElement(element, ctx, catalog, diags, allowKey, scope, styleClasses, localStyleClasses);
                 break;
             case UiText text:
                 VisitText(text, ctx, diags);
@@ -383,17 +388,17 @@ public static class TemplateAnalyzer
                         node.Span));
                 break;
             case UiIf ifNode:
-                VisitBlock(ifNode.ConditionSpan, ifNode.Children, ctx, catalog, diags, allowKeyRoot: false, scope);
+                VisitBlock(ifNode.ConditionSpan, ifNode.Children, ctx, catalog, diags, allowKeyRoot: false, scope, styleClasses, localStyleClasses);
                 foreach (var elseIf in ifNode.ElseIfs)
-                    VisitBlock(elseIf.ConditionSpan, elseIf.Children, ctx, catalog, diags, allowKeyRoot: false, scope);
+                    VisitBlock(elseIf.ConditionSpan, elseIf.Children, ctx, catalog, diags, allowKeyRoot: false, scope, styleClasses, localStyleClasses);
                 if (ifNode.ElseChildren is not null)
-                    VisitBlock(ifNode.ConditionSpan, ifNode.ElseChildren, ctx, catalog, diags, allowKeyRoot: false, scope);
+                    VisitBlock(ifNode.ConditionSpan, ifNode.ElseChildren, ctx, catalog, diags, allowKeyRoot: false, scope, styleClasses, localStyleClasses);
                 break;
             case UiForeach foreachNode:
-                VisitBlock(foreachNode.CollectionSpan, foreachNode.Children, ctx, catalog, diags, allowKeyRoot: true, scope);
+                VisitBlock(foreachNode.CollectionSpan, foreachNode.Children, ctx, catalog, diags, allowKeyRoot: true, scope, styleClasses, localStyleClasses);
                 break;
             case UiSwitch switchNode:
-                VisitSwitch(switchNode, ctx, catalog, diags, scope);
+                VisitSwitch(switchNode, ctx, catalog, diags, scope, styleClasses, localStyleClasses);
                 break;
             case UiCodeBlock:
                 // K21：文档顶层合法（与单根元素任意交错，Analyze 已放行）；块内/内容中报错
@@ -424,7 +429,8 @@ public static class TemplateAnalyzer
     /// 这里做位置与内容模型校验。分支体是完整内容模板（元素/文本/嵌套块）。
     /// </summary>
     private static void VisitSwitch(UiSwitch switchNode, Ctx ctx, UiCatalog catalog,
-        List<UiDiagnostic> diags, TagScope scope)
+        List<UiDiagnostic> diags, TagScope scope, IReadOnlyCollection<string>? styleClasses,
+        IReadOnlyDictionary<string, string>? localStyleClasses)
     {
         if (ctx == Ctx.TextRuns || ctx == Ctx.Label)
             diags.Add(UiDiagnostics.Error(UiDiagnostics.TextNotAllowed,
@@ -446,13 +452,14 @@ public static class TemplateAnalyzer
                         child.Span));
                     continue;
                 }
-                Visit(child, childCtx, catalog, diags, allowKey: false, scope);
+                Visit(child, childCtx, catalog, diags, allowKey: false, scope, styleClasses, localStyleClasses);
             }
         }
     }
 
     private static void VisitBlock(TextSpan exprSpan, List<UiNode> children, Ctx ctx, UiCatalog catalog,
-        List<UiDiagnostic> diags, bool allowKeyRoot, TagScope scope)
+        List<UiDiagnostic> diags, bool allowKeyRoot, TagScope scope, IReadOnlyCollection<string>? styleClasses,
+        IReadOnlyDictionary<string, string>? localStyleClasses)
     {
         if (ctx == Ctx.TextRuns || ctx == Ctx.Label)
             diags.Add(UiDiagnostics.Error(UiDiagnostics.TextNotAllowed,
@@ -477,7 +484,7 @@ public static class TemplateAnalyzer
             }
             bool isKeyAllowed = allowKeyRoot && firstRoot && child is UiElement;
             firstRoot = false;
-            Visit(child, childCtx, catalog, diags, isKeyAllowed, scope);
+            Visit(child, childCtx, catalog, diags, isKeyAllowed, scope, styleClasses, localStyleClasses);
         }
     }
 
@@ -490,6 +497,72 @@ public static class TemplateAnalyzer
 
     private static bool IsReservedName(string name) =>
         name is "Key" or "Ref" or "Class" or "Style";
+
+    /// <summary>
+    /// E2（design/17 §4.8）：Class=/Style= 属性校验与 AST 回写。
+    /// Class 字面量：空白拆分逐个解析——<see cref="UiAttribute.ClassNames"/> 回写**注册名**
+    /// （本文件 @style 类经 <paramref name="localStyleClasses"/> 裸名→前缀名映射；§4.8① 的
+    /// 「先本文件、再全局」解析序 = local 命中即遮蔽同名全局类）。
+    /// <paramref name="styleClasses"/> 为 null 是无目录语境（探针/直调测试），不校验直接回写；
+    /// 生成器语境传真实目录（可为空集 = 项目无任何样式类，写了就报）。未知类名报 EUI031。
+    /// Class 表达式：合法入口，string/集合形态由生成器探针推断（ProbeSemantics）。
+    /// Style=：只允许字面量声明序列——表达式报 EUI031（元素属性没有状态语境，变体走类名通道）；
+    /// 字面量经 <see cref="Eustyle.ParseDeclarations"/> 解析，诊断 EUI050/051/052 的 span
+    /// 已经 <c>attr.ValueSpan.Start</c> 偏移映射回宿主 .ui 文件。
+    /// </summary>
+    private static void ValidateStyleAttribute(UiAttribute attr, IReadOnlyCollection<string>? styleClasses,
+        IReadOnlyDictionary<string, string>? localStyleClasses, List<UiDiagnostic> diags)
+    {
+        if (attr.IsBind)
+        {
+            diags.Add(UiDiagnostics.Error(UiDiagnostics.BindTargetInvalid,
+                $"'{attr.Name}' is a styling attribute; @bind-{attr.Name} is not allowed", attr.NameSpan));
+            return;
+        }
+
+        if (attr.Kind == AttrValueKind.Expression)
+        {
+            if (attr.Name == "Style")
+                diags.Add(UiDiagnostics.Error(UiDiagnostics.StyleAttributeInvalid,
+                    "Style= only accepts a static declaration list; " +
+                    "state-driven appearance goes through style classes (Class=)", attr.ValueSpan));
+            return;
+        }
+
+        if (attr.Name == "Class")
+        {
+            var names = attr.Value.Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            var resolved = new List<string>(names.Length);
+            foreach (var name in names)
+            {
+                // ① 本文件 @style 块（裸名 → 带组件前缀的注册名，遮蔽同名全局类）
+                if (localStyleClasses is not null && localStyleClasses.TryGetValue(name, out var registered))
+                {
+                    resolved.Add(registered);
+                    continue;
+                }
+                // ② 全局样式目录
+                if (styleClasses is null || styleClasses.Contains(name))
+                {
+                    resolved.Add(name);
+                    continue;
+                }
+                diags.Add(UiDiagnostics.Error(UiDiagnostics.StyleAttributeInvalid,
+                    $"unknown style class '{name}'; define it in a .eustyle stylesheet, " +
+                    "an @style block, or via StyleRegistry.Define", attr.ValueSpan));
+            }
+            if (resolved.Count == names.Length)
+                attr.ClassNames = resolved;
+            return;
+        }
+
+        // Style= 字面量：解析声明序列（失败诊断已报，不回写 → 生成侧跳过）
+        var styleDiags = new List<UiDiagnostic>();
+        var declarations = Eustyle.ParseDeclarations(attr.Value, "", styleDiags, attr.ValueSpan.Start);
+        diags.AddRange(styleDiags);
+        if (!styleDiags.Exists(static d => d.IsError))
+            attr.StyleSetters = declarations.Setters;
+    }
 
     /// <summary><c>Ref={ident}</c> 的值必须是简单 C# 标识符（spec/01 §4.3 表）。</summary>
     private static bool IsValidIdentifier(string? name)
@@ -551,7 +624,9 @@ public static class TemplateAnalyzer
             ? clrTypeDisplayName.Substring("global::".Length)
             : clrTypeDisplayName;
 
-    private static void VisitElement(UiElement element, Ctx ctx, UiCatalog catalog, List<UiDiagnostic> diags, bool allowKey, TagScope scope)
+    private static void VisitElement(UiElement element, Ctx ctx, UiCatalog catalog, List<UiDiagnostic> diags,
+        bool allowKey, TagScope scope, IReadOnlyCollection<string>? styleClasses,
+        IReadOnlyDictionary<string, string>? localStyleClasses)
     {
         var resolution = scope.Resolve(catalog, element.Tag);
         if (resolution.Kind != UiTagResolutionKind.Found)
@@ -580,7 +655,7 @@ public static class TemplateAnalyzer
                     diags.Add(UiDiagnostics.Error(UiDiagnostics.SlotInvalid,
                         "named slot fills are only allowed as direct children of a resolved component tag", child.Span));
                 else
-                    Visit(child, Ctx.Container, catalog, diags, allowKey: false, scope);
+                    Visit(child, Ctx.Container, catalog, diags, allowKey: false, scope, styleClasses, localStyleClasses);
             }
             return;
         }
@@ -608,11 +683,12 @@ public static class TemplateAnalyzer
             }
             attrSeen.Add(attr.Name, attr.IsBind);
 
-            // EUI031：保留语法——Class/Style（G4 样式）。附加属性已于 G4 解禁（下方点号分支）。
+            // E2 转正（design/17 §4.8/§5）：Class/Style 属性——@bind 保留（EUI040）；
+            // Class 字面量拆分查样式目录（未知类名 EUI031），表达式形态由生成器探针校验；
+            // Style= 只允许字面量声明序列（Eustyle 解析，EUI050–052 定位到属性值 span）。
             if (attr.Name is "Class" or "Style")
             {
-                diags.Add(UiDiagnostics.Error(UiDiagnostics.ReservedSyntax,
-                    $"'{attr.Name}' is reserved for styling (G4) and has no effect yet", attr.NameSpan));
+                ValidateStyleAttribute(attr, styleClasses, localStyleClasses, diags);
                 continue;
             }
             // G4：附加属性（design/14 §14.5.5）——Owner.Prop 点号形式查目录附加属性表。
@@ -905,7 +981,7 @@ public static class TemplateAnalyzer
             // 槽填充不参与默认内容的根计数与内容模型。
             if (child is UiSlotNode fill)
             {
-                ValidateSlotFill(element, def, fill, catalog, diags, scope);
+                ValidateSlotFill(element, def, fill, catalog, diags, scope, styleClasses, localStyleClasses);
                 continue;
             }
             if (child is UiContentSlotNode && isComponent)
@@ -941,7 +1017,7 @@ public static class TemplateAnalyzer
             if ((contentCtx == Ctx.TextRuns || contentCtx == Ctx.Label) && child is UiElement)
                 diags.Add(UiDiagnostics.Error(UiDiagnostics.TextNotAllowed,
                     $"element children are not allowed inside '{element.Tag}' ({def.Content})", child.Span));
-            Visit(child, contentCtx, catalog, diags, allowKey: false, scope);
+            Visit(child, contentCtx, catalog, diags, allowKey: false, scope, styleClasses, localStyleClasses);
         }
     }
 }
@@ -956,6 +1032,8 @@ public static class FrontEnd
     }
 
     public static void Analyze(UiDocument doc, UiCatalog catalog, List<UiDiagnostic> diags,
-        IReadOnlyDictionary<string, UiSlotDef>? ownSlots = null, string? ownTypeDisplay = null)
-        => TemplateAnalyzer.Analyze(doc, catalog, diags, ownSlots, ownTypeDisplay);
+        IReadOnlyDictionary<string, UiSlotDef>? ownSlots = null, string? ownTypeDisplay = null,
+        IReadOnlyCollection<string>? styleClasses = null,
+        IReadOnlyDictionary<string, string>? localStyleClasses = null)
+        => TemplateAnalyzer.Analyze(doc, catalog, diags, ownSlots, ownTypeDisplay, styleClasses, localStyleClasses);
 }

@@ -246,8 +246,11 @@ public sealed class Emitter
     private static bool NeedsElementField(UiElement element, EmitContext ctx)
     {
         if (!ctx.IsRoot) return false;
+        // E2：根级 Class={expr} 走 U{N} 定向更新，与普通动态属性同样需要字段提升。
         var dynamicAttr = element.Attributes.Any(attr =>
-            (attr.PropDef is not null || attr.AttachedDef is not null) && !attr.IsBind &&
+            (attr.PropDef is not null || attr.AttachedDef is not null ||
+             (attr.Name == "Class" && attr.Kind == AttrValueKind.Expression && attr.ClassNames is null)) &&
+            !attr.IsBind &&
             attr.Name != "Key" && attr.Kind == AttrValueKind.Expression);
         if (dynamicAttr) return true;
         return element.ResolvedDef!.Content == UiContentModel.Text &&
@@ -359,6 +362,10 @@ public sealed class Emitter
     private static TextSpan AttrSpan(UiAttribute attr) =>
         attr.ValueSpan.Length > 0 ? attr.ValueSpan : attr.NameSpan;
 
+    /// <summary>E2：C# 字符串字面量转义（类名数组发射用）。</summary>
+    private static string StaticStringLiteral(string text) =>
+        "\"" + text.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
+
     private string EmitElement(UiElement element, string? parentVar, EmitContext ctx)
     {
         var def = element.ResolvedDef!;
@@ -375,6 +382,39 @@ public sealed class Emitter
             if (attr.RefTarget is { } refField)
             {
                 MappedToken(span, $"{refField} = {v};", refField);
+                continue;
+            }
+
+            // E2（design/17 §4.8）：样式类——字面量经目录校验的类名数组；表达式按探针形态
+            // 拆分/集合化。经 EmitDynamicUpdate 走 U{N}/R{N} 定向更新（Classes setter 幂等短路）。
+            if (attr.Name == "Class")
+            {
+                if (attr.ClassNames is { Count: > 0 } names)
+                {
+                    var array = "new global::System.String[] { " +
+                                string.Join(", ", names.Select(StaticStringLiteral)) + " }";
+                    MappedToken(span, $"{v}.Classes = {array};", attr.Value.Trim());
+                }
+                else if (attr.ClassNames is not null)
+                {
+                    // Class=""（空类列表）：no-op，与运行时 ReapplyStyles 空序列同语义
+                }
+                else if (attr.Kind == AttrValueKind.Expression)
+                {
+                    var expr = attr.Value.Trim();
+                    var body = attr.ClassListKind == UiClassListKind.Collection
+                        ? $"global::System.Linq.Enumerable.ToArray({expr})"
+                        : $"{expr}.Split(new[] {{ ' ', '\\t', '\\r', '\\n' }}, global::System.StringSplitOptions.RemoveEmptyEntries)";
+                    EmitDynamicUpdate(body, attr.ValueSpan, ctx, $"{v}.Classes", interpolate: false);
+                }
+                continue;
+            }
+
+            // E2：元素级内联样式——local 层直赋（最高优先级），每条声明独立 #line 映射到值 span。
+            if (attr.Name == "Style" && attr.StyleSetters is { Count: > 0 } setters)
+            {
+                foreach (var (statement, valueSpan) in EustyleGenerator.EmitLocalSetters(setters, v))
+                    Mapped(valueSpan, statement);
                 continue;
             }
 
@@ -454,10 +494,13 @@ public sealed class Emitter
         var clrType = def.ClrTypeDisplayName;
 
         // 字段提升：根级存在动态参数（推送 U 捕获组件变量）或 @bind 推送时需要字段；
+        // E2：根级 Class={expr} 同样走 U 捕获组件变量，一并提升。
         // 委托参数/字面量是 build-once，局部即可；块/内容内一律局部（§4.4.3 规则 5）。
         bool needsField = ctx.IsRoot && element.Attributes.Any(attr =>
-            attr.ParamDef is { IsDelegate: false, IsContent: false } && (attr.IsBind ||
-                (!attr.IsBind && attr.Kind == AttrValueKind.Expression)));
+            (attr.ParamDef is { IsDelegate: false, IsContent: false } && (attr.IsBind ||
+                (!attr.IsBind && attr.Kind == AttrValueKind.Expression))) ||
+            (attr.Name == "Class" && !attr.IsBind && attr.Kind == AttrValueKind.Expression &&
+             attr.ClassNames is null));
         var n = _varCounter++;
         string v;
         if (needsField)
@@ -509,6 +552,32 @@ public sealed class Emitter
                 {
                     EmitAttachedDynamic(attached, v, attr.Value, attr.ValueSpan, ctx);
                 }
+                continue;
+            }
+
+            // E2：组件实例同为 Element——Class/Style 语义与控件一致（样式类/局部覆盖写在实例上）。
+            if (attr.Name == "Class")
+            {
+                if (attr.ClassNames is { Count: > 0 } names)
+                {
+                    var array = "new global::System.String[] { " +
+                                string.Join(", ", names.Select(StaticStringLiteral)) + " }";
+                    MappedToken(span, $"{v}.Classes = {array};", attr.Value.Trim());
+                }
+                else if (attr.Kind == AttrValueKind.Expression && attr.ClassNames is null)
+                {
+                    var expr = attr.Value.Trim();
+                    var body = attr.ClassListKind == UiClassListKind.Collection
+                        ? $"global::System.Linq.Enumerable.ToArray({expr})"
+                        : $"{expr}.Split(new[] {{ ' ', '\\t', '\\r', '\\n' }}, global::System.StringSplitOptions.RemoveEmptyEntries)";
+                    EmitDynamicUpdate(body, attr.ValueSpan, ctx, $"{v}.Classes", interpolate: false);
+                }
+                continue;
+            }
+            if (attr.Name == "Style" && attr.StyleSetters is { Count: > 0 } styleSetters)
+            {
+                foreach (var (statement, valueSpan) in EustyleGenerator.EmitLocalSetters(styleSetters, v))
+                    Mapped(valueSpan, statement);
                 continue;
             }
 

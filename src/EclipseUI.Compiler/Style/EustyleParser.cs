@@ -51,6 +51,15 @@ public static class Eustyle
     public static EustyleStylesheet Parse(string text, string filePath, List<UiDiagnostic> diagnostics, int spanOffset = 0)
         => new Impl(text, diagnostics, spanOffset).Document();
 
+    /// <summary>
+    /// 解析元素级 <c>Style="…"</c> 的声明序列（E2，design/17 §4.8②）：
+    /// 只接受 <c>prop: value;</c> 声明——类规则、<c>$变量</c>（块级概念）与变体块不适用，
+    /// 状态外观一律走类名通道。诊断码与样式表一致（EUI050/EUI051/EUI052），
+    /// span 经 <paramref name="spanOffset"/> 映射回宿主 .ui 文件。
+    /// </summary>
+    public static EustyleDeclarations ParseDeclarations(string text, string filePath, List<UiDiagnostic> diagnostics, int spanOffset = 0)
+        => new Impl(text, diagnostics, spanOffset).DeclarationList();
+
     private sealed class Impl
     {
         private readonly string _s;
@@ -89,6 +98,63 @@ public static class Eustyle
                 SkipTo(';', '}');
             }
             return new EustyleStylesheet(rules);
+        }
+
+        /// <summary>
+        /// Style= 声明序列：循环解析声明直到 EOF。类规则出现报 EUI050 并整块跳过
+        /// （大括号配对，避免内部残渣二次报错）；$变量报 EUI050 跳到 ';'
+        /// （块级概念不属于元素属性）；空序列合法（Class= 空串同款 no-op 语义）。
+        /// </summary>
+        public EustyleDeclarations DeclarationList()
+        {
+            var setters = new List<EustyleSetter>();
+            var seenVariants = new List<EustyleVariant>();
+            var baseVariant = new List<EustyleVariant>();
+            while (true)
+            {
+                SkipTrivia();
+                if (Eof) break;
+                var c = _s[_i];
+                if (c == '$')
+                {
+                    Error(_i, _i + 1,
+                        "'$variable' declarations are not allowed in Style=; variables belong to a stylesheet or @style block");
+                    SkipTo(';');
+                    continue;
+                }
+                if (c == '.')
+                {
+                    Error(_i, _i + 1,
+                        "class rules are not allowed in Style=; declare classes in a stylesheet or @style block and reference them with Class=");
+                    SkipBracedBlock();
+                    continue;
+                }
+                var before = _i;
+                ParseDeclaration(setters, seenVariants, baseVariant);
+                if (_i == before) break; // 防御：解析器未推进（理论不可达）时终止避免死循环
+            }
+            return new EustyleDeclarations(setters);
+        }
+
+        /// <summary>跳过一个完整大括号块（含嵌套与注释）：从当前位置找到 '{' 并消费到配对 '}'。
+        /// 无 '{' 时跳到 EOF。DeclarationList 的类规则错误恢复用。</summary>
+        private void SkipBracedBlock()
+        {
+            while (_i < _s.Length && _s[_i] != '{') _i++;
+            if (_i >= _s.Length) return;
+            var depth = 0;
+            while (_i < _s.Length)
+            {
+                var c = _s[_i];
+                if (c == '/' && _i + 1 < _s.Length && _s[_i + 1] == '/')
+                {
+                    while (_i < _s.Length && _s[_i] != '\n') _i++;
+                    continue;
+                }
+                if (c == '{') depth++;
+                else if (c == '}' && --depth == 0) { _i++; return; }
+                _i++;
+            }
         }
 
         private void ParseVarDecl()
@@ -253,9 +319,9 @@ public static class Eustyle
 
             var value = ParseValue();
             SkipTrivia();
-            if (Peek == '}')
+            if (Peek == '}' || Eof)
             {
-                // 允许块尾最后一个声明省略分号（CSS 惯例）
+                // 允许最后一个声明省略分号（CSS 惯例）——块尾 '}' 或 Style= 值的 EOF 都容忍
             }
             else if (Take(';'))
             {
