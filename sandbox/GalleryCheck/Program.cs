@@ -76,7 +76,7 @@ if (harfBuzz is not null) TextMeasurer.Current = harfBuzz;
 
 var theme = lightTheme ? ElementTheme.Light : new ElementTheme();
 Styling.Provider = StyleRegistry.Instance; // S-B：装配 Class 样式（类名直配 setter 序列）
-GalleryStyles.Define();
+StyleBootstrap.Apply(StyleRegistry.Instance); // E1：app.eustyle 编译产物（生成的 Define 序列）
 var scene = GalleryScene.Build();
 var galleryRoot = new GalleryRoot(scene.Counter, scene.Tasks, scene.RootViewer);
 galleryRoot.Mount();

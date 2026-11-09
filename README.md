@@ -155,6 +155,17 @@
 > 演示按钮。执行计划见 design/17（E3 → E1 → E2 → E4 → E5）。`StyleTests` +5、`PseudoStateTests` +6；
 > **699 个用例（352/241/106），全绿**；selfcheck PASS；深浅双主题出图核对通过（disabled 置灰正确）。
 >
+> **样式表编译器已通过（2026-11-09，D104，样式系统 E1 片）**：`.eustyle` 全局样式表与
+> `@style` 组件块（design/17 §4.8）编译为生成代码——运行时零引擎。解析器支持类规则 +
+> 伪类变体两种形态（`.card:hover` 与块内 `&:hover`，`:active` 是 `:pressed` 别名）、
+> `$变量` 编译期替换、`theme(dark, light)` 双色、`#rgb/#rrggbb/#rrggbbaa`、注释；
+> 诊断 EUI050/051/052（语法 / 未知属性 / 值类型不符）。`.eustyle` → 单 `StyleBootstrap.g.cs`
+> （`Apply(StyleRegistry)` 供 `UseStyles` 直连）；`@style` 块 → 类名加组件前缀
+> `{Component}__{class}` + 组件初始化时静态幂等注册（作用域由命名隔离实现）。画廊
+> `GalleryStyles.cs` 已迁移为 `app.eustyle`，`Showcase.ui` 带 `@style` 块演示。
+> `EustyleTests` +23（含**生成产物语法级校验**）。**722 个用例（352/264/106），全绿**；
+> selfcheck PASS；深浅双主题出图核对通过（外观与迁移前一致）。
+>
 > **伪类状态样式已通过（2026-11-09，D102）**：CSS `:hover/:active/:focus` 对应物——`PseudoStates`
 > 掩码由 InputRouter/FocusManager 维护（hover 跟随命中、捕获冻结、pressed 先路由后清保 Click 门控），
 > 状态变化 = 渲染失效 + class 层重应用；定义侧链式语法

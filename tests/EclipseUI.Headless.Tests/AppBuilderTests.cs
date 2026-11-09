@@ -140,7 +140,7 @@ public class AppBuilderTests
             var options = GalleryLaunchOptions.Parse([]);
             var app = AppBuilder.Configure<GalleryApp>()
                 .UseTheme(ElementTheme.Dark)
-                .UseStyles(StyleRegistry.Instance, GalleryStyles.Define)
+                .UseStyles(StyleRegistry.Instance, StyleBootstrap.Apply)
                 .ConfigureServices(s => s.AddSingleton(options))
                 .Build();
 

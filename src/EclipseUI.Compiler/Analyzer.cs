@@ -402,6 +402,13 @@ public static class TemplateAnalyzer
                         "'@code' is only allowed at the top level of the document; move it outside the element (K21)",
                         node.Span));
                 break;
+            case UiStyleBlock:
+                // E1（design/17 §4.8）：与 @code 同款「仅顶层」位置校验
+                if (ctx != Ctx.Root)
+                    diags.Add(UiDiagnostics.Error(UiDiagnostics.Syntax,
+                        "'@style' is only allowed at the top level of the document; move it outside the element",
+                        node.Span));
+                break;
             case UiUsingDirective:
                 // K22：同上，根层合法
                 if (ctx != Ctx.Root)

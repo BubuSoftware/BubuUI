@@ -18,7 +18,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <AdditionalFiles Include="**\*.ui" />
+    <AdditionalFiles Include="**\*.ui;**\*.eustyle" />
   </ItemGroup>
 
 </Project>

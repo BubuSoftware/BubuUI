@@ -1,5 +1,16 @@
 @using EclipseUI.Elements
 
+@style {
+    // Component-scoped stylesheet (E1, design/17 4.8): class names compile to
+    // Showcase__-prefixed registrations at component initialization. E2 will
+    // expose them to templates via Class="..." with local-first resolution.
+    .demo-scope {
+        corner-radius: 12;
+
+        &:hover { corner-radius: 4; }
+    }
+}
+
 <StackPanel Gap="10">
     <TextBlock FontSize="13">Text scale - runs share one shaping cache</TextBlock>
     <TextBlock FontSize="20">The quick brown fox · 20px</TextBlock>

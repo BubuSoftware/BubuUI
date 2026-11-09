@@ -10,7 +10,7 @@ namespace EclipseUI;
 ///     .UseVello()                         // 渲染表面（Rendering.Vello 扩展）
 ///     .UseHarfBuzzText()                  // 文本管线（Text.Shaping 扩展）
 ///     .UseTheme(ElementTheme.Dark)
-///     .UseStyles(StyleRegistry.Instance, GalleryStyles.Define)
+///     .UseStyles(StyleRegistry.Instance, StyleBootstrap.Apply)
 ///     .ConfigureServices(s => s.AddSingleton(options))
 ///     .Start(args);
 /// </code>

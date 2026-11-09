@@ -53,6 +53,9 @@ public sealed class Emitter
     private readonly IReadOnlyList<string> _usings;
     /// <summary>@code 块（K21/D86）：按源码顺序整块透传进类壳，带 span 型 #line 映射。</summary>
     private readonly IReadOnlyList<UiCodeBlock> _codeBlocks;
+    /// <summary>@style 组件块的解析产物（E1，design/17 §4.8）：类名已加组件前缀，
+    /// 发射为静态幂等注册方法，Build 首行调用。</summary>
+    private readonly IReadOnlyList<EustyleRule> _styleRules;
     /// <summary>自身 code-behind 组件的插槽（spec/02 §4.12.5）——TemplateGenerator 按
     /// code-behind 符号精确匹配传入；分析器的短名近似只用于诊断，发射以此为准。</summary>
     private readonly IReadOnlyDictionary<string, UiSlotDef> _ownSlots;
@@ -72,7 +75,8 @@ public sealed class Emitter
         IReadOnlyDictionary<string, UiSlotDef>? ownSlots = null,
         IReadOnlyDictionary<int, string>? switchValueTypes = null,
         IReadOnlyList<string>? usings = null,
-        IReadOnlyList<UiCodeBlock>? codeBlocks = null)
+        IReadOnlyList<UiCodeBlock>? codeBlocks = null,
+        IReadOnlyList<EustyleRule>? styleRules = null)
     {
         _doc = doc;
         _accessibility = accessibility;
@@ -82,6 +86,7 @@ public sealed class Emitter
         _switchValueTypes = switchValueTypes ?? new Dictionary<int, string>();
         _usings = usings ?? Array.Empty<string>();
         _codeBlocks = codeBlocks ?? Array.Empty<UiCodeBlock>();
+        _styleRules = styleRules ?? Array.Empty<EustyleRule>();
         _ownSlots = ownSlots ?? new Dictionary<string, UiSlotDef>(StringComparer.Ordinal);
         // #line 的文件名不是 C# 字符串字面量：反斜杠原样写入，否则映射路径会变成双反斜杠。
         _linePath = filePath.Replace("\"", "\\\"");
@@ -92,6 +97,9 @@ public sealed class Emitter
         var root = (UiElement)_doc.Nodes.First(n => n is UiElement);
         _out = _body;
         _indent = 2;
+        // E1：组件私有样式在 Build 首行幂等注册（类名带组件前缀，树重建重复调用零开销）。
+        if (_styleRules.Count > 0)
+            Line("__RegisterStyles();");
         var rootVar = EmitElement(root, parentVar: null, EmitContext.Root());
         Line($"return {rootVar};");
 
@@ -123,6 +131,24 @@ public sealed class Emitter
             _sb.Append("    private ").Append(field.Type).Append(" __").Append(field.Prefix).Append(field.N)
                 .AppendLine(" = null!;");
         if (_fields.Count > 0) _sb.AppendLine();
+
+        // E1（design/17 §4.8）：@style 组件块的注册方法——静态幂等（守卫位），类名在
+        // TemplateGenerator 已加组件前缀；注册目标是全局 StyleRegistry.Instance（与
+        // AppBuilder.UseStyles 装配的 Provider 同源），运行时零新机制。
+        if (_styleRules.Count > 0)
+        {
+            _sb.AppendLine("    private static bool __euiStylesRegistered;");
+            _sb.AppendLine();
+            _sb.AppendLine("    private static void __RegisterStyles()");
+            _sb.AppendLine("    {");
+            _sb.AppendLine("        if (__euiStylesRegistered) return;");
+            _sb.AppendLine("        __euiStylesRegistered = true;");
+            _sb.Append(EustyleGenerator.EmitDefines(
+                new EustyleStylesheet(_styleRules),
+                "global::EclipseUI.Rendering.StyleRegistry.Instance"));
+            _sb.AppendLine("    }");
+            _sb.AppendLine();
+        }
 
         _sb.AppendLine("    protected override global::EclipseUI.Element Build()");
         _sb.AppendLine("    {");

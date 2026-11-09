@@ -78,7 +78,7 @@
 | 文本 | 🟡 单行 shaping 已接入 | 断行、bidi、fallback、emoji、glyph 缓存、display list 集成 |
 | 输入/焦点 | 🟡 元素路由已通 | 字符输入/IME、滚轮/触摸、Shift+Tab、无障碍 |
 | 渲染/合成器 | 🟡 scene graph + 上屏 + damage v0 + retained 构建层（✅ D93） | 脏区光栅化（上游 scissor API）、合成器、帧预算门槛 |
-| 样式/主题 | 🟡 令牌 + Class 样式 + 主题资源 + 伪类变体 + `:disabled` 已落（2026-11-09，D98–D103） | 模板 `Class` 语法与编译期类名校验（E2）、样式表编译器（E1）、嵌套塌缩（E4）、注册位（E5）——design/17 执行计划；资源字典/`Style=` 模板语法（S-C 后续）、后代/子代选择器组合、控件模板（S-D） |
+| 样式/主题 | 🟡 令牌 + Class 样式 + 主题资源 + 伪类变体 + `:disabled` + **样式表编译器（E1：.eustyle/@style → 生成 Define 调用）**已落（2026-11-09，D98–D104） | 模板 `Class` 语法与编译期类名校验（E2）、嵌套塌缩（E4）、注册位（E5）——design/17 执行计划；资源字典/`Style=` 模板语法（S-C 后续）、后代/子代选择器组合、控件模板（S-D） |
 | 控件库 | 🟡 极简 | TextBlock/Button/CheckBox/StackPanel/ListBoxItem 之外的基础控件 |
 | IDE | 🔴 未开始 | TextMate、LSP server、VS Code/Rider 壳 |
 | 工具链 | 🔴 基本未开始 | 热重载、断点映射、DevTools、无头测试 SDK |

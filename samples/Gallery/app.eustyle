@@ -1,0 +1,23 @@
+// EclipseUI Gallery stylesheet (E1, design/17 §4):
+//   app.eustyle --(EustyleCompiler)--> StyleBootstrap.g.cs (generated)
+// theme(dark, light) compiles to ThemeColor dual-color resources (S-C, auto-follows theme);
+// &:hover / &:pressed / &:disabled are pseudo-class variants (D102/D103 semantics).
+
+// Primary action green — both theme shades.
+$primary: theme(#22a064, #1c8c58);
+
+.primary {
+    background: $primary;
+
+    &:hover    { background: theme(#30ba78, #26a268); }  // brighten on hover
+    &:pressed  { background: theme(#187e4e, #146e44); }  // darken while pressed
+    &:disabled { background: theme(#2e3e3a, #ced6d2); }  // explicit :disabled variant (E3)
+}
+
+// Tool buttons: neutral grey, both shades.
+.tool {
+    background: theme(#606a84, #b0b7c6);
+
+    &:hover   { background: theme(#7682a0, #9ea6ba); }
+    &:pressed { background: theme(#4e566e, #929ab0); }
+}

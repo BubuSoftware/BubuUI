@@ -595,13 +595,14 @@ public sealed class Lexer
         if (name == "using")
             return ParseUsingDirective(start);
 
-        // @code { ... }（K21，D86）：块体整块捕获（字符串/注释/插值感知，D11），原文透传（K25）
-        if (name == "code")
+        // @code { ... }（K21，D86）与 @style { ... }（E1，design/17 §4.8）：块体整块捕获
+        //（C# 感知的括号匹配——注释/字符串安全，样式块的 /* */ 注释同样覆盖），原文透传。
+        if (name == "code" || name == "style")
         {
             int j = _i;
             while (j < _s.Length && char.IsWhiteSpace(_s[j])) j++;
             if (j >= _s.Length || _s[j] != '{')
-                return ErrorToken(start, "expected '{' after @code: @code { ... }");
+                return ErrorToken(start, $"expected '{{' after @{name}: @{name} {{ ... }}");
             int bodyStart = j + 1;
             int close = CSharpSnippet.FindMatchingClose(_s, j);
             if (close < 0)
@@ -610,8 +611,8 @@ public sealed class Lexer
                 return new Token
                 {
                     Kind = TokenKind.Error,
-                    Text = "unterminated @code",
-                    Aux = "unterminated @code block; add the closing '}'",
+                    Text = $"unterminated @{name}",
+                    Aux = $"unterminated @{name} block; add the closing '}}'",
                     Span = new TextSpan(start, _s.Length - start),
                 };
             }
@@ -621,7 +622,7 @@ public sealed class Lexer
             return new Token
             {
                 Kind = TokenKind.Directive,
-                Text = "code",
+                Text = name,
                 Aux = body,
                 Span = new TextSpan(start, _i - start),
                 InnerSpan = inner,

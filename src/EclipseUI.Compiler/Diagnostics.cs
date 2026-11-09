@@ -90,6 +90,13 @@ public static class UiDiagnostics
     // 规则 8 的「不重复报」在此退让为「预检警告 + C# 权威错误」双可见，属既定权衡。
     public const string ExpressionSemantic = "EUI049";
 
+    // E1（样式表编译器，design/17 §5）：.eustyle / @style 块诊断。码位从 EUI050 起——
+    // EUI048/EUI049 已被 @using 别名（K31）与表达式语义（G4）占用（design/17 初版的
+    // EUI048–052 分配按实际占用顺延）；EUI053/EUI054 预留给 E4（派生名冲突）/E5（双通道冲突）。
+    public const string StyleSyntax = "EUI050";
+    public const string StyleUnknownProperty = "EUI051";
+    public const string StyleValueType = "EUI052";
+
     // 语法诊断
     public const string Syntax = "EUI100";
 

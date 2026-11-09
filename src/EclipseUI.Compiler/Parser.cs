@@ -324,6 +324,18 @@ public sealed class Parser
                         Span = directive.Span,
                     });
                 break;
+            case "style":
+                Advance();
+                if (directive.Aux is null)
+                    Diag(UiDiagnostics.Syntax, "expected '{' after @style: @style { ... }", directive.Span);
+                else
+                    list.Add(new UiStyleBlock
+                    {
+                        Code = directive.Aux,
+                        CodeSpan = directive.InnerSpan,
+                        Span = directive.Span,
+                    });
+                break;
             case "else" or "else if":
                 Advance();
                 Diag(UiDiagnostics.Syntax,

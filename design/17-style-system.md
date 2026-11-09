@@ -338,16 +338,17 @@ app.eustyle ──► EustyleCompiler ──► StyleBootstrap.g.cs ─┐
             └ ③ 注册位（E5）同目录校验 :state 名
 ```
 
-诊断码分配（EUI048 起，表接 design/03 诊断总表）：
+诊断码分配（**EUI050 起**——EUI048/EUI049 已被 @using 别名（K31）与表达式语义（G4）占用；
+初版本表误分配 EUI048–052，2026-11-09 落地 E1 时按实际占用顺延修正）：
 
 | 码 | 语义 | 级别 |
 |----|------|------|
 | `EUI031` | **转正**：模板 `Class="…"` 引用样式目录中不存在的类（原「保留未实现」语义终止） | Error |
-| `EUI048` | 样式表语法错误 / 不支持的选择器形态 | Error |
-| `EUI049` | 未知属性名（不在 StyleBuilder setter 目录） | Error |
-| `EUI050` | 值类型不匹配（color/length/theme 形态不符） | Error |
-| `EUI051` | 嵌套派生类自动命名冲突 | Error |
-| `EUI052` | 样式表类与手写 `Define` 重复注册（双通道冲突） | Warning（运行时后者覆盖前者的既有语义不变） |
+| `EUI050` | 样式表语法错误 / 不支持的选择器形态 | Error |
+| `EUI051` | 未知属性名（不在 StyleBuilder setter 目录） | Error |
+| `EUI052` | 值类型不匹配（color/length/theme 形态不符、未定义变量、单位后缀） | Error |
+| `EUI053` | 嵌套派生类自动命名冲突（E4 预留） | Error |
+| `EUI054` | 样式表类与手写 `Define` 重复注册（双通道冲突，E5 预留） | Warning（运行时后者覆盖前者的既有语义不变） |
 
 级别口径沿用 design/03：Error 短路生成、Warning 生成但提示（对齐 EUI037/EUI024 的先例讨论）。
 
@@ -376,7 +377,7 @@ CSS 里 `var(--accent)` 的角色，在我们的模型里由**层的缺席**天�
 
 | 片 | 内容 | 验收口径 | 依赖 |
 |----|------|----------|------|
-| **E1** | EustyleCompiler：词法/语法解析、属性值绑定、伪类变体、`$变量`、生成器 + EUI048–050；**`@style` 组件块（§4.8①，共享解析核心）** | 画廊样式表化（GalleryStyles → app.eustyle）；`@style` 块编译+作用域前缀用例；测试 +15 左右 | 无 |
+| **E1** | EustyleCompiler：词法/语法解析、属性值绑定、伪类变体、`$变量`、生成器 + EUI050–052；**`@style` 组件块（§4.8①，共享解析核心）** | 画廊样式表化（GalleryStyles → app.eustyle）；`@style` 块编译+作用域前缀用例；测试 +15 左右 | 无 |
 | **E2** | 类名目录接入 UiCompiler + 模板 `Class` 语法转正（EUI031）+ 元素级 `Style=` 属性（§4.8②） | Showcase.ui 用 `Class`，未知类名编译期报错用例；`Style=` 属性生成 local 直调用例 | E1 |
 | **E3** | `:disabled`：`IsEnabled` 属性 + 第 4 枚举位 + painter 置灰兜底 + `.Disabled(...)` / `:disabled` | 全控件可禁用；TextBox 顺路受益；InputRouter 对 disabled 元素跳过命中 | 无（可与 E1 并行） |
 | **E4** | 嵌套塌缩 + `.ui` 注入 + EUI051 | 画廊分区卡派生样式走塌缩链路；注入用例（含 @foreach 分支） | E1+E2 |
@@ -390,7 +391,8 @@ E4 依赖 E1+E2；E5 收尾开放性。0.1 alpha 出口只需 E3（+ 可选 E1�
 | 片 | 状态 |
 |----|------|
 | E3 | ✅ 完成（2026-11-09，D103）：Disabled 位 + IsEnabled 继承 + 路由/焦点门控 + 置灰令牌 + `.Disabled()` 变体 + FocusRingWidth；699 例全绿 |
-| E1–E5 | ⏳ 排队（E1 下一片） |
+| E1 | ✅ 完成（2026-11-09，D104）：EustyleParser/Generator + EUI050–052 + `.eustyle` → StyleBootstrap.g.cs + `@style` 组件块（前缀注册）；画廊迁移 app.eustyle；722 例全绿（352/264/106） |
+| E2/E4/E5 | ⏳ 排队（E2 下一片） |
 
 ---
 

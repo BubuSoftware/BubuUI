@@ -173,6 +173,21 @@ public sealed class UiCodeBlock : UiNode
 }
 
 /// <summary>
+/// <c>@style { … }</c>（E1，design/17 §4.8）：文档顶层的组件样式块，块体为 Eustyle 样式表
+/// 源码（与 .eustyle 文件同语法，<see cref="Eustyle"/> 解析）。类名编译期加组件前缀
+/// （<c>{Component}__{class}</c>）注册进全局 <c>StyleRegistry</c>——作用域由命名隔离实现，
+/// 运行时零新机制；本文件 <c>Class="…"</c> 的解析顺序（先块内后全局目录）随 E2 落地。
+/// </summary>
+public sealed class UiStyleBlock : UiNode
+{
+    /// <summary>块体原文（不含定界大括号）。</summary>
+    public string Code { get; set; } = "";
+
+    /// <summary>块体原文在 .ui 中的 span（诊断 span 绝对定位用）。</summary>
+    public TextSpan CodeSpan { get; set; }
+}
+
+/// <summary>
 /// <c>@using</c>（K22，D85）：文档顶层指令，多条、位置不限；生成文件头按模板顺序去重输出
 /// 普通 <c>using Ns;</c>，标签只在导入命名空间内解析。
 /// K31：另有别名形态 <c>@using Btn = Ns.Type</c>——生成 <c>using Btn = global::Ns.Type;</c>，
