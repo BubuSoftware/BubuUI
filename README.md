@@ -160,7 +160,17 @@
 > 零选择器引擎；`Class={expr}` 表达式形态跳过注入（明示边界，手工 BEM 名兜底且可校验）。
 > 画廊 app.eustyle `.card` 塌缩链路 + Showcase 分区卡（含 @foreach 行注入）演示。
 > **752 个用例（Headless 352 / Compiler 294 / Rendering 106），全绿**。
-> **668 个用例（Headless 332 / Compiler 241 / Rendering 95），全绿**。
+>
+> **注册制伪类已通过（2026-11-10，D107，样式系统 E5 收尾片——五片全部落地）**：
+> `PseudoStatesRegistry.Register("loading")` 启动期注册自定义状态位（幂等、平台保留名拒绝、
+> 位从 0x10 起）——掩码即凭证：`Element.SetRegisteredState(mask, bool)` 只接受已注册位，
+> 注册位 OR 进 `PseudoStates` 合成掩码（变体匹配/段键零特殊处理）；`ClassStyleVariants.State(mask, …)`
+> 变体链与平台位共用声明序语义。样式表侧 `@states { loading; }` 顶层声明（预扫两遍、声明序
+> 无关、撞平台名 EUI050）+ 三处状态解析统一「平台位 → 本文件声明 → 全局目录」，产物是
+> 幂等 Register 行 + `.State(Register("name"), …)` 变体链；**EUI054** 双通道冲突（样式表类 ×
+> 手写 `Define`）Warning 不短路。painter 补齐 TextBlock class 背景绘制（状态芯片形态）。
+> 画廊 `@states { spinning; }` + spinner 双芯片演示（idle 灰 / 翻位绿）。**769 个用例
+> （Headless 359 / Compiler 304 / Rendering 106），全绿**。
 >
 > **S-C 最小主题资源已通过（2026-11-09，D100）**：`ThemeColor` 暗亮双色——`Visual.BackgroundResource/
 > ForegroundResource`（解析优先级 resource > 静态覆盖 > 主题令牌）+ `StyleBuilder` 双色重载；
@@ -442,8 +452,9 @@ public partial class Counter
   **retained 构建层已落地（D93 段级缓存，帧间命令构造趋零）**；真正的局部重绘（脏区光栅化）
   等 VelloSharp 提供 scissor API，合成器仍未实现；
   样式系统已落（D98/D99 主题 token + Class 样式分层、D100 ThemeColor、D102 伪类、D103 :disabled、
-  D104 样式表编译器 `.eustyle`/`@style`、D105 模板 `Class`/`Style` 转正、D106 嵌套塌缩 + `.ui` 注入）——
-  注册制伪类（E5）与控件模板（S-D）留后续片。
+  D104 样式表编译器 `.eustyle`/`@style`、D105 模板 `Class`/`Style` 转正、D106 嵌套塌缩 + `.ui` 注入、
+  D107 注册制伪类 `PseudoStatesRegistry`/`@states`/EUI054）——**E1–E5 五片全部落地**；
+  控件模板（S-D）留后续片。
 - 字体 fallback 未实现（缺字显示 `.notdef`）；CPU 光栅化每次约 60 ms 固定开销，仅用于 CI/离线导出。
 - 3D：**不提供 3D 引擎**。规划为 WebGPU 视口控件——应用自带渲染器，框架负责布局、
   裁剪、DPI、输入与纹理合成（见 [05 布局、渲染与输入](./design/05-layout-rendering-input.md) 与 G7）。
@@ -490,5 +501,6 @@ IDE/DevTools 随后。
    基础控件集首批 ✅（WrapPanel/Grid/ScrollViewer/附加属性/Unmount，2026-11-09）；
    ~~主题切换~~ ✅ D98、~~Class 样式 + 有效值分层~~ ✅ D99、~~按主题资源查找~~ ✅ D100、
    ~~伪类~~ ✅ D102/D103、~~样式表编译器~~ ✅ D104（E1）、~~模板 Class/Style 转正~~ ✅ D105（E2）、
-   ~~嵌套塌缩 + .ui 注入~~ ✅ D106（E4，2026-11-09）；余注册制伪类（E5）、控件模板（S-D）。
+   ~~嵌套塌缩 + .ui 注入~~ ✅ D106（E4，2026-11-09）、~~注册制伪类~~ ✅ D107（E5，2026-11-10）——
+   **样式系统 E1–E5 全部落地**；余控件模板（S-D）。
 5. **G5 IDE P0–P1**：TextMate grammar + LSP server（表达式投影进 Roslyn）+ VS Code/Rider 壳。

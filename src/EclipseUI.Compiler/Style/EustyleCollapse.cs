@@ -33,8 +33,11 @@ public static class EustyleCollapse
         string RootClass, IReadOnlyList<ChainSeg> Chain, string DerivedName, TextSpan Span);
 
     /// <summary>塌缩产物：<paramref name="Rules"/> 含根类与全部派生类（直接发 Define），
-    /// <paramref name="Injects"/> 交 .ui 编译器做静态子树注入。</summary>
-    public sealed record Collapsed(IReadOnlyList<EustyleRule> Rules, IReadOnlyList<InjectRule> Injects);
+    /// <paramref name="Injects"/> 交 .ui 编译器做静态子树注入，
+    /// <paramref name="States"/> 是样式表的 @states 声明（E5——发启动期 Register 序列）。</summary>
+    public sealed record Collapsed(
+        IReadOnlyList<EustyleRule> Rules, IReadOnlyList<InjectRule> Injects,
+        IReadOnlyList<EustyleStateDecl> States);
 
     public static Collapsed Flatten(EustyleStylesheet sheet, List<UiDiagnostic> diagnostics)
     {
@@ -63,7 +66,7 @@ public static class EustyleCollapse
             rules.Add(new EustyleRule(name, span, derivedSetters[name], Array.Empty<EustyleNested>()));
             injects.Add(new InjectRule(rootClass, chain, name, span));
         }
-        return new Collapsed(rules, injects);
+        return new Collapsed(rules, injects, sheet.States);
 
         void Walk(string rootClass, string parentDerived, IReadOnlyList<ChainSeg> ancestorChain,
             IReadOnlyList<EustyleNested> nested)

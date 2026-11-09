@@ -985,4 +985,208 @@ public class EustyleTests
         Assert.Contains("s.Padding(8);", code);
         Assert.Empty(result.Diagnostics);
     }
+
+    // ---------- E5：注册制伪类（design/17 §3.2/§5/§7）----------
+
+    private static (EustyleStylesheet Sheet, List<UiDiagnostic> Diags) ParseWithStates(
+        string source, IReadOnlyCollection<string>? externalStates = null, int offset = 0)
+    {
+        var diags = new List<UiDiagnostic>();
+        var sheet = Eustyle.Parse(source, "test.eustyle", diags, offset, externalStates);
+        return (sheet, diags);
+    }
+
+    [Fact]
+    public void StatesDeclaration_SelectorForm_ParsesRegisteredStateAndEmitsRegisterChain()
+    {
+        const string source = """
+            @states { spinning; }
+            .spinner {
+                background: theme(#2a3040, #ffffff);
+                &:spinning { foreground: #22c55e; }
+            }
+            .busy:spinning { corner-radius: 4; }
+            """;
+
+        var (sheet, diags) = ParseWithStates(source);
+        Assert.Empty(diags);
+        var state = Assert.Single(sheet.States);
+        Assert.Equal("spinning", state.Name);
+
+        var spinner = sheet.Rules[0];
+        // 基础 + 变体块归属注册名（Variant 保持 None，RegisteredState 承载归属）
+        Assert.Equal(EustyleVariant.None, spinner.Setters[0].Variant);
+        Assert.Null(spinner.Setters[0].RegisteredState);
+        var variant = spinner.Setters[1];
+        Assert.Equal(EustyleVariant.None, variant.Variant);
+        Assert.Equal("spinning", variant.RegisteredState);
+
+        var selectorForm = sheet.Rules[1].Setters.Single();
+        Assert.Equal(EustyleVariant.None, selectorForm.Variant);
+        Assert.Equal("spinning", selectorForm.RegisteredState);
+
+        // 生成代码：Apply 顶部注册行 + 变体链 .State(Register("spinning"), …)
+        var result = Run(new TestAdditionalText("app.eustyle", source));
+        var code = SourceOf(result, hint => hint.Contains("StyleBootstrap.g.cs"));
+        AssertGeneratedCodeParses(code);
+        Assert.Contains("global::EclipseUI.PseudoStatesRegistry.Register(\"spinning\");", code);
+        Assert.Contains(".State(global::EclipseUI.PseudoStatesRegistry.Register(\"spinning\"), s =>", code);
+        Assert.Contains("s.Foreground(", code);
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact]
+    public void StatesDeclaration_DeclarationOrderIndependent_AndDeduplicated()
+    {
+        // 声明写在规则之后同样可用（预扫两遍解析）；重复声明去重。
+        const string source = """
+            .spinner:loading { background: #22c55e; }
+            @states {
+                loading;
+                loading, busy;
+            }
+            .busy:busy { foreground: #fff; }
+            """;
+
+        var (sheet, diags) = ParseWithStates(source);
+        Assert.Empty(diags);
+        Assert.Equal(["loading", "busy"], sheet.States.Select(s => s.Name).ToArray());
+        Assert.Equal("loading", sheet.Rules[0].Setters.Single().RegisteredState);
+        Assert.Equal("busy", sheet.Rules[1].Setters.Single().RegisteredState);
+    }
+
+    [Fact]
+    public void StatesDeclaration_NestedSelector_RegisteredState()
+    {
+        const string source = """
+            @states { spinning; }
+            .card {
+                background: #222222;
+                > Button:spinning { foreground: #22c55e; }
+            }
+            """;
+
+        var (sheet, diags) = ParseWithStates(source);
+        Assert.Empty(diags);
+        var nested = Assert.Single(sheet.Rules[0].Nested);
+        var setter = Assert.Single(nested.Setters);
+        Assert.Equal("spinning", setter.RegisteredState);
+    }
+
+    [Fact]
+    public void StatesDeclaration_UndeclaredName_ReportsEUI050()
+    {
+        var (_, diags) = ParseWithStates(".spinner:loading { background: #fff; }");
+
+        // EUI050 是 Error → 产物整体短路（无效状态归属不进产物，断言只看诊断）。
+        var diag = Assert.Single(diags);
+        Assert.Equal(UiDiagnostics.StyleSyntax, diag.Code);
+        Assert.Contains("unknown pseudo-class ':loading'", diag.Message);
+        Assert.Contains("@states", diag.Message);
+    }
+
+    [Fact]
+    public void StatesDeclaration_PlatformNameConflict_ReportsEUI050()
+    {
+        var (_, diags) = ParseWithStates("@states { hover; loading; }");
+
+        var diag = Assert.Single(diags);
+        Assert.Equal(UiDiagnostics.StyleSyntax, diag.Code);
+        Assert.Contains("platform pseudo-class", diag.Message);
+    }
+
+    [Fact]
+    public void StatesDeclaration_CrossFileReference_ResolvesViaExternalCatalog()
+    {
+        // 本文件未声明、外部目录（其他样式来源的 @states 并集）已声明 → 引用通过；
+        // 外部目录也没有 → 报错。
+        const string source = ".spinner:loading { background: #fff; }";
+
+        var (sheet, okDiags) = ParseWithStates(source, ["loading"]);
+        Assert.Empty(okDiags);
+        Assert.Equal("loading", sheet.Rules[0].Setters.Single().RegisteredState);
+
+        var (_, missingDiags) = ParseWithStates(source, ["other"]);
+        Assert.Contains(missingDiags, d => d.Code == UiDiagnostics.StyleSyntax);
+    }
+
+    [Fact]
+    public void StyleBlock_AtStates_EmitsRegisterSequenceInComponentStyles()
+    {
+        const string ui = """
+            @using EclipseUI.Elements
+            <StackPanel />
+            @style {
+                @states { spinning; }
+                .demo:spinning { corner-radius: 18; }
+            }
+            """;
+
+        var result = Run(new TestAdditionalText("Probe.ui", ui));
+        var code = SourceOf(result, hint => hint.Contains("Probe."));
+        AssertGeneratedCodeParses(code);
+        // 注册名是全局掩码命名空间——不做组件前缀（与类名前缀机制解耦）
+        Assert.Contains("global::EclipseUI.PseudoStatesRegistry.Register(\"spinning\");", code);
+        Assert.Contains(".State(global::EclipseUI.PseudoStatesRegistry.Register(\"spinning\"), s =>", code);
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact]
+    public void StyleAttribute_AtDirective_ReportsEUI050()
+    {
+        // 元素属性没有「状态」语境（design/17 §4.8②）——@states 与一切 @ 指令不适用。
+        // 直测 ParseDeclarations（.ui 属性值里的 '@' 由 Lexer 指令通道处理，是既有限制）。
+        var (_, diags) = ParseDeclarations("background: #fff; @states { loading; }");
+
+        var diag = Assert.Single(diags);
+        Assert.Equal(UiDiagnostics.StyleSyntax, diag.Code);
+        Assert.Contains("not allowed in Style=", diag.Message);
+    }
+
+    [Fact]
+    public void DualChannel_HandwrittenDefine_SameName_ReportsEUI054Warning()
+    {
+        // 宿主 code-behind 手写 Define("card", …) × 样式表 .card → EUI054 Warning（不短路生成）。
+        const string sheet = """
+            .card { background: theme(#2a3040, #ffffff); }
+            .unique { padding: 8; }
+            """;
+        const string codeBehind = """
+            using EclipseUI.Rendering;
+            public partial class Probe
+            {
+                static Probe()
+                {
+                    StyleRegistry.Instance.Define("card", s => s.Padding(4));
+                }
+            }
+            """;
+
+        var result = RunWith(codeBehind, new TestAdditionalText("app.eustyle", sheet));
+        Assert.Null(result.Exception);
+        var warning = Assert.Single(result.Diagnostics);
+        Assert.Equal(UiDiagnostics.StyleDualChannelConflict, warning.Id);
+        // Warning 不短路：产物照常生成
+        var code = SourceOf(result, hint => hint.Contains("StyleBootstrap.g.cs"));
+        Assert.Contains("registry.Define(\"card\", s =>", code);
+    }
+
+    [Fact]
+    public void DualChannel_NoOverlap_NoDiagnostics()
+    {
+        const string sheet = ".unique { padding: 8; }";
+        const string codeBehind = """
+            using EclipseUI.Rendering;
+            public partial class Probe
+            {
+                static Probe()
+                {
+                    StyleRegistry.Instance.Define("onlyHandwritten", s => s.Padding(4));
+                }
+            }
+            """;
+
+        var result = RunWith(codeBehind, new TestAdditionalText("app.eustyle", sheet));
+        Assert.Empty(result.Diagnostics);
+    }
 }

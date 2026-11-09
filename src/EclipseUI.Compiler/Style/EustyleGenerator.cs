@@ -76,15 +76,18 @@ public static class EustyleGenerator
 
     private static void EmitRule(StringBuilder sb, EustyleRule rule, string registry, string indent)
     {
-        // 变体按首次出现顺序分组（None 组最前，进 Define 体）；组内保持属性声明序。
-        var groups = new List<KeyValuePair<EustyleVariant, List<EustyleSetter>>>();
+        // 变体按首次出现顺序分组（None 组最前，进 Define 体；组内保持属性声明序）。
+        // 分组键 = (平台位, 注册名)——注册制伪类（E5）是独立通道，RegisteredState 非空的
+        // 声明不与平台位混组；同一注册名的声明同组（见 <see cref="EustyleSetter.RegisteredState"/>）。
+        var groups = new List<KeyValuePair<(EustyleVariant Variant, string? Registered), List<EustyleSetter>>>();
         foreach (var setter in rule.Setters)
         {
-            var index = IndexOfVariant(groups, setter.Variant);
+            var key = (setter.Variant, setter.RegisteredState);
+            var index = IndexOfKey(groups, key);
             if (index < 0)
             {
                 var group = new List<EustyleSetter> { setter };
-                groups.Add(new KeyValuePair<EustyleVariant, List<EustyleSetter>>(setter.Variant, group));
+                groups.Add(new KeyValuePair<(EustyleVariant, string?), List<EustyleSetter>>(key, group));
             }
             else
             {
@@ -106,13 +109,13 @@ public static class EustyleGenerator
         //       {
         //           s.Background(...);
         //       });
-        var chain = new List<KeyValuePair<EustyleVariant, List<EustyleSetter>>>();
+        var chain = new List<KeyValuePair<(EustyleVariant Variant, string? Registered), List<EustyleSetter>>>();
         foreach (var group in groups)
-            if (group.Key != EustyleVariant.None) chain.Add(group);
+            if (group.Key != (EustyleVariant.None, null)) chain.Add(group);
 
         sb.Append(indent).Append(registry).Append(".Define(\"").Append(Literal(rule.ClassName))
             .Append("\", s =>").AppendLine();
-        EmitSetterGroup(sb, indent + "    ", SettersOf(groups, EustyleVariant.None));
+        EmitSetterGroup(sb, indent + "    ", SettersOf(groups, (EustyleVariant.None, null)));
         if (chain.Count == 0)
         {
             sb.Append(indent).AppendLine(");");
@@ -123,24 +126,38 @@ public static class EustyleGenerator
             for (var i = 0; i < chain.Count; i++)
             {
                 var last = i == chain.Count - 1;
-                sb.Append(indent).Append("    .").Append(VariantMethod(chain[i].Key)).Append("(s =>").AppendLine();
-                EmitSetterGroup(sb, indent + "    ", chain[i].Value, last ? ");" : ")");
+                var closing = last ? ");" : ")";
+                if (chain[i].Key.Registered is { } registered)
+                {
+                    // 注册位（E5）：.State(global::…PseudoStatesRegistry.Register("name"), s => …)
+                    sb.Append(indent).Append("    .State(global::EclipseUI.PseudoStatesRegistry.Register(\"")
+                        .Append(Literal(registered)).Append("\"), s =>").AppendLine();
+                }
+                else
+                {
+                    sb.Append(indent).Append("    .").Append(VariantMethod(chain[i].Key.Variant))
+                        .Append("(s =>").AppendLine();
+                }
+                EmitSetterGroup(sb, indent + "    ", chain[i].Value, closing);
             }
         }
     }
 
-    private static int IndexOfVariant(List<KeyValuePair<EustyleVariant, List<EustyleSetter>>> groups, EustyleVariant variant)
+    private static int IndexOfKey(
+        List<KeyValuePair<(EustyleVariant Variant, string? Registered), List<EustyleSetter>>> groups,
+        (EustyleVariant Variant, string? Registered) key)
     {
         for (var i = 0; i < groups.Count; i++)
-            if (groups[i].Key == variant) return i;
+            if (groups[i].Key == key) return i;
         return -1;
     }
 
     private static List<EustyleSetter> SettersOf(
-        List<KeyValuePair<EustyleVariant, List<EustyleSetter>>> groups, EustyleVariant variant)
+        List<KeyValuePair<(EustyleVariant Variant, string? Registered), List<EustyleSetter>>> groups,
+        (EustyleVariant Variant, string? Registered) key)
     {
         foreach (var group in groups)
-            if (group.Key == variant) return group.Value;
+            if (group.Key == key) return group.Value;
         return new List<EustyleSetter>();
     }
 
@@ -156,6 +173,9 @@ public static class EustyleGenerator
         sb.Append(indent).Append('}').Append(closingSuffix).AppendLine();
     }
 
+    /// <summary>变体链调用形态：平台位 → 命名方法（.Hover/.Pressed/…）；注册位（E5）→
+    /// <c>.State(PseudoStatesRegistry.Register("name"), …)</c>——掩码在运行时启动期分配，
+    /// 生成代码内联幂等 Register（重复调用安全、与宿主 C# 的注册互不干扰）。</summary>
     private static string VariantMethod(EustyleVariant variant) => variant switch
     {
         EustyleVariant.Hover => "Hover",
@@ -164,6 +184,22 @@ public static class EustyleGenerator
         EustyleVariant.Disabled => "Disabled",
         _ => throw new InvalidOperationException("unexpected base variant in chain emission"),
     };
+
+    /// <summary>
+    /// 发射 <c>@states</c> 声明的启动期注册序列（E5）：每个声明一行幂等
+    /// <c>PseudoStatesRegistry.Register</c>——在 Define 序列之前调用，保证变体链内联的
+    /// Register 实参之外，未引用的声明位也完成注册（第三方可 GetMask 查询）。
+    /// </summary>
+    public static string EmitStateRegisters(IReadOnlyList<EustyleStateDecl> states, string indent = "        ")
+    {
+        var sb = new StringBuilder();
+        foreach (var state in states)
+        {
+            sb.Append(indent).Append("global::EclipseUI.PseudoStatesRegistry.Register(\"")
+                .Append(Literal(state.Name)).AppendLine("\");");
+        }
+        return sb.ToString();
+    }
 
     private static string ValueLiteral(EustyleValue value) => value switch
     {

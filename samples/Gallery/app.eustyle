@@ -1,7 +1,9 @@
 // EclipseUI Gallery stylesheet (E1, design/17 §4):
 //   app.eustyle --(EustyleCompiler)--> StyleBootstrap.g.cs (generated)
 // theme(dark, light) compiles to ThemeColor dual-color resources (S-C, auto-follows theme);
-// &:hover / &:pressed / &:disabled are pseudo-class variants (D102/D103 semantics).
+// &:hover / &:pressed / &:disabled are pseudo-class variants (D102/D103 semantics);
+// @states declares registered pseudo-classes (E5: PseudoStatesRegistry at bootstrap,
+// elements flip the bit via SetRegisteredState — mask is the credential).
 
 // Primary action green — both theme shades.
 $primary: theme(#22a064, #1c8c58);
@@ -38,3 +40,15 @@ $primary: theme(#22a064, #1c8c58);
 }
 
 .hint { foreground: theme(#9aa4bc, #5a6272); }
+
+// E5 registered pseudo-state (design/17 §3.2): 'spinning' is not a platform bit —
+// it is declared here, registered at bootstrap (idempotent Register), and flipped
+// by code via Element.SetRegisteredState. The variant chains like any other state.
+@states { spinning; }
+
+.spinner {
+    background: theme(#606a84, #aeb5c4);
+    corner-radius: 10;
+
+    &:spinning { background: theme(#22c55e, #1aad52); }  // state-driven highlight
+}

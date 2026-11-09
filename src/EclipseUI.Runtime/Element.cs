@@ -248,12 +248,15 @@ public abstract class Element
     /// 渲染重算 + class 层样式重应用（伪类变体按当前状态重选）。
     /// E3：<see cref="PseudoStates.Disabled"/> 位在此合成（**有效值**——沿祖先链继承，
     /// 父禁用则子也禁用），使变体匹配与段键对其零特殊处理。
+    /// E5：注册制伪类位（<see cref="PseudoStatesRegistry"/> 分配）同样直接 OR 进本掩码——
+    /// 变体匹配与段键对注册位零特殊处理。
     /// </summary>
     public PseudoStates PseudoStates =>
         (_isHovered ? PseudoStates.Hover : PseudoStates.None) |
         (_isPressed ? PseudoStates.Pressed : PseudoStates.None) |
         (_isFocused ? PseudoStates.Focused : PseudoStates.None) |
-        (IsEffectiveEnabled ? PseudoStates.None : PseudoStates.Disabled);
+        (IsEffectiveEnabled ? PseudoStates.None : PseudoStates.Disabled) |
+        _registeredStates;
 
     /// <summary>指针悬停（CSS :hover）。由 <see cref="InputRouter"/> 在命中目标变化时维护。</summary>
     public bool IsHovered
@@ -316,6 +319,29 @@ public abstract class Element
         if (field == value) return;
         field = value;
         InvalidateRender(); // 显式失效兜底：变体移除时重应用可能值相等短路（SetStyleValue 同值不触发）
+        ReapplyStyles();
+    }
+
+    /// <summary>注册制伪类位（E5，design/17 §3.2）——<see cref="PseudoStates"/> 的注册位存储。</summary>
+    private PseudoStates _registeredStates;
+
+    /// <summary>
+    /// 翻转注册制伪类位（E5，design/17 §3.2）：第三方/控件自定义状态（<c>:loading</c>…）
+    /// 的唯一写入通道。<paramref name="mask"/> 必须是 <see cref="PseudoStatesRegistry.Register"/>
+    /// 分配位的非空子集——掩码即凭证：平台位与伪造位一律拒绝（启动期注册，运行期 O(1) 位测试）。
+    /// 变化即失效：渲染重算 + class 层重应用（变体按新掩码重选，段键含状态位自动重建）。
+    /// </summary>
+    public void SetRegisteredState(PseudoStates mask, bool value)
+    {
+        if (!PseudoStatesRegistry.IsRegisteredMask(mask))
+            throw new ArgumentException(
+                $"pseudo-state mask {mask} is not a non-empty subset of bits allocated by " +
+                "PseudoStatesRegistry.Register; platform bits and arbitrary values are rejected.",
+                nameof(mask));
+        var next = value ? _registeredStates | mask : _registeredStates & ~mask;
+        if (next == _registeredStates) return;
+        _registeredStates = next;
+        InvalidateRender();
         ReapplyStyles();
     }
 

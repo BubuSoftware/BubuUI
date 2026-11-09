@@ -92,9 +92,9 @@ public static class GalleryScene
         page.Children.Add(Section("3. Controls & Layout - template compile pipeline", showcase.Root));
 
         // ④ 样式系统：有效值分层 local > class > theme 的按钮四连 + Visual 覆盖卡片。
-        page.Children.Add(Section("4. Styles - theme tokens + class/visual layers", BuildStyleSection()));
+        page.Children.Add(Section("4. Styles - theme tokens + class layers + registered states", BuildStyleSection()));
 
-        page.Children.Add(Text("EclipseUI - retained segment caching (D93) - 752 tests green", 12));
+        page.Children.Add(Text("EclipseUI - retained segment caching (D93) - 769 tests green", 12));
 
         var rootViewer = new ScrollViewer();
         rootViewer.Children.Add(page);
@@ -136,9 +136,25 @@ public static class GalleryScene
             Light: new Color(18, 118, 88)));
         card.Children.Add(fgText);
 
+        // E5 registered pseudo-state（design/17 §3.2）：'spinning' 由 app.eustyle 的 @states
+        // 声明 + StyleBootstrap 启动期注册；宿主用返回的掩码（掩码即凭证）翻位——
+        // :spinning 变体命中即变体色，翻回即基础色（O(1) 位测试，段键含注册位）。
+        var spinState = PseudoStatesRegistry.Register("spinning");
+        var chips = new WrapPanel { Gap = 8 };
+        var idleChip = new TextBlock { FontSize = 13 };
+        idleChip.AddRun(new TextRun("spinner: idle"));
+        idleChip.Classes = ["spinner"];
+        var busyChip = new TextBlock { FontSize = 13 };
+        busyChip.AddRun(new TextRun("spinner: spinning"));
+        busyChip.Classes = ["spinner"];
+        busyChip.SetRegisteredState(spinState, true);
+        chips.Children.Add(idleChip);
+        chips.Children.Add(busyChip);
+
         var section = new StackPanel { Gap = 10 };
         section.Children.Add(row);
         section.Children.Add(card);
+        section.Children.Add(chips);
         return section;
     }
 

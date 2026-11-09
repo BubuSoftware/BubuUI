@@ -95,13 +95,16 @@ public static class UiDiagnostics
 
     // E1（样式表编译器，design/17 §5）：.eustyle / @style 块诊断。码位从 EUI050 起——
     // EUI048/EUI049 已被 @using 别名（K31）与表达式语义（G4）占用（design/17 初版的
-    // EUI048–052 分配按实际占用顺延）；EUI053 落地为 E4（派生名冲突）/EUI054 预留 E5（双通道冲突）。
+    // EUI048–052 分配按实际占用顺延）；EUI053 落地为 E4（派生名冲突）。
     public const string StyleSyntax = "EUI050";
     public const string StyleUnknownProperty = "EUI051";
     public const string StyleValueType = "EUI052";
     // E4（design/17 §4.5/§5）：嵌套塌缩的派生类自动命名冲突——同名派生类声明两次、
     // 或与样式表里的显式类名撞车。第一版不提供显式改名，拆两个中间类规避。
     public const string StyleDerivedNameConflict = "EUI053";
+    // E5（design/17 §5/§8）：双通道冲突——样式表类与手写 C# Define 同名注册。
+    // Warning 不短路（运行时「后注册覆盖」既有语义不变）；约定样式表为唯一来源。
+    public const string StyleDualChannelConflict = "EUI054";
 
     // 语法诊断
     public const string Syntax = "EUI100";

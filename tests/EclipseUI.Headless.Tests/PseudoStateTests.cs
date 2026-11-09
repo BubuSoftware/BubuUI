@@ -1,5 +1,6 @@
 using EclipseUI;
 using EclipseUI.Elements;
+using EclipseUI.Rendering;
 using Xunit;
 
 namespace EclipseUI.Headless.Tests;
@@ -235,5 +236,120 @@ public class PseudoStateTests
 
         headless.Focus.Focus(a);
         Assert.Same(c, headless.Focus.MoveNext()); // b 禁用被跳过
+    }
+
+    // ---- E5：注册制伪类（PseudoStatesRegistry + SetRegisteredState + .State 变体）----
+
+    [Fact]
+    public void Register_AssignsUniqueBits_IsIdempotent()
+    {
+        var first = PseudoStatesRegistry.Register("e5-a");
+        var again = PseudoStatesRegistry.Register("e5-a");
+        var second = PseudoStatesRegistry.Register("e5-b");
+
+        Assert.Equal(first, again);                    // 幂等：同名同掩码
+        Assert.NotEqual(PseudoStates.None, first);
+        Assert.NotEqual(first, second);                // 不同名不同位
+        Assert.Equal(0, (int)(first & second));        // 位不重叠
+        Assert.True(first > PseudoStates.Disabled);    // 注册位排在平台四位之后
+    }
+
+    [Fact]
+    public void Register_NormalizesLeadingColon()
+    {
+        var bare = PseudoStatesRegistry.Register("e5-colon");
+        var colon = PseudoStatesRegistry.Register(":e5-colon");
+
+        Assert.Equal(bare, colon); // ':loading' 与 'loading' 是同一状态
+    }
+
+    [Fact]
+    public void Register_RejectsPlatformNames_AndInvalidNames()
+    {
+        foreach (var platform in new[] { "hover", "pressed", "active", "focus", "disabled" })
+            Assert.Throws<ArgumentException>(() => PseudoStatesRegistry.Register(platform));
+        Assert.Throws<ArgumentException>(() => PseudoStatesRegistry.Register(""));
+        Assert.Throws<ArgumentException>(() => PseudoStatesRegistry.Register("has space"));
+        Assert.Throws<ArgumentException>(() => PseudoStatesRegistry.Register("a;b"));
+        Assert.Throws<ArgumentNullException>(() => PseudoStatesRegistry.Register(null!));
+    }
+
+    [Fact]
+    public void SetRegisteredState_TogglesBit_InPseudoStates()
+    {
+        var (_, button, _) = BuildTree();
+        var mask = PseudoStatesRegistry.Register("e5-toggle");
+
+        Assert.Equal(PseudoStates.None, button.PseudoStates & mask);
+        button.SetRegisteredState(mask, true);
+        Assert.Equal(mask, button.PseudoStates & mask);
+
+        button.SetRegisteredState(mask, false);
+        Assert.Equal(PseudoStates.None, button.PseudoStates & mask);
+    }
+
+    [Fact]
+    public void SetRegisteredState_RejectsPlatformBits_AndUnregistered()
+    {
+        var (_, button, _) = BuildTree();
+
+        Assert.Throws<ArgumentException>(() => button.SetRegisteredState(PseudoStates.Hover, true));
+        Assert.Throws<ArgumentException>(() => button.SetRegisteredState(PseudoStates.None, true));
+        Assert.Throws<ArgumentException>(() => button.SetRegisteredState((PseudoStates)0x40000000, true));
+    }
+
+    [Fact]
+    public void RegisteredState_DrivesStateVariantStyle_EndToEnd()
+    {
+        var (_, spinner, _) = BuildTree();
+        var mask = PseudoStatesRegistry.Register("e5-spin");
+        var provider = new StyleRegistry();
+        provider.Define("spinner", s => s.Background(new Color(42, 48, 64)))
+            .State(mask, s => s.Background(new Color(34, 197, 94)));
+        Styling.Provider = provider;
+        try
+        {
+            spinner.Classes = ["spinner"];
+            Assert.Equal(new Color(42, 48, 64), Visual.GetBackground(spinner)); // 基础
+
+            spinner.SetRegisteredState(mask, true);
+            Assert.Equal(new Color(34, 197, 94), Visual.GetBackground(spinner)); // 注册位变体命中
+
+            spinner.SetRegisteredState(mask, false);
+            Assert.Equal(new Color(42, 48, 64), Visual.GetBackground(spinner)); // 翻回基础
+        }
+        finally
+        {
+            Styling.Provider = null;
+        }
+    }
+
+    [Fact]
+    public void RegisteredVariant_LaterDeclarationWins_OverHover()
+    {
+        // 声明序语义（design/17 §3.3）：State 声明在 Hover 之后 → 两位同开时注册位胜。
+        var (headless, spinner, _) = BuildTree();
+        var center = CenterOf(spinner);
+        var mask = PseudoStatesRegistry.Register("e5-order");
+        var provider = new StyleRegistry();
+        provider.Define("spinner", s => s.Background(new Color(42, 48, 64)))
+            .Hover(s => s.Background(new Color(1, 1, 1)))
+            .State(mask, s => s.Background(new Color(2, 2, 2)));
+        Styling.Provider = provider;
+        try
+        {
+            spinner.Classes = ["spinner"];
+            headless.PointerMove(center); // 悬停（IsHovered 由 InputRouter 维护）
+            Assert.True(spinner.IsHovered);
+            spinner.SetRegisteredState(mask, true);
+            Assert.Equal(new Color(2, 2, 2), Visual.GetBackground(spinner)); // 后声明的 State 胜
+
+            spinner.SetRegisteredState(mask, false);
+            Assert.Equal(new Color(1, 1, 1), Visual.GetBackground(spinner)); // 只剩 hover
+        }
+        finally
+        {
+            Styling.Provider = null;
+        }
     }
 }

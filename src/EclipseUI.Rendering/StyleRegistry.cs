@@ -95,6 +95,14 @@ public sealed class ClassStyleVariants
     /// <summary>有效禁用变体（CSS :disabled，E3）：祖先禁用同样命中（有效值沿树继承）。</summary>
     public ClassStyleVariants Disabled(Action<StyleBuilder> build) => AddVariant(PseudoStates.Disabled, build);
 
+    /// <summary>
+    /// 注册制伪类变体（E5，design/17 §3.2）：<paramref name="state"/> 传
+    /// <c>PseudoStatesRegistry.Register("name")</c> 返回的掩码（幂等，重复调用安全）——
+    /// 元素经 <see cref="Element.SetRegisteredState"/> 翻转该位后命中本变体。
+    /// 与平台位变体共用同一应用序（声明序后者胜，design/17 §3.3）。
+    /// </summary>
+    public ClassStyleVariants State(PseudoStates state, Action<StyleBuilder> build) => AddVariant(state, build);
+
     private ClassStyleVariants AddVariant(PseudoStates state, Action<StyleBuilder> build)
     {
         if (build is null) throw new ArgumentNullException(nameof(build));

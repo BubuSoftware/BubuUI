@@ -25,6 +25,8 @@ public sealed record EustyleNumber(double Value, TextSpan Span) : EustyleValue(S
 /// <summary>
 /// 伪类变体（D102 PseudoStates 位掩码的编译期对应物）：
 /// None = 基础序列；<c>:active</c> 是 <see cref="Pressed"/> 的 CSS 别名。
+/// 注册制伪类（E5）不走本枚举——<see cref="EustyleSetter.RegisteredState"/> 携带注册名，
+/// 运行时掩码由 <c>PseudoStatesRegistry.Register</c> 启动期分配。
 /// </summary>
 public enum EustyleVariant
 {
@@ -34,6 +36,14 @@ public enum EustyleVariant
     Focus = 3,
     Disabled = 4,
 }
+
+/// <summary>
+/// <c>@states {{ name; name; }}</c> 顶层声明块的一项（E5，design/17 §3.2/§7）：
+/// 声明的名字在本样式表内可作为伪类选择器使用，产物是启动期
+/// <c>PseudoStatesRegistry.Register</c> 调用（全局掩码命名空间——注册位是运行时全局的，
+/// 不参与类名组件前缀机制，跨文件声明/引用同掩码幂等）。
+/// </summary>
+public sealed record EustyleStateDecl(string Name, TextSpan Span);
 
 /// <summary>一个样式类：类名 + 属性/变体 setter 序列（声明序，重复声明按后者胜）。
 /// <see cref="Nested"/> 是 E4 的嵌套结构选择器（编译期塌缩为派生类，见 <see cref="EustyleNested"/>）。</summary>
@@ -56,12 +66,19 @@ public sealed record EustyleNested(
     bool DirectChild, string? TypeName, string? ClassConstraint, TextSpan SelectorSpan,
     IReadOnlyList<EustyleSetter> Setters, IReadOnlyList<EustyleNested> Nested);
 
-/// <summary>一条属性声明：所属变体（None = 基础）+ StyleBuilder setter 名 + 值。</summary>
+/// <summary>一条属性声明：所属变体（None = 基础）+ StyleBuilder setter 名 + 值。
+/// <see cref="RegisteredState"/> 非空 = 注册制伪类归属（E5）——此时 <see cref="Variant"/>
+/// 恒为 None，注册名经运行时 <c>PseudoStatesRegistry.Register</c> 解析为掩码。</summary>
 public sealed record EustyleSetter(
-    EustyleVariant Variant, string Property, EustyleValue Value, TextSpan PropertySpan, TextSpan ValueSpan);
+    EustyleVariant Variant, string Property, EustyleValue Value, TextSpan PropertySpan, TextSpan ValueSpan,
+    string? RegisteredState = null);
 
-/// <summary>解析产物：全部类规则（按源顺序）。</summary>
-public sealed record EustyleStylesheet(IReadOnlyList<EustyleRule> Rules);
+/// <summary>解析产物：全部类规则（按源顺序）+ <c>@states</c> 声明块（E5）。</summary>
+public sealed record EustyleStylesheet(IReadOnlyList<EustyleRule> Rules)
+{
+    /// <summary>顶层 <c>@states</c> 声明（E5）：按源顺序去重；解析撞平台位名已报错。</summary>
+    public IReadOnlyList<EustyleStateDecl> States { get; init; } = Array.Empty<EustyleStateDecl>();
+}
 
 /// <summary>
 /// 元素级 <c>Style="…"</c> 的解析产物（E2，design/17 §4.8②）：无类语境的声明序列，

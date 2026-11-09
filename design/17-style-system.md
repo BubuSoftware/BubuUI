@@ -1,6 +1,6 @@
 # 17 · 样式系统完整设计（Styling System）
 
-> 状态：**D98–D102 + E1(E3)/E2(D105)/E4(D106) 已落地，E5 提案**（2026-11-09）
+> 状态：**全部五片落地**——D98–D102 + E3(D103)/E1(D104)/E2(D105)/E4(D106)/E5(D107)（2026-11-10）
 > 关联：design/03（模板引擎，§3.3.9 `Class`/`Style` 保留）、design/09 §9.3 G4（样式/主题行）、
 > design/04（Runtime 属性引擎）、design/05（绘制与段缓存）
 > 台账：已落部分见 spec/02 §12 D98–D102；提案部分实现时逐片登记（E1–E5）
@@ -93,11 +93,17 @@ public enum PseudoStates { None = 0, Hover = 1, Pressed = 2, Focused = 4, Disabl
 | 平台通用位 | `:hover` `:pressed` `:focus`（`:focus-within` 远期） | InputRouter / FocusManager | ✅ D102 |
 | 平台通用位 | `:disabled` | `IsEnabled` 属性 + 属性系统（有效值沿树继承） | ✅ D103（E3） |
 | 控件语义位 | `:checked` `:indeterminate` `:valid`… | **控件自身**（属性变化回调里翻转自己的位） | 需要样式化时逐控件加 |
-| 第三方注册位 | 任意（`:loading` 等） | `PseudoStates.Register(":loading")` → 返回掩码；注册者经 `SetRegisteredState(mask, bool)` 翻转 | E5 |
+| 第三方注册位 | 任意（`:loading` 等） | `PseudoStatesRegistry.Register("loading")` → 返回掩码（幂等）；注册者经 `Element.SetRegisteredState(mask, bool)` 翻转（掩码即凭证——拒绝平台位/未注册位） | ✅ E5（D107） |
 
 设计守则：**枚举位是引擎，不是枷锁**。字符串只存在于注册时刻（启动期，正好接编译期目录校验），
 运行期全是掩码测试。注册位直接 OR 进 `PseudoStates` 掩码与段键，段缓存机制零改动
 （int 掩码 32 位充足；不够升级 long，段键 record 同步扩字段）。
+
+E5 落地（D107）：`PseudoStates` 是 enum 不能挂静态方法——注册表落 `PseudoStatesRegistry` 静态类；
+样式表侧 `@states { name; }` 顶层声明块（预扫两遍解析，声明序无关），声明的名字在本表内可作
+伪类选择器、跨文件经全局目录兜底校验；产物是 `StyleBootstrap.Apply` 顶部的幂等 `Register` 行 +
+变体链 `.State(Register("name"), …)`。撞平台保留名（hover/pressed/active/focus/disabled）编译期
+报 EUI050、运行时 `Register` 抛 ArgumentException（同名单双通道拦截）。
 
 ### 3.3 变体声明
 
@@ -340,7 +346,7 @@ app.eustyle ──► EustyleCompiler ──► StyleBootstrap.g.cs ─┐
 *.ui ──► UiCompiler ──► *.g.cs ──────────────────────────┘
             │  ① Class="…" 逐个查目录 → 未知类名 EUI031（✅ E2 已落）
             │  ② E4：静态子树匹配 → 子元素注入派生类（✅ 已落）
-            └ ③ 注册位（E5）同目录校验 :state 名
+            └ ③ 注册位（✅ E5）：@states 声明目录（StyleStatesCatalog）校验 :state 名
 ```
 
 诊断码分配（**EUI050 起**——EUI048/EUI049 已被 @using 别名（K31）与表达式语义（G4）占用；
@@ -353,7 +359,7 @@ app.eustyle ──► EustyleCompiler ──► StyleBootstrap.g.cs ─┐
 | `EUI051` | 未知属性名（不在 StyleBuilder setter 目录） | Error |
 | `EUI052` | 值类型不匹配（color/length/theme 形态不符、未定义变量、单位后缀） | Error |
 | `EUI053` | **已落地（E4）**：嵌套塌缩的派生名与显式类名撞车（同名嵌套段合并不算冲突） | Error |
-| `EUI054` | 样式表类与手写 `Define` 重复注册（双通道冲突，E5 预留） | Warning（运行时后者覆盖前者的既有语义不变） |
+| `EUI054` | **已落地（E5）**：样式表类与手写 `Define` 重复注册（双通道冲突——源生成器扫宿主 C# 语法树的 `Define("name"` 字符串字面量调用与样式表类求交集；Warning 挂样式表类名 span） | Warning（运行时后者覆盖前者的既有语义不变） |
 
 级别口径沿用 design/03：Error 短路生成、Warning 生成但提示（对齐 EUI037/EUI024 的先例讨论）。
 
@@ -399,7 +405,7 @@ E4 依赖 E1+E2；E5 收尾开放性。0.1 alpha 出口只需 E3（+ 可选 E1�
 | E1 | ✅ 完成（2026-11-09，D104）：EustyleParser/Generator + EUI050–052 + `.eustyle` → StyleBootstrap.g.cs + `@style` 组件块（前缀注册）；画廊迁移 app.eustyle；722 例全绿（352/264/106） |
 | E2 | ✅ 完成（2026-11-09，D105）：类名目录管道（StyleClassCatalog 值相等跨管道）+ `Class=` 转正（本地 @style 优先解析、未知类名 EUI031、表达式 Split/ToArray 探针形态）+ `Style=` local 直赋（ParseDeclarations + Visual.SetXxx/SetValue）；739 例全绿（352/281/106） |
 | E4 | ✅ 完成（2026-11-09，D106）：嵌套塌缩（EustyleNested + EustyleCollapse 合并/命名/EUI053）+ 注入规则跨管道（StyleClassCatalog 扩展）+ 模板静态子树匹配（直接子穿透块结构、插槽不穿透）+ Emitter 合并发射（派生类排后）；画廊 card 塌缩链路 + @foreach 注入；752 例全绿（352/294/106） |
-| E5 | ⏳ 排队（下一片） |
+| E5 | ✅ 完成（2026-11-10，D107）：PseudoStatesRegistry.Register（幂等/平台名拒绝/位 0x10 起）+ Element.SetRegisteredState（掩码即凭证）+ ClassStyleVariants.State 变体 + @states 声明（预扫两遍/跨文件全局目录/撞平台名 EUI050）+ EUI054 双通道 Warning（手写 Define 扫描）；painter 补齐 TextBlock class 背景绘制；画廊 spinner 双芯片演示；769 例全绿（359/304/106）。**样式系统五片全部落地** |
 
 ---
 
@@ -425,4 +431,5 @@ E4 依赖 E1+E2；E5 收尾开放性。0.1 alpha 出口只需 E3（+ 可选 E1�
 | D100（S-C ThemeColor） | §4.4 `theme()`、§2.2 末行、§6.2 |
 | D102（伪类三位 + 链式变体 + 段键） | §3.1–3.3、§6.1-3 |
 | D101（AppBuilder/DI） | §4.1 接入点 `UseStyles` |
-| 提案 E1–E5 | §4、§5、§7 |
+| D107（注册制伪类 E5） | §3.2 第三方注册位行、§5 ③/EUI054、§7 E5 |
+| 提案 E1–E5 | §4、§5、§7（全部落地） |

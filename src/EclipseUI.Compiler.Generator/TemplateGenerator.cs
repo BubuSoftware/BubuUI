@@ -64,16 +64,37 @@ public sealed class TemplateGenerator : IIncrementalGenerator
             // 是第二个 SourceOutput，不能把所有 "SourceOutput" 混成一组断言（§14.10.3）。
             .WithTrackingName("PerFileGeneration");
 
+        // E5（design/17 §3.2）：注册制伪类名目录——.eustyle 与 .ui @style 块的 @states 声明并集
+        // （全局掩码命名空间，注册名不做类名式前缀）。两级收集：声明先成目录（预扫，便宜），
+        // 再进样式类目录管道供跨文件注册名引用的编译期校验（声明序无关）。
+        var styleStates = context.AdditionalTextsProvider
+            .Where(static file => Path.GetExtension(file.Path) is ".eustyle" or ".ui")
+            .Select(static (file, ct) => new UiFileInput(file.Path, file.GetText(ct)?.ToString() ?? ""))
+            .Select(static (input, _) => ExtractStyleStates(input))
+            .Collect()
+            .Select(static (facts, _) => StyleStatesCatalog.Build(facts))
+            .WithTrackingName("StyleStatesCatalog");
+
+        // E5（design/17 §5/§8）：宿主手写 C# Define("name", …) 的类名名单——与样式表类求
+        // 交集报 EUI054（Warning，不短路；运行时「后注册覆盖」语义不变）。扫描语法树取
+        // 字符串字面量实参（注释/非字符串不算）；值相等缓存随 compilation 失效。
+        var handwrittenDefines = context.CompilationProvider
+            .Select(static (compilation, _) => ExtractHandwrittenDefines(compilation))
+            .WithTrackingName("HandwrittenDefines");
+
         // E1（design/17 §4.1）：.eustyle → StyleBootstrap.g.cs。样式表文件数少且全局单源，
         // Collect 成批处理（一个 Apply 出口、AppBuilder.UseStyles 直连）；诊断逐文件定位，
         // 任一文件存在 Error 短路整个产物（与 .ui 管道口径一致）。
+        // E5：Combine 样式目录（跨文件 @states 引用校验）与手写 Define 名单（EUI054 双通道）。
         var styleSheets = context.AdditionalTextsProvider
             .Where(static file => Path.GetExtension(file.Path) == ".eustyle")
             .Select(static (file, ct) => new UiFileInput(file.Path, file.GetText(ct)?.ToString() ?? ""))
             .Collect()
-            .Combine(rootNamespace);
-        context.RegisterSourceOutput(styleSheets, static (spc, data) =>
-            ExecuteStylesheet(spc, data.Left, data.Right));
+            .Combine(rootNamespace)
+            .Combine(styleStates)
+            .Combine(handwrittenDefines);
+        context.RegisterSourceOutput(styleSheets, static (spc, data) => ExecuteStylesheet(spc,
+            data.Left.Left.Left, data.Left.Left.Right, data.Left.Right, data.Right));
 
         // E2（design/17 §5）：全局样式类名目录——.eustyle 的类名 + 各 .ui 的 @style 块类名
         // （组件前缀 {Component}__）。产出是值相等 record，combine 进逐文件管道供
@@ -82,7 +103,8 @@ public sealed class TemplateGenerator : IIncrementalGenerator
         var styleClasses = context.AdditionalTextsProvider
             .Where(static file => Path.GetExtension(file.Path) is ".eustyle" or ".ui")
             .Select(static (file, ct) => new UiFileInput(file.Path, file.GetText(ct)?.ToString() ?? ""))
-            .Select(static (input, _) => ExtractStyleClasses(input))
+            .Combine(styleStates)
+            .Select(static (pair, _) => ExtractStyleClasses(pair.Left, pair.Right))
             .Collect()
             .Select(static (facts, _) => StyleClassCatalog.Build(facts))
             .WithTrackingName("StyleClassCatalog");
@@ -305,10 +327,13 @@ public sealed class TemplateGenerator : IIncrementalGenerator
         var styleRules = new List<EustyleRule>();
         var localStyleClasses = new Dictionary<string, string>(StringComparer.Ordinal);
         var localInjects = new List<InjectRuleData>();
+        var localStates = new List<EustyleStateDecl>();
         foreach (var block in doc.Nodes.OfType<UiStyleBlock>())
         {
             var blockDiags = new List<UiDiagnostic>();
-            var sheet = Eustyle.Parse(block.Code, input.Path, blockDiags, block.CodeSpan.Start);
+            // E5：跨文件注册名（@states 全局并集）兜底校验——本文件声明已在解析器预扫闭环。
+            var sheet = Eustyle.Parse(block.Code, input.Path, blockDiags, block.CodeSpan.Start,
+                styleClasses.States);
             diags.AddRange(blockDiags);
             if (blockDiags.Exists(static d => d.IsError)) continue;
             var collapsed = EustyleCollapse.Flatten(sheet, diags);
@@ -322,6 +347,9 @@ public sealed class TemplateGenerator : IIncrementalGenerator
                 if (!localStyleClasses.ContainsKey(rule.ClassName))
                     localStyleClasses[rule.ClassName] = registered;
             }
+            foreach (var state in collapsed.States)
+                if (localStates.All(s => s.Name != state.Name))
+                    localStates.Add(state);
             foreach (var inj in collapsed.Injects)
             {
                 // 嵌套类约束先按本块裸名解析（Class="…" 的「先本文件」序同款）；
@@ -382,54 +410,64 @@ public sealed class TemplateGenerator : IIncrementalGenerator
             facts.SwitchTypes.ToDictionary(fact => fact.SpanStart, fact => fact.Type),
             TemplateAnalyzer.CollectUsingLines(doc.Nodes),
             doc.Nodes.OfType<UiCodeBlock>().ToList(),
-            styleRules).Emit();
+            styleRules,
+            // E5：本文件 @style 块的 @states 声明——Build 首行的 __RegisterStyles 先注册状态位
+            localStates).Emit();
 
         spc.AddSource($"{className}.{StableHash(input.Path)}.g.cs", code);
     }
 
     /// <summary>
-    /// E2/E4：单文件的样式来源提取——.eustyle 取塌缩后的全部类名（根 + 派生）与注入规则；
+    /// E2/E4/E5：单文件的样式来源提取——.eustyle 取塌缩后的全部类名（根 + 派生）与注入规则；
     /// .ui 只取 @style 块（类名加 <c>{Component}__</c> 前缀——塌缩派生名与注入规则同前缀化，
     /// 嵌套类约束按本块裸名先解析）。诊断丢弃（各自主管道报告），任一解析 Error 则该文件
     /// 产出空集——主管道 Error 已短路生成，半成品目录没有意义。
+    /// E5：<paramref name="externalStates"/> 是全局 @states 目录（跨文件注册名引用的兜底校验）。
     /// </summary>
-    private static StyleSourceFact ExtractStyleClasses(UiFileInput input)
+    private static StyleSourceFact ExtractStyleClasses(UiFileInput input, StyleStatesCatalog externalStates)
     {
         var extension = Path.GetExtension(input.Path);
         if (extension == ".eustyle")
         {
             var diags = new List<UiDiagnostic>();
-            var sheet = Eustyle.Parse(input.Text, input.Path, diags);
+            var sheet = Eustyle.Parse(input.Text, input.Path, diags, 0, externalStates.Names);
             if (diags.Exists(static d => d.IsError))
                 return new StyleSourceFact(input.Path,
-                    ImmutableArray<string>.Empty, ImmutableArray<InjectRuleData>.Empty);
+                    ImmutableArray<StyleClassRef>.Empty, ImmutableArray<InjectRuleData>.Empty,
+                    ImmutableArray<string>.Empty);
             var collapsed = EustyleCollapse.Flatten(sheet, new List<UiDiagnostic>());
             return new StyleSourceFact(input.Path,
-                collapsed.Rules.Select(static r => r.ClassName).ToImmutableArray(),
+                collapsed.Rules.Select(static r => new StyleClassRef(r.ClassName, r.NameSpan.Start))
+                    .ToImmutableArray(),
                 collapsed.Injects.Select(static i => new InjectRuleData(
                     i.RootClass,
                     i.Chain.Select(static s2 => new InjectSegData(s2.DirectChild, s2.TypeName, s2.ClassConstraint))
                         .ToImmutableArray(),
-                    i.DerivedName)).ToImmutableArray());
+                    i.DerivedName)).ToImmutableArray(),
+                collapsed.States.Select(static s => s.Name).ToImmutableArray());
         }
 
         // .ui：@style 块类名。组件名 = 文件名（ExecuteFile 同口径）。
         var className = Path.GetFileNameWithoutExtension(input.Path);
         if (!SyntaxFacts.IsValidIdentifier(className))
             return new StyleSourceFact(input.Path,
-                ImmutableArray<string>.Empty, ImmutableArray<InjectRuleData>.Empty);
+                ImmutableArray<StyleClassRef>.Empty, ImmutableArray<InjectRuleData>.Empty,
+                ImmutableArray<string>.Empty);
         var parseDiags = new List<UiDiagnostic>();
         var doc = FrontEnd.Parse(input.Text, input.Path, parseDiags);
         var names = new List<string>();
         var injects = new List<InjectRuleData>();
+        var states = new List<string>();
         foreach (var block in doc.Nodes.OfType<UiStyleBlock>())
         {
             var blockDiags = new List<UiDiagnostic>();
-            var sheet = Eustyle.Parse(block.Code, input.Path, blockDiags, block.CodeSpan.Start);
+            var sheet = Eustyle.Parse(block.Code, input.Path, blockDiags, block.CodeSpan.Start,
+                externalStates.Names);
             if (blockDiags.Exists(static d => d.IsError)) continue;
             var collapsed = EustyleCollapse.Flatten(sheet, new List<UiDiagnostic>());
             var localNames = new HashSet<string>(collapsed.Rules.Select(static r => r.ClassName), StringComparer.Ordinal);
             names.AddRange(collapsed.Rules.Select(static r => r.ClassName));
+            states.AddRange(collapsed.States.Select(static s => s.Name));
             foreach (var inj in collapsed.Injects)
             {
                 injects.Add(new InjectRuleData(
@@ -442,8 +480,32 @@ public sealed class TemplateGenerator : IIncrementalGenerator
             }
         }
         return new StyleSourceFact(input.Path,
-            names.Select(n => className + "__" + n).ToImmutableArray(),
-            injects.ToImmutableArray());
+            names.Select(n => new StyleClassRef(className + "__" + n, 0)).ToImmutableArray(),
+            injects.ToImmutableArray(),
+            states.Distinct(StringComparer.Ordinal).ToImmutableArray());
+    }
+
+    /// <summary>
+    /// E5 第一级收集：单文件的 @states 声明名单（预扫——不做完整解析，声明序无关）。
+    /// .eustyle 直接预扫全文；.ui 解析后逐 @style 块预扫。诊断丢弃（正式管道重报）。
+    /// </summary>
+    private static StyleStatesFact ExtractStyleStates(UiFileInput input)
+    {
+        var extension = Path.GetExtension(input.Path);
+        if (extension == ".eustyle")
+            return new StyleStatesFact(input.Path,
+                Eustyle.CollectStates(input.Text, input.Path, new List<UiDiagnostic>())
+                    .Select(static s => s.Name).ToImmutableArray());
+
+        var className = Path.GetFileNameWithoutExtension(input.Path);
+        if (!SyntaxFacts.IsValidIdentifier(className))
+            return new StyleStatesFact(input.Path, ImmutableArray<string>.Empty);
+        var doc = FrontEnd.Parse(input.Text, input.Path, new List<UiDiagnostic>());
+        var names = new List<string>();
+        foreach (var block in doc.Nodes.OfType<UiStyleBlock>())
+            names.AddRange(Eustyle.CollectStates(block.Code, input.Path, new List<UiDiagnostic>(),
+                block.CodeSpan.Start).Select(static s => s.Name));
+        return new StyleStatesFact(input.Path, names.Distinct(StringComparer.Ordinal).ToImmutableArray());
     }
 
     /// <summary>
@@ -578,9 +640,13 @@ public sealed class TemplateGenerator : IIncrementalGenerator
     /// <c>StyleBootstrap.Apply(StyleRegistry)</c> 静态入口（AppBuilder.UseStyles 方法组直连）。
     /// 命名空间取项目根命名空间（与单文件组件同口径）。诊断逐文件报告；任一文件存在
     /// Error 短路生成。同名类跨文件重复：保持「后注册覆盖先注册」运行时语义，顺序由路径排序固定。
+    /// E5：<paramref name="statesCatalog"/> 是全局 @states 目录（跨文件注册名引用校验）；
+    /// Apply 顶部发射全部文件的注册序列（幂等 Register）。
+    /// E5/EUI054：<paramref name="handwritten"/> 是宿主手写 Define 的类名名单——交集 Warning。
     /// </summary>
     private static void ExecuteStylesheet(SourceProductionContext spc,
-        ImmutableArray<UiFileInput> files, string rootNamespace)
+        ImmutableArray<UiFileInput> files, string rootNamespace,
+        StyleStatesCatalog statesCatalog, ImmutableArray<HandwrittenDefine> handwritten)
     {
         if (files.IsEmpty) return;
 
@@ -591,7 +657,7 @@ public sealed class TemplateGenerator : IIncrementalGenerator
         {
             var text = SourceText.From(file.Text);
             var diags = new List<UiDiagnostic>();
-            var sheet = Eustyle.Parse(file.Text, file.Path, diags);
+            var sheet = Eustyle.Parse(file.Text, file.Path, diags, 0, statesCatalog.Names);
             // E4：嵌套塌缩——派生类进 Define 序列，命名冲突 EUI053 进同一诊断流（Error 短路）。
             var collapsed = EustyleCollapse.Flatten(sheet, diags);
             foreach (var diag in diags)
@@ -600,6 +666,20 @@ public sealed class TemplateGenerator : IIncrementalGenerator
                 if (diag.IsError) hasErrors = true;
             }
             collapsedSheets.Add(collapsed);
+
+            // E5/EUI054：双通道冲突（Warning 不短路）——样式表类名也出现在宿主手写
+            // Define("name", …) 时报告；运行时「后注册覆盖」既有语义不变。
+            var handwrittenNames = new HashSet<string>(
+                handwritten.Select(static d => d.Name), StringComparer.Ordinal);
+            foreach (var rule in collapsed.Rules)
+            {
+                if (!handwrittenNames.Contains(rule.ClassName)) continue;
+                Report(spc, file.Path, text, UiDiagnostics.Warning(
+                    UiDiagnostics.StyleDualChannelConflict,
+                    $"style class '{rule.ClassName}' is also registered by a handwritten Define(...) call " +
+                    "in C#; the runtime keeps the last registration — stylesheets should be the single " +
+                    "source of truth (EUI054)", rule.NameSpan));
+            }
         }
         if (hasErrors) return;
 
@@ -619,10 +699,43 @@ public sealed class TemplateGenerator : IIncrementalGenerator
         sb.AppendLine("    public static void Apply(global::EclipseUI.Rendering.StyleRegistry registry)");
         sb.AppendLine("    {");
         foreach (var collapsed in collapsedSheets)
+        {
+            // E5：@states 声明先注册（幂等）——变体链的 Register 实参本就自足，此处保证
+            // 未被变体引用的声明位也完成注册（宿主可 GetMask 查询句柄）。
+            sb.Append(EustyleGenerator.EmitStateRegisters(collapsed.States));
             sb.Append(EustyleGenerator.EmitDefines(collapsed.Rules, "registry"));
+        }
         sb.AppendLine("    }");
         sb.AppendLine("}");
         spc.AddSource("StyleBootstrap.g.cs", sb.ToString());
+    }
+
+    /// <summary>
+    /// E5/EUI054：宿主手写 C# <c>Define("name", …)</c> 的类名名单——遍历宿主语法树，
+    /// 取方法名 Define 且首实参为字符串字面量的调用（注释/非字符串实参不算）。
+    /// 误报（同名自定义方法）容忍：诊断是 Warning。
+    /// </summary>
+    private static ImmutableArray<HandwrittenDefine> ExtractHandwrittenDefines(Compilation compilation)
+    {
+        var names = new List<HandwrittenDefine>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var tree in compilation.SyntaxTrees)
+        {
+            if (tree.GetRoot() is not CompilationUnitSyntax root) continue;
+            foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
+            {
+                if (invocation.Expression is not MemberAccessExpressionSyntax member ||
+                    !member.Name.Identifier.ValueText.Equals("Define", StringComparison.Ordinal) ||
+                    invocation.ArgumentList.Arguments.Count == 0 ||
+                    invocation.ArgumentList.Arguments[0].Expression is not LiteralExpressionSyntax literal ||
+                    !literal.IsKind(SyntaxKind.StringLiteralExpression) ||
+                    literal.Token.Value is not string name ||
+                    !seen.Add(name))
+                    continue;
+                names.Add(new HandwrittenDefine(name));
+            }
+        }
+        return names.ToImmutableArray();
     }
 
     /// <summary>
@@ -1486,15 +1599,33 @@ public sealed class TemplateGenerator : IIncrementalGenerator
 
 internal sealed record UiFileInput(string Path, string Text);
 
-/// <summary>E2/E4：单文件提取的样式来源（路径 + 有序类名 + 注入规则；值相等供增量缓存）。</summary>
-internal sealed record StyleSourceFact(string Path, ImmutableArray<string> Classes, ImmutableArray<InjectRuleData> Injects)
+/// <summary>E5/EUI054：宿主手写 C# Define 调用的类名（值相等供增量缓存；只留名字——报告位置在样式表侧）。</summary>
+internal sealed record HandwrittenDefine(string Name);
+
+/// <summary>E2/E4：单文件提取的样式来源（路径 + 有序类名引用（含 span——EUI054 定位）+
+/// 注入规则 + @states 声明；值相等供增量缓存）。</summary>
+internal sealed record StyleSourceFact(
+    string Path, ImmutableArray<StyleClassRef> Classes, ImmutableArray<InjectRuleData> Injects,
+    ImmutableArray<string> States)
 {
     public bool Equals(StyleSourceFact? other) =>
         other is not null && Path == other.Path && Classes.SequenceEqual(other.Classes) &&
-        Injects.SequenceEqual(other.Injects);
+        Injects.SequenceEqual(other.Injects) && States.SequenceEqual(other.States);
 
     public override int GetHashCode() =>
-        unchecked(Path.GetHashCode() * 397 + Classes.Length * 31 + Injects.Length);
+        unchecked(Path.GetHashCode() * 397 + Classes.Length * 31 + Injects.Length * 17 + States.Length);
+}
+
+/// <summary>E5：样式类引用（名 + 名字原文起点——EUI054 Warning 的样式表侧定位；值相等）。</summary>
+internal sealed record StyleClassRef(string Name, int NameStart);
+
+/// <summary>E5：单文件提取的 @states 声明名单（值相等供增量缓存；诊断丢弃——正式管道重报）。</summary>
+internal sealed record StyleStatesFact(string Path, ImmutableArray<string> Names)
+{
+    public bool Equals(StyleStatesFact? other) =>
+        other is not null && Path == other.Path && Names.SequenceEqual(other.Names);
+
+    public override int GetHashCode() => unchecked(Path.GetHashCode() * 397 + Names.Length);
 }
 
 /// <summary>E4：注入链段的纯数据形态（值相等；诊断 span 不进缓存数据）。</summary>
@@ -1517,25 +1648,44 @@ internal sealed record InjectRuleData(string RootClass, IReadOnlyList<InjectSegD
 }
 
 /// <summary>
-/// E2/E4：全局样式目录（类名有序去重集 + 注入规则集）。值相等是增量缓存前提：
-/// 任何样式文件变化都会重建，但内容不变时下游逐文件管道按值命中。
+/// E2/E4/E5：全局样式目录（类名有序去重集 + 注入规则集 + @states 声明并集）。
+/// 值相等是增量缓存前提：任何样式文件变化都会重建，但内容不变时下游逐文件管道按值命中。
 /// </summary>
-internal sealed record StyleClassCatalog(ImmutableArray<string> ClassNames, ImmutableArray<InjectRuleData> Injects)
+internal sealed record StyleClassCatalog(
+    ImmutableArray<string> ClassNames, ImmutableArray<InjectRuleData> Injects, ImmutableArray<string> States)
 {
     public static StyleClassCatalog Build(ImmutableArray<StyleSourceFact> facts) => new(
         facts.SelectMany(static f => f.Classes)
+            .Select(static c => c.Name)
             .Distinct(StringComparer.Ordinal)
             .OrderBy(static n => n, StringComparer.Ordinal)
             .ToImmutableArray(),
-        facts.SelectMany(static f => f.Injects).ToImmutableArray());
+        facts.SelectMany(static f => f.Injects).ToImmutableArray(),
+        facts.SelectMany(static f => f.States)
+            .Distinct(StringComparer.Ordinal)
+            .ToImmutableArray());
 
     public bool Contains(string className) => ClassNames.IndexOf(className, StringComparer.Ordinal) >= 0;
 
     public bool Equals(StyleClassCatalog? other) =>
         other is not null && ClassNames.SequenceEqual(other.ClassNames, StringComparer.Ordinal) &&
-        Injects.SequenceEqual(other.Injects);
+        Injects.SequenceEqual(other.Injects) && States.SequenceEqual(other.States, StringComparer.Ordinal);
 
-    public override int GetHashCode() => ClassNames.Length * 31 + Injects.Length;
+    public override int GetHashCode() => ClassNames.Length * 31 + Injects.Length * 17 + States.Length;
+}
+
+/// <summary>E5：全局 @states 注册名目录（第一级收集——声明序无关，跨文件引用校验的兜底集）。</summary>
+internal sealed record StyleStatesCatalog(ImmutableArray<string> Names)
+{
+    public static StyleStatesCatalog Build(ImmutableArray<StyleStatesFact> facts) => new(
+        facts.SelectMany(static f => f.Names)
+            .Distinct(StringComparer.Ordinal)
+            .ToImmutableArray());
+
+    public bool Equals(StyleStatesCatalog? other) =>
+        other is not null && Names.SequenceEqual(other.Names, StringComparer.Ordinal);
+
+    public override int GetHashCode() => Names.Length;
 }
 
 /// <summary>E2：Class={expr} 的集合形态事实（ValueSpan.Start → 形态；String 形态为默认不记录）。</summary>

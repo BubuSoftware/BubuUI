@@ -56,6 +56,8 @@ public sealed class Emitter
     /// <summary>@style 组件块的解析产物（E1，design/17 §4.8）：类名已加组件前缀，
     /// 发射为静态幂等注册方法，Build 首行调用。</summary>
     private readonly IReadOnlyList<EustyleRule> _styleRules;
+    /// <summary>本组件 @style 块的 @states 声明（E5）：__RegisterStyles 先发注册序列。</summary>
+    private readonly IReadOnlyList<EustyleStateDecl> _styleStates;
     /// <summary>自身 code-behind 组件的插槽（spec/02 §4.12.5）——TemplateGenerator 按
     /// code-behind 符号精确匹配传入；分析器的短名近似只用于诊断，发射以此为准。</summary>
     private readonly IReadOnlyDictionary<string, UiSlotDef> _ownSlots;
@@ -76,7 +78,8 @@ public sealed class Emitter
         IReadOnlyDictionary<int, string>? switchValueTypes = null,
         IReadOnlyList<string>? usings = null,
         IReadOnlyList<UiCodeBlock>? codeBlocks = null,
-        IReadOnlyList<EustyleRule>? styleRules = null)
+        IReadOnlyList<EustyleRule>? styleRules = null,
+        IReadOnlyList<EustyleStateDecl>? styleStates = null)
     {
         _doc = doc;
         _accessibility = accessibility;
@@ -87,6 +90,7 @@ public sealed class Emitter
         _usings = usings ?? Array.Empty<string>();
         _codeBlocks = codeBlocks ?? Array.Empty<UiCodeBlock>();
         _styleRules = styleRules ?? Array.Empty<EustyleRule>();
+        _styleStates = styleStates ?? Array.Empty<EustyleStateDecl>();
         _ownSlots = ownSlots ?? new Dictionary<string, UiSlotDef>(StringComparer.Ordinal);
         // #line 的文件名不是 C# 字符串字面量：反斜杠原样写入，否则映射路径会变成双反斜杠。
         _linePath = filePath.Replace("\"", "\\\"");
@@ -143,6 +147,9 @@ public sealed class Emitter
             _sb.AppendLine("    {");
             _sb.AppendLine("        if (__euiStylesRegistered) return;");
             _sb.AppendLine("        __euiStylesRegistered = true;");
+            // E5：@states 声明先注册（幂等）——变体链内联 Register 自足，此处保证未引用的
+            // 声明位也完成注册。
+            _sb.Append(EustyleGenerator.EmitStateRegisters(_styleStates, "        "));
             _sb.Append(EustyleGenerator.EmitDefines(
                 new EustyleStylesheet(_styleRules),
                 "global::EclipseUI.Rendering.StyleRegistry.Instance"));

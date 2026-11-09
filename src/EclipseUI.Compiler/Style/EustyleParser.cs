@@ -8,16 +8,20 @@ namespace EclipseUI.Compiler;
 /// Eustyle 解析器（E1，design/17 §4）：SCSS 子集 → 规则列表。语法：
 /// <code>
 /// $var: value;                        // 编译期变量（解析时替换，先声明先用）
+/// @states {{ name; name; }}           // 注册制伪类声明（E5，design/17 §3.2）
 /// .name[:state][:state] { prop: value;  &amp;:state { prop: value; ... } }
 /// .panel { &gt; Button { … }  TextBlock.title { … }  &gt; Button:hover { … } }   // E4 嵌套
 /// </code>
 /// value := theme(color, color) | #rgb | #rrggbb | #rrggbbaa | number | $var
 /// state := hover | active | pressed | focus | disabled（active 是 pressed 的 CSS 别名）
+///        | @states 声明的注册名（E5；本文件声明优先，未声明查 <paramref name="externalStates"/>）
 /// 注释 := // 行注释 | /* 块注释 */
 ///
-/// 诊断：EUI050（语法 / 不支持形态）、EUI051（未知属性）、EUI052（值类型不符，含未定义变量）。
+/// 诊断：EUI050（语法 / 不支持形态 / 注册名未声明）、EUI051（未知属性）、EUI052（值类型不符，含未定义变量）。
 /// 嵌套结构选择器（E4，design/17 §4.5）只产结构（<see cref="EustyleNested"/>）——塌缩命名、
 /// 冲突查重（EUI053）与注入规则由 <c>EustyleCollapse</c> 统一完成；变体块内不允许嵌套选择器。
+/// <c>@states</c> 采用预扫两遍解析（声明序无关——CSS 声明先于/后于使用都合法）；
+/// 声明名是全局掩码命名空间（运行时全局注册，不做类名式组件前缀）。
 /// </summary>
 public static class Eustyle
 {
@@ -44,13 +48,27 @@ public static class Eustyle
             ["disabled"] = EustyleVariant.Disabled,
         };
 
+    /// <summary>平台保留伪类名（E5）：@states 不得重声明，运行时 Register 同名单拒绝。</summary>
+    internal static readonly string[] PlatformStateNames =
+        ["hover", "pressed", "active", "focus", "disabled"];
+
     /// <summary>
     /// 解析样式表源码。<paramref name="spanOffset"/> 是源码在宿主文件内的起始偏移
     /// （@style 块传 <c>UiStyleBlock.CodeSpan.Start</c>，.eustyle 文件传 0）——
-    /// 产出的诊断 span 一律是宿主文件的绝对 span。
+    /// 产出的诊断 span 一律是宿主文件的绝对 span。<paramref name="externalStates"/> 是
+    /// 全局目录里已声明的注册名（其他样式来源的 @states 并集，E5）——本文件未声明时兜底校验。
     /// </summary>
-    public static EustyleStylesheet Parse(string text, string filePath, List<UiDiagnostic> diagnostics, int spanOffset = 0)
-        => new Impl(text, diagnostics, spanOffset).Document();
+    public static EustyleStylesheet Parse(string text, string filePath, List<UiDiagnostic> diagnostics,
+        int spanOffset = 0, IReadOnlyCollection<string>? externalStates = null)
+        => new Impl(text, diagnostics, spanOffset, externalStates).Document();
+
+    /// <summary>
+    /// 只收集 <c>@states</c> 声明（E5 第一级目录收集）：预扫全文——不做规则解析，
+    /// 便宜且声明序无关。诊断（撞平台保留名等）照常产出，调用方决定报告或丢弃。
+    /// </summary>
+    public static IReadOnlyList<EustyleStateDecl> CollectStates(string text, string filePath,
+        List<UiDiagnostic> diagnostics, int spanOffset = 0)
+        => new Impl(text, diagnostics, spanOffset, null).SnapshotDeclaredStates();
 
     /// <summary>
     /// 解析元素级 <c>Style="…"</c> 的声明序列（E2，design/17 §4.8②）：
@@ -59,7 +77,7 @@ public static class Eustyle
     /// span 经 <paramref name="spanOffset"/> 映射回宿主 .ui 文件。
     /// </summary>
     public static EustyleDeclarations ParseDeclarations(string text, string filePath, List<UiDiagnostic> diagnostics, int spanOffset = 0)
-        => new Impl(text, diagnostics, spanOffset).DeclarationList();
+        => new Impl(text, diagnostics, spanOffset, externalStates: null, scanStates: false).DeclarationList();
 
     private sealed class Impl
     {
@@ -68,19 +86,27 @@ public static class Eustyle
         private readonly int _offset;
         private readonly Dictionary<string, EustyleValue> _vars =
             new(StringComparer.Ordinal);
+        private readonly IReadOnlyCollection<string> _externalStates;
+        private readonly List<EustyleStateDecl> _declaredStates = [];
         private int _i;
 
-        public Impl(string s, List<UiDiagnostic> diags, int offset)
+        public Impl(string s, List<UiDiagnostic> diags, int offset, IReadOnlyCollection<string>? externalStates,
+            bool scanStates = true)
         {
             _s = s;
             _diags = diags;
             _offset = offset;
+            _externalStates = externalStates ?? Array.Empty<string>();
+            // E5 预扫：@states 声明序无关（先声明先可用）。Style= 的声明序列不开预扫——
+            // 元素属性没有状态语境，@ 块应走 '@' 分支报错而不是被预扫静默吞掉。
+            if (scanStates) CollectStates();
         }
 
         // ---------- 顶层 ----------
 
         public EustyleStylesheet Document()
         {
+            _i = 0; // 预扫已推进 _i——正式解析从头开始（@states 块本体由 '@' 分支消费）
             var rules = new List<EustyleRule>();
             while (true)
             {
@@ -88,6 +114,18 @@ public static class Eustyle
                 if (Eof) break;
                 var c = _s[_i];
                 if (c == '$') { ParseVarDecl(); continue; }
+                if (c == '@')
+                {
+                    // @states 已预扫收集并报告；此处只消费整块防二次解析。其他 @ 一律报错。
+                    if (MatchesWord(_s, _i + 1, "states")) ConsumeStatesBlock();
+                    else
+                    {
+                        Error(_i, _i + 1,
+                            "unexpected '@'; only '@states { ... }' blocks are supported at the top level");
+                        SkipTo(';', '}');
+                    }
+                    continue;
+                }
                 if (c == '.')
                 {
                     var rule = ParseRule();
@@ -95,11 +133,161 @@ public static class Eustyle
                     continue;
                 }
                 Error(_i, _i + 1,
-                    $"unexpected character '{Printable(c)}'; expected a class rule '.name {{ ... }}' or a '$variable' declaration");
+                    $"unexpected character '{Printable(c)}'; expected a class rule '.name {{ ... }}', an '@states' block or a '$variable' declaration");
                 SkipTo(';', '}');
             }
-            return new EustyleStylesheet(rules);
+            return new EustyleStylesheet(rules) { States = _declaredStates };
         }
+
+        // ---------- E5：@states 预扫与状态解析 ----------
+
+        /// <summary>
+        /// 预扫全文收集 <c>@states</c> 声明（两遍解析的第一遍）：跳过注释逐字符扫描，
+        /// 命中 <c>@states</c> 后完整解析声明块（分隔符 ';' ',' 空白容忍）。撞平台保留名
+        /// 报 EUI050；重复名去重。声明序无关——写在规则之后同样先于规则解析可用。
+        /// </summary>
+        private void CollectStates()
+        {
+            var i = 0;
+            var s = _s;
+            while (i < s.Length)
+            {
+                var c = s[i];
+                if (char.IsWhiteSpace(c)) { i++; continue; }
+                if (c == '/' && i + 1 < s.Length)
+                {
+                    if (s[i + 1] == '/') { while (i < s.Length && s[i] != '\n') i++; continue; }
+                    if (s[i + 1] == '*')
+                    {
+                        var close = s.IndexOf("*/", i + 2, StringComparison.Ordinal);
+                        i = close < 0 ? s.Length : close + 2;
+                        continue;
+                    }
+                }
+                if (c == '@' && MatchesWord(s, i + 1, "states"))
+                {
+                    _i = i;
+                    ParseStatesBlock();
+                    i = _i;
+                    continue;
+                }
+                i++;
+            }
+        }
+
+        /// <summary>解析一个 <c>@states {{ ... }}</c> 声明块（_i 定位在 '@'）。</summary>
+        private void ParseStatesBlock()
+        {
+            var start = _i;
+            _i += 7; // '@states'
+            SkipTrivia();
+            if (!Take('{'))
+            {
+                Error(start, _i, "expected '{' to open the @states block: @states { name; name; }");
+                SkipTo(';', '}');
+                return;
+            }
+            while (true)
+            {
+                SkipTrivia();
+                if (Eof)
+                {
+                    Error(start, _i, "unterminated @states block; add the closing '}'");
+                    return;
+                }
+                var c = _s[_i];
+                if (c == '}') { _i++; return; }
+                if (c == ';' || c == ',') { _i++; continue; }
+                if (c == '/') { SkipTrivia(); continue; } // SkipTrivia 跳过注释
+                var nameStart = _i;
+                var name = Ident();
+                if (name.Length == 0)
+                {
+                    Error(_i, _i + 1,
+                        $"unexpected character '{Printable(c)}' in @states block; expected state names separated by ';' or ','");
+                    SkipTo(';', '}');
+                    continue;
+                }
+                if (Array.IndexOf(PlatformStateNames, name) >= 0)
+                    ErrorSpan(SpanAt(nameStart, name.Length),
+                        $"'{name}' is a platform pseudo-class (hover/active/pressed/focus/disabled) " +
+                        "and cannot be redeclared in @states (EUI050)",
+                        UiDiagnostics.StyleSyntax);
+                else if (!DeclaredContains(name))
+                    _declaredStates.Add(new EustyleStateDecl(name, SpanAt(nameStart, name.Length)));
+                SkipTrivia();
+            }
+        }
+
+        /// <summary>正式解析时消费一个已预扫的 @states 块（只前进 _i，收集与报告都在预扫完成）。</summary>
+        private void ConsumeStatesBlock()
+        {
+            _i += 7; // '@states'
+            SkipTrivia();
+            if (!Take('{')) { SkipTo(';', '}'); return; }
+            var depth = 1;
+            while (_i < _s.Length && depth > 0)
+            {
+                var c = _s[_i];
+                if (c == '/' && _i + 1 < _s.Length && _s[_i + 1] == '/')
+                {
+                    while (_i < _s.Length && _s[_i] != '\n') _i++;
+                    continue;
+                }
+                if (c == '/' && _i + 1 < _s.Length && _s[_i + 1] == '*')
+                {
+                    var close = _s.IndexOf("*/", _i + 2, StringComparison.Ordinal);
+                    _i = close < 0 ? _s.Length : close + 2;
+                    continue;
+                }
+                if (c == '{') depth++;
+                else if (c == '}') depth--;
+                _i++;
+            }
+        }
+
+        /// <summary><paramref name="s"/> 在 <paramref name="index"/> 处以词 <paramref name="word"/> 开头
+        /// 且其后不是 Ident 字符（防 '@statesX' 误配）。</summary>
+        private static bool MatchesWord(string s, int index, string word)
+        {
+            if (index + word.Length > s.Length ||
+                string.CompareOrdinal(s, index, word, 0, word.Length) != 0) return false;
+            var after = index + word.Length;
+            return after >= s.Length || !(char.IsLetterOrDigit(s[after]) || s[after] is '-' or '_');
+        }
+
+        /// <summary>统一状态解析（E5）：平台位 → 本文件 @states 声明 → 全局已声明目录（跨文件注册名）。
+        /// 全未命中报 EUI050 并返回 (None, null)——调用方以 default 判别未命中。</summary>
+        private (EustyleVariant Variant, string? Registered) ResolveState(string state, int nameStart)
+        {
+            if (States.TryGetValue(state, out var variant))
+                return (variant, null);
+            if (DeclaredContains(state) || EnumerableContains(_externalStates, state))
+                return (EustyleVariant.None, state);
+            ErrorSpan(SpanAt(nameStart, Math.Max(1, state.Length)),
+                $"unknown pseudo-class ':{state}'; platform states are hover/active/pressed/focus/disabled — " +
+                "declare custom states in a '@states {{ name; }}' block (EUI050)",
+                UiDiagnostics.StyleSyntax);
+            return (EustyleVariant.None, null);
+        }
+
+        private bool DeclaredContains(string name)
+        {
+            foreach (var decl in _declaredStates)
+                if (decl.Name == name) return true;
+            return false;
+        }
+
+        /// <summary>netstandard2.0 兼容的线性查找（该文件未启用 Linq）。</summary>
+        private static bool EnumerableContains(IReadOnlyCollection<string> source, string value)
+        {
+            foreach (var item in source)
+                if (item == value) return true;
+            return false;
+        }
+
+        /// <summary>CollectStates 公开入口的快照（预扫已在构造时完成）。</summary>
+        internal IReadOnlyList<EustyleStateDecl> SnapshotDeclaredStates() => _declaredStates.ToArray();
 
         /// <summary>
         /// Style= 声明序列：循环解析声明直到 EOF。类规则出现报 EUI050 并整块跳过
@@ -110,7 +298,7 @@ public static class Eustyle
         {
             var setters = new List<EustyleSetter>();
             var seenVariants = new List<EustyleVariant>();
-            var baseVariant = new List<EustyleVariant>();
+            var baseVariant = new List<(EustyleVariant Variant, string? Registered)>();
             while (true)
             {
                 SkipTrivia();
@@ -127,6 +315,14 @@ public static class Eustyle
                 {
                     Error(_i, _i + 1,
                         "class rules are not allowed in Style=; declare classes in a stylesheet or @style block and reference them with Class=");
+                    SkipBracedBlock();
+                    continue;
+                }
+                if (c == '@')
+                {
+                    // 元素属性没有「状态」语境（design/17 §4.8②）：@states 与一切 @ 指令不适用
+                    Error(_i, _i + 1,
+                        "'@states' (and any '@' directive) is not allowed in Style=; custom states belong to a stylesheet or @style block");
                     SkipBracedBlock();
                     continue;
                 }
@@ -203,18 +399,18 @@ public static class Eustyle
             }
             var nameSpan = SpanAt(start, _i - start);
 
-            // 选择器形态变体：.card:hover / .card:hover:focus（每个状态各得一份声明）
-            var selectorStates = new List<EustyleVariant>();
+            // 选择器形态变体：.card:hover / .card:hover:focus（每个状态各得一份声明，
+            // E5 起含注册名——混合书写时各得一份独立变体，与「声明序表达组合态」一致）。
+            var selectorStates = new List<(EustyleVariant Variant, string? Registered)>();
             SkipTrivia();
             while (Peek == ':')
             {
                 _i++;
+                var nameStart = _i;
                 var state = Ident();
-                if (!States.TryGetValue(state, out var variant))
-                    Error(_i - Math.Max(1, state.Length), _i,
-                        $"unknown pseudo-class ':{state}'; supported: hover/active/pressed/focus/disabled");
-                else if (!selectorStates.Contains(variant))
-                    selectorStates.Add(variant);
+                var resolved = ResolveState(state, nameStart);
+                if (resolved != default && !selectorStates.Contains(resolved))
+                    selectorStates.Add(resolved);
                 SkipTrivia();
             }
 
@@ -239,7 +435,7 @@ public static class Eustyle
         /// （null = 变体块内——嵌套选择器不允许出现在变体块里，语义上「状态 × 结构」无对应物）。
         /// </summary>
         private void ParseBody(List<EustyleSetter> setters, List<EustyleVariant> seenVariants,
-            List<EustyleVariant> current, string className, bool allowNestedVariants,
+            List<(EustyleVariant Variant, string? Registered)> current, string className, bool allowNestedVariants,
             List<EustyleNested>? nestedOut)
         {
             while (true)
@@ -326,18 +522,18 @@ public static class Eustyle
                     Array.Empty<EustyleSetter>(), Array.Empty<EustyleNested>());
             }
 
-            // 嵌套选择器可带 :state —— 声明归属派生类的对应变体（与根规则同款状态链）。
-            var states = new List<EustyleVariant>();
+            // 嵌套选择器可带 :state —— 声明归属派生类的对应变体（与根规则同款状态链，
+            // E5 起含注册名）。
+            var states = new List<(EustyleVariant Variant, string? Registered)>();
             SkipTrivia();
             while (Peek == ':')
             {
                 _i++;
+                var nameStart = _i;
                 var state = Ident();
-                if (!States.TryGetValue(state, out var variant))
-                    Error(_i - Math.Max(1, state.Length), _i,
-                        $"unknown pseudo-class ':{state}'; supported: hover/active/pressed/focus/disabled");
-                else if (!states.Contains(variant))
-                    states.Add(variant);
+                var resolved = ResolveState(state, nameStart);
+                if (resolved != default && !states.Contains(resolved))
+                    states.Add(resolved);
                 SkipTrivia();
             }
 
@@ -378,14 +574,10 @@ public static class Eustyle
                 SkipTo(';', '}');
                 return;
             }
+            var nameStart = _i;
             var state = Ident();
-            if (!States.TryGetValue(state, out var variant))
-            {
-                Error(_i - Math.Max(1, state.Length), _i,
-                    $"unknown pseudo-class ':{state}'; supported: hover/active/pressed/focus/disabled");
-                SkipTo(';', '}');
-                return;
-            }
+            var resolved = ResolveState(state, nameStart);
+            if (resolved == default) return; // 未命中：ResolveState 已报 EUI050
             SkipTrivia();
             if (!Take('{'))
             {
@@ -394,13 +586,14 @@ public static class Eustyle
                 return;
             }
 
-            if (!seenVariants.Contains(variant)) seenVariants.Add(variant);
-            var current = new List<EustyleVariant> { variant };
+            if (resolved.Registered is null && !seenVariants.Contains(resolved.Variant))
+                seenVariants.Add(resolved.Variant);
+            var current = new List<(EustyleVariant Variant, string? Registered)> { resolved };
             ParseBody(setters, seenVariants, current, className, allowNestedVariants: false, nestedOut: null);
         }
 
         private void ParseDeclaration(List<EustyleSetter> setters, List<EustyleVariant> seenVariants,
-            List<EustyleVariant> current)
+            List<(EustyleVariant Variant, string? Registered)> current)
         {
             var start = _i;
             var prop = Ident();
@@ -463,11 +656,11 @@ public static class Eustyle
             }
             else
             {
-                foreach (var variant in current)
+                foreach (var (variant, registered) in current)
                 {
-                    if (variant != EustyleVariant.None && !seenVariants.Contains(variant))
+                    if (registered is null && variant != EustyleVariant.None && !seenVariants.Contains(variant))
                         seenVariants.Add(variant);
-                    setters.Add(new EustyleSetter(variant, binding.Setter, value, propSpan, value.Span));
+                    setters.Add(new EustyleSetter(variant, binding.Setter, value, propSpan, value.Span, registered));
                 }
             }
         }
