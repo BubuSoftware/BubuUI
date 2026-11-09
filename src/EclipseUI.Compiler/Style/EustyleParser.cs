@@ -9,14 +9,15 @@ namespace EclipseUI.Compiler;
 /// <code>
 /// $var: value;                        // 编译期变量（解析时替换，先声明先用）
 /// .name[:state][:state] { prop: value;  &amp;:state { prop: value; ... } }
+/// .panel { &gt; Button { … }  TextBlock.title { … }  &gt; Button:hover { … } }   // E4 嵌套
 /// </code>
 /// value := theme(color, color) | #rgb | #rrggbb | #rrggbbaa | number | $var
 /// state := hover | active | pressed | focus | disabled（active 是 pressed 的 CSS 别名）
 /// 注释 := // 行注释 | /* 块注释 */
 ///
 /// 诊断：EUI050（语法 / 不支持形态）、EUI051（未知属性）、EUI052（值类型不符，含未定义变量）。
-/// 嵌套结构选择器（<c>.panel &gt; Button</c>）是 E4——类块内只接受属性声明与 &amp;:state 变体块；
-/// 选择器形态与块内 &amp;:state 两种变体写法等价，同时匹配多个变体时按声明序后者胜（D102 语义）。
+/// 嵌套结构选择器（E4，design/17 §4.5）只产结构（<see cref="EustyleNested"/>）——塌缩命名、
+/// 冲突查重（EUI053）与注入规则由 <c>EustyleCollapse</c> 统一完成；变体块内不允许嵌套选择器。
 /// </summary>
 public static class Eustyle
 {
@@ -226,16 +227,20 @@ public static class Eustyle
 
             var setters = new List<EustyleSetter>();
             var seenVariants = new List<EustyleVariant>();
-            ParseBody(setters, seenVariants, selectorStates, name, allowNestedVariants: true);
-            return new EustyleRule(name, nameSpan, setters);
+            var nested = new List<EustyleNested>();
+            ParseBody(setters, seenVariants, selectorStates, name, allowNestedVariants: true, nested);
+            return new EustyleRule(name, nameSpan, setters, nested);
         }
 
         /// <summary>
-        /// 规则体：属性声明 + 可选 &amp;:state 变体块，直到 '}' 或 EOF。
-        /// <paramref name="current"/> 是本层声明归属的变体集合（选择器形态带入；空 = 基础序列）。
+        /// 规则体：属性声明 + <c>&amp;:state</c> 变体块 + 嵌套结构选择器（E4，design/17 §4.5），
+        /// 直到 '}' 或 EOF。<paramref name="current"/> 是本层声明归属的变体集合
+        /// （选择器形态带入；空 = 基础序列）；<paramref name="nestedOut"/> 是本层嵌套规则容器
+        /// （null = 变体块内——嵌套选择器不允许出现在变体块里，语义上「状态 × 结构」无对应物）。
         /// </summary>
         private void ParseBody(List<EustyleSetter> setters, List<EustyleVariant> seenVariants,
-            List<EustyleVariant> current, string className, bool allowNestedVariants)
+            List<EustyleVariant> current, string className, bool allowNestedVariants,
+            List<EustyleNested>? nestedOut)
         {
             while (true)
             {
@@ -259,9 +264,107 @@ public static class Eustyle
                     ParseVariantBlock(setters, seenVariants, className);
                     continue;
                 }
+                // E4 嵌套结构选择器：'>Button' / 'TextBlock.title' / '.title'（属性名一律小写，
+                // PascalCase 开头即类型选择器；'.' 开头是类约束后代）。
+                if (c == '>' || c == '.' || char.IsUpper(c))
+                {
+                    if (nestedOut is null)
+                    {
+                        Error(_i, _i + 1,
+                            "nested selectors are not allowed inside a variant block; declare them on the class rule body");
+                        SkipBracedBlock();
+                        continue;
+                    }
+                    nestedOut.Add(ParseNested());
+                    continue;
+                }
                 ParseDeclaration(setters, seenVariants, current);
             }
         }
+
+        /// <summary>
+        /// E4 嵌套结构选择器（design/17 §4.5）：
+        /// <code>
+        /// &gt; Button { … }              // 直接子类型 → 派生类 {parent}__button
+        /// TextBlock.title { … }        // 后代 + 类约束 → {parent}__text-block-title
+        /// .title { … }                 // 后代类约束 → {parent}__title
+        /// &gt; Button:hover { … }        // 直接子类型 + 伪类 → 派生类的变体
+        /// </code>
+        /// 命名与查重由 <c>EustyleCollapse</c> 统一完成（解析器只产结构）。体内允许声明、
+        /// <c>&amp;:state</c> 变体块（派生类变体）与再嵌套（派生名链式累加）。
+        /// </summary>
+        private EustyleNested ParseNested()
+        {
+            var start = _i;
+            var direct = Take('>');
+            SkipTrivia();
+
+            string? typeName = null;
+            string? constraint = null;
+            if (Peek == '.')
+            {
+                _i++; // '.'
+                constraint = Ident();
+            }
+            else
+            {
+                typeName = Ident();
+                SkipTrivia();
+                if (Peek == '.')
+                {
+                    _i++; // '.'
+                    constraint = Ident();
+                }
+            }
+
+            if ((typeName is null || typeName.Length == 0) && (constraint is null || constraint.Length == 0))
+            {
+                Error(start, _i,
+                    "expected a nested selector: '> TypeName', 'TypeName.class' or '.class'");
+                SkipTo(';', '}');
+                return new EustyleNested(direct, null, null, SpanAt(start, Math.Max(1, _i - start)),
+                    Array.Empty<EustyleSetter>(), Array.Empty<EustyleNested>());
+            }
+
+            // 嵌套选择器可带 :state —— 声明归属派生类的对应变体（与根规则同款状态链）。
+            var states = new List<EustyleVariant>();
+            SkipTrivia();
+            while (Peek == ':')
+            {
+                _i++;
+                var state = Ident();
+                if (!States.TryGetValue(state, out var variant))
+                    Error(_i - Math.Max(1, state.Length), _i,
+                        $"unknown pseudo-class ':{state}'; supported: hover/active/pressed/focus/disabled");
+                else if (!states.Contains(variant))
+                    states.Add(variant);
+                SkipTrivia();
+            }
+
+            var selectorSpan = SpanAt(start, Math.Max(1, _i - start));
+
+            if (!Take('{'))
+            {
+                Error(_i, _i + 1,
+                    $"expected '{{' to open the nested rule block '{SelectorLabel(typeName, constraint)}'");
+                SkipTo(';', '}');
+                return new EustyleNested(direct, typeName, constraint, selectorSpan,
+                    Array.Empty<EustyleSetter>(), Array.Empty<EustyleNested>());
+            }
+
+            var setters = new List<EustyleSetter>();
+            var seenVariants = new List<EustyleVariant>();
+            var nested = new List<EustyleNested>();
+            ParseBody(setters, seenVariants, states, SelectorLabel(typeName, constraint),
+                allowNestedVariants: true, nested);
+            return new EustyleNested(direct, typeName, constraint, selectorSpan, setters, nested);
+        }
+
+        /// <summary>错误消息里的选择器显示名（类型/约束组合）。</summary>
+        private static string SelectorLabel(string? typeName, string? constraint) =>
+            typeName is null ? "." + constraint
+                : constraint is null ? typeName
+                : typeName + "." + constraint;
 
         /// <summary>&amp;:state { ... } 变体块：块内声明归属该状态（E1 不支持再嵌套）。</summary>
         private void ParseVariantBlock(List<EustyleSetter> setters, List<EustyleVariant> seenVariants, string className)
@@ -293,7 +396,7 @@ public static class Eustyle
 
             if (!seenVariants.Contains(variant)) seenVariants.Add(variant);
             var current = new List<EustyleVariant> { variant };
-            ParseBody(setters, seenVariants, current, className, allowNestedVariants: false);
+            ParseBody(setters, seenVariants, current, className, allowNestedVariants: false, nestedOut: null);
         }
 
         private void ParseDeclaration(List<EustyleSetter> setters, List<EustyleVariant> seenVariants,

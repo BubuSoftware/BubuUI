@@ -351,7 +351,7 @@ string        ::= '"' raw-char* '"'
 | `OnE={expr}` | Build 时 `AddHandler` | 否 | 无 | `Action` / `Action<RoutedEventArgs>` | ✅（控件）/ C4 组件 |
 | `Key={expr}` | 条目创建 | 身份 | 无 | 第一个元素根；不得可观察（`EUI039`） | ✅（S2 加严） |
 | `Ref={ident}` | Build 时赋给字段 | 否 | 无 | 简单标识符、字段可写 | G3 / 保留 `EUI029` |
-| `Class="a b"` / `Class={expr}` | Build（表达式 + U/R 推送） | 是（表达式） | 无（类变化经 `Classes` setter 重应用样式） | 类名编译期查样式目录；`@style` 本文件优先 | ✅ E2（2026-11-09） |
+| `Class="a b"` / `Class={expr}` | Build（表达式 + U/R 推送） | 是（表达式） | 无（类变化经 `Classes` setter 重应用样式） | 类名编译期查样式目录；`@style` 本文件优先；E4 塌缩注入的派生类排后（表达式形态跳过） | ✅ E2 + E4（2026-11-09） |
 | `Style="prop: value; ..."` | Build 直赋 local 层 | 否（只允许静态值） | 无 | 声明序列经 Eustyle 解析，`theme()` 升级 Resource 属性 | ✅ E2（2026-11-09） |
 
 #### 3.3.3.1 单向反应式 `P={expr}`

@@ -87,6 +87,13 @@ public sealed class UiElement : UiNode
 
     // 由 Analyzer 填充
     public UiElementDef? ResolvedDef { get; set; }
+
+    /// <summary>
+    /// E4（design/17 §4.5）：嵌套塌缩注入的派生类名（生成器按模板静态子树匹配后回写；
+    /// 发射时排在 <see cref="UiAttribute.ClassNames"/> 之后——派生类胜）。表达式 Class
+    /// 与 C# 动态建树拿不到注入（明示边界）；去重由填充方保证。
+    /// </summary>
+    public List<string>? InjectedClasses { get; set; }
 }
 
 /// <summary>

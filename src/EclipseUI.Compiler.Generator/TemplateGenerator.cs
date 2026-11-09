@@ -300,21 +300,39 @@ public sealed class TemplateGenerator : IIncrementalGenerator
 
         // E2（design/17 §4.8①）：先解析本文件 @style 块——产物除 styleRules 外还提供
         // 裸名 → 注册名映射（Probe__demo），供 Class="…" 的「先本文件、再全局」解析序。
+        // E4（design/17 §4.5）：嵌套塌缩——派生类带前缀注册（Probe__panel__button），
+        // 塌缩名进裸名映射（模板 Class="panel__button" 闭环校验），注入规则同前缀化。
         var styleRules = new List<EustyleRule>();
         var localStyleClasses = new Dictionary<string, string>(StringComparer.Ordinal);
+        var localInjects = new List<InjectRuleData>();
         foreach (var block in doc.Nodes.OfType<UiStyleBlock>())
         {
             var blockDiags = new List<UiDiagnostic>();
             var sheet = Eustyle.Parse(block.Code, input.Path, blockDiags, block.CodeSpan.Start);
             diags.AddRange(blockDiags);
             if (blockDiags.Exists(static d => d.IsError)) continue;
-            foreach (var rule in sheet.Rules)
+            var collapsed = EustyleCollapse.Flatten(sheet, diags);
+            foreach (var rule in collapsed.Rules)
             {
-                styleRules.Add(new EustyleRule(className + "__" + rule.ClassName, rule.NameSpan, rule.Setters));
+                var registered = className + "__" + rule.ClassName;
+                styleRules.Add(new EustyleRule(registered, rule.NameSpan, rule.Setters,
+                    Array.Empty<EustyleNested>()));
                 // 前块健康即可用；同名裸名取先声明（与运行时「后注册覆盖」口径不同——
                 // 编译期闭环要确定性，声明序后者胜留给运行时重叠注册的既有语义）
                 if (!localStyleClasses.ContainsKey(rule.ClassName))
-                    localStyleClasses[rule.ClassName] = className + "__" + rule.ClassName;
+                    localStyleClasses[rule.ClassName] = registered;
+            }
+            foreach (var inj in collapsed.Injects)
+            {
+                // 嵌套类约束先按本块裸名解析（Class="…" 的「先本文件」序同款）；
+                // 未命中的约束保持裸名（指全局 .eustyle 类——注册名即裸名）。
+                var chain = new List<InjectSegData>();
+                foreach (var seg in inj.Chain)
+                    chain.Add(new InjectSegData(seg.DirectChild, seg.TypeName,
+                        seg.ClassConstraint is { } c && localStyleClasses.TryGetValue(c, out var reg)
+                            ? reg : seg.ClassConstraint));
+                localInjects.Add(new InjectRuleData(
+                    className + "__" + inj.RootClass, chain, className + "__" + inj.DerivedName));
             }
         }
 
@@ -337,6 +355,13 @@ public sealed class TemplateGenerator : IIncrementalGenerator
                     if (attr.Name == "Class" && kindsByStart.TryGetValue(attr.ValueSpan.Start, out var kind))
                         attr.ClassListKind = kind;
         }
+
+        // E4（design/17 §4.5-2）：嵌套塌缩注入——按目录注入规则对模板静态子树匹配
+        // （含 @foreach/@if 分支内的模板），命中元素回写 InjectedClasses（发射排 ClassNames
+        // 之后 → 派生类胜）。表达式 Class 拿不到编译期类列表，注入跳过（§4.5-3 明示边界）。
+        var injectRules = new List<InjectRuleData>(styleClasses.Injects);
+        injectRules.AddRange(localInjects);
+        ApplyInjectRules(doc, injectRules);
 
         bool hasErrors = false;
         foreach (var diag in diags)
@@ -363,39 +388,152 @@ public sealed class TemplateGenerator : IIncrementalGenerator
     }
 
     /// <summary>
-    /// E2：单文件的样式类名提取——.eustyle 取全部类规则名；.ui 只取 @style 块的规则名
-    /// （加 <c>{Component}__</c> 前缀，与 ExecuteFile 注册侧同规则）。诊断丢弃（各自主管道报告），
-    /// 任一解析 Error 则该文件产出空集——主管道 Error 已短路生成，半成品目录没有意义。
+    /// E2/E4：单文件的样式来源提取——.eustyle 取塌缩后的全部类名（根 + 派生）与注入规则；
+    /// .ui 只取 @style 块（类名加 <c>{Component}__</c> 前缀——塌缩派生名与注入规则同前缀化，
+    /// 嵌套类约束按本块裸名先解析）。诊断丢弃（各自主管道报告），任一解析 Error 则该文件
+    /// 产出空集——主管道 Error 已短路生成，半成品目录没有意义。
     /// </summary>
-    private static StyleClassFact ExtractStyleClasses(UiFileInput input)
+    private static StyleSourceFact ExtractStyleClasses(UiFileInput input)
     {
         var extension = Path.GetExtension(input.Path);
         if (extension == ".eustyle")
         {
             var diags = new List<UiDiagnostic>();
             var sheet = Eustyle.Parse(input.Text, input.Path, diags);
-            return new StyleClassFact(input.Path,
-                diags.Exists(static d => d.IsError)
-                    ? ImmutableArray<string>.Empty
-                    : sheet.Rules.Select(static r => r.ClassName).ToImmutableArray());
+            if (diags.Exists(static d => d.IsError))
+                return new StyleSourceFact(input.Path,
+                    ImmutableArray<string>.Empty, ImmutableArray<InjectRuleData>.Empty);
+            var collapsed = EustyleCollapse.Flatten(sheet, new List<UiDiagnostic>());
+            return new StyleSourceFact(input.Path,
+                collapsed.Rules.Select(static r => r.ClassName).ToImmutableArray(),
+                collapsed.Injects.Select(static i => new InjectRuleData(
+                    i.RootClass,
+                    i.Chain.Select(static s2 => new InjectSegData(s2.DirectChild, s2.TypeName, s2.ClassConstraint))
+                        .ToImmutableArray(),
+                    i.DerivedName)).ToImmutableArray());
         }
 
         // .ui：@style 块类名。组件名 = 文件名（ExecuteFile 同口径）。
         var className = Path.GetFileNameWithoutExtension(input.Path);
         if (!SyntaxFacts.IsValidIdentifier(className))
-            return new StyleClassFact(input.Path, ImmutableArray<string>.Empty);
+            return new StyleSourceFact(input.Path,
+                ImmutableArray<string>.Empty, ImmutableArray<InjectRuleData>.Empty);
         var parseDiags = new List<UiDiagnostic>();
         var doc = FrontEnd.Parse(input.Text, input.Path, parseDiags);
         var names = new List<string>();
+        var injects = new List<InjectRuleData>();
         foreach (var block in doc.Nodes.OfType<UiStyleBlock>())
         {
             var blockDiags = new List<UiDiagnostic>();
             var sheet = Eustyle.Parse(block.Code, input.Path, blockDiags, block.CodeSpan.Start);
             if (blockDiags.Exists(static d => d.IsError)) continue;
-            names.AddRange(sheet.Rules.Select(static r => r.ClassName));
+            var collapsed = EustyleCollapse.Flatten(sheet, new List<UiDiagnostic>());
+            var localNames = new HashSet<string>(collapsed.Rules.Select(static r => r.ClassName), StringComparer.Ordinal);
+            names.AddRange(collapsed.Rules.Select(static r => r.ClassName));
+            foreach (var inj in collapsed.Injects)
+            {
+                injects.Add(new InjectRuleData(
+                    className + "__" + inj.RootClass,
+                    inj.Chain.Select(seg => new InjectSegData(
+                        seg.DirectChild, seg.TypeName,
+                        seg.ClassConstraint is { } c && localNames.Contains(c)
+                            ? className + "__" + c : seg.ClassConstraint)).ToImmutableArray(),
+                    className + "__" + inj.DerivedName));
+            }
         }
-        return new StyleClassFact(input.Path,
-            names.Select(n => className + "__" + n).ToImmutableArray());
+        return new StyleSourceFact(input.Path,
+            names.Select(n => className + "__" + n).ToImmutableArray(),
+            injects.ToImmutableArray());
+    }
+
+    /// <summary>
+    /// E4 注入匹配（design/17 §4.5-2）：对挂根类的元素按链段匹配静态子树。直接子不穿透
+    /// 插槽填充（插槽内容运行时挂进组件内部，不是视觉直接子）；后裔匹配穿透全部块结构
+    /// （@foreach/@if/@switch 编译期已知——正是「无引擎获得结构表达力」的关键）。
+    /// </summary>
+    private static void ApplyInjectRules(UiDocument doc, IReadOnlyList<InjectRuleData> injects)
+    {
+        if (injects.Count == 0) return;
+        foreach (var element in WalkElements(doc.Nodes))
+        {
+            // 根类匹配按解析后的注册名（Analyzer 已把本文件 @style 裸名映射成注册名）。
+            var classAttr = element.Attributes.FirstOrDefault(static a => a.Name == "Class");
+            if (classAttr?.ClassNames is not IReadOnlyList<string> names) continue; // 表达式/无目录 → 跳过
+            foreach (var rule in injects)
+                if (IndexOfName(names, rule.RootClass) >= 0)
+                    MatchChain(element, rule, 0);
+        }
+    }
+
+    private static void MatchChain(UiElement element, InjectRuleData rule, int index)
+    {
+        var seg = rule.Chain[index];
+        var candidates = seg.DirectChild
+            ? DirectChildElements(element.Children)
+            : WalkElements(element.Children);
+        foreach (var child in candidates)
+        {
+            if (!SegMatches(child, seg)) continue;
+            AddInject(child, rule.DerivedName);
+            if (index + 1 < rule.Chain.Count)
+                MatchChain(child, rule, index + 1);
+        }
+    }
+
+    /// <summary>
+    /// 直接子元素枚举：穿透 @if/@foreach/@switch 块（块内模板编译期已知、运行时就是直接子），
+    /// 不穿透插槽填充（插槽内容运行时挂进组件内部，不是视觉直接子）。
+    /// </summary>
+    private static IEnumerable<UiElement> DirectChildElements(IReadOnlyList<UiNode> children)
+    {
+        foreach (var node in children)
+        {
+            switch (node)
+            {
+                case UiElement element:
+                    yield return element;
+                    break;
+                case UiIf ifNode:
+                    foreach (var e in DirectChildElements(ifNode.Children)) yield return e;
+                    foreach (var elseIf in ifNode.ElseIfs)
+                        foreach (var e in DirectChildElements(elseIf.Children)) yield return e;
+                    if (ifNode.ElseChildren is not null)
+                        foreach (var e in DirectChildElements(ifNode.ElseChildren)) yield return e;
+                    break;
+                case UiForeach foreachNode:
+                    foreach (var e in DirectChildElements(foreachNode.Children)) yield return e;
+                    break;
+                case UiSwitch switchNode:
+                    foreach (var section in switchNode.Sections)
+                        foreach (var e in DirectChildElements(section.Children)) yield return e;
+                    break;
+            }
+        }
+    }
+
+    private static bool SegMatches(UiElement element, InjectSegData seg)
+    {
+        if (seg.TypeName is { } type &&
+            !string.Equals(EustyleCollapse.Kebab(element.Tag), type, StringComparison.Ordinal))
+            return false;
+        if (seg.ClassConstraint is not { } constraint) return true;
+        // 类约束按注册名比较：元素解析后的 ClassNames ∪ 已注入的派生名（注入可作后续链段的约束）。
+        var classAttr = element.Attributes.FirstOrDefault(static a => a.Name == "Class");
+        if (classAttr?.ClassNames is { } names && IndexOfName(names, constraint) >= 0) return true;
+        return element.InjectedClasses is { } existing && existing.Contains(constraint);
+    }
+
+    private static void AddInject(UiElement element, string derived)
+    {
+        var list = element.InjectedClasses ??= new List<string>();
+        if (!list.Contains(derived)) list.Add(derived);
+    }
+
+    private static int IndexOfName(IReadOnlyList<string> names, string name)
+    {
+        for (var i = 0; i < names.Count; i++)
+            if (string.Equals(names[i], name, StringComparison.Ordinal)) return i;
+        return -1;
     }
 
     /// <summary>E2：深度遍历模板树的全部元素节点（含 @if/@foreach/@switch 块与插槽填充内容）。</summary>
@@ -447,19 +585,21 @@ public sealed class TemplateGenerator : IIncrementalGenerator
         if (files.IsEmpty) return;
 
         var ordered = files.OrderBy(static f => f.Path, StringComparer.Ordinal).ToList();
-        var sheets = new List<EustyleStylesheet>();
+        var collapsedSheets = new List<EustyleCollapse.Collapsed>();
         var hasErrors = false;
         foreach (var file in ordered)
         {
             var text = SourceText.From(file.Text);
             var diags = new List<UiDiagnostic>();
             var sheet = Eustyle.Parse(file.Text, file.Path, diags);
+            // E4：嵌套塌缩——派生类进 Define 序列，命名冲突 EUI053 进同一诊断流（Error 短路）。
+            var collapsed = EustyleCollapse.Flatten(sheet, diags);
             foreach (var diag in diags)
             {
                 Report(spc, file.Path, text, diag);
                 if (diag.IsError) hasErrors = true;
             }
-            sheets.Add(sheet);
+            collapsedSheets.Add(collapsed);
         }
         if (hasErrors) return;
 
@@ -478,8 +618,8 @@ public sealed class TemplateGenerator : IIncrementalGenerator
         sb.AppendLine("{");
         sb.AppendLine("    public static void Apply(global::EclipseUI.Rendering.StyleRegistry registry)");
         sb.AppendLine("    {");
-        foreach (var sheet in sheets)
-            sb.Append(EustyleGenerator.EmitDefines(sheet, "registry"));
+        foreach (var collapsed in collapsedSheets)
+            sb.Append(EustyleGenerator.EmitDefines(collapsed.Rules, "registry"));
         sb.AppendLine("    }");
         sb.AppendLine("}");
         spc.AddSource("StyleBootstrap.g.cs", sb.ToString());
@@ -1346,33 +1486,56 @@ public sealed class TemplateGenerator : IIncrementalGenerator
 
 internal sealed record UiFileInput(string Path, string Text);
 
-/// <summary>E2：单文件提取的样式类名（路径 + 有序类名；值相等供增量缓存）。</summary>
-internal sealed record StyleClassFact(string Path, ImmutableArray<string> Classes)
+/// <summary>E2/E4：单文件提取的样式来源（路径 + 有序类名 + 注入规则；值相等供增量缓存）。</summary>
+internal sealed record StyleSourceFact(string Path, ImmutableArray<string> Classes, ImmutableArray<InjectRuleData> Injects)
 {
-    public bool Equals(StyleClassFact? other) =>
-        other is not null && Path == other.Path && Classes.SequenceEqual(other.Classes);
+    public bool Equals(StyleSourceFact? other) =>
+        other is not null && Path == other.Path && Classes.SequenceEqual(other.Classes) &&
+        Injects.SequenceEqual(other.Injects);
 
-    public override int GetHashCode() => unchecked(Path.GetHashCode() * 397 + Classes.Length);
+    public override int GetHashCode() =>
+        unchecked(Path.GetHashCode() * 397 + Classes.Length * 31 + Injects.Length);
+}
+
+/// <summary>E4：注入链段的纯数据形态（值相等；诊断 span 不进缓存数据）。</summary>
+internal sealed record InjectSegData(bool DirectChild, string? TypeName, string? ClassConstraint);
+
+/// <summary>
+/// E4：注入规则的纯数据形态（值相等）——挂 <see cref="RootClass"/> 的元素的静态子树中，
+/// 按 <see cref="Chain"/> 匹配到的元素追加 <see cref="DerivedName"/> 类（排原类之后）。
+/// RootClass 与 ClassConstraint 一律是**注册名**（.eustyle 裸名 = 注册名；@style 块由
+/// ExtractStyleClasses/ExecuteFile 前缀化并按「先本文件」序解析约束）。
+/// </summary>
+internal sealed record InjectRuleData(string RootClass, IReadOnlyList<InjectSegData> Chain, string DerivedName)
+{
+    public bool Equals(InjectRuleData? other) =>
+        other is not null && RootClass == other.RootClass && DerivedName == other.DerivedName &&
+        Chain.SequenceEqual(other.Chain);
+
+    public override int GetHashCode() =>
+        unchecked(RootClass.GetHashCode() * 397 + DerivedName.GetHashCode() * 31 + Chain.Count);
 }
 
 /// <summary>
-/// E2：全局样式类名目录（.eustyle 全部类名 + 各 .ui @style 块前缀类名的有序去重集）。
-/// 值相等是增量缓存前提：任何样式文件变化都会重建，但内容不变时下游逐文件管道按值命中。
+/// E2/E4：全局样式目录（类名有序去重集 + 注入规则集）。值相等是增量缓存前提：
+/// 任何样式文件变化都会重建，但内容不变时下游逐文件管道按值命中。
 /// </summary>
-internal sealed record StyleClassCatalog(ImmutableArray<string> ClassNames)
+internal sealed record StyleClassCatalog(ImmutableArray<string> ClassNames, ImmutableArray<InjectRuleData> Injects)
 {
-    public static StyleClassCatalog Build(ImmutableArray<StyleClassFact> facts) => new(
+    public static StyleClassCatalog Build(ImmutableArray<StyleSourceFact> facts) => new(
         facts.SelectMany(static f => f.Classes)
             .Distinct(StringComparer.Ordinal)
             .OrderBy(static n => n, StringComparer.Ordinal)
-            .ToImmutableArray());
+            .ToImmutableArray(),
+        facts.SelectMany(static f => f.Injects).ToImmutableArray());
 
     public bool Contains(string className) => ClassNames.IndexOf(className, StringComparer.Ordinal) >= 0;
 
     public bool Equals(StyleClassCatalog? other) =>
-        other is not null && ClassNames.SequenceEqual(other.ClassNames, StringComparer.Ordinal);
+        other is not null && ClassNames.SequenceEqual(other.ClassNames, StringComparer.Ordinal) &&
+        Injects.SequenceEqual(other.Injects);
 
-    public override int GetHashCode() => ClassNames.Length;
+    public override int GetHashCode() => ClassNames.Length * 31 + Injects.Length;
 }
 
 /// <summary>E2：Class={expr} 的集合形态事实（ValueSpan.Start → 形态；String 形态为默认不记录）。</summary>

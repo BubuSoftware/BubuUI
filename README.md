@@ -152,6 +152,14 @@
 > 静态声明序列（Eustyle 解析，EUI050–052 定位值 span），生成 local 层直赋（`Visual.SetXxx`/
 > `SetValue`，theme() 升级 Resource 属性）。Showcase.ui 演示本文件 `@style` 闭环 +
 > local>class 层级覆盖。**739 个用例（Headless 352 / Compiler 281 / Rendering 106），全绿**。
+>
+> **嵌套塌缩 + `.ui` 注入已通过（2026-11-09，D106，样式系统 E4 片）**：`.panel { > Button { … } }`
+> 编译期塌缩为 BEM 派生类（`panel__button`，类型名 kebab 化）——同名段合并（CSS 同选择器
+> 多块语义）、派生名撞显式类名报 EUI053；`.ui` 编译器把派生类注入挂根类元素的静态子树
+> （直接子穿透 @if/@foreach/@switch，插槽不穿透；派生类排原类之后 = 派生类胜），运行时
+> 零选择器引擎；`Class={expr}` 表达式形态跳过注入（明示边界，手工 BEM 名兜底且可校验）。
+> 画廊 app.eustyle `.card` 塌缩链路 + Showcase 分区卡（含 @foreach 行注入）演示。
+> **752 个用例（Headless 352 / Compiler 294 / Rendering 106），全绿**。
 > **668 个用例（Headless 332 / Compiler 241 / Rendering 95），全绿**。
 >
 > **S-C 最小主题资源已通过（2026-11-09，D100）**：`ThemeColor` 暗亮双色——`Visual.BackgroundResource/
@@ -434,8 +442,8 @@ public partial class Counter
   **retained 构建层已落地（D93 段级缓存，帧间命令构造趋零）**；真正的局部重绘（脏区光栅化）
   等 VelloSharp 提供 scissor API，合成器仍未实现；
   样式系统已落（D98/D99 主题 token + Class 样式分层、D100 ThemeColor、D102 伪类、D103 :disabled、
-  D104 样式表编译器 `.eustyle`/`@style`、D105 模板 `Class`/`Style` 转正）——
-  嵌套塌缩（E4）、注册制伪类（E5）与控件模板（S-D）留后续片。
+  D104 样式表编译器 `.eustyle`/`@style`、D105 模板 `Class`/`Style` 转正、D106 嵌套塌缩 + `.ui` 注入）——
+  注册制伪类（E5）与控件模板（S-D）留后续片。
 - 字体 fallback 未实现（缺字显示 `.notdef`）；CPU 光栅化每次约 60 ms 固定开销，仅用于 CI/离线导出。
 - 3D：**不提供 3D 引擎**。规划为 WebGPU 视口控件——应用自带渲染器，框架负责布局、
   裁剪、DPI、输入与纹理合成（见 [05 布局、渲染与输入](./design/05-layout-rendering-input.md) 与 G7）。
@@ -481,6 +489,6 @@ IDE/DevTools 随后。
 4. **G4 样式/控件/虚拟化**：~~`VirtualizingPanel`~~ ✅（2026-11-09，窗口虚拟化 + 均匀行 extent）；
    基础控件集首批 ✅（WrapPanel/Grid/ScrollViewer/附加属性/Unmount，2026-11-09）；
    ~~主题切换~~ ✅ D98、~~Class 样式 + 有效值分层~~ ✅ D99、~~按主题资源查找~~ ✅ D100、
-   ~~伪类~~ ✅ D102/D103、~~样式表编译器~~ ✅ D104（E1）、~~模板 Class/Style 转正~~ ✅ D105（E2，2026-11-09）；
-   余嵌套塌缩（E4）、注册制伪类（E5）、控件模板（S-D）。
+   ~~伪类~~ ✅ D102/D103、~~样式表编译器~~ ✅ D104（E1）、~~模板 Class/Style 转正~~ ✅ D105（E2）、
+   ~~嵌套塌缩 + .ui 注入~~ ✅ D106（E4，2026-11-09）；余注册制伪类（E5）、控件模板（S-D）。
 5. **G5 IDE P0–P1**：TextMate grammar + LSP server（表达式投影进 Roslyn）+ VS Code/Rider 壳。

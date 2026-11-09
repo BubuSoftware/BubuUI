@@ -94,7 +94,7 @@ public static class GalleryScene
         // ④ 样式系统：有效值分层 local > class > theme 的按钮四连 + Visual 覆盖卡片。
         page.Children.Add(Section("4. Styles - theme tokens + class/visual layers", BuildStyleSection()));
 
-        page.Children.Add(Text("EclipseUI - retained segment caching (D93) - 739 tests green", 12));
+        page.Children.Add(Text("EclipseUI - retained segment caching (D93) - 752 tests green", 12));
 
         var rootViewer = new ScrollViewer();
         rootViewer.Children.Add(page);

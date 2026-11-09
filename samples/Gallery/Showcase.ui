@@ -27,6 +27,16 @@
     <Button Class="primary" Style="corner-radius: 18">class=primary paint + inline corner-radius override</Button>
     <Button Class="tool primary">tool + primary stacked (array order: later wins)</Button>
 
+    <TextBlock FontSize="13">Nested collapse - structural selectors compile to derived classes and inject into the static subtree (E4)</TextBlock>
+    <StackPanel Class="card" Gap="8">
+        <TextBlock Class="hint">descendant with class constraint gets card__text-block-hint</TextBlock>
+        <Button>direct child button gets card__button (hover pads to 12)</Button>
+        @foreach (var row in rows)
+        {
+            <Button>foreach row also matches the direct-child chain</Button>
+        }
+    </StackPanel>
+
     <TextBlock FontSize="13">Grid - Auto, fixed and star tracks (Grid.Row / Grid.Column attached)</TextBlock>
     <Grid RowDefinitions="Auto,44" ColumnDefinitions="120,*,2*" Gap="6">
         <Button>row 0 / fixed 120</Button>
@@ -89,4 +99,5 @@
 
 @code {
     public int mode;
+    public string[] rows = { "row A", "row B" };
 }

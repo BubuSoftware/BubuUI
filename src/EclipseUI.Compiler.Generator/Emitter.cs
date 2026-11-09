@@ -366,6 +366,10 @@ public sealed class Emitter
     private static string StaticStringLiteral(string text) =>
         "\"" + text.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
 
+    /// <summary>E4：类名数组发射文本（解析后的类名 + 塌缩注入的派生类名共用）。</summary>
+    private static string ClassArrayLiteral(IEnumerable<string> names) =>
+        "new global::System.String[] { " + string.Join(", ", names.Select(StaticStringLiteral)) + " }";
+
     private string EmitElement(UiElement element, string? parentVar, EmitContext ctx)
     {
         var def = element.ResolvedDef!;
@@ -387,20 +391,24 @@ public sealed class Emitter
 
             // E2（design/17 §4.8）：样式类——字面量经目录校验的类名数组；表达式按探针形态
             // 拆分/集合化。经 EmitDynamicUpdate 走 U{N}/R{N} 定向更新（Classes setter 幂等短路）。
+            // E4：塌缩注入的派生类排在解析类名之后（design/17 §2.2 派生类胜）。
             if (attr.Name == "Class")
             {
+                var pending = element.InjectedClasses;
                 if (attr.ClassNames is { Count: > 0 } names)
                 {
-                    var array = "new global::System.String[] { " +
-                                string.Join(", ", names.Select(StaticStringLiteral)) + " }";
-                    MappedToken(span, $"{v}.Classes = {array};", attr.Value.Trim());
+                    var all = pending is { Count: > 0 } ? names.Concat(pending) : (IEnumerable<string>)names;
+                    MappedToken(span, $"{v}.Classes = {ClassArrayLiteral(all)};", attr.Value.Trim());
                 }
                 else if (attr.ClassNames is not null)
                 {
-                    // Class=""（空类列表）：no-op，与运行时 ReapplyStyles 空序列同语义
+                    // Class=""（空类列表）：仅注入命中时发注入数组；无注入保持 no-op
+                    if (pending is { Count: > 0 })
+                        Mapped(attr.ValueSpan, $"{v}.Classes = {ClassArrayLiteral(pending)};");
                 }
                 else if (attr.Kind == AttrValueKind.Expression)
                 {
+                    // 表达式形态拿不到编译期类列表——塌缩注入跳过（design/17 §4.5-3 明示边界）
                     var expr = attr.Value.Trim();
                     var body = attr.ClassListKind == UiClassListKind.Collection
                         ? $"global::System.Linq.Enumerable.ToArray({expr})"
@@ -463,6 +471,11 @@ public sealed class Emitter
                 EmitDynamicUpdate(attr.Value, attr.ValueSpan, ctx, $"{v}.{attr.Name}", interpolate: false);
             }
         }
+
+        // E4：无 Class 属性但被塌缩注入命中的元素——发注入类列表（派生类直配）。
+        if (element.InjectedClasses is { Count: > 0 } injected &&
+            element.Attributes.All(static a => a.Name != "Class"))
+            Line($"{v}.Classes = {ClassArrayLiteral(injected)};");
 
         switch (def.Content)
         {
@@ -556,13 +569,19 @@ public sealed class Emitter
             }
 
             // E2：组件实例同为 Element——Class/Style 语义与控件一致（样式类/局部覆盖写在实例上）。
+            // E4：塌缩注入同控件口径（派生类排后；表达式形态跳过）。
             if (attr.Name == "Class")
             {
+                var pending = element.InjectedClasses;
                 if (attr.ClassNames is { Count: > 0 } names)
                 {
-                    var array = "new global::System.String[] { " +
-                                string.Join(", ", names.Select(StaticStringLiteral)) + " }";
-                    MappedToken(span, $"{v}.Classes = {array};", attr.Value.Trim());
+                    var all = pending is { Count: > 0 } ? names.Concat(pending) : (IEnumerable<string>)names;
+                    MappedToken(span, $"{v}.Classes = {ClassArrayLiteral(all)};", attr.Value.Trim());
+                }
+                else if (attr.ClassNames is not null)
+                {
+                    if (pending is { Count: > 0 })
+                        Mapped(attr.ValueSpan, $"{v}.Classes = {ClassArrayLiteral(pending)};");
                 }
                 else if (attr.Kind == AttrValueKind.Expression && attr.ClassNames is null)
                 {
@@ -634,6 +653,11 @@ public sealed class Emitter
             }
             // @bind 无回调 / 字面量写委托参数 / :bind 等非法形态：Analyzer 已报，不生成
         }
+
+        // E4：无 Class 属性但被塌缩注入命中的组件实例——发注入类列表（同控件口径）。
+        if (element.InjectedClasses is { Count: > 0 } cmpInjected &&
+            element.Attributes.All(static a => a.Name != "Class"))
+            Line($"{v}.Classes = {ClassArrayLiteral(cmpInjected)};");
 
         // 默认内容（§4.12.3）：build-once 静态展开到 List<Element>，再单根/多根赋参数。
         var contentParam = def.Parameters.Values.FirstOrDefault(p => p.IsContent);

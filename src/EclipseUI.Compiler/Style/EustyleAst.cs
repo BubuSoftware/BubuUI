@@ -35,8 +35,26 @@ public enum EustyleVariant
     Disabled = 4,
 }
 
-/// <summary>一个样式类：类名 + 属性/变体 setter 序列（声明序，重复声明按后者胜）。</summary>
-public sealed record EustyleRule(string ClassName, TextSpan NameSpan, IReadOnlyList<EustyleSetter> Setters);
+/// <summary>一个样式类：类名 + 属性/变体 setter 序列（声明序，重复声明按后者胜）。
+/// <see cref="Nested"/> 是 E4 的嵌套结构选择器（编译期塌缩为派生类，见 <see cref="EustyleNested"/>）。</summary>
+public sealed record EustyleRule(
+    string ClassName, TextSpan NameSpan, IReadOnlyList<EustyleSetter> Setters,
+    IReadOnlyList<EustyleNested> Nested);
+
+/// <summary>
+/// E4 嵌套结构选择器（design/17 §4.5）：编译期塌缩为 BEM 命名的派生类，运行时仍是类名直配。
+/// <c>.panel { &gt; Button { … } }</c> → 派生类 <c>panel__button</c>；<c>TextBlock.title</c> →
+/// 后代 + 类约束。命名由 <c>EustyleCollapse</c> 统一生成与查重（冲突 EUI053）。
+/// </summary>
+/// <param name="DirectChild"><c>&gt;</c> 直接子约束；false = 后代（任意深度）。</param>
+/// <param name="TypeName">类型选择器名（模板标签名，kebab 化后比较；null = 纯类约束）。</param>
+/// <param name="ClassConstraint">类约束名（<c>TextBlock.title</c> 的 <c>title</c>；null = 无）。</param>
+/// <param name="SelectorSpan">选择器原文 span（诊断定位用）。</param>
+/// <param name="Setters">本段声明（含 :state 变体归属——派生类的伪类变体）。</param>
+/// <param name="Nested">更深一层嵌套（派生名链式累加，如 <c>panel__button__text</c>）。</param>
+public sealed record EustyleNested(
+    bool DirectChild, string? TypeName, string? ClassConstraint, TextSpan SelectorSpan,
+    IReadOnlyList<EustyleSetter> Setters, IReadOnlyList<EustyleNested> Nested);
 
 /// <summary>一条属性声明：所属变体（None = 基础）+ StyleBuilder setter 名 + 值。</summary>
 public sealed record EustyleSetter(

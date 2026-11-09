@@ -18,9 +18,13 @@ public static class EustyleGenerator
     /// （如 <c>registry</c>），@style 组件块传 <c>global::EclipseUI.Rendering.StyleRegistry.Instance</c>。
     /// </summary>
     public static string EmitDefines(EustyleStylesheet sheet, string registryExpression, string indent = "        ")
+        => EmitDefines(sheet.Rules, registryExpression, indent);
+
+    /// <summary>塌缩产物入口（E4）：根类与派生类混排的规则列表（<see cref="EustyleCollapse"/> 产出）。</summary>
+    public static string EmitDefines(IReadOnlyList<EustyleRule> rules, string registryExpression, string indent = "        ")
     {
         var sb = new StringBuilder();
-        foreach (var rule in sheet.Rules)
+        foreach (var rule in rules)
             EmitRule(sb, rule, registryExpression, indent);
         return sb.ToString();
     }

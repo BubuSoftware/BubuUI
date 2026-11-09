@@ -1,6 +1,6 @@
 # 17 · 样式系统完整设计（Styling System）
 
-> 状态：**D98–D102 + E1(E3)–E2(D105) 已落地，E4/E5 提案**（2026-11-09）
+> 状态：**D98–D102 + E1(E3)/E2(D105)/E4(D106) 已落地，E5 提案**（2026-11-09）
 > 关联：design/03（模板引擎，§3.3.9 `Class`/`Style` 保留）、design/09 §9.3 G4（样式/主题行）、
 > design/04（Runtime 属性引擎）、design/05（绘制与段缓存）
 > 台账：已落部分见 spec/02 §12 D98–D102；提案部分实现时逐片登记（E1–E5）
@@ -142,9 +142,10 @@ registry.Define("primary", s => s.Background(new ThemeColor(Dark: ..., Light: ..
 |------|------|----------|
 | E1 | `.class { }` | `Define("class", ...)` |
 | E1 | `.class:hover { }` `:pressed` `:focus`（`:disabled` E3 后） | `.Hover(s => ...)` 变体链 |
-| E4 | `.panel > Button { }` | 派生类 `panel__button`（塌缩，见 §4.5） |
-| E4 | `.panel TextBlock.title { }` | 派生类 `panel__text-title` |
-| E4 | `.panel > Button:hover { }` | 派生类的伪类变体 |
+| ✅ E4 | `.panel > Button { }` | 派生类 `panel__button`（塌缩，见 §4.5） |
+| ✅ E4 | `.panel TextBlock.title { }` | 派生类 `panel__text-block-title`（类型名 kebab 化） |
+| ✅ E4 | `.panel > Button:hover { }` | 派生类的伪类变体 |
+| ✅ E4 | 同名段重复（`.panel > Button` ×2） | **合并**（CSS 同选择器多块 = 声明合并，声明序后者胜） |
 | 不做 | `*`、属性选择器、兄弟组合 `~`/`+`、多类交集 `.a.b` | —（报 `EUI048`「已保留未实现」口径） |
 
 ### 4.3 属性表（属性名目录 = StyleBuilder 公共 setter 集，单一来源）
@@ -200,15 +201,19 @@ $primary: theme(#22c55e, #16a34a);     // SCSS 编译期变量（E1 就支持：
 }
 ```
 
-塌缩规则：
+塌缩规则（✅ E4 落地，2026-11-09）：
 
-1. 命名：`{父类名}__{子类型名或子类名}`（全小写 kebab）；自动命名冲突报 `EUI051`，
-   第一版不提供显式改名（重名时拆两个中间类，人工成本低）。
+1. 命名：`{父派生名}__{kebab(类型名)}{-类约束}`（全小写；`TextBlock.title` →
+   `text-block-title`）；同一派生名的多个嵌套段**合并**（CSS 同选择器多块 = 声明合并，
+   声明序后者胜；同名子嵌套递归聚合）；派生名与**显式类名**撞车报 `EUI053`，
+   第一版不提供显式改名（拆两个中间类规避，人工成本低）。
 2. **注入**：`.ui` 编译器解析模板时，对「挂 `panel` 类的元素」的静态子树做匹配
-   （`.ui` 树编译期已知，含 `@foreach`/`@if` 分支内的模板），给匹配子元素的 `Classes`
-   **追加**派生类（排在原类之后 → §2.2 派生类胜）。
-3. **边界（明示）**：C# 代码动态建树拿不到注入——此类场景手工写 BEM 名
-   （`Classes = ["panel__button"]`），诊断不覆盖、文档不承诺。
+   （`.ui` 树编译期已知，`@foreach`/`@if`/`@switch` 分支内的模板编译期展开、运行时就是
+   直接子——直接子匹配穿透块结构；插槽填充不穿透——内容运行时挂进组件内部），给匹配
+   子元素的 `Classes` **追加**派生类（排在原类之后 → §2.2 派生类胜）。
+3. **边界（明示）**：C# 代码动态建树与 `Class={expr}` 表达式形态拿不到注入
+   （运行时类列表编译期未知）——此类场景手工写 BEM 名
+   （`Classes = ["panel__button"]`，派生类在目录里可校验），诊断不覆盖、文档不承诺。
 4. 派生类同样进样式目录 → 模板里直接写 `Class="panel__button"` 也能校验。
 
 ### 4.6 完整示例（源 → 生成代码）
@@ -334,7 +339,7 @@ app.eustyle ──► EustyleCompiler ──► StyleBootstrap.g.cs ─┐
                  │                                       │
 *.ui ──► UiCompiler ──► *.g.cs ──────────────────────────┘
             │  ① Class="…" 逐个查目录 → 未知类名 EUI031（✅ E2 已落）
-            │  ② E4：静态子树匹配 → 子元素注入派生类
+            │  ② E4：静态子树匹配 → 子元素注入派生类（✅ 已落）
             └ ③ 注册位（E5）同目录校验 :state 名
 ```
 
@@ -347,7 +352,7 @@ app.eustyle ──► EustyleCompiler ──► StyleBootstrap.g.cs ─┐
 | `EUI050` | 样式表语法错误 / 不支持的选择器形态 | Error |
 | `EUI051` | 未知属性名（不在 StyleBuilder setter 目录） | Error |
 | `EUI052` | 值类型不匹配（color/length/theme 形态不符、未定义变量、单位后缀） | Error |
-| `EUI053` | 嵌套派生类自动命名冲突（E4 预留） | Error |
+| `EUI053` | **已落地（E4）**：嵌套塌缩的派生名与显式类名撞车（同名嵌套段合并不算冲突） | Error |
 | `EUI054` | 样式表类与手写 `Define` 重复注册（双通道冲突，E5 预留） | Warning（运行时后者覆盖前者的既有语义不变） |
 
 级别口径沿用 design/03：Error 短路生成、Warning 生成但提示（对齐 EUI037/EUI024 的先例讨论）。
@@ -380,7 +385,7 @@ CSS 里 `var(--accent)` 的角色，在我们的模型里由**层的缺席**天�
 | **E1** | EustyleCompiler：词法/语法解析、属性值绑定、伪类变体、`$变量`、生成器 + EUI050–052；**`@style` 组件块（§4.8①，共享解析核心）** | 画廊样式表化（GalleryStyles → app.eustyle）；`@style` 块编译+作用域前缀用例；测试 +15 左右 | 无 |
 | **E2** | 类名目录接入 UiCompiler + 模板 `Class` 语法转正（EUI031）+ 元素级 `Style=` 属性（§4.8②） | Showcase.ui 用 `Class`，未知类名编译期报错用例；`Style=` 属性生成 local 直调用例 | E1 |
 | **E3** | `:disabled`：`IsEnabled` 属性 + 第 4 枚举位 + painter 置灰兜底 + `.Disabled(...)` / `:disabled` | 全控件可禁用；TextBox 顺路受益；InputRouter 对 disabled 元素跳过命中 | 无（可与 E1 并行） |
-| **E4** | 嵌套塌缩 + `.ui` 注入 + EUI051 | 画廊分区卡派生样式走塌缩链路；注入用例（含 @foreach 分支） | E1+E2 |
+| **E4** | 嵌套塌缩 + `.ui` 注入 + EUI053 | 画廊分区卡派生样式走塌缩链路；注入用例（含 @foreach 分支） | E1+E2 |
 | **E5** | 注册制伪类（`PseudoStates.Register`）+ `@states` 声明 + EUI052 + 可选颜色函数 | 第三方状态端到端用例 | E1 |
 
 **执行顺序（已批准，2026-11-12 定案）：E3 → E1 → E2 → E4 → E5**。
@@ -393,7 +398,8 @@ E4 依赖 E1+E2；E5 收尾开放性。0.1 alpha 出口只需 E3（+ 可选 E1�
 | E3 | ✅ 完成（2026-11-09，D103）：Disabled 位 + IsEnabled 继承 + 路由/焦点门控 + 置灰令牌 + `.Disabled()` 变体 + FocusRingWidth；699 例全绿 |
 | E1 | ✅ 完成（2026-11-09，D104）：EustyleParser/Generator + EUI050–052 + `.eustyle` → StyleBootstrap.g.cs + `@style` 组件块（前缀注册）；画廊迁移 app.eustyle；722 例全绿（352/264/106） |
 | E2 | ✅ 完成（2026-11-09，D105）：类名目录管道（StyleClassCatalog 值相等跨管道）+ `Class=` 转正（本地 @style 优先解析、未知类名 EUI031、表达式 Split/ToArray 探针形态）+ `Style=` local 直赋（ParseDeclarations + Visual.SetXxx/SetValue）；739 例全绿（352/281/106） |
-| E4/E5 | ⏳ 排队（E4 下一片） |
+| E4 | ✅ 完成（2026-11-09，D106）：嵌套塌缩（EustyleNested + EustyleCollapse 合并/命名/EUI053）+ 注入规则跨管道（StyleClassCatalog 扩展）+ 模板静态子树匹配（直接子穿透块结构、插槽不穿透）+ Emitter 合并发射（派生类排后）；画廊 card 塌缩链路 + @foreach 注入；752 例全绿（352/294/106） |
+| E5 | ⏳ 排队（下一片） |
 
 ---
 

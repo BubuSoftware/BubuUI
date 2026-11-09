@@ -21,3 +21,20 @@ $primary: theme(#22a064, #1c8c58);
     &:hover   { background: theme(#7682a0, #9ea6ba); }
     &:pressed { background: theme(#4e566e, #929ab0); }
 }
+
+// E4 nested collapse (design/17 4.5): structural selectors compile to BEM-derived
+// classes — card__button etc. — and the .ui compiler injects them into the static
+// subtree of elements carrying `card` (no runtime selector engine; same-name
+// segments merge, CSS same-selector multi-block semantics).
+.card {
+    background: theme(#2a3040, #1a2030);
+    corner-radius: 12;
+    padding: 12;
+
+    > Button { padding: 8; }              // direct child  → card__button
+    TextBlock.hint { font-size: 12; }     // descendant + class → card__text-block-hint
+
+    > Button:hover { padding: 12; }       // same derived name: merges into card__button's Hover variant
+}
+
+.hint { foreground: theme(#9aa4bc, #5a6272); }

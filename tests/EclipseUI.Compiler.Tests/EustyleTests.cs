@@ -681,4 +681,308 @@ public class EustyleTests
         Assert.Contains("colour", diag.GetMessage());
         Assert.Contains("Probe.ui", diag.Location.GetLineSpan().Path);
     }
+
+    // ---------- E4：嵌套塌缩（design/17 §4.5，EUI053） ----------
+
+    private static List<UiDiagnostic> Collapse(EustyleStylesheet sheet, out EustyleCollapse.Collapsed collapsed)
+    {
+        var diags = new List<UiDiagnostic>();
+        collapsed = EustyleCollapse.Flatten(sheet, diags);
+        return diags;
+    }
+
+    [Fact]
+    public void NestedRules_ParseDirectChildDescendantAndConstraint()
+    {
+        const string source = """
+            .panel {
+                background: #222222;
+                > Button { padding: 8; }
+                TextBlock.title { font-size: 20; }
+                .title { corner-radius: 4; }
+            }
+            """;
+
+        var (sheet, diags) = Parse(source);
+        Assert.Empty(diags);
+
+        var panel = Assert.Single(sheet.Rules);
+        Assert.Single(panel.Setters);
+        Assert.Equal(3, panel.Nested.Count);
+
+        var direct = panel.Nested[0];
+        Assert.True(direct.DirectChild);
+        Assert.Equal("Button", direct.TypeName);
+        Assert.Null(direct.ClassConstraint);
+        Assert.Equal("Padding", Assert.Single(direct.Setters).Property);
+
+        var descendant = panel.Nested[1];
+        Assert.False(descendant.DirectChild);
+        Assert.Equal("TextBlock", descendant.TypeName);
+        Assert.Equal("title", descendant.ClassConstraint);
+
+        var constraintOnly = panel.Nested[2];
+        Assert.Null(constraintOnly.TypeName);
+        Assert.Equal("title", constraintOnly.ClassConstraint);
+    }
+
+    [Fact]
+    public void NestedCollapse_NamesDerivedClasses_KebabAndChains()
+    {
+        const string source = """
+            .panel {
+                > Button { padding: 8; }
+                TextBlock.title { font-size: 20; }
+                .title { corner-radius: 4; }
+                > Button { > Text { corner-radius: 2; } }
+            }
+            """;
+
+        var (sheet, _) = Parse(source);
+        var diags = Collapse(sheet, out var collapsed);
+
+        Assert.Empty(diags);
+        Assert.Equal(
+            new[] { "panel", "panel__button", "panel__text-block-title", "panel__title", "panel__button__text" },
+            collapsed.Rules.Select(static r => r.ClassName).ToArray());
+
+        var button = collapsed.Injects.Single(static i => i.DerivedName == "panel__button");
+        Assert.Equal("panel", button.RootClass);
+        var seg = Assert.Single(button.Chain);
+        Assert.True(seg.DirectChild);
+        Assert.Equal("button", seg.TypeName); // ChainSeg 类型名已 kebab 化（与匹配侧同一规则）
+        Assert.Null(seg.ClassConstraint);
+
+        var text = collapsed.Injects.Single(static i => i.DerivedName == "panel__button__text");
+        Assert.Equal(2, text.Chain.Count);
+        Assert.True(text.Chain[1].DirectChild);
+        Assert.Equal("text", text.Chain[1].TypeName);
+    }
+
+    [Fact]
+    public void NestedCollapse_SameDerivedName_MergesSettersAndSubtree()
+    {
+        // CSS 同选择器多块 = 声明合并（声明序后者胜）；同名子嵌套同理递归聚合
+        const string source = """
+            .panel {
+                > Button { padding: 8; }
+                > Button { corner-radius: 2; > Text { font-size: 12; } }
+                > Button:hover { padding: 4; }
+            }
+            """;
+
+        var (sheet, _) = Parse(source);
+        var diags = Collapse(sheet, out var collapsed);
+
+        Assert.Empty(diags);
+        Assert.Equal(new[] { "panel", "panel__button", "panel__button__text" },
+            collapsed.Rules.Select(static r => r.ClassName).ToArray());
+
+        var button = Assert.Single(collapsed.Rules, static r => r.ClassName == "panel__button");
+        Assert.Equal(3, button.Setters.Count); // 两个块的声明合并 + :hover 变体
+        Assert.Single(collapsed.Injects, static i => i.DerivedName == "panel__button");
+
+        var text = Assert.Single(collapsed.Rules, static r => r.ClassName == "panel__button__text");
+        Assert.Single(text.Setters);
+    }
+
+    [Fact]
+    public void NestedCollapse_CollidesWithExplicitClass_ReportsEUI053()
+    {
+        const string source = """
+            .panel__button { padding: 99; }
+            .panel { > Button { padding: 8; } }
+            """;
+
+        var (sheet, _) = Parse(source);
+        var diags = Collapse(sheet, out _);
+
+        Assert.Equal(UiDiagnostics.StyleDerivedNameConflict, Assert.Single(diags).Code);
+    }
+
+    [Fact]
+    public void NestedState_SelectorAndVariantBlock_BothLandOnDerivedClass()
+    {
+        // '> Button:hover {}' 与 '> Button { &:hover {} }' 两种写法等价——都归派生类的 Hover 变体
+        const string source = """
+            .panel {
+                > Button:hover { padding: 4; }
+                > Label { &:focus { font-size: 15; } }
+            }
+            """;
+
+        var (sheet, diags) = Parse(source);
+        Assert.Empty(diags);
+
+        var directButton = sheet.Rules[0].Nested[0];
+        Assert.Equal(EustyleVariant.Hover, directButton.Setters.Single().Variant);
+        var label = sheet.Rules[0].Nested[1];
+        Assert.Equal(EustyleVariant.Focus, label.Setters.Single().Variant);
+    }
+
+    [Fact]
+    public void NestedSelectorInsideVariantBlock_ReportsEUI050()
+    {
+        var (_, diags) = Parse(".a { &:hover { > Button { padding: 8; } } }");
+
+        var diag = Assert.Single(diags);
+        Assert.Equal(UiDiagnostics.StyleSyntax, diag.Code);
+        Assert.Contains("nested selectors are not allowed", diag.Message);
+    }
+
+    [Fact]
+    public void NestedCollapse_GeneratorEmitsDerivedDefines()
+    {
+        const string source = """
+            .panel {
+                background: #222222;
+                > Button { padding: 8; }
+            }
+            """;
+
+        var (sheet, _) = Parse(source);
+        Collapse(sheet, out var collapsed);
+        var code = EustyleGenerator.EmitDefines(collapsed.Rules, "registry");
+
+        Assert.Contains("registry.Define(\"panel\", s =>", code);
+        Assert.Contains("registry.Define(\"panel__button\", s =>", code);
+        AssertGeneratedCodeParses("class __P { void M(global::EclipseUI.Rendering.StyleRegistry registry) {\n" + code + "\n} }");
+    }
+
+    // ---------- E4：模板注入管线 ----------
+
+    private const string NestedSheet = """
+        .panel {
+            background: theme(#2a3040, #ffffff);
+            > Button { padding: 8; }
+        }
+        .primary { foreground: #e8ecf4; }
+        """;
+
+    [Fact]
+    public void Inject_DirectChildButton_GeneratesInjectedClasses()
+    {
+        const string ui = """
+            @using EclipseUI.Elements
+            <StackPanel Class="panel">
+                <Button>injected</Button>
+                <Button Class="primary">both</Button>
+            </StackPanel>
+            """;
+
+        var result = Run(new TestAdditionalText("app.eustyle", NestedSheet),
+                         new TestAdditionalText("Probe.ui", ui));
+        Assert.Null(result.Exception);
+        Assert.Empty(result.Diagnostics);
+
+        var code = SourceOf(result, hint => hint.Contains("Probe."));
+        AssertGeneratedCodeParses(code);
+
+        // 无 Class 属性的按钮：只发注入类列表
+        Assert.Contains("el1.Classes = new global::System.String[] { \"panel__button\" };", code);
+        // 已有类名的按钮：注入排在解析类名之后（design/17 §2.2 派生类胜）
+        Assert.Contains("el2.Classes = new global::System.String[] { \"primary\", \"panel__button\" };", code);
+    }
+
+    [Fact]
+    public void Inject_InsideForeach_MatchesStaticTemplate()
+    {
+        const string ui = """
+            @using EclipseUI.Elements
+            <StackPanel Class="panel">
+                @foreach (var item in items)
+                {
+                    <Button>row</Button>
+                }
+            </StackPanel>
+            """;
+
+        var result = RunWith("public partial class Probe { public global::System.Collections.Generic.List<string> items = new(); }",
+            new TestAdditionalText("app.eustyle", NestedSheet),
+            new TestAdditionalText("Probe.ui", ui));
+
+        Assert.Null(result.Exception);
+        Assert.Empty(result.Diagnostics);
+        var code = SourceOf(result, hint => hint.Contains("Probe."));
+        Assert.Contains(".Classes = new global::System.String[] { \"panel__button\" };", code);
+    }
+
+    [Fact]
+    public void Inject_ExpressionClass_SkipsInjection()
+    {
+        // §4.5-3 明示边界：表达式 Class 的运行时类列表编译期未知，塌缩注入跳过
+        const string ui = """
+            @using EclipseUI.Elements
+            <StackPanel Class="panel">
+                <Button Class={kind}>dynamic</Button>
+            </StackPanel>
+            """;
+
+        var result = RunWith("public partial class Probe { public string kind = \"primary\"; }",
+            new TestAdditionalText("app.eustyle", NestedSheet),
+            new TestAdditionalText("Probe.ui", ui));
+
+        Assert.Null(result.Exception);
+        Assert.Empty(result.Diagnostics);
+        var code = SourceOf(result, hint => hint.Contains("Probe."));
+        Assert.DoesNotContain("\"panel__button\"", code);
+        Assert.Contains(".Classes = kind.Split(", code);
+    }
+
+    [Fact]
+    public void Inject_DerivedClassInCatalog_ClassReferenceValidates()
+    {
+        // 塌缩派生类同样进样式目录：模板直接写 Class="panel__button" 编译期校验通过
+        const string ui = """
+            @using EclipseUI.Elements
+            <StackPanel Class="panel">
+                <Button Class="panel__button">manual</Button>
+            </StackPanel>
+            """;
+
+        var result = Run(new TestAdditionalText("app.eustyle", NestedSheet),
+                         new TestAdditionalText("Probe.ui", ui));
+        Assert.Null(result.Exception);
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact]
+    public void StyleBlock_NestedRules_InjectWithLocalPrefix()
+    {
+        // @style 块嵌套：派生类带组件前缀注册，注入按注册名闭环
+        const string ui = """
+            @using EclipseUI.Elements
+            <StackPanel Class="panel">
+                <Button>go</Button>
+            </StackPanel>
+            @style {
+                .panel {
+                    background: #222222;
+                    > Button { corner-radius: 6; }
+                }
+            }
+            """;
+
+        var result = Run(new TestAdditionalText("Probe.ui", ui));
+        Assert.Null(result.Exception);
+        Assert.Empty(result.Diagnostics);
+
+        var code = SourceOf(result, hint => hint.Contains("Probe."));
+        AssertGeneratedCodeParses(code);
+        Assert.Contains("el1.Classes = new global::System.String[] { \"Probe__panel__button\" };", code);
+        Assert.Contains("Define(\"Probe__panel__button\"", code);
+    }
+
+    [Fact]
+    public void Stylesheet_NestedRules_EmitDerivedDefinesInBootstrap()
+    {
+        var result = Run(new TestAdditionalText("app.eustyle", NestedSheet));
+        var code = SourceOf(result, hint => hint.Contains("StyleBootstrap.g.cs"));
+        AssertGeneratedCodeParses(code);
+
+        Assert.Contains("registry.Define(\"panel\", s =>", code);
+        Assert.Contains("registry.Define(\"panel__button\", s =>", code);
+        Assert.Contains("s.Padding(8);", code);
+        Assert.Empty(result.Diagnostics);
+    }
 }
