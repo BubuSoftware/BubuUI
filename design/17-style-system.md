@@ -268,6 +268,59 @@ public static class StyleBootstrap
 | 颜色函数 `lighten/darken/rgba` | ⛔ E1，远期可作编译期常量求值 |
 | 插值 `#{}`、注释 `//`、`/* */` | `//` 与 `/* */` ✅ E1；插值 ⛔ |
 
+### 4.8 内联形态：`@style` 组件块与元素级 `Style=` 属性（E1 扩展 + E2 转正）
+
+「样式内联在 .ui 里」拆成**两个正交机制**，各有 Web 先例对应：
+
+**① 组件级 `@style` 块**（HTML `<style>` / Vue SFC scoped 的对应物）——E1 扩展：
+
+```html
+<StackPanel Gap="10">
+    <Button Class="card primary">go</Button>
+</StackPanel>
+
+@style {
+    $card-bg: theme(#2a3040, #ffffff);
+
+    .card {
+        background: $card-bg;
+        corner-radius: 12;
+
+        &:hover { background: theme(#30d158, #1aad52); }  // 变体同 .eustyle
+    }
+    .primary { foreground: theme(#e8ecf4, #1a1f2e); }
+}
+
+@code { /* ... */ }
+```
+
+- 语法形态与既有 `@code`/`@using` 顶层指令**同构**（Lexer/Parser 已有顶层指令块链路，
+  新增一种指令；Analyzer 同款「仅顶层允许」诊断）。
+- **作用域规则（默认 scoped）**：块内类名编译期自动加组件前缀（`Showcase__card`）注册——
+  物理上仍是全局 `StyleRegistry` 的普通类名（运行时零新机制），但前缀含组件名 ⇒
+  **跨文件碰撞不可能发生**，EUI052（双通道冲突）对组件块天然不适用。
+- **解析顺序**：本文件 `Class="…"` 先查本文件 `@style` 块、再查全局样式目录；
+  两处皆无 → EUI031。定义与引用在同一编译单元内闭环校验——类名拼错直接编译不过，
+  这是外部样式表（甚至 CSS）都拿不到的作者体验。
+- 与 `.eustyle` **共享同一解析核心**（词法/属性表/变体/`$var`/`theme()`）——E1 落地解析器后，
+  块形态只是 UiCompiler 侧的接入薄层（解析产物→生成 `Define` 调用挂到组件初始化）。
+- 分工约定：**组件私有样式进 `@style`，跨组件复用进 `.eustyle`**（SCSS 的局部/全局惯例同款）。
+
+**② 元素级 `Style="…"` 属性**（HTML `style=""` 的对应物）——E2 转正（EUI031 原保留语义之一）：
+
+```html
+<Button Style="background: #c45499; corner-radius: 18">inline</Button>
+```
+
+- 语义：**local 层直赋**（§2.1 最高优先级）——生成代码直译为 `Visual.SetXxx` 系 setter 调用，
+  运行时零新机制。
+- **只允许静态值**：不支持变体（元素属性没有「状态」语境——CSS 同样不允许 `style=""`
+  里写 `:hover`），状态外观一律走类名通道；`theme()` 双色允许（local 层存 `ThemeColor`）。
+- 值校验复用 EUI048–050，诊断定位到属性值 span。
+
+**取舍记录**：不做「块内类名不加前缀直进全局表」的文件级全局注入形态——作用域是内联样式的
+核心价值；要全局复用请写 `.eustyle`（同一语法，挪个位置而已）。
+
 ---
 
 ## 5. 编译管线与校验
@@ -323,8 +376,8 @@ CSS 里 `var(--accent)` 的角色，在我们的模型里由**层的缺席**天�
 
 | 片 | 内容 | 验收口径 | 依赖 |
 |----|------|----------|------|
-| **E1** | EustyleCompiler：词法/语法解析、属性值绑定、伪类变体、`$变量`、生成器 + EUI048–050 | 画廊样式表化（GalleryStyles → app.eustyle）；测试 +15 左右 | 无 |
-| **E2** | 类名目录接入 UiCompiler + 模板 `Class` 语法转正（EUI031） | Showcase.ui 用 `Class`，未知类名编译期报错用例 | E1 |
+| **E1** | EustyleCompiler：词法/语法解析、属性值绑定、伪类变体、`$变量`、生成器 + EUI048–050；**`@style` 组件块（§4.8①，共享解析核心）** | 画廊样式表化（GalleryStyles → app.eustyle）；`@style` 块编译+作用域前缀用例；测试 +15 左右 | 无 |
+| **E2** | 类名目录接入 UiCompiler + 模板 `Class` 语法转正（EUI031）+ 元素级 `Style=` 属性（§4.8②） | Showcase.ui 用 `Class`，未知类名编译期报错用例；`Style=` 属性生成 local 直调用例 | E1 |
 | **E3** | `:disabled`：`IsEnabled` 属性 + 第 4 枚举位 + painter 置灰兜底 + `.Disabled(...)` / `:disabled` | 全控件可禁用；TextBox 顺路受益；InputRouter 对 disabled 元素跳过命中 | 无（可与 E1 并行） |
 | **E4** | 嵌套塌缩 + `.ui` 注入 + EUI051 | 画廊分区卡派生样式走塌缩链路；注入用例（含 @foreach 分支） | E1+E2 |
 | **E5** | 注册制伪类（`PseudoStates.Register`）+ `@states` 声明 + EUI052 + 可选颜色函数 | 第三方状态端到端用例 | E1 |
