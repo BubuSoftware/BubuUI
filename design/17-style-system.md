@@ -243,18 +243,18 @@ public static class StyleBootstrap
             .Background(new ThemeColor(new(42, 48, 64), new(255, 255, 255)))
             .CornerRadius(12)
             .Padding(16));
-        r.Define("card__button", s => s.Padding(8 + 16 /*E1 落定多值语义*/));
+        r.Define("card__button", s => s.Padding(24 /*padding 多值已定案：单值，见 §8*/));
         r.Define("primary", s => s.Background(new ThemeColor(new(34, 197, 94), new(22, 163, 74))));
-        r.Define("accent-hover", /* … */);   // 变体的物理形态见生成器实现：
-        r.Define("accent-pressed", /* … */); // 方案 A 物理类 / 方案 B 变体链，落定时二选一
+        // `&:hover`/`&:pressed` 编进同名 Define 的变体链（方案 B，已定案）：
+        r.Define("card", s => s /*…*/)
+            .Hover(s => s /*…*/)
+            .Pressed(s => s /*…*/);
     }
 }
 ```
 
-> **变体物理形态（E1 落定时二选一）**：
-> **方案 B（推荐）**——生成器把 `&:hover` 编进同名 `Define` 的变体链
-> （`r.Define("card", …).Hover(…)`），类名面不膨胀，与手写 C# 产物同构；
-> 方案 A（物理类 `card:hover`）仅在需要「模板强制状态类」时才有意义，无此需求。
+> **变体物理形态（已定案）**：**方案 B 变体链**——`&:hover` 编进同名 `Define` 的变体链，
+> 类名面不膨胀、与手写 C# 产物同构；方案 A（物理类）仅当未来出现「模板强制状态类」需求再议。
 
 ### 4.7 SCSS 兼容范围总表
 
@@ -329,8 +329,15 @@ CSS 里 `var(--accent)` 的角色，在我们的模型里由**层的缺席**天�
 | **E4** | 嵌套塌缩 + `.ui` 注入 + EUI051 | 画廊分区卡派生样式走塌缩链路；注入用例（含 @foreach 分支） | E1+E2 |
 | **E5** | 注册制伪类（`PseudoStates.Register`）+ `@states` 声明 + EUI052 + 可选颜色函数 | 第三方状态端到端用例 | E1 |
 
-顺序建议：**E3 → E1 → E2 → E4 → E5**（E3 补齐 0.1 控件集缺口最急；E1/E2 是作者体验主线；
-E4 依赖前两者；E5 收尾开放性）。0.1 alpha 出口只需 E3（+ 可选 E1）。
+**执行顺序（已批准，2026-11-12 定案）：E3 → E1 → E2 → E4 → E5**。
+依据：E3 补齐 0.1 控件集缺口最急（`:disabled` 是 TextBox 的前置）；E1/E2 是作者体验主线；
+E4 依赖 E1+E2；E5 收尾开放性。0.1 alpha 出口只需 E3（+ 可选 E1）。
+每片独立提交并逐片登记台账（E3 = D104 起，E1 起沿 E 编号在 design/03 §12 双侧登记）。
+
+| 片 | 状态 |
+|----|------|
+| E3 | 🔄 进行中（2026-11-12 开工） |
+| E1–E5 | ⏳ 排队 |
 
 ---
 
@@ -343,7 +350,7 @@ E4 依赖前两者；E5 收尾开放性）。0.1 alpha 出口只需 E3（+ 可�
 | SCSS 兼容蔓延 | §4.7 明确不做清单；新特性先过「编译期直配」一致性门槛 |
 | 注册位上限 | 32 位掩码充足；不够升 long（段键 record 同步扩字段，一次性迁移） |
 | 焦点环宽度等主题参数不可类覆盖 | StyleBuilder 暴露 `outline-width` setter（E3 顺手项，painter 读 class 值回落令牌） |
-| `padding: 8 16` 多值 | E1 落定时按 StyleBuilder 形态定（当前 `double` 单值——多值需先扩属性类型，本片不扩则报 EUI050） |
+| `padding: 8 16` 多值 | **已定案（2026-11-12）**：E1 单值（StyleBuilder `Padding` 为 `double`）；四边独立/多值待属性系统引入 Thickness 支持后扩，此前样式表多值一律报 `EUI050`，不做运行时兜底 |
 
 ---
 
