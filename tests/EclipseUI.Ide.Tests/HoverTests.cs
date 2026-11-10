@@ -1,0 +1,104 @@
+using EclipseUI.LanguageServer.Analysis;
+using Xunit;
+
+namespace EclipseUI.Ide.Tests;
+
+/// <summary>悬停要把「这个名字是什么」答完整：CLR 类型、内容模型、属性类型、事件签名。</summary>
+public class HoverTests
+{
+    private const string Using = "@using EclipseUI.Elements\n\n";
+
+    [Fact]
+    public void TagHover_ShowsTheClrTypeAndContentModel()
+    {
+        var (service, uri, offset) = TestHost.Open(Using + "<Butt|on>+1</Button>");
+        var hover = service.Hover(uri, offset);
+
+        Assert.NotNull(hover);
+        Assert.Contains("EclipseUI.Elements.Button", hover!.Markdown);
+        Assert.Contains("control", hover.Markdown);
+        Assert.Contains("content: text", hover.Markdown);
+    }
+
+    [Fact]
+    public void TagHover_CoversTheWholeName()
+    {
+        var (service, uri, offset) = TestHost.Open(Using + "<Butt|on>+1</Button>");
+        var hover = service.Hover(uri, offset)!;
+
+        Assert.Equal(Using.Length + 1, hover.Span.Start);
+        Assert.Equal("Button".Length, hover.Span.Length);
+    }
+
+    [Fact]
+    public void EventHover_ExplainsTheHandler()
+    {
+        var (service, uri, offset) = TestHost.Open(Using + "<Button OnCli|ck={() => 1}>+1</Button>");
+        var hover = service.Hover(uri, offset);
+
+        Assert.NotNull(hover);
+        Assert.Contains("OnClick", hover!.Markdown);
+        Assert.Contains("event", hover.Markdown);
+        Assert.Contains("RoutedEventArgs", hover.Markdown);
+    }
+
+    [Fact]
+    public void PropertyHover_ShowsTheType()
+    {
+        var (service, uri, offset) = TestHost.Open(Using + "<Button Lab|el=\"x\" />");
+        var hover = service.Hover(uri, offset);
+
+        Assert.NotNull(hover);
+        Assert.Contains("Label", hover!.Markdown);
+        Assert.Contains("string", hover.Markdown);
+    }
+
+    [Fact]
+    public void AttachedPropertyHover_ShowsTheOwner()
+    {
+        var (service, uri, offset) = TestHost.Open(Using + "<Button Grid.R|ow=\"1\" />");
+        var hover = service.Hover(uri, offset);
+
+        Assert.NotNull(hover);
+        Assert.Contains("Grid.Row", hover!.Markdown);
+        Assert.Contains("attached property", hover.Markdown);
+    }
+
+    [Fact]
+    public void EnumValueHover_ListsTheMembers()
+    {
+        var catalog = TestHost.EnumCatalog(out _);
+        var text = "<Box Align=\"Le|\" />";
+        var offset = text.IndexOf('|');
+        var analysis = DocumentAnalysis.Create(text.Remove(offset, 1), "Probe.ui", catalog);
+
+        var hover = HoverProvider.Hover(analysis, catalog, offset);
+        Assert.NotNull(hover);
+        Assert.Contains("Center, Left, Right", hover!.Markdown);
+    }
+
+    [Fact]
+    public void DirectiveHover_DocumentsTheBlock()
+    {
+        var (service, uri, offset) = TestHost.Open("@i|f (true) { }");
+        var hover = service.Hover(uri, offset);
+
+        Assert.NotNull(hover);
+        Assert.Contains("@if", hover!.Markdown);
+        Assert.Contains("else", hover.Markdown);
+    }
+
+    [Fact]
+    public void UnknownTag_HasNoHover()
+    {
+        var (service, uri, offset) = TestHost.Open(Using + "<Nope| />");
+        Assert.Null(service.Hover(uri, offset));
+    }
+
+    [Fact]
+    public void PlainText_HasNoHover()
+    {
+        var (service, uri, offset) = TestHost.Open(Using + "<Button>he|llo</Button>");
+        Assert.Null(service.Hover(uri, offset));
+    }
+}

@@ -10,8 +10,11 @@ namespace EclipseUI.Compiler;
 /// 而 `SyntaxFactory.ParseTokens` 对**不完整片段**（括号未配平）会产出 SkippedTokensTrivia，
 /// 插值洞里的 `{}` 又是独立 token，用它做「配对括号定位」需要额外补偿；这里只做最小状态机，
 /// 语义边界与 C# 词法一致即可（真正的语法/语义错误仍交 Roslyn，经 <c>#line</c> 回映）。
+///
+/// 公开的原因：IDE 侧（`EclipseUI.LanguageServer`）判断「光标是否在 <c>{expr}</c> 内」
+/// 要用同一套括号/字符串判定，否则高亮与补全对同一段文本会有两种边界理解。
 /// </summary>
-internal static class CSharpSnippet
+public static class CSharpSnippet
 {
     /// <summary>
     /// 从 <paramref name="openIndex"/> 处的 <c>{</c> 或 <c>(</c> 出发，返回配对闭括号的下标；

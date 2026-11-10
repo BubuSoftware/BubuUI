@@ -1,0 +1,112 @@
+using EclipseUI.Compiler;
+
+namespace EclipseUI.LanguageServer.Analysis;
+
+public enum UiCompletionKind
+{
+    Tag,
+    Property,
+    Event,
+    Parameter,
+    AttachedProperty,
+    Directive,
+    EnumMember,
+    Keyword,
+    StyleProperty,
+    Namespace,
+}
+
+/// <param name="InsertText">写入文本；原生 LSP 补全项恒为纯文本，片段形态由 <paramref name="IsSnippet"/> 决定。</param>
+/// <param name="SortText">排序键（LSP <c>sortText</c>）：默认按标签字母序会打乱"已导入优先"，
+/// 所以用前缀数字分组——0 可见标签 / 1 属性 / 2 保留 / 3 附加属性。</param>
+public sealed record UiCompletionItem(
+    string Label,
+    UiCompletionKind Kind,
+    string? Detail = null,
+    string? Documentation = null,
+    string? InsertText = null,
+    bool IsSnippet = false,
+    string? SortText = null)
+{
+    public string Text => InsertText ?? Label;
+}
+
+/// <summary>一次补全的全部候选共享同一个替换区间（光标处只有一个 token）。</summary>
+public sealed record UiCompletionList(TextSpan Replacement, IReadOnlyList<UiCompletionItem> Items)
+{
+    public static readonly UiCompletionList Empty = new(TextSpan.Zero, Array.Empty<UiCompletionItem>());
+}
+
+public sealed record UiHoverResult(TextSpan Span, string Markdown);
+
+public enum UiSymbolKind
+{
+    /// <summary><c>Element</c> 派生：标签是控件。</summary>
+    Control,
+
+    /// <summary><c>Component</c> 派生：标签是组件。</summary>
+    Component,
+
+    /// <summary><c>@if</c>/<c>@foreach</c>/<c>@switch</c> 块。</summary>
+    Block,
+
+    /// <summary><c>@code</c> 块。</summary>
+    CodeBlock,
+}
+
+public sealed record UiSymbol(
+    string Name,
+    string Detail,
+    UiSymbolKind Kind,
+    TextSpan Span,
+    TextSpan SelectionSpan,
+    IReadOnlyList<UiSymbol> Children);
+
+/// <summary>
+/// 类型名的展示形态：目录里存的是 <c>global::System.Double</c> 这种生成用全名，
+/// 悬停/补全要给人看的是 <c>double</c> / <c>EclipseUI.Brush</c>。
+/// </summary>
+public static class TypeNames
+{
+    private static readonly Dictionary<string, string> Keywords = new(StringComparer.Ordinal)
+    {
+        ["System.Double"] = "double",
+        ["System.Single"] = "float",
+        ["System.Decimal"] = "decimal",
+        ["System.Int64"] = "long",
+        ["System.Int32"] = "int",
+        ["System.Int16"] = "short",
+        ["System.Byte"] = "byte",
+        ["System.Boolean"] = "bool",
+        ["System.String"] = "string",
+        ["System.Char"] = "char",
+        ["System.Object"] = "object",
+        ["System.TimeSpan"] = "TimeSpan",
+    };
+
+    public static string Short(string clrDisplayName)
+    {
+        var name = clrDisplayName.StartsWith("global::", StringComparison.Ordinal)
+            ? clrDisplayName.Substring("global::".Length)
+            : clrDisplayName;
+        return Keywords.TryGetValue(name, out var keyword) ? keyword : name;
+    }
+
+    /// <summary>命名空间（<c>global::EclipseUI.Elements.Button</c> → <c>EclipseUI.Elements</c>）。</summary>
+    public static string? NamespaceOf(string clrDisplayName)
+    {
+        var name = clrDisplayName.StartsWith("global::", StringComparison.Ordinal)
+            ? clrDisplayName.Substring("global::".Length)
+            : clrDisplayName;
+        int dot = name.LastIndexOf('.');
+        return dot <= 0 ? null : name.Substring(0, dot);
+    }
+
+    /// <summary>短名（去掉命名空间），用于 <c>&lt;/</c> 与列表展示。</summary>
+    public static string Bare(string clrDisplayName)
+    {
+        var name = Short(clrDisplayName);
+        int dot = name.LastIndexOf('.');
+        return dot < 0 ? name : name.Substring(dot + 1);
+    }
+}

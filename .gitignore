@@ -7,3 +7,8 @@ Generated/
 TestResults/
 out/
 .workbuddy/
+
+# IDE 壳（design/06）：npm 依赖与本地产出的 server 副本不入库
+ide/vscode/node_modules/
+ide/vscode/server/
+ide/vscode/*.vsix

@@ -183,6 +183,16 @@
 > `Showcase.ui` 已改用规范名。全量 784 例（359/319/106），除本机
 > `PixelGoldens_MatchBaseline` 的像素哈希差异（改动前既有的环境差异）外 0 回归。
 >
+> **G5 IDE 第一片已通过（2026-11-10）**：`ide/` 落地 design/06 的「一份共享资产、两个薄壳」——
+> **LSP server**（`EclipseUI.LanguageServer`，net10.0 stdio，手写 JSON-RPC 帧）诊断直接跑编译器前端
+> （EUI 码与 `dotnet build` 同码同 span），补全覆盖标签/属性/事件/组件参数/附加属性/`@bind-`/
+> 枚举值与 `Style=` 属性名/`@` 指令/`@using` 命名空间，另有悬停与大纲；目录仍由
+> `UiCatalogFactory` 符号派生（runtime 同目录下引用 `EclipseUI.Runtime` 的程序集自动纳入，
+> 用户组件因此可直接补全）。**VS Code 壳**含 `.ui`/`.eustyle` 两份 TextMate grammar、
+> 语言配置与片段，客户端只有百行。用例 **64 例**（光标上下文/补全/悬停/大纲/诊断/协议帧/端到端会话）
+> + grammar 的 oniguruma 逐 token 断言（`node test/tokenize.test.js`）。表达式内 C# 补全
+> （Roslyn 投影）、跳转/重命名、语义着色、`#line` 调试留后续片。
+>
 > **S-C 最小主题资源已通过（2026-11-09，D100）**：`ThemeColor` 暗亮双色——`Visual.BackgroundResource/
 > ForegroundResource`（解析优先级 resource > 静态覆盖 > 主题令牌）+ `StyleBuilder` 双色重载；
 > painter 在**段构建期**按 `ElementTheme.IsLight` 解析，换主题 `ReplaceTheme` 丢段重建即随新表刷新
@@ -345,6 +355,10 @@ src/EclipseUI.Rendering.Vello/   Vello 后端：VelloSceneBuilder（CPU/GPU 共�
 src/EclipseUI.Platform.Windows/  Win32 窗口宿主：消息循环、DPI、resize、鼠标/键盘事件、
                                  WindowHost（布局+绘制+damage 跳帧上屏循环）、UseWindows() +
                                  ClassicDesktopLifetime（AppBuilder 桌面生命周期，D101）
+ide/                              IDE 支持（design/06）：一份共享 LSP server + 两个薄壳
+  EclipseUI.LanguageServer/       stdio LSP：诊断/标签·属性·枚举·指令补全/悬停/大纲，
+                                  目录由 UiCatalogFactory 符号派生（与编译器同源）
+  vscode/                         TextMate grammar（.ui / .eustyle）+ 语言配置 + 片段 + 薄客户端
 sandbox/RenderSpike/             G1 像素管线 spike：PNG 输出 + 性能 bench（不入解决方案）
 sandbox/WindowSpike/             G2 上屏 spike：动画场景 + 帧时间分段 + resize 自检（不入解决方案）
 sandbox/GalleryCheck/            画廊验证壳：--selfcheck 六步自动化、damage 覆盖率、帧成本测量、
@@ -514,4 +528,7 @@ IDE/DevTools 随后。
    ~~伪类~~ ✅ D102/D103、~~样式表编译器~~ ✅ D104（E1）、~~模板 Class/Style 转正~~ ✅ D105（E2）、
    ~~嵌套塌缩 + .ui 注入~~ ✅ D106（E4，2026-11-09）、~~注册制伪类~~ ✅ D107（E5，2026-11-10）——
    **样式系统 E1–E5 全部落地**；余控件模板（S-D）。
-5. **G5 IDE P0–P1**：TextMate grammar + LSP server（表达式投影进 Roslyn）+ VS Code/Rider 壳。
+5. **G5 IDE**：~~P0 语法高亮 + 诊断通道~~ ✅ 2026-11-10（`ide/EclipseUI.LanguageServer` + `ide/vscode`，
+   见 [ide/README.md](./ide/README.md)）、~~P1 补全/悬停/大纲~~ ✅（标签/属性/事件/参数/附加属性/
+   `@bind-`/枚举/指令）——**Rider 用 lsp4ij 接同一个 server，server 侧零改动**；
+   余 P1 的表达式内 C# 补全（Roslyn 投影）、跳转定义/重命名，以及 P2 语义着色、P3 `#line` 调试映射。

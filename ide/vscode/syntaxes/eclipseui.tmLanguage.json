@@ -1,0 +1,361 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "EclipseUI",
+  "scopeName": "source.eclipseui",
+  "fileTypes": ["ui"],
+  "comment": "EclipseUI .ui 模板（spec/01 是语法正本）。两类注释、四种指令、标签属性、{expr} 内嵌 C#。",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#directive" },
+    { "include": "#end-tag" },
+    { "include": "#element" },
+    { "include": "#block-brace" },
+    { "include": "#expression" }
+  ],
+  "repository": {
+    "comment": {
+      "patterns": [
+        {
+          "begin": "<!--",
+          "end": "-->",
+          "name": "comment.block.eclipseui",
+          "beginCaptures": { "0": { "name": "punctuation.definition.comment.begin.eclipseui" } },
+          "endCaptures": { "0": { "name": "punctuation.definition.comment.end.eclipseui" } }
+        },
+        {
+          "begin": "@\\*",
+          "end": "\\*@",
+          "name": "comment.block.eclipseui",
+          "beginCaptures": { "0": { "name": "punctuation.definition.comment.begin.eclipseui" } },
+          "endCaptures": { "0": { "name": "punctuation.definition.comment.end.eclipseui" } }
+        }
+      ]
+    },
+
+    "directive": {
+      "patterns": [
+        { "include": "#if-directive" },
+        { "include": "#foreach-directive" },
+        { "include": "#switch-directive" },
+        { "include": "#code-block" },
+        { "include": "#style-block" },
+        { "include": "#using-directive" },
+        { "include": "#else-directive" },
+        { "include": "#unknown-directive" }
+      ]
+    },
+
+    "else-directive": {
+      "comment": "else / else if 是 @if 的续接，不带 @（K23 ③）。顺带吃掉块起始的 '{'，否则它会落进 text 模式的表达式规则。",
+      "patterns": [
+        {
+          "match": "(\\b)(else)\\b(\\s+)(if)\\b",
+          "captures": {
+            "2": { "name": "keyword.control.conditional.eclipseui" },
+            "4": { "name": "keyword.control.conditional.eclipseui" }
+          }
+        },
+        {
+          "match": "(\\b)(else)\\b(\\s*)(\\{)?",
+          "captures": {
+            "2": { "name": "keyword.control.conditional.eclipseui" },
+            "4": { "name": "punctuation.section.block.begin.eclipseui" }
+          }
+        }
+      ]
+    },
+
+    "if-directive": {
+      "begin": "(@)(if)\\b\\s*(\\()",
+      "end": "(\\))(\\s*)(\\{)?",
+      "name": "meta.directive.if.eclipseui",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.directive.eclipseui" },
+        "2": { "name": "keyword.control.conditional.eclipseui" },
+        "3": { "name": "punctuation.section.parens.begin.eclipseui" }
+      },
+      "endCaptures": {
+        "1": { "name": "punctuation.section.parens.end.eclipseui" },
+        "3": { "name": "punctuation.section.block.begin.eclipseui" }
+      },
+      "patterns": [{ "include": "#csharp-in-parens" }]
+    },
+
+    "foreach-directive": {
+      "begin": "(@)(foreach)\\b\\s*(\\()",
+      "end": "(\\))(\\s*)(\\{)?",
+      "name": "meta.directive.foreach.eclipseui",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.directive.eclipseui" },
+        "2": { "name": "keyword.control.loop.eclipseui" },
+        "3": { "name": "punctuation.section.parens.begin.eclipseui" }
+      },
+      "endCaptures": {
+        "1": { "name": "punctuation.section.parens.end.eclipseui" },
+        "3": { "name": "punctuation.section.block.begin.eclipseui" }
+      },
+      "patterns": [{ "include": "#csharp-in-parens" }]
+    },
+
+    "switch-directive": {
+      "begin": "(@)(switch)\\b\\s*(\\()",
+      "end": "(\\))(\\s*)(\\{)?",
+      "name": "meta.directive.switch.eclipseui",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.directive.eclipseui" },
+        "2": { "name": "keyword.control.switch.eclipseui" },
+        "3": { "name": "punctuation.section.parens.begin.eclipseui" }
+      },
+      "endCaptures": {
+        "1": { "name": "punctuation.section.parens.end.eclipseui" },
+        "3": { "name": "punctuation.section.block.begin.eclipseui" }
+      },
+      "patterns": [{ "include": "#csharp-in-parens" }]
+    },
+
+    "code-block": {
+      "begin": "(@)(code)\\b\\s*(\\{)",
+      "end": "(\\})",
+      "name": "meta.embedded.block.csharp.eclipseui",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.directive.eclipseui" },
+        "2": { "name": "keyword.control.directive.eclipseui" },
+        "3": { "name": "punctuation.section.block.begin.eclipseui" }
+      },
+      "endCaptures": { "1": { "name": "punctuation.section.block.end.eclipseui" } },
+      "patterns": [{ "include": "#csharp" }, { "include": "#csharp-block" }]
+    },
+
+    "style-block": {
+      "begin": "(@)(style)\\b\\s*(\\{)",
+      "end": "(\\})",
+      "name": "meta.embedded.block.eustyle.eclipseui",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.directive.eclipseui" },
+        "2": { "name": "keyword.control.directive.eclipseui" },
+        "3": { "name": "punctuation.section.block.begin.eclipseui" }
+      },
+      "endCaptures": { "1": { "name": "punctuation.section.block.end.eclipseui" } },
+      "patterns": [{ "include": "source.eustyle" }]
+    },
+
+    "using-directive": {
+      "patterns": [
+        {
+          "match": "(@)(using)\\b\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(=)\\s*([A-Za-z_][A-Za-z0-9_.]*)",
+          "captures": {
+            "1": { "name": "punctuation.definition.directive.eclipseui" },
+            "2": { "name": "keyword.control.import.eclipseui" },
+            "3": { "name": "entity.name.type.alias.eclipseui" },
+            "4": { "name": "punctuation.separator.key-value.eclipseui" },
+            "5": { "name": "entity.name.type.eclipseui" }
+          }
+        },
+        {
+          "match": "(@)(using)\\b\\s+([A-Za-z_][A-Za-z0-9_.]*)",
+          "captures": {
+            "1": { "name": "punctuation.definition.directive.eclipseui" },
+            "2": { "name": "keyword.control.import.eclipseui" },
+            "3": { "name": "entity.name.namespace.eclipseui" }
+          }
+        }
+      ]
+    },
+
+    "unknown-directive": {
+      "match": "(@)([A-Za-z_][A-Za-z0-9_]*)",
+      "captures": {
+        "1": { "name": "punctuation.definition.directive.eclipseui" },
+        "2": { "name": "keyword.control.directive.eclipseui" }
+      }
+    },
+
+    "block-brace": {
+      "comment": "块定界符独占一行时（`@foreach (...)` 换行再写 `{`），它既不是表达式也不是标签——单独上色，否则会被 text 模式的表达式规则吞掉。",
+      "patterns": [
+        {
+          "match": "^\\s*(\\{)\\s*$",
+          "captures": { "1": { "name": "punctuation.section.block.begin.eclipseui" } }
+        },
+        {
+          "match": "^\\s*(\\})\\s*$",
+          "captures": { "1": { "name": "punctuation.section.block.end.eclipseui" } }
+        }
+      ]
+    },
+
+    "end-tag": {
+      "match": "(</)([A-Za-z_][A-Za-z0-9_]*)(\\s*)(>)",
+      "captures": {
+        "1": { "name": "punctuation.definition.tag.begin.eclipseui" },
+        "2": { "name": "entity.name.tag.eclipseui" },
+        "4": { "name": "punctuation.definition.tag.end.eclipseui" }
+      }
+    },
+
+    "element": {      "begin": "(<)([A-Za-z_][A-Za-z0-9_]*)",
+      "end": "(/?)(>)",
+      "name": "meta.tag.eclipseui",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.tag.begin.eclipseui" },
+        "2": { "name": "entity.name.tag.eclipseui" }
+      },
+      "endCaptures": {
+        "1": { "name": "punctuation.definition.tag.self-close.eclipseui" },
+        "2": { "name": "punctuation.definition.tag.end.eclipseui" }
+      },
+      "patterns": [
+        { "include": "#tag-attribute-value" },
+        { "include": "#expression" },
+        { "include": "#bind-attribute" },
+        { "include": "#attached-attribute" },
+        { "include": "#equals" },
+        { "include": "#attribute-name" },
+        { "include": "#comment" }
+      ]
+    },
+
+    "tag-attribute-value": {
+      "begin": "\"",
+      "end": "\"",
+      "name": "string.quoted.double.eclipseui",
+      "comment": "属性字面量是原始文本：不做 XML 实体解析，也不解释 {expr}（spec/01 §2.5）。",
+      "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.eclipseui" } },
+      "endCaptures": { "0": { "name": "punctuation.definition.string.end.eclipseui" } }
+    },
+
+    "bind-attribute": {
+      "match": "(@bind-)([A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)?)",
+      "captures": {
+        "1": { "name": "keyword.operator.binding.eclipseui" },
+        "2": { "name": "entity.other.attribute-name.eclipseui" }
+      }
+    },
+
+    "attached-attribute": {
+      "match": "([A-Za-z_][A-Za-z0-9_]*)(\\.)([A-Za-z_][A-Za-z0-9_]*)(?=\\s*=)",
+      "captures": {
+        "1": { "name": "support.class.attached-owner.eclipseui" },
+        "2": { "name": "punctuation.separator.eclipseui" },
+        "3": { "name": "entity.other.attribute-name.eclipseui" }
+      }
+    },
+
+    "attribute-name": {
+      "match": "[A-Za-z_][A-Za-z0-9_]*",
+      "name": "entity.other.attribute-name.eclipseui"
+    },
+
+    "equals": {
+      "match": "=",
+      "name": "punctuation.separator.key-value.eclipseui"
+    },
+
+    "expression": {
+      "begin": "\\{",
+      "end": "\\}",
+      "name": "meta.embedded.expression.eclipseui",
+      "beginCaptures": { "0": { "name": "punctuation.section.expression.begin.eclipseui" } },
+      "endCaptures": { "0": { "name": "punctuation.section.expression.end.eclipseui" } },
+      "contentName": "meta.embedded.line.csharp.eclipseui",
+      "patterns": [
+        { "include": "#csharp-comment" },
+        { "include": "#csharp-string" },
+        { "include": "#csharp-char" },
+        { "include": "#expression" },
+        { "include": "#csharp-literal" },
+        { "include": "#csharp-type" },
+        { "include": "#csharp-keyword" },
+        { "include": "#csharp-number" }
+      ]
+    },
+
+    "csharp-in-parens": {
+      "patterns": [
+        { "include": "#csharp-comment" },
+        { "include": "#csharp-string" },
+        { "include": "#csharp-char" },
+        {
+          "begin": "\\(",
+          "end": "\\)",
+          "name": "meta.group.csharp.eclipseui",
+          "beginCaptures": { "0": { "name": "punctuation.section.parens.begin.eclipseui" } },
+          "endCaptures": { "0": { "name": "punctuation.section.parens.end.eclipseui" } },
+          "patterns": [{ "include": "#csharp-in-parens" }]
+        },
+        { "include": "#csharp-literal" },
+        { "include": "#csharp-type" },
+        { "include": "#csharp-keyword" },
+        { "include": "#csharp-number" }
+      ]
+    },
+
+    "csharp-block": {
+      "begin": "\\{",
+      "end": "\\}",
+      "name": "meta.block.csharp.eclipseui",
+      "beginCaptures": { "0": { "name": "punctuation.section.block.begin.eclipseui" } },
+      "endCaptures": { "0": { "name": "punctuation.section.block.end.eclipseui" } },
+      "patterns": [{ "include": "#csharp" }, { "include": "#csharp-block" }]
+    },
+
+    "csharp": {
+      "patterns": [
+        { "include": "#csharp-comment" },
+        { "include": "#csharp-string" },
+        { "include": "#csharp-char" },
+        { "include": "#csharp-literal" },
+        { "include": "#csharp-type" },
+        { "include": "#csharp-keyword" },
+        { "include": "#csharp-number" }
+      ]
+    },
+
+    "csharp-comment": {
+      "patterns": [
+        { "match": "//.*$", "name": "comment.line.double-slash.csharp" },
+        {
+          "begin": "/\\*",
+          "end": "\\*/",
+          "name": "comment.block.csharp"
+        }
+      ]
+    },
+
+    "csharp-string": {
+      "patterns": [
+        {
+          "begin": "\\$?@?\"",
+          "end": "\"",
+          "name": "string.quoted.double.csharp",
+          "patterns": [{ "match": "\\\\.", "name": "constant.character.escape.csharp" }]
+        }
+      ]
+    },
+
+    "csharp-char": {
+      "match": "'(?:\\\\.|[^'\\\\])'",
+      "name": "string.quoted.single.csharp"
+    },
+
+    "csharp-literal": {
+      "match": "\\b(?:true|false|null)\\b",
+      "name": "constant.language.csharp"
+    },
+
+    "csharp-type": {
+      "match": "\\b(?:bool|byte|sbyte|char|decimal|double|float|int|uint|long|ulong|short|ushort|object|string|void|var|dynamic)\\b",
+      "name": "storage.type.csharp"
+    },
+
+    "csharp-keyword": {
+      "match": "\\b(?:if|else|for|foreach|while|do|switch|case|default|break|continue|return|await|async|yield|new|this|base|is|as|in|out|ref|params|typeof|nameof|sizeof|throw|try|catch|finally|using|lock|public|private|protected|internal|static|readonly|const|sealed|partial|override|virtual|abstract|class|struct|interface|record|enum|namespace|where|get|set|init|when|and|or|not)\\b",
+      "name": "keyword.control.csharp"
+    },
+
+    "csharp-number": {
+      "match": "\\b(?:0[xX][0-9a-fA-F_]+|\\d[\\d_]*(?:\\.\\d[\\d_]*)?(?:[eE][+-]?\\d+)?)[fFdDmMlLuU]?\\b",
+      "name": "constant.numeric.csharp"
+    }
+  }
+}

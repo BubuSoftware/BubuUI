@@ -1,0 +1,137 @@
+{
+  "name": "eclipseui",
+  "displayName": "EclipseUI",
+  "description": "EclipseUI .ui templates: syntax highlighting, diagnostics, completion, hover and outline (shared language server, ready for Rider via lsp4ij).",
+  "version": "0.1.0",
+  "publisher": "eclipseui",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.82.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "eclipseui",
+    "ui",
+    "templates",
+    "intellisense"
+  ],
+  "activationEvents": [
+    "onLanguage:eclipseui",
+    "onLanguage:eustyle",
+    "workspaceContains:**/*.ui"
+  ],
+  "main": "./client/extension.js",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "The extension starts the EclipseUI language server (a local .NET process)."
+    }
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "eclipseui",
+        "aliases": [
+          "EclipseUI",
+          "eclipseui"
+        ],
+        "extensions": [
+          ".ui"
+        ],
+        "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "eustyle",
+        "aliases": [
+          "Eustyle"
+        ],
+        "extensions": [
+          ".eustyle"
+        ],
+        "configuration": "./eustyle-language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "eclipseui",
+        "scopeName": "source.eclipseui",
+        "path": "./syntaxes/eclipseui.tmLanguage.json",
+        "embeddedLanguages": {
+          "meta.embedded.line.csharp.eclipseui": "csharp",
+          "meta.embedded.block.csharp.eclipseui": "csharp",
+          "meta.embedded.block.eustyle.eclipseui": "eustyle"
+        }
+      },
+      {
+        "language": "eustyle",
+        "scopeName": "source.eustyle",
+        "path": "./syntaxes/eustyle.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "eclipseui",
+        "path": "./snippets/eclipseui.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "eclipseui.reloadCatalog",
+        "title": "EclipseUI: Reload Tag Catalog"
+      }
+    ],
+    "configuration": {
+      "title": "EclipseUI",
+      "properties": {
+        "eclipseui.server.path": {
+          "type": "string",
+          "default": "",
+          "description": "Path to EclipseUI.LanguageServer.dll. Empty = bundled server/ folder, then the repository build output."
+        },
+        "eclipseui.server.dotnet": {
+          "type": "string",
+          "default": "dotnet",
+          "description": "dotnet executable used to start the language server."
+        },
+        "eclipseui.runtime.path": {
+          "type": "string",
+          "default": "",
+          "description": "EclipseUI.Runtime.dll or the directory containing it. Empty = auto-detect (server folder, then src/EclipseUI.Runtime/bin/**)."
+        },
+        "eclipseui.catalog.assemblies": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Extra assemblies whose Element/Component types should become template tags (your app's output dll)."
+        },
+        "eclipseui.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Trace LSP traffic in the EclipseUI output channel."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build:server": "dotnet publish ../EclipseUI.LanguageServer -c Release -o server",
+    "test": "node test/tokenize.test.js && node test/extension.test.js",
+    "test:grammar": "node test/tokenize.test.js",
+    "test:shell": "node test/extension.test.js"
+  },
+  "dependencies": {
+    "vscode-languageclient": "9.0.1"
+  },
+  "devDependencies": {
+    "vscode-oniguruma": "^2.0.1",
+    "vscode-textmate": "^9.3.2"
+  }
+}

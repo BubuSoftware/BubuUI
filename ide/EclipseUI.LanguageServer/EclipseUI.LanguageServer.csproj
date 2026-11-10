@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>EclipseUI.LanguageServer</RootNamespace>
+    <AssemblyName>EclipseUI.LanguageServer</AssemblyName>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <Description>EclipseUI .ui language server (stdio LSP): diagnostics, completion, hover, document symbols. Shared by the VS Code and Rider shells (design/06).</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 前端（零 Roslyn 依赖）+ 目录扫描器（Roslyn 符号派生）。Metadata 对 Compiler 的引用是
+         PrivateAssets=all，所以这里两个都得显式引用。 -->
+    <ProjectReference Include="..\..\src\EclipseUI.Compiler\EclipseUI.Compiler.csproj" />
+    <ProjectReference Include="..\..\src\EclipseUI.Compiler.Metadata\EclipseUI.Compiler.Metadata.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 与 EclipseUI.Compiler.Metadata 保持同一版本，避免程序集绑定到两个 Roslyn 副本。 -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.9.2" />
+  </ItemGroup>
+
+</Project>
