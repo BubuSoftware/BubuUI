@@ -225,9 +225,10 @@
     },
 
     "bind-attribute": {
+      "comment": "用 keyword.control 前缀而不是 keyword.operator：主流主题里 operator 与正文默认前景同色，@bind- 看上去会像没有高亮。",
       "match": "(@bind-)([A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)?)",
       "captures": {
-        "1": { "name": "keyword.operator.binding.eclipseui" },
+        "1": { "name": "keyword.control.binding.eclipseui" },
         "2": { "name": "entity.other.attribute-name.eclipseui" }
       }
     },
@@ -266,7 +267,9 @@
         { "include": "#csharp-literal" },
         { "include": "#csharp-type" },
         { "include": "#csharp-keyword" },
-        { "include": "#csharp-number" }
+        { "include": "#csharp-number" },
+        { "include": "#csharp-member-access" },
+        { "include": "#csharp-identifier" }
       ]
     },
 
@@ -286,7 +289,9 @@
         { "include": "#csharp-literal" },
         { "include": "#csharp-type" },
         { "include": "#csharp-keyword" },
-        { "include": "#csharp-number" }
+        { "include": "#csharp-number" },
+        { "include": "#csharp-member-access" },
+        { "include": "#csharp-identifier" }
       ]
     },
 
@@ -307,7 +312,9 @@
         { "include": "#csharp-literal" },
         { "include": "#csharp-type" },
         { "include": "#csharp-keyword" },
-        { "include": "#csharp-number" }
+        { "include": "#csharp-number" },
+        { "include": "#csharp-member-access" },
+        { "include": "#csharp-identifier" }
       ]
     },
 
@@ -356,6 +363,22 @@
     "csharp-number": {
       "match": "\\b(?:0[xX][0-9a-fA-F_]+|\\d[\\d_]*(?:\\.\\d[\\d_]*)?(?:[eE][+-]?\\d+)?)[fFdDmMlLuU]?\\b",
       "name": "constant.numeric.csharp"
+    },
+
+    "csharp-member-access": {
+      "comment": "没有这条时 model.Name 整段落进默认前景，{expr} 看上去不上色。放在关键字/类型/字面量之后，避免抢它们的匹配。",
+      "match": "([A-Za-z_][A-Za-z0-9_]*)(\\.)([A-Za-z_][A-Za-z0-9_]*)",
+      "captures": {
+        "1": { "name": "variable.other.object.csharp" },
+        "2": { "name": "punctuation.accessor.csharp" },
+        "3": { "name": "variable.other.object.property.csharp" }
+      }
+    },
+
+    "csharp-identifier": {
+      "comment": "兜底：普通标识符也要有 scope。embeddedLanguages 的二次着色依赖装了 C# grammar，不能把上色押在它身上。",
+      "match": "[A-Za-z_][A-Za-z0-9_]*",
+      "name": "variable.other.readwrite.csharp"
     }
   }
 }

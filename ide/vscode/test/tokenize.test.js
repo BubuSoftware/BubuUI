@@ -154,7 +154,7 @@ $accent: theme(#ffffff, #000000);
   expectNotAt(doc, 4, '<TextBlock', 0, 'meta.embedded.expression.eclipseui', '</TextBlock> 不在表达式里');
 
   // 双向绑定（@bind- 前缀与属性名分开上色）
-  expectAt(doc, 5, '@bind-Checked', 1, 'keyword.operator.binding.eclipseui', '@bind-');
+  expectAt(doc, 5, '@bind-Checked', 1, 'keyword.control.binding.eclipseui', '@bind-');
   expectAt(doc, 5, '@bind-Checked', 9, 'entity.other.attribute-name.eclipseui', 'bind target');
   expectAt(doc, 5, 'Checked="true"', 10, 'string.quoted.double.eclipseui', 'bool literal');
 
@@ -177,6 +177,32 @@ $accent: theme(#ffffff, #000000);
   expectAt(doc, 20, 'int count', 1, 'storage.type.csharp', 'int');
   expectAt(doc, 21, 'bool showButton', 1, 'storage.type.csharp', 'bool');
   expectAt(doc, 21, 'false', 1, 'constant.language.csharp', 'bool literal in C#');
+
+  // 回归：@bind- 与 {expr} 内的标识符必须真的拿到 scope，不能只剩默认前景。
+  // 曾经的 bug：@bind- 用 keyword.operator（多数主题与正文同色），表达式里的普通标识符
+  // 没有任何 C# scope，整行看上去「没有代码高亮」。
+  const bindForms = `@using EclipseUI.Elements
+<TextBox @bind-p={model.Name} />
+<CheckBox @bind-Checked={showButton} />
+@code {
+    public int count;
+}
+`;
+  const bindDoc = await tokenize('source.eclipseui', bindForms);
+  if (dump) {
+    bindDoc.lines.forEach((tokens, index) => {
+      console.log(`--- bindForms line ${index + 1}`);
+      for (const token of tokens) console.log(`  ${JSON.stringify(token.text)}  ${token.scopes.slice(1).join(' ')}`);
+    });
+  }
+
+  expectAt(bindDoc, 1, '@bind-p', 1, 'keyword.control.binding.eclipseui', '@bind- prefix');
+  expectAt(bindDoc, 1, '@bind-p', 6, 'entity.other.attribute-name.eclipseui', 'lowercase bind target');
+  expectAt(bindDoc, 1, 'model.Name', 0, 'variable.other.object.csharp', 'member access object');
+  expectAt(bindDoc, 1, 'model.Name', 5, 'punctuation.accessor.csharp', 'member access dot');
+  expectAt(bindDoc, 1, 'model.Name', 6, 'variable.other.object.property.csharp', 'member access property');
+  expectAt(bindDoc, 2, '{showButton}', 2, 'variable.other.readwrite.csharp', 'identifier in bind expression');
+  expectAt(bindDoc, 4, 'count', 1, 'variable.other.readwrite.csharp', 'identifier in @code block');
 
   const styleDoc = await tokenize('source.eustyle', style);
   if (dump) {
