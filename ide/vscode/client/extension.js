@@ -86,7 +86,14 @@ function activate(context) {
       try {
         const result = await client.sendRequest('eclipseui/reloadCatalog');
         const tags = result && typeof result.tags === 'number' ? result.tags : 0;
-        vscode.window.showInformationMessage(`EclipseUI: tag catalog reloaded (${tags} tags).`);
+        if (tags === 0) {
+          vscode.window.showWarningMessage(
+            'EclipseUI: tag catalog is empty (0 tags) - tag completion and semantic ' +
+            'diagnostics are disabled. Set eclipseui.runtime.path, or open this repository ' +
+            'as the workspace folder.');
+        } else {
+          vscode.window.showInformationMessage(`EclipseUI: tag catalog reloaded (${tags} tags).`);
+        }
       } catch (error) {
         vscode.window.showErrorMessage(`EclipseUI: reload failed — ${error.message}`);
       }
