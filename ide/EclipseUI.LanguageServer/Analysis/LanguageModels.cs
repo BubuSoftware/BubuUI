@@ -14,6 +14,15 @@ public enum UiCompletionKind
     Keyword,
     StyleProperty,
     Namespace,
+
+    /// <summary>表达式投影：C# 字段（code-behind/@code）。</summary>
+    Field,
+
+    /// <summary>表达式投影：C# 方法。</summary>
+    Method,
+
+    /// <summary>表达式投影：<c>@foreach</c> 迭代变量等局部量。</summary>
+    Variable,
 }
 
 /// <param name="InsertText">写入文本；原生 LSP 补全项恒为纯文本，片段形态由 <paramref name="IsSnippet"/> 决定。</param>
@@ -38,6 +47,13 @@ public sealed record UiCompletionList(TextSpan Replacement, IReadOnlyList<UiComp
 }
 
 public sealed record UiHoverResult(TextSpan Span, string Markdown);
+
+/// <summary>
+/// 跳转定义目标（L3 第一片）。<paramref name="Uri"/> 为 null 表示**本文档**内
+/// （<paramref name="Span"/> 是 .ui 偏移，如 <c>@foreach</c> 迭代变量）；否则是
+/// code-behind 兄弟文件的磁盘路径，<paramref name="Span"/> 是该文件内的偏移。
+/// </summary>
+public sealed record UiDefinition(string? Uri, TextSpan Span, string Name);
 
 public enum UiSymbolKind
 {

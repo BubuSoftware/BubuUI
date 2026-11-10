@@ -116,6 +116,7 @@ public class ProtocolTests
             .Single(m => m["id"]?.GetValue<int>() == 1)["result"]!["capabilities"]!;
 
         Assert.True(capabilities["hoverProvider"]!.GetValue<bool>());
+        Assert.True(capabilities["definitionProvider"]!.GetValue<bool>());
         Assert.True(capabilities["documentSymbolProvider"]!.GetValue<bool>());
         Assert.Contains("<", capabilities["completionProvider"]!["triggerCharacters"]!
             .AsArray().Select(n => n!.GetValue<string>()));
@@ -139,6 +140,62 @@ public class ProtocolTests
         Assert.All(diagnostics, d => Assert.Equal("eclipseui", d!["source"]!.GetValue<string>()));
     }
 
+    /// <summary>K22：删掉 @using 后，已写好的内置标签必须立刻变成 EUI001（用户实际遇到的场景）。</summary>
+    [Fact]
+    public async Task Session_RemovingUsingReportsUnknownTagOnChange()
+    {
+        var uri = "file:///D:/workspace/Counter.ui";
+        var transcript = await RunSession(
+            Request(1, "initialize"),
+            Notification("initialized", new JsonObject()),
+            DidOpen(uri, "@using EclipseUI.Elements\n<StackPanel />\n"),
+            Notification("textDocument/didChange", new JsonObject
+            {
+                ["textDocument"] = new JsonObject { ["uri"] = uri, ["version"] = 2 },
+                ["contentChanges"] = new JsonArray { new JsonObject { ["text"] = "<StackPanel />\n" } },
+            }));
+
+        var published = transcript
+            .Where(m => m["method"]?.GetValue<string>() == "textDocument/publishDiagnostics")
+            .ToArray();
+
+        Assert.Equal(2, published.Length);
+        Assert.Empty(published[0]["params"]!["diagnostics"]!.AsArray());
+
+        var after = published[1]["params"]!["diagnostics"]!.AsArray();
+        Assert.Contains(after, d => d!["code"]!.GetValue<string>() == "EUI001");
+        Assert.Contains(after, d => d!["message"]!.GetValue<string>().Contains("@using"));
+    }
+
+    /// <summary>
+    /// 目录为空时语义诊断会被刻意跳过（避免把配置问题伪装成"每个标签都未知"），
+    /// 但**必须**弹警告，否则编辑器表现为"高亮正常、零诊断"，用户无从排查。
+    /// 回归：旧实现在后台 Build 完成前就读 Notes，警告被静默吞掉。
+    /// </summary>
+    [Fact]
+    public async Task Session_EmptyCatalogWarnsInsteadOfFailingSilently()
+    {
+        var empty = new CatalogProvider(new CatalogOptions
+        {
+            RuntimePath = Path.Combine(Path.GetTempPath(), "eclipseui-missing-" + Guid.NewGuid().ToString("N")),
+            IncludeSiblingAssemblies = false,
+        });
+        var uri = "file:///D:/workspace/NoCatalog.ui";
+        var transcript = await RunSessionWith(empty,
+            Request(1, "initialize"),
+            Notification("initialized", new JsonObject()),
+            DidOpen(uri, "<StackPanel />\n"));
+
+        var warning = Assert.Single(transcript,
+            m => m["method"]?.GetValue<string>() == "window/showMessage");
+        Assert.Equal(2, warning["params"]!["type"]!.GetValue<int>()); // Warning
+        Assert.Contains("diagnostics", warning["params"]!["message"]!.GetValue<string>());
+
+        var published = Assert.Single(transcript,
+            m => m["method"]?.GetValue<string>() == "textDocument/publishDiagnostics");
+        Assert.Empty(published["params"]!["diagnostics"]!.AsArray());
+    }
+
     [Fact]
     public async Task Session_CompletionReturnsEditsInsideTheTag()
     {
@@ -157,6 +214,84 @@ public class ProtocolTests
         Assert.Equal("Button", edit["newText"]!.GetValue<string>());
         Assert.Equal(1, edit["range"]!["start"]!["character"]!.GetValue<int>());
         Assert.Equal(4, edit["range"]!["end"]!["character"]!.GetValue<int>());
+    }
+
+    /// <summary>
+    /// 表达式投影端到端（design/06 §6.3）：code-behind 是磁盘上的同名兄弟 .cs
+    /// （spec/02 §2.2 文件契约），server 经 LanguageService 读它建探针，
+    /// <c>{tasks.Cou}</c> 里补全 <c>Count</c>，textEdit 只覆盖点号后的 "Cou"。
+    /// </summary>
+    [Fact]
+    public async Task Session_ExpressionCompletionProjectsCodeBehind()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "eclipseui-ide-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, "Session.ui");
+        const string text = "<TextBlock Text={tasks.Cou} />";
+        await File.WriteAllTextAsync(path, text);
+        await File.WriteAllTextAsync(Path.ChangeExtension(path, ".cs"), """
+            using System.Collections.Generic;
+            namespace Gallery;
+            public partial class Session
+            {
+                public List<string> tasks = new();
+            }
+            """);
+
+        var uri = DocumentStore.PathToUri(path);
+        var transcript = await RunSession(
+            Request(1, "initialize"),
+            Notification("initialized", new JsonObject()),
+            DidOpen(uri, text),
+            Request(2, "textDocument/completion", Position(uri, 0, 26)));
+
+        var items = transcript.Single(m => m["id"]?.GetValue<int>() == 2)["result"]!["items"]!.AsArray();
+        Assert.Contains(items, static i => i!["label"]!.GetValue<string>() == "Count");
+
+        var edit = items.Single(i => i!["label"]!.GetValue<string>() == "Count")!["textEdit"]!;
+        Assert.Equal("Count", edit["newText"]!.GetValue<string>());
+        Assert.Equal(23, edit["range"]!["start"]!["character"]!.GetValue<int>());
+        Assert.Equal(26, edit["range"]!["end"]!["character"]!.GetValue<int>());
+    }
+
+    /// <summary>
+    /// 跳转定义端到端（L3 第一片）：<c>{Total}</c> 里的标识符落到兄弟 .cs 的属性声明——
+    /// 返回的 Location 换成 code-behind 文件的 uri，range 用 .cs 原文换算行位。
+    /// </summary>
+    [Fact]
+    public async Task Session_DefinitionOpensTheCodeBehindDeclaration()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "eclipseui-ide-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, "Session.ui");
+        const string text = "<TextBlock Text={Total} />";
+        await File.WriteAllTextAsync(path, text);
+        await File.WriteAllTextAsync(Path.ChangeExtension(path, ".cs"), """
+            namespace Gallery;
+            public partial class Session
+            {
+                public int Total => 42;
+            }
+            """);
+
+        var uri = DocumentStore.PathToUri(path);
+        var transcript = await RunSession(
+            Request(1, "initialize"),
+            Notification("initialized", new JsonObject()),
+            DidOpen(uri, text),
+            Request(2, "textDocument/definition", Position(uri, 0, 18)));
+
+        var location = transcript.Single(m => m["id"]?.GetValue<int>() == 2)["result"]!;
+        Assert.EndsWith("Session.cs", location["uri"]!.GetValue<string>(), StringComparison.Ordinal);
+
+        // range 是 .cs 的行/列：反算回偏移，必须落在属性名 "Total" 上。
+        var cs = await File.ReadAllTextAsync(Path.ChangeExtension(path, ".cs"));
+        var expectedOffset = cs.IndexOf("public int Total", StringComparison.Ordinal) + "public int ".Length;
+        var positions = new PositionMap(cs);
+        var actual = positions.ToOffset(
+            location["range"]!["start"]!["line"]!.GetValue<int>(),
+            location["range"]!["start"]!["character"]!.GetValue<int>());
+        Assert.Equal(expectedOffset, actual);
     }
 
     [Fact]
@@ -210,7 +345,14 @@ public class ProtocolTests
     }
 
     /// <summary>把一串消息喂给真实的 server（内存流，全会话跑完），回收 server 发出的所有消息。</summary>
-    private static async Task<JsonNode[]> RunSession(params JsonObject[] messages)
+    private static Task<JsonNode[]> RunSession(params JsonObject[] messages) =>
+        RunSessionWith(new CatalogProvider(new CatalogOptions
+        {
+            RuntimePath = Path.Combine(AppContext.BaseDirectory, "EclipseUI.Runtime.dll"),
+            IncludeSiblingAssemblies = false,
+        }), messages);
+
+    private static async Task<JsonNode[]> RunSessionWith(CatalogProvider catalogs, params JsonObject[] messages)
     {
         var input = new MemoryStream();
         var writer = new LspMessageWriter(input);
@@ -218,11 +360,6 @@ public class ProtocolTests
         input.Position = 0;
 
         var output = new MemoryStream();
-        var catalogs = new CatalogProvider(new CatalogOptions
-        {
-            RuntimePath = Path.Combine(AppContext.BaseDirectory, "EclipseUI.Runtime.dll"),
-            IncludeSiblingAssemblies = false,
-        });
         var service = new LanguageService(catalogs, new DocumentStore());
         var connection = new JsonRpcConnection(input, output);
         var host = new LanguageServerHost(connection, service, catalogs);

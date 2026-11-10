@@ -54,6 +54,9 @@ public sealed class LanguageServerHost
             case "textDocument/hover":
                 return Hover(request.Parameters);
 
+            case "textDocument/definition":
+                return Definition(request.Parameters);
+
             case "textDocument/documentSymbol":
                 return DocumentSymbols(request.Parameters);
 
@@ -72,18 +75,25 @@ public sealed class LanguageServerHost
         switch (method)
         {
             case "initialized":
-                // 目录没找到是**配置问题**，必须显式告诉人，不能让补全静默空着。
-                if (_catalogs.Notes.Count > 0)
+            {
+                // 先强制完成目录构建，再读 Notes。后台预热与 initialized 可能并发：
+                // 若先读 Notes 会得到空列表，"目录没找到"的警告被静默吞掉，编辑器表现为
+                // "高亮正常、补全空、零诊断"，用户无从判断是配置问题还是代码没问题。
+                var count = _catalogs.Catalog.Elements.Count;
+                var notes = _catalogs.Notes;
+                if (notes.Count > 0)
                 {
                     await _connection.NotifyAsync("window/showMessage", new JsonObject
                     {
                         ["type"] = 2, // Warning
-                        ["message"] = "EclipseUI: " + string.Join("\n", _catalogs.Notes),
+                        ["message"] = "EclipseUI: " + string.Join("\n", notes),
                     }).ConfigureAwait(false);
                 }
-                _log?.Invoke($"catalog: {_catalogs.Catalog.Elements.Count} tags from " +
-                             $"{_catalogs.RuntimePath ?? "<none>"}");
+                _log?.Invoke($"catalog: {count} tags from {_catalogs.RuntimePath ?? "<none>"}");
+                // 兜住 didOpen 早于目录就绪的窗口：目录一就绪就重发已打开文档的诊断。
+                await PublishAllDiagnosticsAsync().ConfigureAwait(false);
                 break;
+            }
 
             case "textDocument/didOpen":
             {
@@ -151,6 +161,7 @@ public sealed class LanguageServerHost
                     ["resolveProvider"] = false,
                 },
                 ["hoverProvider"] = true,
+                ["definitionProvider"] = true,
                 ["documentSymbolProvider"] = true,
             },
             ["serverInfo"] = new JsonObject
@@ -233,6 +244,41 @@ public sealed class LanguageServerHost
         };
         if (positions is not null) result["range"] = ToRange(positions, hover.Span);
         return result;
+    }
+
+    /// <summary>
+    /// 跳转定义（L3 第一片）：本文档目标（foreach 头）用 .ui 的 PositionMap；
+    /// code-behind 目标换 uri 并用 code-behind 原文的 PositionMap 换算行位。
+    /// </summary>
+    private JsonNode? Definition(JsonNode? parameters)
+    {
+        var (uri, offset) = Position(parameters);
+        if (uri is null) return null;
+
+        var definition = _service.Definition(uri, offset);
+        if (definition is null) return null;
+
+        string targetUri;
+        PositionMap positions;
+        if (definition.Uri is null)
+        {
+            if (!_service.Documents.TryGet(uri, out var document)) return null;
+            targetUri = uri;
+            positions = new PositionMap(document.Text);
+        }
+        else
+        {
+            var analysis = _service.Analyze(uri);
+            if (analysis?.CodeBehindText is null) return null;
+            targetUri = DocumentStore.PathToUri(definition.Uri);
+            positions = new PositionMap(analysis.CodeBehindText);
+        }
+
+        return new JsonObject
+        {
+            ["uri"] = targetUri,
+            ["range"] = ToRange(positions, definition.Span),
+        };
     }
 
     private JsonNode? DocumentSymbols(JsonNode? parameters)
@@ -362,6 +408,9 @@ public sealed class LanguageServerHost
         UiCompletionKind.Keyword => CompletionKindDto.Keyword,
         UiCompletionKind.StyleProperty => CompletionKindDto.Property,
         UiCompletionKind.Namespace => CompletionKindDto.Module,
+        UiCompletionKind.Field => CompletionKindDto.Field,
+        UiCompletionKind.Method => CompletionKindDto.Method,
+        UiCompletionKind.Variable => CompletionKindDto.Variable,
         _ => CompletionKindDto.Text,
     };
 

@@ -14,6 +14,7 @@ using UiSpan = EclipseUI.Compiler.TextSpan;
 using CompilerSeverity = EclipseUI.Compiler.DiagnosticSeverity;
 using RoslynSeverity = Microsoft.CodeAnalysis.DiagnosticSeverity;
 using EclipseUI.Compiler.Metadata;
+using EclipseUI.Compiler.Probe;
 
 namespace EclipseUI.Compiler.Generator;
 
@@ -186,7 +187,7 @@ public sealed class TemplateGenerator : IIncrementalGenerator
         var effectiveNamespace = type is null ? SanitizeNamespace(rootNamespace) : NamespaceName(type);
         var accessibility = type is null ? "public" : AccessibilityOf(type);
         var memberTrees = BuildCodeMemberTrees(codeBlocks, type, className, effectiveNamespace, usings, compilation);
-        var probe = new TemplateProbe(compilation, type, className, effectiveNamespace, memberTrees, usings);
+        var probe = new ExpressionProbe(compilation, type, className, effectiveNamespace, memberTrees, usings);
         var probeDiags = new List<UiDiagnostic>();
         var switchTypes = new List<SwitchTypeFact>();
         var classKinds = new List<ClassKindFact>();
@@ -293,23 +294,16 @@ public sealed class TemplateGenerator : IIncrementalGenerator
         IReadOnlyList<UiCodeBlock> blocks, INamedTypeSymbol? type, string className,
         string namespaceName, ImmutableArray<string> usings, Compilation compilation)
     {
+        // 探针核心已抽到 EclipseUI.Compiler.Probe（LSP 与生成器共享同一实现，design/06 §6.3）；
+        // 这里只做 AST → 纯字符串的适配。
         if (blocks.Count == 0) return ImmutableArray<SyntaxTree>.Empty;
-        var sb = new StringBuilder();
-        sb.AppendLine("#nullable enable");
-        foreach (var ns in usings)
-            sb.AppendLine($"using {ns};");
-        if (namespaceName.Length > 0)
-            sb.Append("namespace ").AppendLine(namespaceName + ";");
-        var accessibility = type is null || type.DeclaredAccessibility == Accessibility.Public ? "public" : "internal";
-        sb.Append(accessibility).Append(" partial class ").AppendLine(type?.Name ?? className);
-        sb.AppendLine("{");
-        foreach (var block in blocks)
-            sb.AppendLine(block.Code);
-        sb.AppendLine("}");
-
-        var parseOptions = compilation.SyntaxTrees.FirstOrDefault()?.Options as CSharpParseOptions
-            ?? CSharpParseOptions.Default;
-        return ImmutableArray.Create<SyntaxTree>(CSharpSyntaxTree.ParseText(sb.ToString(), parseOptions));
+        var tree = ExpressionProbe.BuildMemberTree(
+            blocks.Select(static block => block.Code).ToList(),
+            type?.Name ?? className,
+            namespaceName,
+            type is null || type.DeclaredAccessibility == Accessibility.Public,
+            usings, compilation);
+        return tree is null ? ImmutableArray<SyntaxTree>.Empty : ImmutableArray.Create(tree);
     }
 
     private static void ExecuteFile(SourceProductionContext spc, UiFileInput input,
@@ -964,27 +958,13 @@ public sealed class TemplateGenerator : IIncrementalGenerator
         string.IsNullOrWhiteSpace(rootNamespace) ? "" :
         rootNamespace.Split('.').All(SyntaxFacts.IsValidIdentifier) ? rootNamespace : "";
 
-    private static ITypeSymbol? ElementTypeOf(ITypeSymbol type, Compilation compilation)
-    {
-        if (type is IArrayTypeSymbol array) return array.ElementType;
-        var enumerable = compilation.GetTypeByMetadataName("System.Collections.Generic.IEnumerable`1");
-        if (enumerable is null) return null;
-        if (type is INamedTypeSymbol named &&
-            SymbolEqualityComparer.Default.Equals(named.OriginalDefinition, enumerable))
-            return named.TypeArguments[0];
-        foreach (var iface in type.AllInterfaces)
-            if (SymbolEqualityComparer.Default.Equals(iface.OriginalDefinition, enumerable))
-                return iface.TypeArguments[0];
-        return null;
-    }
-
     /// <summary>
     /// 逐块推断 item 类型与 @switch selector 类型，并校验每个 <c>@bind</c> 源：都把表达式放进
     /// 合成 partial 方法体，借探针 Compilation（含 @code 成员合成树，R1）的符号上下文让 Roslyn 回答；
     /// 外层 item 以局部变量注入，支持嵌套作用域。
     /// </summary>
     private static Dictionary<UiForeach, string> ProbeSemantics(
-        UiDocument doc, TemplateProbe probe, Compilation compilation, List<UiDiagnostic> diags,
+        UiDocument doc, ExpressionProbe probe, Compilation compilation, List<UiDiagnostic> diags,
         List<SwitchTypeFact> switchTypes, List<ClassKindFact> classKinds)
     {
         var itemTypes = new Dictionary<UiForeach, string>();
@@ -1036,7 +1016,7 @@ public sealed class TemplateGenerator : IIncrementalGenerator
                         break;
                     case UiForeach foreachNode:
                         var collectionType = probe.InferType(foreachNode.Collection, scope);
-                        var itemType = collectionType is null ? null : ElementTypeOf(collectionType, compilation);
+                        var itemType = collectionType is null ? null : ExpressionProbe.ItemTypeOf(collectionType, compilation);
                         if (itemType is null)
                         {
                             diags.Add(UiDiagnostics.Error(UiDiagnostics.ForEachItemTypeUnknown,
@@ -1063,7 +1043,7 @@ public sealed class TemplateGenerator : IIncrementalGenerator
     /// 对每个 case 标签做编译期常量校验（EUI047 语义级——const 声明探针；语法层形态校验已在
     /// Parser 完成）。符号未解析/表达式内部错误静默，交 C# 经 #line 兜底。
     /// </summary>
-    private static void ProbeSwitch(UiSwitch switchNode, TemplateProbe probe, Compilation compilation,
+    private static void ProbeSwitch(UiSwitch switchNode, ExpressionProbe probe, Compilation compilation,
         IReadOnlyList<(ITypeSymbol Type, string Name)> scope, List<UiDiagnostic> diags,
         List<SwitchTypeFact> switchTypes)
     {
@@ -1088,7 +1068,7 @@ public sealed class TemplateGenerator : IIncrementalGenerator
     /// EUI049：普通表达式属性值（非 bind/事件/Ref——各有专属探针；目标未知 EUI002 已报的不重复）
     /// 做语义探针编译，句内 CS 错误与「表达式 → 目标类型」转换错误在使用点直接报。
     /// </summary>
-    private static void ValidateExpressionValue(UiAttribute attr, TemplateProbe probe,
+    private static void ValidateExpressionValue(UiAttribute attr, ExpressionProbe probe,
         IReadOnlyList<(ITypeSymbol Type, string Name)> env, List<UiDiagnostic> diags)
     {
         if (attr.Kind != AttrValueKind.Expression || attr.IsBind) return;
@@ -1104,7 +1084,7 @@ public sealed class TemplateGenerator : IIncrementalGenerator
     /// IEnumerable&lt;string&gt; 记入 <paramref name="classKinds"/> 供发射 ToArray；
     /// 确定类型且两者皆非的报 EUI031。推断失败/dynamic 不报（C# 经 #line 兜底）。
     /// </summary>
-    private static void ValidateClassExpression(UiAttribute attr, TemplateProbe probe,
+    private static void ValidateClassExpression(UiAttribute attr, ExpressionProbe probe,
         IReadOnlyList<(ITypeSymbol Type, string Name)> env, List<UiDiagnostic> diags,
         List<ClassKindFact> classKinds)
     {
@@ -1137,7 +1117,7 @@ public sealed class TemplateGenerator : IIncrementalGenerator
     }
 
     /// <summary>EUI049 共用入口：表达式原文放探针编译，句内 CS 错误逐条升级为模板诊断。</summary>
-    private static void ProbeExpression(string expression, TextSpan span, TemplateProbe probe,
+    private static void ProbeExpression(string expression, TextSpan span, ExpressionProbe probe,
         IReadOnlyList<(ITypeSymbol Type, string Name)> env, List<UiDiagnostic> diags,
         string? targetClrType = null)
     {        var trimmed = expression.Trim();
@@ -1153,7 +1133,7 @@ public sealed class TemplateGenerator : IIncrementalGenerator
     /// <c>?.</c>/<c>??</c>/转换/new/lambda，再用赋值探针取 C# 的可写性与类型结论。
     /// 目标非法（EUI040）与非表达式值（EUI037）已由分析器报错，这里不重复报。
     /// </summary>
-    private static void ValidateBindSource(UiAttribute attr, TemplateProbe probe,
+    private static void ValidateBindSource(UiAttribute attr, ExpressionProbe probe,
         IReadOnlyList<(ITypeSymbol Type, string Name)> env, List<UiDiagnostic> diags)
     {
         // 控件目标看 PropDef；组件目标看 ParamDef（spec/02 §4.4.3 回调由父推送实现，源校验同规则）。
@@ -1174,7 +1154,7 @@ public sealed class TemplateGenerator : IIncrementalGenerator
     /// 字段缺失（CS0103）、类型不兼容（CS0029）、只读/静态/标注 const 的一律拒绝。
     /// 语法级（非简单标识符）已由分析器报 EUI029，这里不重复。
     /// </summary>
-    private static void ValidateRefTarget(UiElement element, UiAttribute attr, TemplateProbe probe,
+    private static void ValidateRefTarget(UiElement element, UiAttribute attr, ExpressionProbe probe,
         IReadOnlyList<(ITypeSymbol Type, string Name)> env, List<UiDiagnostic> diags)
     {
         if (attr.Name != "Ref" || attr.RefTarget is null || element.ResolvedDef is null) return;
@@ -1191,7 +1171,7 @@ public sealed class TemplateGenerator : IIncrementalGenerator
     /// 经 #line 兜底（§2.4 规则 8：生成器不得重复报告 C# 类型错误）。
     /// 字面量/@bind 由 EUI004/EUI040 负责，这里不重复报。
     /// </summary>
-    private static void ValidateEventHandlerSignature(UiAttribute attr, TemplateProbe probe,
+    private static void ValidateEventHandlerSignature(UiAttribute attr, ExpressionProbe probe,
         IReadOnlyList<(ITypeSymbol Type, string Name)> env, List<UiDiagnostic> diags)
     {
         string? delegateType = null;
@@ -1208,389 +1188,6 @@ public sealed class TemplateGenerator : IIncrementalGenerator
         diags.Add(UiDiagnostics.Error(UiDiagnostics.EventHandlerSignature,
             $"event handler '{attr.Value.Trim()}' does not match the delegate '{delegateType}': {reason}",
             attr.ValueSpan));
-    }
-
-    /// <summary>
-    /// 探针：把表达式放进合成 partial 方法体，借 Roslyn 的符号上下文回答类型/可写性/
-    /// 委托转换/常量性。R1/K21：构造时注入全部 @code 成员合成树（含模板 using 行），
-    /// 每次 Augment 时一并加入派生 Compilation——保证后置 @code 成员对前置 {expr} 同样可见。
-    /// </summary>
-    private sealed class TemplateProbe
-    {
-        private readonly Compilation _compilation;
-        private readonly INamedTypeSymbol? _type;
-        private readonly string _className;
-        private readonly string _namespace;
-        private readonly ImmutableArray<SyntaxTree> _memberTrees;
-        private readonly ImmutableArray<string> _usings;
-        private int _counter;
-
-        public TemplateProbe(Compilation compilation, INamedTypeSymbol? type, string className,
-            string namespaceName, ImmutableArray<SyntaxTree> memberTrees, ImmutableArray<string> usings)
-        {
-            _compilation = compilation;
-            _type = type;
-            _className = className;
-            _namespace = namespaceName;
-            _memberTrees = memberTrees;
-            _usings = usings;
-        }
-
-        /// <summary>
-        /// 派生 Compilation：@code 成员合成树（K21，通常为空——多数模板没有 @code）+ 探针树。
-        /// 同一棵 memberTree 实例加入多次派生 Compilation 是安全的（树不可变）。
-        /// </summary>
-        private Compilation Augment(SyntaxTree tree)
-        {
-            var result = _memberTrees.IsEmpty ? _compilation : _compilation.AddSyntaxTrees(_memberTrees);
-            return result.AddSyntaxTrees(tree);
-        }
-
-        public ITypeSymbol? InferType(string expression, IReadOnlyList<(ITypeSymbol Type, string Name)> env)
-        {
-            var tree = ProbeTree("var __value = (" + expression + ");", env);
-            var augmented = Augment(tree);
-            var model = augmented.GetSemanticModel(tree);
-            var method = tree.GetRoot().DescendantNodes().OfType<MethodDeclarationSyntax>().LastOrDefault();
-            if (method is null) return null;
-            var declarator = method.DescendantNodes().OfType<VariableDeclaratorSyntax>()
-                .FirstOrDefault(v => v.Identifier.ValueText == "__value");
-            if (declarator is null) return null;
-            if (model.GetDeclaredSymbol(declarator) is not ILocalSymbol local) return null;
-            return local.Type.TypeKind == TypeKind.Error || local.Type is IDynamicTypeSymbol ? null : local.Type;
-        }
-
-        /// <summary>把 <c>{expr} = __bindValue</c> 交给 C# 判定：落在赋值语句内的错误即左值/类型问题。</summary>
-        public bool IsWritableSource(string expression, string targetClrType,
-            IReadOnlyList<(ITypeSymbol Type, string Name)> env, out string? reason)
-        {
-            if (!IsLvalueShape(SyntaxFactory.ParseExpression(expression), out var rootName))
-            {
-                reason = "it must be a writable field or property of the component or of the item " +
-                    "(not a method call, indexer, '?.', '??', cast, 'new' or lambda)";
-                return false;
-            }
-
-            // 值类型 item 是副本：写它的成员既不报错也传不回去，必须静态拒绝（spec/01 §4.5）。
-            if (rootName is not null)
-            {
-                foreach (var (envType, name) in env)
-                {
-                    if (name != rootName || !envType.IsValueType) continue;
-                    reason = $"the @foreach item '{name}' is a value type ({envType.Name}), " +
-                        $"so '{expression}' would write into a copy";
-                    return false;
-                }
-            }
-
-            var tree = ProbeTree($"{expression} = __bindValue;", env,
-                $"        {ClrTypeOf(targetClrType)} __bindValue = default!;");
-            var augmented = Augment(tree);
-            var model = augmented.GetSemanticModel(tree);
-            var assignment = tree.GetRoot().DescendantNodes().OfType<AssignmentExpressionSyntax>().FirstOrDefault();
-            if (assignment is null)
-            {
-                reason = "it is not an assignment target";
-                return false;
-            }
-
-            switch (model.GetSymbolInfo(assignment.Left).Symbol)
-            {
-                case IFieldSymbol { IsStatic: true }:
-                    reason = "a static field cannot be written back";
-                    return false;
-                case IFieldSymbol { IsConst: true }:
-                    reason = "a constant cannot be written back";
-                    return false;
-                case IPropertySymbol { IsStatic: true }:
-                    reason = "a static property cannot be written back";
-                    return false;
-            }
-
-            foreach (var diagnostic in model.GetDiagnostics())
-            {
-                if (diagnostic.Severity != Microsoft.CodeAnalysis.DiagnosticSeverity.Error) continue;
-                if (!assignment.Span.Contains(diagnostic.Location.SourceSpan)) continue;
-                reason = $"{diagnostic.GetMessage()} ({diagnostic.Id})";
-                return false;
-            }
-
-            reason = null;
-            return true;
-        }
-
-        /// <summary>
-        /// <c>Ref={field}</c> 用赋值探针取 C# 结论：把 <c>{target} = __refValue</c>（__refValue 为
-        /// 元素/组件实例类型）放进合成方法体。缺失（CS0103）/类型不符（CS0029）/只读（CS0191）由
-        /// 赋值语句内的 CS 错误回答（与 <see cref="IsWritableSource"/> 同法）；编译干净后再要求
-        /// 目标是 code-behind 的非静态实例字段（static/const/readonly 兜底，防语义合法但形态非法）。
-        /// </summary>
-        public bool IsRefTarget(string target, string valueClrType,
-            IReadOnlyList<(ITypeSymbol Type, string Name)> env, out string? reason)
-        {
-            if (!IsLvalueShape(SyntaxFactory.ParseExpression(target), out _))
-            {
-                reason = "it must be a simple identifier";
-                return false;
-            }
-
-            // Ref 目标不允许落在 @foreach item 名上：真实生成代码里 item 是迭代变量，不可赋值。
-            foreach (var (_, name) in env)
-            {
-                if (name != target) continue;
-                reason = $"'{target}' is the @foreach item; the Ref target must be an instance field " +
-                    "declared on the code-behind";
-                return false;
-            }
-
-            var tree = ProbeTree($"{target} = __refValue;", env,
-                $"        {ClrTypeOf(valueClrType)} __refValue = default!;");
-            var augmented = Augment(tree);
-            var model = augmented.GetSemanticModel(tree);
-            var assignment = tree.GetRoot().DescendantNodes().OfType<AssignmentExpressionSyntax>().FirstOrDefault();
-            if (assignment is null)
-            {
-                reason = "it is not an assignment target";
-                return false;
-            }
-
-            // C# 诊断优先：缺失/类型不符/readonly 在 bound 阶段就把左值标记为失败，Symbol 会变 null，
-            // 所以必须先问诊断再问符号（readonly 实测 CS0191 + null symbol）。
-            foreach (var diagnostic in model.GetDiagnostics())
-            {
-                if (diagnostic.Severity != Microsoft.CodeAnalysis.DiagnosticSeverity.Error) continue;
-                if (!assignment.Span.Contains(diagnostic.Location.SourceSpan)) continue;
-                reason = $"{diagnostic.GetMessage()} ({diagnostic.Id})";
-                return false;
-            }
-
-            if (model.GetSymbolInfo(assignment.Left).Symbol is not IFieldSymbol field)
-            {
-                reason = "the Ref target must be an instance field of the code-behind class";
-                return false;
-            }
-            if (field.IsStatic)
-            {
-                reason = $"'{field.Name}' is a static field and cannot hold a template instance";
-                return false;
-            }
-            if (field.IsConst)
-            {
-                reason = $"'{field.Name}' is a constant";
-                return false;
-            }
-            if (field.IsReadOnly)
-            {
-                reason = $"'{field.Name}' is readonly and can only be assigned in a constructor";
-                return false;
-            }
-
-            reason = null;
-            return true;
-        }
-
-        /// <summary>
-        /// 「委托转换」类 C# 错误：这些说明表达式本身可解析，但签/形态与目标委托不匹配。
-        /// 其它错误（CS0103 未解析、CS1501/CS1503 表达式内部调用失败等）一律视为
-        /// 静态不可判定，交回生成代码经 #line 由 C# 报告。
-        /// </summary>
-        private static readonly HashSet<string> DelegateConversionErrors = new(StringComparer.Ordinal)
-        {
-            "CS0029", "CS0030", "CS0123", "CS1593",
-            "CS1660", "CS1661", "CS1678", "CS0411", "CS0428", "CS0119",
-        };
-
-        /// <summary>
-        /// true = 可转换为目标委托；false = 确定不匹配（可报 EUI024）；
-        /// null = 静态不可判定（符号/上下文不足），由 C# 经 #line 兜底。
-        /// 复用 <see cref="ProbeTree"/>：与 EUI037/EUI029 同一套合成 partial 方法体机制。
-        /// </summary>
-        public bool? IsHandlerCompatible(string expression, string delegateType,
-            IReadOnlyList<(ITypeSymbol Type, string Name)> env, out string? reason)
-        {
-            reason = null;
-            expression = expression.Trim();
-            if (expression.Length == 0) return null;
-
-            var target = ClrTypeOf(delegateType);
-            var tree = ProbeTree("var __handler = (" + target + ")(" + expression + ")", env);
-            var model = Augment(tree).GetSemanticModel(tree);
-            var initializer = tree.GetRoot().DescendantNodes().OfType<VariableDeclaratorSyntax>()
-                .FirstOrDefault(v => v.Identifier.ValueText == "__handler")?.Initializer?.Value;
-            if (initializer is not CastExpressionSyntax cast) return null;
-            var inner = cast.Expression;
-
-            // (1) 表达式自身必须语义干净。方法组转换失败时 Symbol 可能为 null 但候选非空，
-            //     因此只把「零候选」当作未解析；歧义/重载失败留给下面的错误分类处理。
-            foreach (var name in inner.DescendantNodesAndSelf().OfType<SimpleNameSyntax>())
-            {
-                var info = model.GetSymbolInfo(name);
-                if (info.Symbol is null && info.CandidateSymbols.Length == 0) return null;
-                if (info.Symbol is IErrorTypeSymbol) return null;
-            }
-            if (model.GetTypeInfo(inner).Type is IErrorTypeSymbol or IDynamicTypeSymbol) return null;
-
-            // (2) 落在 cast 内的 Error 必须全部是委托转换类；否则说明表达式本身有问题。
-            string? failure = null;
-            foreach (var diagnostic in model.GetDiagnostics())
-            {
-                if (diagnostic.Severity != RoslynSeverity.Error) continue;
-                if (!cast.Span.Contains(diagnostic.Location.SourceSpan)) continue;
-                if (!DelegateConversionErrors.Contains(diagnostic.Id)) return null;
-                failure ??= $"{diagnostic.GetMessage()} ({diagnostic.Id})";
-            }
-
-            if (failure is null) return true;
-            reason = failure;
-            return false;
-        }
-
-        /// <summary>
-        /// EUI049（表达式语义分析最小闭环）：把模板表达式放进合成方法体做探针编译，
-        /// 落在表达式本体 span 内的 CS 错误逐条返回（消息 + 代码）——拼错成员（CS0103）、
-        /// 类型不匹配（CS0029/CS0266）等在使用点直接报。带 <paramref name="targetClrType"/> 时
-        /// 先声明目标类型的局部变量再赋值（生成代码同形态：左值 = 表达式），类型转换错误一并捕获；
-        /// 无目标类型（条件/文本段）用 var 探针。脚手架自身的句外错误忽略；
-        /// 生成代码仍经 #line 由 C# 兜底（同一错误两处可见是探针校验的既定权衡）。
-        /// </summary>
-        public IReadOnlyList<string> ProbeExpressionErrors(string expression,
-            IReadOnlyList<(ITypeSymbol Type, string Name)> env, string? targetClrType = null)
-        {
-            SyntaxTree tree;
-            if (targetClrType is null)
-            {
-                tree = ProbeTree("var __value = (" + expression + ");", env);
-            }
-            else
-            {
-                // 与生成代码同形态：目标局部 = 表达式。错误过滤锚定赋值右侧。
-                tree = ProbeTree(
-                    ClrTypeOf(targetClrType) + " __value = default!; __value = (" + expression + ");", env);
-            }
-
-            var model = Augment(tree).GetSemanticModel(tree);
-            var valueNode = targetClrType is null
-                ? tree.GetRoot().DescendantNodes().OfType<VariableDeclaratorSyntax>()
-                    .FirstOrDefault(v => v.Identifier.ValueText == "__value")?.Initializer?.Value
-                : tree.GetRoot().DescendantNodes().OfType<AssignmentExpressionSyntax>()
-                    .FirstOrDefault()?.Right;
-            if (valueNode is null) return Array.Empty<string>();
-
-            var errors = new List<string>();
-            foreach (var diagnostic in model.GetDiagnostics())
-            {
-                if (diagnostic.Severity != RoslynSeverity.Error) continue;
-                if (!valueNode.Span.Contains(diagnostic.Location.SourceSpan)) continue;
-                errors.Add($"{diagnostic.GetMessage()} ({diagnostic.Id})");
-            }
-            return errors;
-        }
-
-        /// <summary>
-        /// K29/EUI047：case 标签编译期常量校验——把 <c>const T __caseKey = expr</c> 放进探针，
-        /// 只有 CS0133（"must be constant"）落在声明上才判非常量；类型不匹配、符号未解析等
-        /// 其它错误静默返回 true，交生成代码经 #line 由 C# 兜底（§2.4 规则 8：不重复报 C# 错）。
-        /// </summary>
-        public bool IsConstant(string expression, ITypeSymbol targetType,
-            IReadOnlyList<(ITypeSymbol Type, string Name)> env, out string? reason)
-        {
-            reason = null;
-            var tree = ProbeTree(
-                "const " + ClrTypeOf(targetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)) +
-                " __caseKey = " + expression, env);
-            var model = Augment(tree).GetSemanticModel(tree);
-            var declarator = tree.GetRoot().DescendantNodes().OfType<VariableDeclaratorSyntax>()
-                .FirstOrDefault(v => v.Identifier.ValueText == "__caseKey");
-            if (declarator?.Initializer is null) return true;
-            foreach (var diagnostic in model.GetDiagnostics())
-            {
-                if (diagnostic.Id != "CS0133" ||
-                    diagnostic.Severity != RoslynSeverity.Error ||
-                    !declarator.Span.Contains(diagnostic.Location.SourceSpan)) continue;
-                reason = "use a literal, a const field, an enum member or a constant expression";
-                return false;
-            }
-            return true;
-        }
-
-        /// <summary>句法白名单：标识符 / this / base，以及它们之间的简单成员访问链（可加括号）。</summary>
-        private static bool IsLvalueShape(ExpressionSyntax expression, out string? rootName)
-        {
-            rootName = null;
-            while (true)
-            {
-                if (expression is ParenthesizedExpressionSyntax paren)
-                {
-                    expression = paren.Expression;
-                    continue;
-                }
-                if (expression is IdentifierNameSyntax identifier)
-                {
-                    rootName = identifier.Identifier.ValueText;
-                    return true;
-                }
-                if (expression is ThisExpressionSyntax or BaseExpressionSyntax) return true;
-                if (expression is MemberAccessExpressionSyntax access &&
-                    access.IsKind(SyntaxKind.SimpleMemberAccessExpression))
-                {
-                    expression = access.Expression;
-                    continue;
-                }
-                return false;
-            }
-        }
-
-        /// <summary>目录里的 CLR 类型名 → 探针里可用的全限定类型。</summary>
-        private static string ClrTypeOf(string clrType) => clrType switch
-        {
-            "bool" => "global::System.Boolean",
-            "byte" => "global::System.Byte",
-            "char" => "global::System.Char",
-            "double" => "global::System.Double",
-            "float" => "global::System.Single",
-            "int" => "global::System.Int32",
-            "long" => "global::System.Int64",
-            "object" => "global::System.Object",
-            "string" => "global::System.String",
-            _ => clrType.StartsWith("global::", StringComparison.Ordinal) ? clrType : "global::" + clrType,
-        };
-
-        /// <summary>
-        /// 合成探针方法：与 code-behind（或 @code 类壳，K23 ④）同命名空间的 partial 类，
-        /// item 以局部变量注入。模板 @using 逐行输出——using 是语法树局部的，成员合成树里的
-        /// using 行帮不到本树的表达式，两边都要有。
-        /// </summary>
-        private SyntaxTree ProbeTree(string statement, IReadOnlyList<(ITypeSymbol Type, string Name)> env,
-            string? preamble = null)
-        {
-            var sb = new StringBuilder();
-            sb.AppendLine("#nullable enable");
-            foreach (var ns in _usings)
-                sb.AppendLine($"using {ns};");
-            if (_namespace.Length > 0)
-            {
-                sb.Append("namespace ").Append(_namespace).AppendLine(";");
-                sb.AppendLine();
-            }
-            sb.Append(_type is null || _type.DeclaredAccessibility != Accessibility.Public ? "internal" : "public")
-                .Append(" partial class ").Append(_type?.Name ?? _className).AppendLine();
-            sb.AppendLine("{");
-            sb.Append("    private void __EclipseUiProbe").Append(_counter++).AppendLine("()");
-            sb.AppendLine("    {");
-            foreach (var (envType, name) in env)
-                sb.Append("        ")
-                    .Append(envType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat))
-                    .Append(' ').Append(name).AppendLine(" = default!;");
-            if (preamble is not null) sb.AppendLine(preamble);
-            sb.Append("        ").Append(statement).AppendLine(";");
-            sb.AppendLine("    }");
-            sb.AppendLine("}");
-
-            // 探针树必须与编译单元共享解析选项，否则 AddSyntaxTrees 拒绝混合特征。
-            var parseOptions = _compilation.SyntaxTrees.FirstOrDefault()?.Options as CSharpParseOptions
-                ?? CSharpParseOptions.Default;
-            return CSharpSyntaxTree.ParseText(sb.ToString(), parseOptions);
-        }
     }
 
     private static void Report(SourceProductionContext spc, string path, SourceText text, UiDiagnostic diag)

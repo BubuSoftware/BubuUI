@@ -21,6 +21,9 @@
          Polyfills.cs 不并入：EclipseUI.Compiler/Polyfills.cs 已提供 internal IsExternalInit。 -->
     <Compile Include="..\EclipseUI.Compiler.Metadata\**\*.cs" LinkBase="Metadata"
              Exclude="..\EclipseUI.Compiler.Metadata\obj\**\*.cs;..\EclipseUI.Compiler.Metadata\bin\**\*.cs;..\EclipseUI.Compiler.Metadata\Polyfills.cs" />
+    <!-- 表达式探针核心（design/06 §6.3）：与 LSP 共享同一实现，所以也是源码并入。 -->
+    <Compile Include="..\EclipseUI.Compiler.Probe\**\*.cs" LinkBase="Probe"
+             Exclude="..\EclipseUI.Compiler.Probe\obj\**\*.cs;..\EclipseUI.Compiler.Probe\bin\**\*.cs" />
   </ItemGroup>
 
 </Project>

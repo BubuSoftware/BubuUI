@@ -193,6 +193,25 @@
 > + grammar 的 oniguruma 逐 token 断言（`node test/tokenize.test.js`）。表达式内 C# 补全
 > （Roslyn 投影）、跳转/重命名、语义着色、`#line` 调试留后续片。
 >
+> **G5 IDE 表达式投影已通过（2026-11-10，L2）**：design/06 §6.3 落地——生成器的探针类抽取为共享项目
+> `src/EclipseUI.Compiler.Probe`（生成器源码包含 + LSP 直接引用，**单一实现**），LSP 侧
+> `DocumentAnalysis.Probe` 懒建投影编译：基编译 + `{Name}.cs` 兄弟文件（spec/02 §2.2）+ `@code` 成员树，
+> `@foreach` 变量经 `CursorScanner` 作用域栈 + `InferType`/`ItemTypeOf` 推断入环境。
+> `{expr}` 内：点号补全列接收者成员（基类链遍历）、裸前缀列 foreach 变量 + 自身成员，
+> 悬停显示推断类型（流调整可空性）与处理器签名；无运行时/无 code-behind 时优雅停用。
+> 新增 **13 例**（探针原语/补全/悬停/兄弟文件/缓存失效），IDE 用例 64 → **77**，全绿；
+> 生成器回归 319 例不变（探针抽取行为等价）。
+>
+> **G5 IDE 跳转定义已通过（2026-11-10，L3 第一片）**：探针新增符号反查 `Locate`——同一探针语句里
+> 定位光标所在标识符（表达式内偏移映射到合成树，光标在 token 中间也取**完整表达式**，
+> `CursorContext` 因此增加 `ExpressionEnd`）→ `GetSymbolInfo` 得符号。落点两类：
+> `@foreach` 迭代变量落回**本文档**的 foreach 头（`CursorScanner` 给变量名的文档偏移 `NameOffset`）；
+> code-behind 成员跳到兄弟 `.cs`（spec/02 §2.2）的**声明名字**（属性/方法/字段/类型/参数的
+> 标识符区间，不是整个声明）。`@code` 成员的声明在合成树里、无可去文件——返回 null 不给错位置。
+> server 声明 `definitionProvider`，VS Code 客户端零改动（标准 LSP 自动接通）。
+> 新增 **7 例**（探针定位/token 中点/内存态边界/点号与未知名/服务级属性与方法/协议会话），
+> IDE 用例 77 → **84**，全解决方案 868 例全绿、0 警告。
+>
 > **S-C 最小主题资源已通过（2026-11-09，D100）**：`ThemeColor` 暗亮双色——`Visual.BackgroundResource/
 > ForegroundResource`（解析优先级 resource > 静态覆盖 > 主题令牌）+ `StyleBuilder` 双色重载；
 > painter 在**段构建期**按 `ElementTheme.IsLight` 解析，换主题 `ReplaceTheme` 丢段重建即随新表刷新
@@ -530,5 +549,9 @@ IDE/DevTools 随后。
    **样式系统 E1–E5 全部落地**；余控件模板（S-D）。
 5. **G5 IDE**：~~P0 语法高亮 + 诊断通道~~ ✅ 2026-11-10（`ide/EclipseUI.LanguageServer` + `ide/vscode`，
    见 [ide/README.md](./ide/README.md)）、~~P1 补全/悬停/大纲~~ ✅（标签/属性/事件/参数/附加属性/
-   `@bind-`/枚举/指令）——**Rider 用 lsp4ij 接同一个 server，server 侧零改动**；
-   余 P1 的表达式内 C# 补全（Roslyn 投影）、跳转定义/重命名，以及 P2 语义着色、P3 `#line` 调试映射。
+   `@bind-`/枚举/指令）、~~表达式投影（L2 悬停/补全）~~ ✅ 2026-11-10（design/06 §6.3：探针合成树复用
+   生成器的 `ExpressionProbe`，code-behind 取 `{Name}.cs` 兄弟文件；`{expr}` 内成员补全 + 类型悬停，
+   `@foreach` 变量入环境）、~~跳转定义（L3 第一片）~~ ✅ 2026-11-10（探针符号反查 `Locate`：
+   foreach 变量落回本文档、code-behind 成员跳到兄弟 `.cs` 声明名字）——
+   **Rider 用 lsp4ij 接同一个 server，server 侧零改动**；
+   余 L3 的重命名（WorkspaceEdit 反扫）、语义着色，以及 P3 `#line` 调试映射。

@@ -6,6 +6,7 @@
   <Folder Name="/src/">
     <Project Path="src/EclipseUI.Compiler.Generator/EclipseUI.Compiler.Generator.csproj" />
     <Project Path="src/EclipseUI.Compiler.Metadata/EclipseUI.Compiler.Metadata.csproj" />
+    <Project Path="src/EclipseUI.Compiler.Probe/EclipseUI.Compiler.Probe.csproj" />
     <Project Path="src/EclipseUI.Compiler/EclipseUI.Compiler.csproj" />
     <Project Path="src/EclipseUI.Platform.Windows/EclipseUI.Platform.Windows.csproj" />
     <Project Path="src/EclipseUI.Rendering.Vello/EclipseUI.Rendering.Vello.csproj" />

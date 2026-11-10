@@ -41,24 +41,54 @@ public sealed class CatalogProvider
 
     private readonly CatalogOptions _options;
     private readonly List<string> _notes = new();
-    private UiCatalog? _catalog;
+    private readonly object _gate = new();
+    private Lazy<UiCatalog> _catalog;
 
-    public CatalogProvider(CatalogOptions options) => _options = options;
+    public CatalogProvider(CatalogOptions options)
+    {
+        _options = options;
+        _catalog = new Lazy<UiCatalog>(Build, LazyThreadSafetyMode.ExecutionAndPublication);
+    }
 
     /// <summary>命中扫描的 <c>EclipseUI.Runtime.dll</c> 绝对路径；null = 没找到（目录为空）。</summary>
     public string? RuntimePath { get; private set; }
 
-    /// <summary>启动期问题（找不到 runtime / 程序集读不了）。宿主转成 window/showMessage。</summary>
-    public IReadOnlyList<string> Notes => _notes;
+    /// <summary>
+    /// 目录构建用的探针 Compilation（TPA + Runtime + Rendering + 应用程序集，无源码树）。
+    /// 表达式投影在它之上派生（加 code-behind 与 @code 合成树）；没找到 runtime 时为 null，
+    /// 表达式补全/悬停与语义诊断一样整体停用。
+    /// </summary>
+    public Compilation? Compilation { get; private set; }
 
-    public UiCatalog Catalog => _catalog ??= Build();
+    /// <summary>
+    /// 启动期问题（找不到 runtime / 程序集读不了）。宿主转成 window/showMessage。
+    /// 读之前**必须**先完成 Build：后台预热与 initialized 通知并发时，若在 Build 前读会得到
+    /// 空列表，于是"目录没找到"的警告永远不发出，编辑器表现为"高亮正常但零诊断"。
+    /// 返回快照，避免调用方持有会被 Reload 清空的集合。
+    /// </summary>
+    public IReadOnlyList<string> Notes
+    {
+        get
+        {
+            _ = Catalog;
+            lock (_gate) return _notes.ToArray();
+        }
+    }
 
-    public void Reload() => _catalog = null;
+    public UiCatalog Catalog => _catalog.Value;
+
+    public void Reload()
+    {
+        lock (_gate)
+            _catalog = new Lazy<UiCatalog>(Build, LazyThreadSafetyMode.ExecutionAndPublication);
+    }
 
     private UiCatalog Build()
     {
-        _notes.Clear();
-        RuntimePath = DiscoverRuntime();
+        // notes 先在局部收集、构建结束时一次性发布：Lazy 保证同一实例只跑一次 Build，
+        // 但 Reload 会换实例，不能被并发的 Clear/Add 交错成空列表。
+        var notes = new List<string>();
+        RuntimePath = DiscoverRuntime(notes);
 
         var references = new List<MetadataReference>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -72,7 +102,7 @@ public sealed class CatalogProvider
             }
             catch (Exception ex)
             {
-                _notes.Add($"cannot reference '{path}': {ex.Message}");
+                notes.Add($"cannot reference '{path}': {ex.Message}");
             }
         }
 
@@ -81,8 +111,11 @@ public sealed class CatalogProvider
 
         if (RuntimePath is null)
         {
-            _notes.Add($"'{RuntimeAssemblyFileName}' not found — tag completion is disabled. " +
-                       "Pass --runtime <path> or set eclipseui.server.runtime.");
+            notes.Add($"'{RuntimeAssemblyFileName}' not found - tag completion AND semantic " +
+                      "diagnostics (EUI001/EUI002/...) are disabled. " +
+                      "Pass --runtime <path> or set eclipseui.runtime.path in VS Code settings.");
+            PublishNotes(notes);
+            Compilation = null;
             return EmptyCatalog();
         }
 
@@ -108,9 +141,25 @@ public sealed class CatalogProvider
             "EclipseUICatalogProbe",
             Array.Empty<SyntaxTree>(),
             references,
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+            // 可空上下文 Enabled：code-behind/@code 合成树没有 #nullable 指令，继承编译级设置。
+            // 保持 Disabled 会把 oblivious 类型在探针树（#nullable enable）里消费成 maybe-null，
+            // 表达式悬停/补全的类型显示就多出假 `?`。与仓库 Build.props 的全局 Nullable enable 对齐。
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary,
+                nullableContextOptions: Microsoft.CodeAnalysis.NullableContextOptions.Enable));
 
-        return UiCatalogFactory.Build(compilation);
+        var catalog = UiCatalogFactory.Build(compilation);
+        Compilation = compilation;
+        PublishNotes(notes);
+        return catalog;
+    }
+
+    private void PublishNotes(List<string> notes)
+    {
+        lock (_gate)
+        {
+            _notes.Clear();
+            _notes.AddRange(notes);
+        }
     }
 
     private static UiCatalog EmptyCatalog() =>
@@ -121,12 +170,19 @@ public sealed class CatalogProvider
     /// 从工作区向上找仓库布局 <c>src/EclipseUI.Runtime/bin/{Release,Debug}/net*/</c>。
     /// 开发机上最后一条最好用：不用配任何东西，打开仓库即生效。
     /// </summary>
-    private string? DiscoverRuntime()
+    private string? DiscoverRuntime(List<string> notes)
     {
-        foreach (var candidate in new[] { _options.RuntimePath, Environment.GetEnvironmentVariable("ECLIPSEUI_RUNTIME") })
+        var explicitPath = new[] { _options.RuntimePath, Environment.GetEnvironmentVariable("ECLIPSEUI_RUNTIME") }
+            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+        if (explicitPath is not null)
         {
-            var resolved = Resolve(candidate);
+            var resolved = Resolve(explicitPath);
             if (resolved is not null) return resolved;
+            // 显式配置无效时不要静默回退到自动发现：用户以为自己指定了产物，
+            // 实际用的是另一份，排错时这会变成最难查的一类"看起来生效了"。
+            notes.Add($"explicit runtime path '{explicitPath}' has no {RuntimeAssemblyFileName}; " +
+                      "tag completion AND semantic diagnostics are disabled.");
+            return null;
         }
 
         var beside = Path.Combine(AppContext.BaseDirectory, RuntimeAssemblyFileName);

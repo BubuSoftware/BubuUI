@@ -31,7 +31,7 @@ public class SymbolTests
         var (service, uri, _) = TestHost.Open(Template);
         var symbols = service.GetSymbols(uri);
 
-        var root = Assert.Single(symbols.Where(s => s.Name == "StackPanel"));
+        var root = Assert.Single(symbols, s => s.Name == "StackPanel");
         Assert.Equal("StackPanel", root.Detail);
         Assert.Equal(UiSymbolKind.Control, root.Kind);
     }
@@ -138,7 +138,8 @@ public class DiagnosticTests
     {
         var text = Using + "<Buton />";
         var (service, uri, _) = TestHost.Open(text);
-        var diagnostic = Assert.Single(service.GetDiagnostics(uri).Where(d => d.Code == UiDiagnostics.UnknownTag));
+        var diagnostic = Assert.Single(service.GetDiagnostics(uri),
+            d => d.Code == UiDiagnostics.UnknownTag);
 
         Assert.Equal(text.IndexOf("Buton", StringComparison.Ordinal), diagnostic.Span.Start);
         Assert.Equal("Buton".Length, diagnostic.Span.Length);

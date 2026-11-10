@@ -1,10 +1,14 @@
 # 6. IDE 支持（VS Code + Rider 第一优先）
 
-> **实现状态（2026-11-10）**：§6.8 的 **P0 + P1 前半**已落地——`ide/EclipseUI.LanguageServer`
-> （stdio LSP：诊断 / 标签·属性·事件·参数·附加属性·`@bind-`·枚举·指令补全 / 悬停 / 大纲）+
-> `ide/vscode`（`.ui` 与 `.eustyle` 两份 TextMate grammar、语言配置、片段、百行客户端）。
-> 目录仍走 §6.3 的「组件注册表驱动」，只是 v1 由 `UiCatalogFactory` 从程序集符号派生，
-> 而非 MSBuildWorkspace 加载项目；**表达式投影（Roslyn）尚未接入**，所以 `{expr}` 内只有词法高亮。
+> **实现状态（2026-11-10）**：§6.8 的 **P0 + P1 前半 + 表达式投影（L2 悬停/补全）+ L3 第一片（跳转定义）**已落地——
+> `ide/EclipseUI.LanguageServer`（stdio LSP：诊断 / 标签·属性·事件·参数·附加属性·`@bind-`·枚举·指令补全 /
+> **表达式悬停与 C# 补全 / 跳转定义** / 大纲）+ `ide/vscode`（`.ui` 与 `.eustyle` 两份 TextMate grammar、
+> 语言配置、片段、百行客户端）。目录仍走 §6.3 的「组件注册表驱动」，只是 v1 由
+> `UiCatalogFactory` 从程序集符号派生，而非 MSBuildWorkspace 加载项目。
+> 表达式投影按 §6.3 机制落地：探针合成树复用生成器的 `ExpressionProbe`（单一实现，
+> `src/EclipseUI.Compiler.Probe`），code-behind 取 `{Name}.cs` 兄弟文件（spec/02 §2.2）；
+> 跳转定义 = 探针符号反查（`Locate`），foreach 变量落回本文档、code-behind 成员落到兄弟文件声明。
+> **L3 余项（重命名 / 语义着色）尚未做**——重命名需 WorkspaceEdit 反扫多文件。
 > 用法与边界见 [ide/README.md](../ide/README.md)。本文余下部分是设计与决策口径，不是完成度声明。
 
 核心难题：**`.ui` 是自定义语言，但表达式是 C#——让 C# 的智能"投影"进你的文件**。

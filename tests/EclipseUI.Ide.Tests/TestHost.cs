@@ -37,6 +37,39 @@ internal static class TestHost
         return (service, uri, offset < 0 ? content.Length : offset);
     }
 
+    /// <summary>
+    /// 真实磁盘形态：<c>.ui</c> 与同名 <c>.cs</c> 落临时目录——LanguageService 的
+    /// 兄弟文件 code-behind 加载（spec/02 §2.2 文件契约）走的就是这条路径。
+    /// </summary>
+    public static (LanguageService Service, string Uri, int Offset) OpenWithCodeBehind(
+        string text, string codeBehind, string marker = "|")
+    {
+        var service = Service();
+        var offset = text.IndexOf(marker, StringComparison.Ordinal);
+        var content = offset >= 0 ? text.Remove(offset, marker.Length) : text;
+
+        var directory = Path.Combine(Path.GetTempPath(), "eclipseui-ide-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, "ProbeDoc.ui");
+        File.WriteAllText(path, content);
+        File.WriteAllText(Path.ChangeExtension(path, ".cs"), codeBehind);
+
+        var uri = DocumentStore.PathToUri(path);
+        service.Documents.Open(uri, content, 1);
+        return (service, uri, offset < 0 ? content.Length : offset);
+    }
+
+    /// <summary>不落盘的直连分析：code-behind 由参数注入（测 Provider 层，不经文件系统）。</summary>
+    public static (DocumentAnalysis Analysis, int Offset) Analyze(
+        string text, string? codeBehind = null, string marker = "|")
+    {
+        var offset = text.IndexOf(marker, StringComparison.Ordinal);
+        var content = offset >= 0 ? text.Remove(offset, marker.Length) : text;
+        var analysis = DocumentAnalysis.Create(content, "ProbeDoc.ui", Catalog,
+            Shared.Value.Compilation, codeBehind);
+        return (analysis, offset < 0 ? content.Length : offset);
+    }
+
     public static string FileName(string text) => "Probe.ui";
 
     /// <summary>合成一个只含枚举属性的控件定义：内置表面里没有枚举属性，用它验证枚举值补全。</summary>

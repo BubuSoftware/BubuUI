@@ -1,11 +1,13 @@
 using EclipseUI.Compiler;
+using EclipseUI.Compiler.Probe;
+using Microsoft.CodeAnalysis;
 
 namespace EclipseUI.LanguageServer.Analysis;
 
 /// <summary>
 /// 补全：全部答案来自**模板目录**（编译器同一份符号派生物），不做硬编码清单。
-/// 四个位置各一套候选：标签名 / 属性名（含 <c>@bind-</c>）/ 属性值（枚举、bool、样式属性）/ 指令。
-/// 表达式内部（C# 语义补全）需要 Roslyn 投影，属下一片（design/06 §6.3）。
+/// 五个位置各一套候选：标签名 / 属性名（含 <c>@bind-</c>）/ 属性值（枚举、bool、样式属性）/
+/// 指令 / C# 表达式（探针投影，design/06 §6.3——与编译期 EUI049 用同一台机器）。
 /// </summary>
 public static class CompletionProvider
 {
@@ -22,11 +24,121 @@ public static class CompletionProvider
             CursorKind.EndTagName => ClosingTags(context, replacement),
             CursorKind.AttributeName => Attributes(analysis, catalog, context, replacement),
             CursorKind.AttributeValue => Values(analysis, catalog, context, replacement),
+            CursorKind.Expression => Expressions(analysis, catalog, context, offset),
             CursorKind.Directive => Directives(replacement),
             CursorKind.DirectiveArgument => Namespaces(catalog, context, replacement),
             _ => UiCompletionList.Empty,
         };
     }
+
+    // ---- 表达式（C# 投影，design/06 §6.3）----
+
+    /// <summary>
+    /// <c>{expr}</c> 内的 C# 补全。答案来自探针 Compilation（code-behind 源码 + @code 成员 +
+    /// @foreach 变量环境），与编译期表达式诊断同源。探针建不起来（没有 runtime、code-behind
+    /// 不可读）返回空——与「目录为空就跳过语义」同一口径，不猜。
+    /// </summary>
+    private static UiCompletionList Expressions(
+        DocumentAnalysis analysis, UiCatalog catalog, CursorContext context, int offset)
+    {
+        var probe = analysis.Probe;
+        if (probe is null || context.ExpressionStart < 0 || context.ExpressionStart >= offset)
+            return UiCompletionList.Empty;
+
+        var full = analysis.Text.Substring(context.ExpressionStart, offset - context.ExpressionStart);
+        var env = ExpressionEnvironment.Build(analysis.Ast!, context.OpenForeaches, probe, probe.Compilation);
+
+        int lastDot = full.LastIndexOf('.');
+        if (lastDot >= 0)
+        {
+            // 成员访问：接收者类型 → 实例成员。替换区间只覆盖点号后的部分标识符
+            // （tasks.Cou → "Cou"），整段 "tasks.Cou" 不能被候选整词替换掉。
+            var receiver = full.Substring(0, lastDot).Trim();
+            if (receiver.Length == 0) return UiCompletionList.Empty;
+            var receiverType = probe.InferType(receiver, env);
+            if (receiverType is null) return UiCompletionList.Empty;
+            var memberStart = context.ExpressionStart + lastDot + 1;
+            return new UiCompletionList(new TextSpan(memberStart, offset - memberStart),
+                Members(receiverType, includeStatic: false));
+        }
+
+        // 裸前缀（或空）：@foreach 变量 + code-behind/@code 的成员（含 static——裸标识符可引用）。
+        var items = new List<UiCompletionItem>();
+        foreach (var (envType, name) in env)
+        {
+            items.Add(new UiCompletionItem(name, UiCompletionKind.Variable,
+                TypeDisplay(envType) + " · foreach item", SortText: "0" + name));
+        }
+        if (probe.ThisType is { } self)
+            items.AddRange(Members(self, includeStatic: true, sortPrefix: "1"));
+        return new UiCompletionList(new TextSpan(context.TokenStart, offset - context.TokenStart), items);
+    }
+
+    /// <summary>
+    /// 实例成员枚举：属性/字段/普通方法，沿基类链走到 object 为止（object 的成员不进列表，
+    /// 降噪），按名去重（派生覆写先到先得），private 剔除。扩展方法不在列（v1 边界）。
+    /// </summary>
+    private static List<UiCompletionItem> Members(ITypeSymbol type, bool includeStatic, string sortPrefix = "1")
+    {
+        var items = new List<UiCompletionItem>();
+        if (type.TypeKind == TypeKind.Error || type.TypeKind == TypeKind.Dynamic) return items;
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var member in WalkMembers(type))
+        {
+            if (!member.CanBeReferencedByName) continue;
+            if (member.DeclaredAccessibility == Accessibility.Private) continue;
+            if (!includeStatic && member.IsStatic) continue;
+            if (!seen.Add(member.Name)) continue;
+
+            switch (member)
+            {
+                case IPropertySymbol property:
+                    items.Add(new UiCompletionItem(property.Name, UiCompletionKind.Property,
+                        TypeDisplay(property.Type) + StaticSuffix(property.IsStatic),
+                        SortText: sortPrefix + property.Name));
+                    break;
+                case IFieldSymbol field:
+                    items.Add(new UiCompletionItem(field.Name, UiCompletionKind.Field,
+                        TypeDisplay(field.Type) + StaticSuffix(field.IsStatic),
+                        SortText: sortPrefix + field.Name));
+                    break;
+                case IMethodSymbol method when method.MethodKind == MethodKind.Ordinary:
+                    items.Add(new UiCompletionItem(method.Name, UiCompletionKind.Method,
+                        Signature(method), SortText: sortPrefix + method.Name));
+                    break;
+            }
+        }
+        return items;
+    }
+
+    private static string StaticSuffix(bool isStatic) => isStatic ? " · static" : "";
+
+    /// <summary>
+    /// 展示格式：去掉可空修饰符——探针树是 #nullable enable，oblivious 的 code-behind 类型
+    /// 会被显示成 <c>string?</c>，对人是噪音；类型本身的可空性语义不受影响。
+    /// </summary>
+    private static readonly SymbolDisplayFormat DisplayFormat =
+        SymbolDisplayFormat.MinimallyQualifiedFormat.WithMiscellaneousOptions(
+            SymbolDisplayFormat.MinimallyQualifiedFormat.MiscellaneousOptions
+            & ~SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier);
+
+    private static string TypeDisplay(ITypeSymbol type) => type.ToDisplayString(DisplayFormat);
+
+    /// <summary>沿基类链枚举成员（不含 System.Object——ToString/Equals 这些留给全局约定）。</summary>
+    private static IEnumerable<ISymbol> WalkMembers(ITypeSymbol type)
+    {
+        for (var current = (ITypeSymbol?)type; current is not null; current = current.BaseType)
+        {
+            if (current.SpecialType == SpecialType.System_Object) yield break;
+            foreach (var member in current.GetMembers()) yield return member;
+        }
+    }
+
+    private static string Signature(IMethodSymbol method) =>
+        $"{TypeDisplay(method.ReturnType)} {method.Name}(" +
+        string.Join(", ", method.Parameters.Select(static p =>
+            $"{TypeDisplay(p.Type)} {p.Name}")) + ")";
 
     // ---- 标签 ----
 

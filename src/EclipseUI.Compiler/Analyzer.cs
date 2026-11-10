@@ -110,8 +110,9 @@ public static class TemplateAnalyzer
     /// K22/K31：生成文件头的 using 子句正文（不含 <c>using</c> 与结尾分号），按模板顺序去重。
     /// 命名空间原样输出；别名输出 <c>Alias = global::Ns.Type</c>——目标必须全限定，
     /// 否则被生成类所在命名空间里的同名类型劫持。别名不进 <see cref="CollectImports"/>。
+    /// public：LSP 的探针合成树复用同一份 using 行（与生成器口径逐字一致，design/06 §6.3）。
     /// </summary>
-    internal static List<string> CollectUsingLines(IEnumerable<UiNode> nodes)
+    public static List<string> CollectUsingLines(IEnumerable<UiNode> nodes)
     {
         var lines = new List<string>();
         foreach (var node in nodes)

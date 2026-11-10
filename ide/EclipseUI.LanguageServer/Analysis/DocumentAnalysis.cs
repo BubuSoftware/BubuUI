@@ -1,4 +1,9 @@
+using System.Collections.Immutable;
 using EclipseUI.Compiler;
+using EclipseUI.Compiler.Probe;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace EclipseUI.LanguageServer.Analysis;
 
@@ -55,6 +60,13 @@ public sealed class DocumentStore
 /// </summary>
 public sealed class DocumentAnalysis
 {
+    private readonly Compilation? _baseCompilation;
+    private readonly string? _codeBehind;
+    private readonly string? _codeBehindPath;
+    private SyntaxTree? _codeBehindTree;
+    private ExpressionProbe? _probe;
+    private bool _probeFailed;
+
     private DocumentAnalysis(
         string text,
         PositionMap positions,
@@ -62,7 +74,10 @@ public sealed class DocumentAnalysis
         IReadOnlyList<UiDiagnostic> diagnostics,
         IReadOnlyList<string> imports,
         IReadOnlyDictionary<string, string?> aliases,
-        string? internalError)
+        string? internalError,
+        Compilation? baseCompilation,
+        string? codeBehind,
+        string? codeBehindPath)
     {
         Text = text;
         Positions = positions;
@@ -71,6 +86,9 @@ public sealed class DocumentAnalysis
         Imports = imports;
         Aliases = aliases;
         InternalError = internalError;
+        _baseCompilation = baseCompilation;
+        _codeBehind = codeBehind;
+        _codeBehindPath = codeBehindPath;
     }
 
     public string Text { get; }
@@ -90,7 +108,14 @@ public sealed class DocumentAnalysis
     /// <summary>前端自身抛异常时的消息（正常路径恒为 null）。</summary>
     public string? InternalError { get; }
 
-    public static DocumentAnalysis Create(string text, string fileName, UiCatalog catalog)
+    /// <summary>code-behind 兄弟文件的磁盘路径（spec/02 §2.2）；内存态分析（测试）为 null。</summary>
+    public string? CodeBehindPath => _codeBehindPath;
+
+    /// <summary>code-behind 源码原文（与探针编译里那棵树逐字对应）；跳转定义换算行位用。</summary>
+    public string? CodeBehindText => _codeBehind;
+
+    public static DocumentAnalysis Create(string text, string fileName, UiCatalog catalog,
+        Compilation? baseCompilation = null, string? codeBehindText = null, string? codeBehindPath = null)
     {
         var positions = new PositionMap(text);
         var diagnostics = new List<UiDiagnostic>();
@@ -104,7 +129,7 @@ public sealed class DocumentAnalysis
         {
             return new DocumentAnalysis(text, positions, null,
                 diagnostics.ToArray(), Array.Empty<string>(),
-                new Dictionary<string, string?>(), ex.Message);
+                new Dictionary<string, string?>(), ex.Message, baseCompilation, codeBehindText, codeBehindPath);
         }
 
         var imports = new List<string>();
@@ -139,7 +164,92 @@ public sealed class DocumentAnalysis
             }
         }
 
-        return new DocumentAnalysis(text, positions, ast, diagnostics.ToArray(), imports, aliases, internalError);
+        return new DocumentAnalysis(text, positions, ast, diagnostics.ToArray(), imports, aliases,
+            internalError, baseCompilation, codeBehindText, codeBehindPath);
+    }
+
+    /// <summary>
+    /// 表达式探针（design/06 §6.3）：懒建、每文档缓存。基编译 + 同名 code-behind 源码
+    /// （spec/02 §2.2 的 <c>{Name}.cs</c> 文件契约）+ <c>@code</c> 成员合成树 →
+    /// <see cref="ExpressionProbe"/>。code-behind 是**源码**而非程序集——这是 IDE 与
+    /// 编译期探针 Compilation 的唯一结构差异；找不到/解析不了就优雅停用，不抛。
+    /// </summary>
+    public ExpressionProbe? Probe
+    {
+        get
+        {
+            if (_probe is null && !_probeFailed) _probe = BuildProbe();
+            return _probe;
+        }
+    }
+
+    /// <summary>
+    /// 这棵语法树是不是 code-behind 兄弟文件的原文（跳转定义的"可跳"判据）：
+    /// 只有它带真实磁盘路径；<c>@code</c> 成员树是合成的，声明位置没有可去的文件，
+    /// 符号落在那里就返回 null 而不是给出错位置。
+    /// </summary>
+    public bool IsCodeBehindTree(SyntaxTree tree) => ReferenceEquals(tree, _codeBehindTree);
+
+    private ExpressionProbe? BuildProbe()
+    {
+        if (_baseCompilation is null || Ast is null)
+        {
+            _probeFailed = true;
+            return null;
+        }
+
+        try
+        {
+            var compilation = _baseCompilation;
+            INamedTypeSymbol? type = null;
+            var namespaceName = "";
+
+            if (!string.IsNullOrEmpty(_codeBehind))
+            {
+                var parseOptions = (_baseCompilation.SyntaxTrees.FirstOrDefault()?.Options as CSharpParseOptions)
+                    ?? CSharpParseOptions.Default;
+                var tree = CSharpSyntaxTree.ParseText(_codeBehind!, parseOptions);
+                _codeBehindTree = tree;
+                compilation = _baseCompilation.AddSyntaxTrees(tree);
+                var model = compilation.GetSemanticModel(tree);
+                foreach (var declaration in tree.GetRoot().DescendantNodes().OfType<ClassDeclarationSyntax>())
+                {
+                    if (declaration.Identifier.ValueText != Ast.ClassName) continue;
+                    type = model.GetDeclaredSymbol(declaration);
+                    namespaceName = NamespaceOf(declaration);
+                    break;
+                }
+            }
+
+            // using 行与成员树和探针树共用（生成器口径）：模板 @using 同时给短名与别名（K31）。
+            var usings = TemplateAnalyzer.CollectUsingLines(Ast.Nodes).ToImmutableArray();
+            var memberBodies = Ast.Nodes.OfType<UiCodeBlock>().Select(static block => block.Code).ToList();
+            var memberTree = ExpressionProbe.BuildMemberTree(
+                memberBodies, type?.Name ?? Ast.ClassName, namespaceName,
+                type is null || type.DeclaredAccessibility == Accessibility.Public,
+                usings, compilation);
+            var memberTrees = memberTree is null
+                ? ImmutableArray<SyntaxTree>.Empty
+                : ImmutableArray.Create(memberTree);
+
+            return new ExpressionProbe(compilation, type, Ast.ClassName, namespaceName, memberTrees, usings);
+        }
+        catch (Exception)
+        {
+            // code-behind 半截/探针建不起来：表达式能力静默降级，诊断与目录补全不受影响。
+            _probeFailed = true;
+            return null;
+        }
+    }
+
+    private static string NamespaceOf(SyntaxNode node)
+    {
+        for (var parent = node.Parent; parent is not null; parent = parent.Parent)
+        {
+            if (parent is NamespaceDeclarationSyntax named) return named.Name.ToString();
+            if (parent is FileScopedNamespaceDeclarationSyntax scoped) return scoped.Name.ToString();
+        }
+        return "";
     }
 
     /// <summary><c>@using</c> 别名目标归一化为目录键（<c>global::</c> 前缀，无则为原样全名）。</summary>

@@ -15,6 +15,8 @@
          PrivateAssets=all，所以这里两个都得显式引用。 -->
     <ProjectReference Include="..\..\src\EclipseUI.Compiler\EclipseUI.Compiler.csproj" />
     <ProjectReference Include="..\..\src\EclipseUI.Compiler.Metadata\EclipseUI.Compiler.Metadata.csproj" />
+    <!-- 表达式探针（design/06 §6.3）：与生成器共享同一实现（生成器源码并入本项目）。 -->
+    <ProjectReference Include="..\..\src\EclipseUI.Compiler.Probe\EclipseUI.Compiler.Probe.csproj" />
   </ItemGroup>
 
   <ItemGroup>

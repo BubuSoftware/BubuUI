@@ -1,10 +1,13 @@
 using EclipseUI.Compiler;
+using EclipseUI.Compiler.Probe;
+using Microsoft.CodeAnalysis;
 
 namespace EclipseUI.LanguageServer.Analysis;
 
 /// <summary>
 /// 悬停：把"这个名字是什么"答清楚——标签落在哪个 CLR 类型、属性是什么类型、
-/// 事件要什么签名、枚举有哪些值。答案同样只来自模板目录，不猜。
+/// 事件要什么签名、枚举有哪些值；C# 表达式交给探针推断（design/06 §6.3）。
+/// 答案只来自模板目录与 Roslyn 符号，不猜。
 /// </summary>
 public static class HoverProvider
 {
@@ -38,6 +41,9 @@ public static class HoverProvider
                 return new UiHoverResult(new TextSpan(context.TokenStart, Math.Max(0, Math.Min(end, offset) - context.TokenStart)), markdown);
             }
 
+            case CursorKind.Expression:
+                return ExpressionHover(analysis, catalog, context, offset);
+
             case CursorKind.Directive:
             {
                 var (name, span) = WordAt(analysis.Text, context.TokenStart);
@@ -49,6 +55,56 @@ public static class HoverProvider
                 return null;
         }
     }
+
+    /// <summary>
+    /// C# 表达式悬停（design/06 §6.3）：表达式放进探针方法体问 SemanticModel，
+    /// 与编译期 EUI049 同一台机器。事件处理器位置显示方法签名（方法组没有可显示的"类型"）。
+    /// 探针不可用时返回 null——不猜。
+    /// </summary>
+    private static UiHoverResult? ExpressionHover(
+        DocumentAnalysis analysis, UiCatalog catalog, CursorContext context, int offset)
+    {
+        var probe = analysis.Probe;
+        if (probe is null || context.ExpressionStart < 0 || context.ExpressionStart >= offset) return null;
+
+        var text = analysis.Text.Substring(context.ExpressionStart, offset - context.ExpressionStart).Trim();
+        if (text.Length == 0) return null;
+
+        var env = ExpressionEnvironment.Build(analysis.Ast!, context.OpenForeaches, probe, probe.Compilation);
+        var span = new TextSpan(context.ExpressionStart, offset - context.ExpressionStart);
+
+        if (context.IsAttributeExpression)
+        {
+            var candidate = analysis.FindAttribute(catalog, context);
+            if (candidate?.Kind == CandidateAttributeKind.Event)
+            {
+                var method = probe.ResolveMethod(text, env);
+                if (method is null) return null;
+                return new UiHoverResult(span,
+                    $"**{method.Name}** — handler method\n\n`{Signature(method)}`\n\ntarget: `{candidate.TypeDisplay}`");
+            }
+        }
+
+        var type = probe.InferType(text, env);
+        if (type is null) return null;
+
+        var markdown = $"**{Display(type)}** — inferred C# type";
+        if (context.IsAttributeExpression && analysis.FindAttribute(catalog, context) is { } target)
+            markdown += $"\n\ntarget: `{target.TypeDisplay}`";
+        return new UiHoverResult(span, markdown);
+    }
+
+    /// <summary>展示格式：去掉可空修饰符（oblivious 的 code-behind 类型会被显示成 <c>string?</c>，是噪音）。</summary>
+    private static readonly SymbolDisplayFormat DisplayFormat =
+        SymbolDisplayFormat.MinimallyQualifiedFormat.WithMiscellaneousOptions(
+            SymbolDisplayFormat.MinimallyQualifiedFormat.MiscellaneousOptions
+            & ~SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier);
+
+    private static string Signature(IMethodSymbol method) =>
+        $"{Display(method.ReturnType)} {method.Name}(" +
+        string.Join(", ", method.Parameters.Select(static p => $"{Display(p.Type)} {p.Name}")) + ")";
+
+    private static string Display(ITypeSymbol type) => type.ToDisplayString(DisplayFormat);
 
     /// <summary>从 <paramref name="start"/> 起的一个标识符/名字（含 <c>@</c> 与 <c>.</c>）。</summary>
     private static (string Name, TextSpan Span) WordAt(string text, int start)

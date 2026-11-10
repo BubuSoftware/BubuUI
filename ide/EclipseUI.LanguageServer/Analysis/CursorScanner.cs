@@ -30,6 +30,19 @@ public enum CursorKind
     DirectiveArgument,
 }
 
+/// <summary>光标外围的一个 <c>@foreach</c> 作用域（<see cref="CursorContext.OpenForeaches"/> 的元素）。</summary>
+public sealed record ForeachScope
+{
+    /// <summary>迭代变量名（<c>@foreach (var <b>task</b> in tasks)</c> 的 task）。</summary>
+    public string VarName { get; init; } = "";
+
+    /// <summary>集合表达式原文（<c>in</c> 之后的部分），item 类型由探针推断。</summary>
+    public string Collection { get; init; } = "";
+
+    /// <summary>变量名在文档里的起点（跳转定义落回 foreach 头用）；头解析不了为 -1。</summary>
+    public int NameOffset { get; init; } = -1;
+}
+
 /// <summary>
 /// 光标上下文。<see cref="Prefix"/> + <see cref="TokenStart"/> 一起构成**待替换区间**：
 /// 补全项显式带 textEdit，避免客户端按"单词"扩大/缩小替换范围
@@ -50,11 +63,31 @@ public sealed record CursorContext
 
     public int TokenStart { get; init; }
 
-    /// <summary><see cref="CursorKind.DirectiveArgument"/> 时的指令名（如 <c>using</c>）。</summary>
+    /// <summary><c>@using |</c>：指令参数（命名空间）时的指令名（如 <c>using</c>）。</summary>
     public string Directive { get; init; } = "";
 
     /// <summary>尚未闭合的元素栈（内层在前），用于 <c>&lt;/</c> 补全。</summary>
     public IReadOnlyList<string> OpenTags { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// 表达式正文的起点（开定界符之后的第一个字符位置）：<c>{expr}</c> 的 expr 首、
+    /// <c>@if (expr)</c> 的括号后首字符。表达式上下文恒 ≥ 0，其余为 -1。
+    /// 补全/悬停用它取**完整表达式**（<see cref="Prefix"/> 只含点号成员访问词）。
+    /// </summary>
+    public int ExpressionStart { get; init; } = -1;
+
+    /// <summary>
+    /// 表达式正文的终点（闭定界符位置，不含）：<c>{expr|}</c> 的 <c>}</c>、<c>@if (expr)</c>
+    /// 的 <c>)</c>。光标落在表达式中间时（跳转定义），没有它就只能拿到半截表达式
+    /// （<c>task.Na</c>），绑不出符号。未闭合表达式为文本末尾。
+    /// </summary>
+    public int ExpressionEnd { get; init; } = -1;
+
+    /// <summary>
+    /// 光标外围的 <c>@foreach</c> 作用域链（外层在前）：表达式环境构建的骨架——
+    /// item 类型不是这里给的（那要问 Roslyn），这里只给变量名与集合表达式原文。
+    /// </summary>
+    public IReadOnlyList<ForeachScope> OpenForeaches { get; init; } = Array.Empty<ForeachScope>();
 
     /// <summary>表达式是否写在属性值位置（<c>P={expr}</c>/<c>@bind-P={expr}</c>）。</summary>
     public bool IsAttributeExpression => Kind == CursorKind.Expression && AttributeName.Length > 0;
@@ -78,6 +111,8 @@ public static class CursorScanner
         var i = 0;
         var blockDepth = 0;
         var expectBlockBrace = false;
+        var foreaches = new List<(string VarName, string Collection, int Depth, int NameOffset)>();
+        (string? VarName, string Collection, int NameOffset) pendingForeach = (null, "", -1);
 
         while (i < text.Length)
         {
@@ -88,10 +123,15 @@ public static class CursorScanner
                 if (j < text.Length && text[j] == '{')
                 {
                     blockDepth++;
+                    if (pendingForeach.VarName is { Length: > 0 } pendingName)
+                        foreaches.Add((pendingName, pendingForeach.Collection, blockDepth, pendingForeach.NameOffset));
+                    pendingForeach = (null, "", -1);
                     expectBlockBrace = false;
                     i = j + 1;
                     continue;
                 }
+                // 头后没有块（半截输入/语法坏）：该 foreach 不进环境，不能凭空猜作用域。
+                pendingForeach = (null, "", -1);
                 expectBlockBrace = false;
             }
 
@@ -176,9 +216,20 @@ public static class CursorScanner
                                 Directive = word,
                                 Prefix = ExpressionPrefix(text, paren + 1, offset),
                                 TokenStart = ExpressionTokenStart(text, paren + 1, offset),
+                                ExpressionStart = paren + 1,
+                                ExpressionEnd = condEnd,
                                 OpenTags = open,
+                                OpenForeaches = SnapshotForeaches(foreaches),
                             };
                         next = close < 0 ? text.Length : close + 1;
+                        // @foreach 的头在块开启前先记下：`{` 真出现（expectBlockBrace 命中）才压栈。
+                        pendingForeach = word == "foreach" && close >= 0
+                            ? ParseForeachHeader(text, paren + 1, close - paren - 1)
+                            : (null, "", -1);
+                    }
+                    else
+                    {
+                        pendingForeach = (null, "", -1);
                     }
 
                     expectBlockBrace = true;
@@ -250,7 +301,7 @@ public static class CursorScanner
                     continue;
                 }
 
-                var (next, context, pushTag) = ScanOpenTag(text, i, offset, open);
+                var (next, context, pushTag) = ScanOpenTag(text, i, offset, open, foreaches);
                 if (context is not null) return context;
                 if (pushTag is not null) open.Add(pushTag);
                 i = next;
@@ -268,7 +319,10 @@ public static class CursorScanner
                         Kind = CursorKind.Expression,
                         Prefix = ExpressionPrefix(text, i + 1, offset),
                         TokenStart = ExpressionTokenStart(text, i + 1, offset),
+                        ExpressionStart = i + 1,
+                        ExpressionEnd = stop,
                         OpenTags = open,
+                        OpenForeaches = SnapshotForeaches(foreaches),
                     };
                 i = close < 0 ? text.Length : close + 1;
                 continue;
@@ -276,6 +330,9 @@ public static class CursorScanner
             if (c == '}')
             {
                 if (blockDepth > 0) blockDepth--;
+                // 块闭合：弹掉比当前深度更深的所有 foreach 作用域（嵌套按深度归位）。
+                while (foreaches.Count > 0 && foreaches[^1].Depth > blockDepth)
+                    foreaches.RemoveAt(foreaches.Count - 1);
                 i++;
                 continue;
             }
@@ -302,7 +359,10 @@ public static class CursorScanner
                                     Directive = "else if",
                                     Prefix = ExpressionPrefix(text, k + 1, offset),
                                     TokenStart = ExpressionTokenStart(text, k + 1, offset),
+                                    ExpressionStart = k + 1,
+                                    ExpressionEnd = close,
                                     OpenTags = open,
+                                    OpenForeaches = SnapshotForeaches(foreaches),
                                 };
                             i = close + 1;
                             expectBlockBrace = true;
@@ -325,7 +385,8 @@ public static class CursorScanner
         new() { Kind = CursorKind.Text, Prefix = "", TokenStart = offset, OpenTags = open };
 
     private static (int Next, CursorContext? Context, string? PushTag) ScanOpenTag(
-        string text, int start, int offset, List<string> open)
+        string text, int start, int offset, List<string> open,
+        List<(string VarName, string Collection, int Depth, int NameOffset)> foreaches)
     {
         int nameStart = start + 1;
         int j = nameStart;
@@ -367,7 +428,10 @@ public static class CursorScanner
                         AttributeName = attribute ?? "",
                         Prefix = ExpressionPrefix(text, j + 1, offset),
                         TokenStart = ExpressionTokenStart(text, j + 1, offset),
+                        ExpressionStart = j + 1,
+                        ExpressionEnd = stop,
                         OpenTags = open,
+                        OpenForeaches = SnapshotForeaches(foreaches),
                     }, null);
                 j = close < 0 ? text.Length : close + 1;
                 continue;
@@ -463,6 +527,44 @@ public static class CursorScanner
     {
         int start = ExpressionTokenStart(text, from, offset);
         return text.Substring(start, offset - start);
+    }
+
+    /// <summary>把内部 foreach 栈快照成对外形态（返回后扫描继续推进，不能共享可变列表）。</summary>
+    private static ForeachScope[] SnapshotForeaches(
+        List<(string VarName, string Collection, int Depth, int NameOffset)> scopes) =>
+        scopes.Count == 0
+            ? Array.Empty<ForeachScope>()
+            : scopes.Select(static s => new ForeachScope
+                {
+                    VarName = s.VarName,
+                    Collection = s.Collection,
+                    NameOffset = s.NameOffset,
+                })
+                .ToArray();
+
+    /// <summary>
+    /// 解析 <c>@foreach</c> 括号内文本为（变量名, 集合表达式, 变量名文档偏移）。<c>in</c> 是
+    /// foreach 头专有关键字，取最后一个 <c> in </c> 分割；左侧最后一段是变量名
+    /// （兼容 <c>var x</c> 与 <c>Type x</c>）。解析失败返回 null 变量名——该层不进环境，
+    /// 而不是猜一个错答案。偏移按文档绝对位置给（跳转定义落回 foreach 头用）。
+    /// </summary>
+    private static (string? VarName, string Collection, int NameOffset) ParseForeachHeader(
+        string text, int start, int length)
+    {
+        var header = text.Substring(start, length);
+        var trimmed = header.Trim();
+        int trimStart = header.Length - header.TrimStart().Length;
+        int inIndex = trimmed.LastIndexOf(" in ", StringComparison.Ordinal);
+        if (inIndex <= 0) return (null, "", -1);
+        var collection = trimmed.Substring(inIndex + 4).Trim();
+        if (collection.Length == 0) return (null, "", -1);
+        var left = trimmed.Substring(0, inIndex).TrimEnd();
+        int lastSpace = left.LastIndexOf(' ');
+        var varName = (lastSpace >= 0 ? left.Substring(lastSpace + 1) : left).Trim();
+        if (varName.Length == 0 || !IsIdentStart(varName[0])) return (null, "", -1);
+        // 变量名紧跟最后一个空格（left 已去尾空白），偏移在原文里精确对齐。
+        int nameInTrimmed = lastSpace >= 0 ? lastSpace + 1 : 0;
+        return (varName, collection, start + trimStart + nameInTrimmed);
     }
 
     private static int SkipWhitespace(string text, int i)
