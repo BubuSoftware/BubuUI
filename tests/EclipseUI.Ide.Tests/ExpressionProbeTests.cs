@@ -289,6 +289,103 @@ public class ExpressionProbeTests
         Assert.EndsWith("ProbeDoc.cs", definition.Uri, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// @code 成员（无 code-behind 场景）：声明就写在 .ui 自己的 @code 块里——真实文本，
+    /// 跳转必须落进去（旧口径返回 null，用户侧表现为"找不到定义"）。
+    /// </summary>
+    [Fact]
+    public void Definition_CodeBlockMemberNavigatesInsideDocument()
+    {
+        const string doc = """
+            @using EclipseUI.Elements
+            <TextBlock Text={mo|de} />
+            @code {
+                public int mode;
+            }
+            """;
+        var (analysis, offset) = TestHost.Analyze(doc);
+        var definition = DefinitionProvider.Definition(analysis, offset);
+
+        Assert.NotNull(definition);
+        Assert.Null(definition!.Uri); // 本文档：@code 块
+        Assert.Equal("mode", definition.Name);
+
+        var expected = analysis.Text.IndexOf("public int mode", StringComparison.Ordinal) + "public int ".Length;
+        Assert.Equal(expected, definition.Span.Start);
+        Assert.Equal("mode".Length, definition.Span.Length);
+    }
+
+    /// <summary>
+    /// foreach 头整体不是合法 C#——光标落在集合段时只探集合（"rows"），
+    /// 集合在 @code 里声明 → 回映到块内声明名。
+    /// </summary>
+    [Fact]
+    public void Definition_ForeachHeaderCollectionNavigatesToDeclaration()
+    {
+        const string doc = """
+            @using EclipseUI.Elements
+            @foreach (var row in ro|ws)
+            {
+                <TextBlock Text={row} />
+            }
+            @code {
+                public string[] rows = { "row A" };
+            }
+            """;
+        var (analysis, offset) = TestHost.Analyze(doc);
+        var definition = DefinitionProvider.Definition(analysis, offset);
+
+        Assert.NotNull(definition);
+        Assert.Null(definition!.Uri);
+        Assert.Equal("rows", definition.Name);
+
+        var expected = analysis.Text.IndexOf("public string[] rows", StringComparison.Ordinal)
+            + "public string[] ".Length;
+        Assert.Equal(expected, definition.Span.Start);
+        Assert.Equal("rows".Length, definition.Span.Length);
+    }
+
+    /// <summary>foreach 头里光标落在**变量名**上：它就是定义本身，没有可跳的目标。</summary>
+    [Fact]
+    public void Definition_ForeachHeaderVariableNameReturnsNull()
+    {
+        const string doc = """
+            @using EclipseUI.Elements
+            @foreach (var ro|w in rows)
+            {
+                <TextBlock Text={row} />
+            }
+            @code {
+                public string[] rows = { "row A" };
+            }
+            """;
+        var (analysis, offset) = TestHost.Analyze(doc);
+        Assert.Null(DefinitionProvider.Definition(analysis, offset));
+    }
+
+    /// <summary>Service 层全链路：@code 声明跳转的 Uri=null 分支按文档文本换算行位。</summary>
+    [Fact]
+    public void Service_DefinitionJumpsIntoCodeBlockInsideUiDocument()
+    {
+        const string doc = """
+            @using EclipseUI.Elements
+            <TextBlock Text={mo|de} />
+            @code {
+                public int mode;
+            }
+            """;
+        var (service, uri, offset) = TestHost.Open(doc);
+        var definition = service.Definition(uri, offset);
+
+        Assert.NotNull(definition);
+        Assert.Null(definition!.Uri);
+        Assert.Equal("mode", definition.Name);
+
+        var text = service.Documents.TryGet(uri, out var document) ? document.Text : "";
+        var expected = text.IndexOf("public int mode", StringComparison.Ordinal) + "public int ".Length;
+        Assert.Equal(expected, definition.Span.Start);
+    }
+
     [Fact]
     public void Service_CodeBehindEditInvalidatesProbe()
     {
@@ -302,5 +399,372 @@ public class ExpressionProbeTests
             Path.ChangeExtension(DocumentStore.UriToPath(uri), ".cs"),
             CodeBehind.Replace("public int Total", "public int Total2;\n        public int Total"));
         Assert.Contains(service.Complete(uri, offset).Items, static i => i.Label == "Total2");
+    }
+
+    // ---- 重命名（L3 第二片） ----
+
+    [Fact]
+    public void Rename_ForeachVariableUpdatesHeaderAndBodyUses()
+    {
+        const string doc = """
+            @using EclipseUI.Elements
+            @foreach (var task in tasks)
+            {
+                <TextBlock Text={ta|sk.Name} />
+                <Button OnClick={() => Toggle(task)} />
+            }
+            """;
+        var (analysis, offset) = TestHost.Analyze(doc, CodeBehind);
+        var result = RenameProvider.Rename(analysis, offset, "item", workspaceRoot: null);
+
+        Assert.NotNull(result);
+        var file = Assert.Single(result!.Files);
+        Assert.Null(file.Path); // 变量作用域就是本文档：编辑全部落在 .ui
+
+        Assert.Equal(3, file.Edits.Count); // 头声明 + 正文引用 + lambda 引用
+        foreach (var edit in file.Edits)
+        {
+            Assert.Equal("task", analysis.Text.Substring(edit.Span.Start, edit.Span.Length));
+            Assert.Equal("item", edit.NewText);
+        }
+        Assert.Equal(analysis.Text.IndexOf("var task", StringComparison.Ordinal) + 4, file.Edits[0].Span.Start);
+    }
+
+    /// <summary>内外层同名（遮蔽）：从外层改名只动外层的声明与外层体内的引用，内层一律不碰。</summary>
+    [Fact]
+    public void Rename_ForeachVariableRespectsInnerShadowing()
+    {
+        const string doc = """
+            @using EclipseUI.Elements
+            @foreach (var task| in tasks)
+            {
+                @foreach (var task in tasks)
+                {
+                    <TextBlock Text={task.Name} />
+                }
+                <TextBlock Text={task.Id} />
+            }
+            """;
+        var (analysis, offset) = TestHost.Analyze(doc, CodeBehind);
+        var result = RenameProvider.Rename(analysis, offset, "item", workspaceRoot: null);
+
+        Assert.NotNull(result);
+        var file = Assert.Single(result!.Files);
+        Assert.Equal(2, file.Edits.Count); // 外层头 + 外层体内的 task.Id；内层 body 不动
+
+        Assert.Equal(analysis.Text.IndexOf("var task", StringComparison.Ordinal) + 4, file.Edits[0].Span.Start);
+        var outerUse = file.Edits[1];
+        Assert.StartsWith("{task.Id}", analysis.Text.Substring(outerUse.Span.Start - 1));
+    }
+
+    [Fact]
+    public void Rename_MemberUpdatesUiCodeBehindAndWorkspaceReferences()
+    {
+        var (service, uri, offset) = TestHost.OpenWithCodeBehind("<TextBlock Text={To|tal} />", CodeBehind);
+        var directory = Path.GetDirectoryName(DocumentStore.UriToPath(uri))!;
+        File.WriteAllText(Path.Combine(directory, "Helper.cs"), """
+            namespace Gallery;
+            public class Helper
+            {
+                public int Read(ProbeDoc doc) => doc.Total;
+            }
+            """);
+
+        var result = service.Rename(uri, offset, "Count");
+
+        Assert.NotNull(result);
+        Assert.Equal(3, result!.Files.Count); // .ui + 兄弟 ProbeDoc.cs + 工作区 Helper.cs
+
+        var ui = result.Files[0];
+        Assert.Null(ui.Path);
+        var uiEdit = Assert.Single(ui.Edits);
+        Assert.Equal("Total", ui.Text.Substring(uiEdit.Span.Start, uiEdit.Span.Length));
+        Assert.Equal("Count", uiEdit.NewText);
+
+        var codeBehind = result.Files[1];
+        Assert.EndsWith("ProbeDoc.cs", codeBehind.Path, StringComparison.Ordinal);
+        var declaration = Assert.Single(codeBehind.Edits);
+        Assert.Equal("Total", codeBehind.Text.Substring(declaration.Span.Start, declaration.Span.Length));
+        Assert.Equal(codeBehind.Text.IndexOf("public int Total", StringComparison.Ordinal) + "public int ".Length,
+            declaration.Span.Start);
+
+        var helper = result.Files[2];
+        Assert.EndsWith("Helper.cs", helper.Path, StringComparison.Ordinal);
+        var usage = Assert.Single(helper.Edits);
+        Assert.Equal("Total", helper.Text.Substring(usage.Span.Start, usage.Span.Length));
+        Assert.Equal("Count", usage.NewText);
+    }
+
+    [Fact]
+    public void Rename_RejectsForeignMemberAndInvalidNames()
+    {
+        // TaskItem.Name：声明在其他类型上，本 server 的文件集合改不全 → 拒绝。
+        const string doc = """
+            @using EclipseUI.Elements
+            @foreach (var task in tasks)
+            {
+                <TextBlock Text={task.Na|me} />
+            }
+            """;
+        var (service, uri, offset) = TestHost.OpenWithCodeBehind(doc, CodeBehind);
+        Assert.Null(service.Rename(uri, offset, "Name"));
+
+        // 新名字必须是合法标识符（保留关键字同样拒绝）。
+        var (member, memberUri, memberOffset) = TestHost.OpenWithCodeBehind("<TextBlock Text={To|tal} />", CodeBehind);
+        Assert.Null(member.Rename(memberUri, memberOffset, "1bad"));
+        Assert.Null(member.Rename(memberUri, memberOffset, "class"));
+        Assert.NotNull(member.Rename(memberUri, memberOffset, "Count"));
+    }
+
+    /// <summary>内存态文档：变量改名不需要磁盘/工作区，成员改名则需要——缺了就整体拒绝。</summary>
+    [Fact]
+    public void Rename_InMemoryDocumentAllowsVariablesButNotMembers()
+    {
+        const string doc = """
+            @using EclipseUI.Elements
+            @foreach (var task in tasks)
+            {
+                <TextBlock Text={ta|sk.Id} />
+            }
+            """;
+        var variable = TestHost.Analyze(doc, CodeBehind);
+        Assert.NotNull(RenameProvider.Rename(variable.Analysis, variable.Offset, "item", workspaceRoot: null));
+
+        var member = TestHost.Analyze("<TextBlock Text={To|tal} />", CodeBehind);
+        Assert.Null(RenameProvider.Rename(member.Analysis, member.Offset, "Count", workspaceRoot: null));
+    }
+
+    [Fact]
+    public void Prepare_GivesIdentifierSpanAndPlaceholder()
+    {
+        var (analysis, offset) = TestHost.Analyze("<TextBlock Text={To|tal} />", CodeBehind);
+        var prepare = RenameProvider.Prepare(analysis, offset);
+
+        Assert.NotNull(prepare);
+        Assert.Equal("Total", prepare!.Placeholder);
+        Assert.Equal("Total", analysis.Text.Substring(prepare.Span.Start, prepare.Span.Length));
+
+        var dot = TestHost.Analyze("<TextBlock Text={tasks.|Count} />", CodeBehind);
+        Assert.Null(RenameProvider.Prepare(dot.Analysis, dot.Offset));
+    }
+
+    // ---- @code 块内跳转（L3 第三片） ----
+
+    /// <summary>诊断：服务层全链路（磁盘 code-behind + @code 声明点击）。</summary>
+    [Fact]
+    public void Service_CodeBlockDeclarationClickResolves()
+    {
+        const string doc = """
+            @using EclipseUI.Elements
+            <TextBlock />
+            @code {
+                public int mo|de;
+            }
+            """;
+        var (service, uri, offset) = TestHost.OpenWithCodeBehind(doc, CodeBehind);
+        var definition = service.Definition(uri, offset);
+        Assert.NotNull(definition);
+        Assert.Equal("mode", definition!.Name);
+        Assert.Null(definition.Uri);
+    }
+
+    /// <summary>诊断：内存态声明点击。</summary>
+    [Fact]
+    public void CodeBlockDeclarationClickResolvesInMemory()
+    {
+        const string doc = """
+            @using EclipseUI.Elements
+            <TextBlock />
+            @code {
+                public int mode;
+            }
+            """;
+        var (analysis, offset) = TestHost.Analyze(doc);
+        var atDecl = analysis.Text.IndexOf("public int mode", StringComparison.Ordinal) + "public int ".Length;
+        Assert.NotNull(DefinitionProvider.Definition(analysis, atDecl));
+    }
+
+    /// <summary>块内引用（mode = 1）→ 同块声明（public int mode）——回映到 .ui 真实文本。</summary>
+    [Fact]
+    public void Definition_CodeBlockReferenceNavigatesToDeclaration()
+    {
+        const string doc = """
+            @using EclipseUI.Elements
+            <TextBlock Text="x" />
+            @code {
+                public int mode;
+                void Tick()
+                {
+                    mo|de = 1;
+                }
+            }
+            """;
+        var (analysis, offset) = TestHost.Analyze(doc);
+        var definition = DefinitionProvider.Definition(analysis, offset);
+
+        Assert.NotNull(definition);
+        Assert.Null(definition!.Uri); // 本文档：@code 块
+        Assert.Equal("mode", definition.Name);
+
+        var expected = analysis.Text.IndexOf("public int mode", StringComparison.Ordinal) + "public int ".Length;
+        Assert.Equal(expected, definition.Span.Start);
+        Assert.Equal("mode".Length, definition.Span.Length);
+    }
+
+    /// <summary>块内局部变量（C# 全语义：声明→引用）→ 同块声明。</summary>
+    [Fact]
+    public void Definition_CodeBlockLocalVariableNavigatesInsideBlock()
+    {
+        const string doc = """
+            @code {
+                void Tick()
+                {
+                    int count = 1;
+                    cou|nt++;
+                }
+            }
+            """;
+        var (analysis, offset) = TestHost.Analyze(doc);
+        var definition = DefinitionProvider.Definition(analysis, offset);
+
+        Assert.NotNull(definition);
+        Assert.Null(definition!.Uri);
+        Assert.Equal("count", definition.Name);
+        Assert.Equal("count", analysis.Text.Substring(definition.Span.Start, definition.Span.Length));
+    }
+
+    // ---- 标签名跳转（L3 第四片） ----
+
+    /// <summary>
+    /// 标签 → 目录 CLR 类型 → 工作区源码声明。两个文件都定义了同名类：
+    /// "文件名 == 类型名" 的那个优先（EclipseUI 组件惯例）。
+    /// </summary>
+    [Fact]
+    public void Definition_TagNameNavigatesToWorkspaceSource()
+    {
+        var element = new UiElementDef(
+            "Widget", "global::Probe.Widget", UiElementOrigin.Control,
+            UiContentModel.Children, null,
+            new Dictionary<string, UiPropDef>(StringComparer.Ordinal),
+            new Dictionary<string, UiEventDef>(StringComparer.Ordinal),
+            new Dictionary<string, UiParameterDef>(StringComparer.Ordinal),
+            new Dictionary<string, UiSlotDef>(StringComparer.Ordinal),
+            Array.Empty<UiMetadataProblem>());
+        var catalog = new UiCatalog(new[] { element }, Array.Empty<UiHiddenTag>(), Array.Empty<UiMetadataProblem>());
+
+        var directory = Path.Combine(Path.GetTempPath(), "eclipseui-ide-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            File.WriteAllText(Path.Combine(directory, "Widget.cs"),
+                "namespace Probe;\n\npublic class Widget\n{\n}\n");
+            File.WriteAllText(Path.Combine(directory, "Other.cs"),
+                "namespace Probe;\n\npublic class Widget\n{\n}\n");
+
+            var (analysis, offset) = TestHost.Analyze("<Wi|dget />", catalog: catalog);
+            var definition = DefinitionProvider.Definition(analysis, offset,
+                workspaceRoot: directory, catalog: catalog);
+
+            Assert.NotNull(definition);
+            Assert.EndsWith("Widget.cs", definition!.Uri, StringComparison.Ordinal);
+            Assert.Equal("Widget", definition.Name);
+            var text = File.ReadAllText(definition.Uri!);
+            Assert.Equal("Widget", text.Substring(definition.Span.Start, definition.Span.Length));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    /// <summary>目录不认识的标签（用户拼错）：不猜，返回 null。</summary>
+    [Fact]
+    public void Definition_UnknownTagNameReturnsNull()
+    {
+        var (analysis, offset) = TestHost.Analyze("<NotA|Tag />");
+        Assert.Null(DefinitionProvider.Definition(analysis, offset));
+    }
+
+    /// <summary>
+    /// 内置标签（dll/nuget 引用形态）：源码三路都够不着 → 反编译兜底——
+    /// eui-decompiled: 虚拟文档 + 声明 span，内容请求回传 C# 文本。
+    /// </summary>
+    [Fact]
+    public void Definition_BuiltInTagDecompilesWithoutSource()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "eclipseui-ide-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var (analysis, offset) = TestHost.Analyze("<TextBl|ock />");
+            var definition = DefinitionProvider.Definition(analysis, offset,
+                workspaceRoot: directory, catalog: TestHost.Catalog);
+
+            Assert.NotNull(definition);
+            Assert.StartsWith("eui-decompiled:", definition!.Uri, StringComparison.Ordinal);
+            Assert.Equal("TextBlock", definition.Name);
+            Assert.False(definition.Text is null);
+
+            // span 落在反编译文本的声明名字上；内容请求回传同源文本。
+            Assert.Equal("TextBlock", definition.Text.Substring(definition.Span.Start, definition.Span.Length));
+            Assert.Contains("TextBlock", DecompileProvider.Content(definition.Uri!), StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    /// <summary>反编译虚拟文档的服务级链路：definition → decompiledContent 同一 uri 键。</summary>
+    [Fact]
+    public void Service_DecompiledContentRoundTrips()
+    {
+        var (service, uri, offset) = TestHost.Open("<TextBl|ock />");
+        var definition = service.Definition(uri, offset);
+
+        Assert.NotNull(definition);
+        Assert.StartsWith("eui-decompiled:", definition!.Uri, StringComparison.Ordinal);
+
+        var content = service.DecompiledContent(definition.Uri!);
+        Assert.False(content is null);
+        Assert.Contains("TextBlock", content!, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 内置标签的工作区不在仓库根（samples/Gallery 这类子目录）：框架类型兜底——
+    /// 从工作区向上找仓库根（.git 标记），在仓库源码里跳到元素类声明。
+    /// </summary>
+    [Fact]
+    public void Definition_BuiltInTagJumpsToRepositorySource()
+    {
+        var repository = Path.Combine(Path.GetTempPath(), "eclipseui-ide-tests", Guid.NewGuid().ToString("N"));
+        var workspace = Path.Combine(repository, "samples", "Gallery");
+        Directory.CreateDirectory(Path.Combine(repository, ".git"));
+        Directory.CreateDirectory(Path.Combine(repository, "src", "EclipseUI.Runtime"));
+        Directory.CreateDirectory(workspace);
+        try
+        {
+            File.WriteAllText(
+                Path.Combine(repository, "src", "EclipseUI.Runtime", "TextBlock.cs"),
+                "namespace EclipseUI.Elements;\n\npublic class TextBlock\n{\n}\n");
+
+            // 默认 catalog 扫真实 Runtime.dll——TextBlock 的 ClrTypeDisplayName 就是
+            // global::EclipseUI.Elements.TextBlock，与文件里的声明一一对应。
+            var (analysis, offset) = TestHost.Analyze("<TextBl|ock />");
+            var definition = DefinitionProvider.Definition(analysis, offset,
+                workspaceRoot: workspace, catalog: TestHost.Catalog);
+
+            Assert.NotNull(definition);
+            Assert.Equal("TextBlock", definition!.Name);
+            Assert.EndsWith(
+                Path.Combine("src", "EclipseUI.Runtime", "TextBlock.cs"),
+                definition.Uri, StringComparison.Ordinal);
+            var text = File.ReadAllText(definition.Uri!);
+            Assert.Equal("TextBlock", text.Substring(definition.Span.Start, definition.Span.Length));
+        }
+        finally
+        {
+            Directory.Delete(repository, recursive: true);
+        }
     }
 }

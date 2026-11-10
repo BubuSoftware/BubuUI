@@ -10,6 +10,30 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 namespace EclipseUI.Compiler.Probe;
 
 /// <summary>
+/// 表达式内一个已解析标识符的绑定：相对表达式首字符的偏移、长度与符号。
+/// 重命名（<see cref="ClassifyIdentifiers"/>/<see cref="LocateWithIdentifier"/>）与
+/// 未来的语义 token 共用这个载体。readonly struct：Probe 项目跑 netstandard2.0。
+/// </summary>
+public readonly struct IdentifierBinding
+{
+    public IdentifierBinding(int offset, int length, ISymbol symbol)
+    {
+        Offset = offset;
+        Length = length;
+        Symbol = symbol;
+    }
+
+    /// <summary>相对表达式首字符的偏移（调用方加表达式在文档里的起点得文档偏移）。</summary>
+    public int Offset { get; }
+
+    /// <summary>标识符长度（改名的替换区间）。</summary>
+    public int Length { get; }
+
+    /// <summary>绑定符号：成员符号或环境注入的局部变量（foreach 迭代变量）。</summary>
+    public ISymbol Symbol { get; }
+}
+
+/// <summary>
 /// 表达式投影探针（design/06 §6.3 的核心机制）：把模板表达式放进合成 partial 方法体，
 /// 借 Roslyn <see cref="SemanticModel"/> 回答「类型是什么 / 可写吗 / 兼容目标委托吗」。
 ///
@@ -136,14 +160,19 @@ public sealed class ExpressionProbe
     /// （表达式内偏移）的标识符，返回它的绑定符号。光标落在点号/空白/括号上、
     /// 或标识符解析不到（半截输入、未知名字）返回 null——不猜。
     /// </summary>
-    public ISymbol? Locate(string expression, int cursor, IReadOnlyList<(ITypeSymbol Type, string Name)> env)
+    public ISymbol? Locate(string expression, int cursor, IReadOnlyList<(ITypeSymbol Type, string Name)> env) =>
+        LocateWithIdentifier(expression, cursor, env)?.Symbol;
+
+    /// <summary>
+    /// 光标处标识符的绑定 + 区间（重命名/prepareRename 用，L3 第二片）。offset 相对表达式
+    /// 首字符——符号与位置一起给，调用方不用再猜替换区间落在哪。
+    /// </summary>
+    public IdentifierBinding? LocateWithIdentifier(
+        string expression, int cursor, IReadOnlyList<(ITypeSymbol Type, string Name)> env)
     {
-        var tree = ProbeTree("var __value = (" + expression + ");", env);
-        var model = Augment(tree).GetSemanticModel(tree);
-        var initializer = tree.GetRoot().DescendantNodes().OfType<VariableDeclaratorSyntax>()
-            .FirstOrDefault(v => v.Identifier.ValueText == "__value")?.Initializer?.Value
-            as ParenthesizedExpressionSyntax;
-        if (initializer is null) return null;
+        var probed = ProbeInitializer(expression, env);
+        if (probed is null) return null;
+        var (model, initializer) = probed.Value;
 
         // 表达式原文按 "(" + expression 合成：初始化式 SpanStart 就是那个 "("，
         // +1 即表达式首字符——与 expression 内容（自身含括号/泛型）无关，偏移永远对齐。
@@ -156,8 +185,53 @@ public sealed class ExpressionProbe
             if (cursorInTree >= identifier.SpanStart && cursorInTree <= identifier.Span.End) target = identifier;
         if (target is null) return null;
 
-        var info = model.GetSymbolInfo(target);
-        return info.Symbol ?? (info.CandidateSymbols.Length == 1 ? info.CandidateSymbols[0] : null);
+        var symbol = ResolveIdentifier(model, target);
+        if (symbol is null) return null;
+        return new IdentifierBinding(
+            target.SpanStart - (initializer.SpanStart + 1), target.Span.Length, symbol);
+    }
+
+    /// <summary>
+    /// 表达式里**所有**可解析标识符的绑定（重命名引用扫描用，L3 第二片）：
+    /// 成员符号与 foreach 环境注入的局部变量都原样报告，由调用方按目标分类；
+    /// 解析不到（半截输入、未知名、ErrorType）的跳过——引用扫描宁可少报不可错报。
+    /// </summary>
+    public IReadOnlyList<IdentifierBinding> ClassifyIdentifiers(
+        string expression, IReadOnlyList<(ITypeSymbol Type, string Name)> env)
+    {
+        var probed = ProbeInitializer(expression, env);
+        if (probed is null) return Array.Empty<IdentifierBinding>();
+        var (model, initializer) = probed.Value;
+        var exprStart = initializer.SpanStart + 1;
+
+        var hits = new List<IdentifierBinding>();
+        foreach (var identifier in initializer.DescendantNodes().OfType<IdentifierNameSyntax>())
+        {
+            var symbol = ResolveIdentifier(model, identifier);
+            if (symbol is null) continue;
+            hits.Add(new IdentifierBinding(identifier.SpanStart - exprStart, identifier.Span.Length, symbol));
+        }
+        return hits;
+    }
+
+    /// <summary>合成 <c>var __value = (expr);</c> 并取语义模型与括号初始化式；解析失败返回 null。</summary>
+    private (SemanticModel Model, ParenthesizedExpressionSyntax Initializer)? ProbeInitializer(
+        string expression, IReadOnlyList<(ITypeSymbol Type, string Name)> env)
+    {
+        var tree = ProbeTree("var __value = (" + expression + ");", env);
+        var model = Augment(tree).GetSemanticModel(tree);
+        var initializer = tree.GetRoot().DescendantNodes().OfType<VariableDeclaratorSyntax>()
+            .FirstOrDefault(v => v.Identifier.ValueText == "__value")?.Initializer?.Value
+            as ParenthesizedExpressionSyntax;
+        return initializer is null ? null : (model, initializer);
+    }
+
+    /// <summary>标识符解析：零候选当未解析（方法组转换失败等），单候选收下，ErrorType 不算解析成功。</summary>
+    private static ISymbol? ResolveIdentifier(SemanticModel model, IdentifierNameSyntax identifier)
+    {
+        var info = model.GetSymbolInfo(identifier);
+        if (info.Symbol is not null) return info.Symbol is IErrorTypeSymbol ? null : info.Symbol;
+        return info.CandidateSymbols.Length == 1 ? info.CandidateSymbols[0] : null;
     }
 
     /// <summary>把 <c>{expr} = __bindValue</c> 交给 C# 判定：落在赋值语句内的错误即左值/类型问题。</summary>

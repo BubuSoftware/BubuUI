@@ -212,6 +212,41 @@
 > 新增 **7 例**（探针定位/token 中点/内存态边界/点号与未知名/服务级属性与方法/协议会话），
 > IDE 用例 77 → **84**，全解决方案 868 例全绿、0 警告。
 >
+> **G5 IDE 重命名已通过（2026-11-10，L3 第二片）**：`prepareRename` + `textDocument/rename`
+> 落地。范围口径 v1——**宁可拒绝也不给改不全的编辑**：`@foreach` 变量作用域就是本文档，
+> 头声明 + 表达式内引用完备改名；code-behind 类自身成员扫 `.ui` 表达式 + `@code` 块引用 +
+> 兄弟 `.cs` + 工作区其余 `.cs`（`--workspace`，VS Code/Rider 都传）。其他类型的成员
+> （`task.Name` 的 Name、工具类静态）、`@code` 声明的成员、无工作区根的内存态——一律拒绝。
+> 嵌套同名 foreach 的遮蔽语义按「绑定者 = 栈内最内层同名作用域」精确处理。
+> 踩坑记录：跨编译符号比较不能用 `SymbolEqualityComparer.Default`——探针派生编译里
+> merged partial（`@code` 树）的 identity key 与单 site 版不同，实测 `Gallery.ProbeDoc`
+> 不等于 `Gallery.ProbeDoc`；改用全限定签名字符串比较（含 containing 类型与参数签名）。
+> `CollectExpressions` 还暴露并修掉 `CursorScanner` 一个既有 bug：`@foreach` 指令分支的
+> Prefix 在范围检查前构造，offset 被跳过区间（`@code` 块）越过时负长度 `Substring` 崩溃。
+> 新增 **7 例**（变量改名/遮蔽/成员三文件联动/拒绝场景/内存态边界/prepare/协议会话），
+> IDE 用例 84 → **91**，全解决方案 875 例全绿、0 警告。
+>
+> **G5 IDE §6.9 重构已通过（2026-11-11，P0–P8 全量）**：按 design/06 §6.9 把「dll 元数据目录 +
+> 手写启发式」的 v1 换成**项目系统驱动的单一 Compilation**。L1 `MSBuildLocator` +
+> `Microsoft.Build.Evaluation.Project` 求值（归属判据 = 求值后 `AdditionalFiles` 命中）；L2 每项目
+> 一份真 `CSharpCompilation`（`Compile` 源码树、`Using` items、`obj/project.assets.json` 精确引用）；
+> L3 用 `extern alias euiGen` 在 IDE 内跑真 `TemplateGenerator`（生成 5 棵树、编译错误 10 → 0、
+> 目录 10 → 14 标签）；L4 `UiCatalogFactory.Build(outputCompilation)` 成为唯一事实源。L5 诊断双通道
+> （Tier 1 每次按键 / Tier 2 真生成器 + `#line` 回映，400ms debounce）、L6 标签与属性/事件/参数/
+> 附加属性一律走 Roslyn 符号查询（成员级反编译兜底）、L7 watcher 自动失效、L8 signature help /
+> 语义着色 / 代码操作 / 格式化全部挂在同一份 Compilation 与同一套偏移回映上。`.eustyle` 进
+> `documentSelector`，样式表诊断接入 LSP。**不接管 `.cs` 文件**，Rider 仍走同一 server。
+> 落地实测修掉三处真问题：`ExcludeAssets=runtime` 下 MSBuildLocator 注册晚于 JIT 导致启动即
+> `FileNotFoundException`（注册提前到构造函数 + `NoInlining`）；共用 `ProjectCollection` 重复加载
+> 同一 csproj 抛「已有等效项目」，19 个工程只求值出 10 个（`GetOrLoad` 复用 `LoadedProjects`）；
+> `Location.Create(path,…)` 不是 `IsInSource`，`.eustyle` 的 EUI050–052 被整批丢掉
+> （统一用 `GetMappedLineSpan()`）。另补：框架类型的跨项目源码符号回退用轻量源码树编译，
+> 发现阶段向上扩到仓库根（只扩大已知项目集合，不改归属判据）。
+> `ide/build.ps1` 已重发布；对发布版做 stdio LSP 端到端冒烟：19 个项目全部求值、Gallery 得
+> 14 标签、`StackPanel.Gap` 的 F12 实测落 `src/EclipseUI.Runtime/Panels.cs:46`。
+> 五条验收夹具与协议级回归落在 `ProjectSystemTests.cs` / `ProtocolTests.cs`，
+> **IDE 用例 105 → 119，全绿**；P9（`SymbolFinder` 改造）按原计划不做。
+>
 > **S-C 最小主题资源已通过（2026-11-09，D100）**：`ThemeColor` 暗亮双色——`Visual.BackgroundResource/
 > ForegroundResource`（解析优先级 resource > 静态覆盖 > 主题令牌）+ `StyleBuilder` 双色重载；
 > painter 在**段构建期**按 `ElementTheme.IsLight` 解析，换主题 `ReplaceTheme` 丢段重建即随新表刷新
@@ -551,7 +586,8 @@ IDE/DevTools 随后。
    见 [ide/README.md](./ide/README.md)）、~~P1 补全/悬停/大纲~~ ✅（标签/属性/事件/参数/附加属性/
    `@bind-`/枚举/指令）、~~表达式投影（L2 悬停/补全）~~ ✅ 2026-11-10（design/06 §6.3：探针合成树复用
    生成器的 `ExpressionProbe`，code-behind 取 `{Name}.cs` 兄弟文件；`{expr}` 内成员补全 + 类型悬停，
-   `@foreach` 变量入环境）、~~跳转定义（L3 第一片）~~ ✅ 2026-11-10（探针符号反查 `Locate`：
-   foreach 变量落回本文档、code-behind 成员跳到兄弟 `.cs` 声明名字）——
+   `@foreach` 变量入环境）、~~跳转定义 + 重命名（L3）~~ ✅ 2026-11-10（探针符号反查 `Locate`：
+   foreach 变量落回本文档、code-behind 成员跳到兄弟 `.cs` 声明名字；重命名 `prepareRename` +
+   WorkspaceEdit，foreach 变量完备改名、code-behind 成员扫 `.ui`+`@code`+兄弟+工作区 `.cs`）——
    **Rider 用 lsp4ij 接同一个 server，server 侧零改动**；
-   余 L3 的重命名（WorkspaceEdit 反扫）、语义着色，以及 P3 `#line` 调试映射。
+   余语义着色，以及 P3 `#line` 调试映射。

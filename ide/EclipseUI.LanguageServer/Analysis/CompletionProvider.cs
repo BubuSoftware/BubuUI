@@ -145,8 +145,23 @@ public static class CompletionProvider
     private static UiCompletionList Tags(DocumentAnalysis analysis, UiCatalog catalog, TextSpan replacement)
     {
         var items = new List<UiCompletionItem>();
+
+        // §6.9.0 第 1 条：`@using Alt = Ns.Type` 是 C# 别名**也是模板标签别名**（K31），
+        // 必须进标签补全。Alias 表里 target 为 null 表示别名目标非法，仍列出并标注。
+        var aliases = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var (alias, target) in analysis.Aliases.OrderBy(static a => a.Key, StringComparer.Ordinal))
+        {
+            if (!aliases.Add(alias)) continue;
+            var detail = target is null ? "alias · unresolved target" : "alias → " + TypeNames.Short(target);
+            items.Add(new UiCompletionItem(alias, UiCompletionKind.Tag, detail,
+                "declared by `@using " + alias + " = ...` (K31)", SortText: "0" + alias));
+        }
+
         foreach (var element in catalog.Elements.OrderBy(static e => e.Tag, StringComparer.Ordinal))
         {
+            // 别名覆盖了同名标签：解析走 Aliases（ResolveVisible 优先），补全也只列一次。
+            if (!aliases.Add(element.Tag)) continue;
+
             var ns = TypeNames.NamespaceOf(element.ClrTypeDisplayName);
             var imported = ns is null || analysis.Imports.Contains(ns, StringComparer.Ordinal);
 

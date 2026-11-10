@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using EclipseUI.Compiler;
 using EclipseUI.Compiler.Probe;
+using EclipseUI.LanguageServer.Workspace;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -41,12 +42,36 @@ public sealed class DocumentStore
         return new Document(uri, string.IsNullOrEmpty(fileName) ? "Template.ui" : fileName, text, version);
     }
 
-    /// <summary><c>file:///d%3A/…</c> → 本地路径；非 file 协议原样返回（测试里常用 <c>untitled:</c>）。</summary>
+    /// <summary>
+    /// <c>file:///d%3A/…</c> → 本地路径；非 file 协议原样返回（测试里常用 <c>untitled:</c>）。
+    ///
+    /// **不能用 <see cref="Uri.LocalPath"/>**：VS Code 发来的 URI 把盘符冒号编码成
+    /// <c>%3A</c>（<c>file:///d%3A/repo/x.ui</c>）。一旦路径里有转义序列，.NET 就不再把
+    /// 它当 Windows 本地路径，<c>LocalPath</c> 返回 <c>/d:/repo/x.ui</c>——前导斜杠 + 正
+    /// 斜杠。再经过 <see cref="Path.GetFullPath(string)"/> 就变成一个永远匹配不到项目
+    /// <c>AdditionalFiles</c> 的路径，于是文档「不属于任何项目」，补全/诊断/跳转全空。
+    /// （2026-11-11 实测：手写 <c>file:///D:/…</c> 的脚本全绿、真实编辑器全废，就是这个分支。）
+    ///
+    /// 所以自己解一遍：先按 URI 语义解转义，再按盘符/UNC 还原成 Windows 路径。
+    /// </summary>
     public static string UriToPath(string uri)
     {
-        if (Uri.TryCreate(uri, UriKind.Absolute, out var parsed) && parsed.IsFile)
-            return parsed.LocalPath;
-        return uri;
+        if (!Uri.TryCreate(uri, UriKind.Absolute, out var parsed) || !parsed.IsFile)
+            return uri;
+
+        var path = Uri.UnescapeDataString(parsed.AbsolutePath);
+        if (path.Length == 0) return uri;
+
+        // UNC：file://server/share/x → \\server\share\x（Host 非空且不是 localhost）
+        if (parsed.Host.Length > 0 && !string.Equals(parsed.Host, "localhost", StringComparison.OrdinalIgnoreCase))
+            return @"\\" + parsed.Host + path.Replace('/', '\\');
+
+        // 本地路径。file URI 的绝对路径总以 '/' 开头：
+        //   "/d:/repo/x.ui" → "d:\repo\x.ui"
+        //   "/home/u/x.ui"  → "\home\u\x.ui"（非 Windows 场景原样保留）
+        if (path[0] == '/' && path.Length >= 3 && path[2] == ':')
+            path = path[1..];
+        return path.Replace('/', '\\');
     }
 
     public static string PathToUri(string path) =>
@@ -61,9 +86,12 @@ public sealed class DocumentStore
 public sealed class DocumentAnalysis
 {
     private readonly Compilation? _baseCompilation;
+    private readonly ProjectSnapshot? _project;
+    private readonly ProjectWorkspace? _workspace;
     private readonly string? _codeBehind;
     private readonly string? _codeBehindPath;
     private SyntaxTree? _codeBehindTree;
+    private SyntaxTree? _memberTree;
     private ExpressionProbe? _probe;
     private bool _probeFailed;
 
@@ -77,7 +105,9 @@ public sealed class DocumentAnalysis
         string? internalError,
         Compilation? baseCompilation,
         string? codeBehind,
-        string? codeBehindPath)
+        string? codeBehindPath,
+        ProjectSnapshot? project,
+        ProjectWorkspace? workspace)
     {
         Text = text;
         Positions = positions;
@@ -89,6 +119,8 @@ public sealed class DocumentAnalysis
         _baseCompilation = baseCompilation;
         _codeBehind = codeBehind;
         _codeBehindPath = codeBehindPath;
+        _project = project;
+        _workspace = workspace;
     }
 
     public string Text { get; }
@@ -114,8 +146,22 @@ public sealed class DocumentAnalysis
     /// <summary>code-behind 源码原文（与探针编译里那棵树逐字对应）；跳转定义换算行位用。</summary>
     public string? CodeBehindText => _codeBehind;
 
+    /// <summary>
+    /// code-behind 兄弟文件的语法树（已在探针编译里，可直接取语义模型）。
+    /// 重命名扫成员声明与引用用；无 code-behind 时 null。
+    /// </summary>
+    public SyntaxTree? CodeBehindTree => _codeBehindTree;
+
+    /// <summary>
+    /// <c>@code</c> 块合成出的成员树（块体原文透传，K21）。重命名扫 <c>@code</c> 内的
+    /// 成员引用用：块体在树文本里逐字出现，<c>IndexOf</c> 定位后加 <see cref="Compiler.TextSpan"/>
+    /// 偏移即回映到 .ui。无 <c>@code</c> 时 null。**不在探针编译里**——使用方自行 AddSyntaxTrees。
+    /// </summary>
+    public SyntaxTree? MemberTree => _memberTree;
+
     public static DocumentAnalysis Create(string text, string fileName, UiCatalog catalog,
-        Compilation? baseCompilation = null, string? codeBehindText = null, string? codeBehindPath = null)
+        Compilation? baseCompilation = null, string? codeBehindText = null, string? codeBehindPath = null,
+        ProjectSnapshot? project = null, ProjectWorkspace? workspace = null)
     {
         var positions = new PositionMap(text);
         var diagnostics = new List<UiDiagnostic>();
@@ -129,7 +175,7 @@ public sealed class DocumentAnalysis
         {
             return new DocumentAnalysis(text, positions, null,
                 diagnostics.ToArray(), Array.Empty<string>(),
-                new Dictionary<string, string?>(), ex.Message, baseCompilation, codeBehindText, codeBehindPath);
+                new Dictionary<string, string?>(), ex.Message, baseCompilation, codeBehindText, codeBehindPath, project, workspace);
         }
 
         var imports = new List<string>();
@@ -165,7 +211,7 @@ public sealed class DocumentAnalysis
         }
 
         return new DocumentAnalysis(text, positions, ast, diagnostics.ToArray(), imports, aliases,
-            internalError, baseCompilation, codeBehindText, codeBehindPath);
+            internalError, baseCompilation, codeBehindText, codeBehindPath, project, workspace);
     }
 
     /// <summary>
@@ -188,7 +234,45 @@ public sealed class DocumentAnalysis
     /// 只有它带真实磁盘路径；<c>@code</c> 成员树是合成的，声明位置没有可去的文件，
     /// 符号落在那里就返回 null 而不是给出错位置。
     /// </summary>
-    public bool IsCodeBehindTree(SyntaxTree tree) => ReferenceEquals(tree, _codeBehindTree);
+    public bool IsCodeBehindTree(SyntaxTree tree) =>
+        ReferenceEquals(tree, _codeBehindTree)
+        || (_project is not null && _codeBehindPath is not null
+            && string.Equals(tree.FilePath, _codeBehindPath, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// 项目 Compilation 已含 code-behind 与 @code 生成树（L3）——调用方<strong>不得</strong>
+    /// 再 <c>AddSyntaxTrees</c>，否则 partial 类成员重复、探针语义全错。
+    /// </summary>
+    public bool CompilationContains(SyntaxTree tree) =>
+        _project is not null && (_baseCompilation?.ContainsSyntaxTree(tree) ?? false);
+
+    /// <summary>当前分析所依附的项目快照；null = legacy dll 目录 / 内存态分析。</summary>
+    public ProjectSnapshot? Project => _project;
+
+    /// <summary>工作区内的全部项目快照（L6 跨项目源码符号查询用）。</summary>
+    public ProjectWorkspace? Workspace => _workspace;
+
+    /// <summary>
+    /// <c>@code</code> 合成树里的 span → .ui 文档偏移。块体在树文本里逐字透传（K21），
+    /// <see cref="string.IndexOf(string, StringComparison)"/> 定位所在块后按偏移差回映——
+    /// 与重命名的引用回映（RenameProvider）同一公式。span 不落在任何块体内返回 false。
+    /// 跳转定义用它把 @code 成员声明落到 .ui 的真实文本上（而不是"合成树没有可去文件"）。
+    /// </summary>
+    public bool TryMapMemberSpanToUi(TextSpan span, out TextSpan uiSpan)
+    {
+        uiSpan = default;
+        if (_memberTree is null || Ast is null) return false;
+        var treeText = _memberTree.ToString();
+        foreach (var block in Ast.Nodes.OfType<UiCodeBlock>())
+        {
+            var bodyStart = treeText.IndexOf(block.Code, StringComparison.Ordinal);
+            if (bodyStart < 0) continue;
+            if (span.Start < bodyStart || span.Start + span.Length > bodyStart + block.Code.Length) continue;
+            uiSpan = new TextSpan(block.CodeSpan.Start + (span.Start - bodyStart), span.Length);
+            return true;
+        }
+        return false;
+    }
 
     private ExpressionProbe? BuildProbe()
     {
@@ -200,39 +284,62 @@ public sealed class DocumentAnalysis
 
         try
         {
+            var usings = TemplateAnalyzer.CollectUsingLines(Ast.Nodes).ToImmutableArray();
             var compilation = _baseCompilation;
-            INamedTypeSymbol? type = null;
-            var namespaceName = "";
 
+            // ---- 项目模式（L2/L3）：只查符号，不加树 ----
+            // 项目 Compilation 已含 code-behind 源码、@code 生成树、.ui 派生组件。
+            // 再 AddSyntaxTrees 会造成 partial 类成员重复（CS0111）与类型歧义。
+            if (_project is not null)
+            {
+                var tree = FindProbeTree(compilation, Ast.ClassName, _codeBehindPath);
+                var type = tree is null ? null : FindTypeSymbol(compilation, tree, Ast.ClassName);
+                var namespaceName = type?.ContainingNamespace is { IsGlobalNamespace: false } ns
+                    ? ns.ToDisplayString()
+                    : "";
+                _codeBehindTree = _codeBehindPath is null
+                    ? null
+                    : compilation.SyntaxTrees.FirstOrDefault(t =>
+                        string.Equals(t.FilePath, _codeBehindPath, StringComparison.OrdinalIgnoreCase));
+                // @code 块体在生成树里逐字透传（Emitter.EmitCodeBlock）——用它做 span 回映，
+                // 但绝不把它再次加进编译。
+                _memberTree = FindGeneratedCodeTree(_project.GeneratedTrees, Ast);
+                return new ExpressionProbe(compilation, type, Ast.ClassName, namespaceName,
+                    ImmutableArray<SyntaxTree>.Empty, usings);
+            }
+
+            // ---- legacy：基编译零源码树，code-behind 与 @code 合成树由探针自己加 ----
+            INamedTypeSymbol? legacyType = null;
+            var legacyNamespace = "";
             if (!string.IsNullOrEmpty(_codeBehind))
             {
                 var parseOptions = (_baseCompilation.SyntaxTrees.FirstOrDefault()?.Options as CSharpParseOptions)
                     ?? CSharpParseOptions.Default;
-                var tree = CSharpSyntaxTree.ParseText(_codeBehind!, parseOptions);
-                _codeBehindTree = tree;
-                compilation = _baseCompilation.AddSyntaxTrees(tree);
-                var model = compilation.GetSemanticModel(tree);
-                foreach (var declaration in tree.GetRoot().DescendantNodes().OfType<ClassDeclarationSyntax>())
+                var codeBehindTree = CSharpSyntaxTree.ParseText(_codeBehind!, parseOptions);
+                _codeBehindTree = codeBehindTree;
+                compilation = _baseCompilation.AddSyntaxTrees(codeBehindTree);
+                var model = compilation.GetSemanticModel(codeBehindTree);
+                foreach (var declaration in codeBehindTree.GetRoot().DescendantNodes().OfType<ClassDeclarationSyntax>())
                 {
                     if (declaration.Identifier.ValueText != Ast.ClassName) continue;
-                    type = model.GetDeclaredSymbol(declaration);
-                    namespaceName = NamespaceOf(declaration);
+                    legacyType = model.GetDeclaredSymbol(declaration);
+                    legacyNamespace = NamespaceOf(declaration);
                     break;
                 }
             }
 
             // using 行与成员树和探针树共用（生成器口径）：模板 @using 同时给短名与别名（K31）。
-            var usings = TemplateAnalyzer.CollectUsingLines(Ast.Nodes).ToImmutableArray();
             var memberBodies = Ast.Nodes.OfType<UiCodeBlock>().Select(static block => block.Code).ToList();
             var memberTree = ExpressionProbe.BuildMemberTree(
-                memberBodies, type?.Name ?? Ast.ClassName, namespaceName,
-                type is null || type.DeclaredAccessibility == Accessibility.Public,
+                memberBodies, legacyType?.Name ?? Ast.ClassName, legacyNamespace,
+                legacyType is null || legacyType.DeclaredAccessibility == Accessibility.Public,
                 usings, compilation);
+            _memberTree = memberTree;
             var memberTrees = memberTree is null
                 ? ImmutableArray<SyntaxTree>.Empty
                 : ImmutableArray.Create(memberTree);
 
-            return new ExpressionProbe(compilation, type, Ast.ClassName, namespaceName, memberTrees, usings);
+            return new ExpressionProbe(compilation, legacyType, Ast.ClassName, legacyNamespace, memberTrees, usings);
         }
         catch (Exception)
         {
@@ -240,6 +347,42 @@ public sealed class DocumentAnalysis
             _probeFailed = true;
             return null;
         }
+    }
+
+    /// <summary>项目编译里找承载该组件类的语法树：优先 code-behind 兄弟文件，其次任意同名 partial 类。</summary>
+    private static SyntaxTree? FindProbeTree(Compilation compilation, string className, string? codeBehindPath)
+    {
+        if (codeBehindPath is not null)
+        {
+            var codeBehind = compilation.SyntaxTrees.FirstOrDefault(t =>
+                string.Equals(t.FilePath, codeBehindPath, StringComparison.OrdinalIgnoreCase));
+            if (codeBehind is not null) return codeBehind;
+        }
+        return compilation.SyntaxTrees.FirstOrDefault(t => t.GetRoot()
+            .DescendantNodes().OfType<ClassDeclarationSyntax>()
+            .Any(c => c.Identifier.ValueText == className));
+    }
+
+    private static INamedTypeSymbol? FindTypeSymbol(Compilation compilation, SyntaxTree tree, string className)
+    {
+        var model = compilation.GetSemanticModel(tree);
+        foreach (var declaration in tree.GetRoot().DescendantNodes().OfType<ClassDeclarationSyntax>())
+            if (declaration.Identifier.ValueText == className)
+                return model.GetDeclaredSymbol(declaration);
+        return null;
+    }
+
+    /// <summary>生成树里含 @code 块体原文的那棵（块体逐字透传，可做 IndexOf 回映）。</summary>
+    private static SyntaxTree? FindGeneratedCodeTree(IReadOnlyList<SyntaxTree> trees, UiDocument ast)
+    {
+        var blocks = ast.Nodes.OfType<UiCodeBlock>().Where(static b => b.Code.Length > 0).ToArray();
+        if (blocks.Length == 0) return null;
+        foreach (var tree in trees)
+        {
+            var text = tree.ToString();
+            if (blocks.Any(b => text.Contains(b.Code, StringComparison.Ordinal))) return tree;
+        }
+        return null;
     }
 
     private static string NamespaceOf(SyntaxNode node)

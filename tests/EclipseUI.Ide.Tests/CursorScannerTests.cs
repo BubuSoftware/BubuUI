@@ -167,9 +167,11 @@ public class CursorScannerTests
     }
 
     [Fact]
-    public void CodeBlockIsOpaque()
+    public void CodeBlockIsIdentifiedNotOpaque()
     {
-        Assert.Equal(CursorKind.Text, At("@code {\n    public int cou|nt;\n}").Kind);
+        // @code 块内是真实 C# 文本（跳转定义在成员树上解析）；@style 仍按文本。
+        Assert.Equal(CursorKind.CodeBlock, At("@code {\n    public int cou|nt;\n}").Kind);
+        Assert.Equal(CursorKind.Text, At("@style {\n    .a { color: re|d }\n}").Kind);
     }
 
     [Fact]

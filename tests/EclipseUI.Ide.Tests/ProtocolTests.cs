@@ -294,6 +294,74 @@ public class ProtocolTests
         Assert.Equal(expectedOffset, actual);
     }
 
+    /// <summary>
+    /// 重命名端到端（L3 第二片）：prepareRename 给区间与占位符；rename 返回
+    /// WorkspaceEdit.changes——当前 .ui 与兄弟 .cs 各一个 uri，range 用各自原文换算行位。
+    /// </summary>
+    [Fact]
+    public async Task Session_PrepareAndRenameProduceWorkspaceEdit()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "eclipseui-ide-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, "Session.ui");
+        const string text = "<TextBlock Text={Total} />";
+        await File.WriteAllTextAsync(path, text);
+        await File.WriteAllTextAsync(Path.ChangeExtension(path, ".cs"), """
+            namespace Gallery;
+            public partial class Session
+            {
+                public int Total => 42;
+            }
+            """);
+
+        var catalogs = new CatalogProvider(new CatalogOptions
+        {
+            RuntimePath = Path.Combine(AppContext.BaseDirectory, "EclipseUI.Runtime.dll"),
+            IncludeSiblingAssemblies = false,
+            ProbeRoot = directory,
+        });
+        var uri = DocumentStore.PathToUri(path);
+        var transcript = await RunSessionWith(catalogs,
+            Request(1, "initialize"),
+            Notification("initialized", new JsonObject()),
+            DidOpen(uri, text),
+            Request(2, "textDocument/prepareRename", Position(uri, 0, 18)),
+            Request(3, "textDocument/rename", new JsonObject
+            {
+                ["textDocument"] = new JsonObject { ["uri"] = uri },
+                ["position"] = new JsonObject { ["line"] = 0, ["character"] = 18 },
+                ["newName"] = "Count",
+            }));
+
+        var capabilities = transcript.Single(m => m["id"]?.GetValue<int>() == 1)["result"]!["capabilities"]!;
+        Assert.True(capabilities["renameProvider"]!["prepareProvider"]!.GetValue<bool>());
+
+        var prepare = transcript.Single(m => m["id"]?.GetValue<int>() == 2)["result"]!;
+        Assert.Equal("Total", prepare["placeholder"]!.GetValue<string>());
+
+        var changes = transcript.Single(m => m["id"]?.GetValue<int>() == 3)["result"]!["changes"]!.AsObject();
+        Assert.Equal(2, changes.Count);
+        Assert.True(changes.ContainsKey(uri));
+        var csUri = changes.Single(kvp => kvp.Key != uri).Key;
+        Assert.EndsWith("Session.cs", csUri, StringComparison.Ordinal);
+
+        // .ui 侧：{Total} 的 Total（character 是列号：{ 在 16，Total 17..22，5 个字母）。
+        var uiEdit = changes[uri]![0]!;
+        Assert.Equal("Count", uiEdit["newText"]!.GetValue<string>());
+        Assert.Equal(17, uiEdit["range"]!["start"]!["character"]!.GetValue<int>());
+        Assert.Equal(22, uiEdit["range"]!["end"]!["character"]!.GetValue<int>());
+
+        // .cs 侧：属性声明的名字。用原文反算（列号 ≠ 偏移）。
+        var csText = await File.ReadAllTextAsync(Path.ChangeExtension(path, ".cs"));
+        var expectedOffset = csText.IndexOf("public int Total", StringComparison.Ordinal) + "public int ".Length;
+        var positions = new PositionMap(csText);
+        var csEdit = changes[csUri]![0]!;
+        var actual = positions.ToOffset(
+            csEdit["range"]!["start"]!["line"]!.GetValue<int>(),
+            csEdit["range"]!["start"]!["character"]!.GetValue<int>());
+        Assert.Equal(expectedOffset, actual);
+    }
+
     [Fact]
     public async Task Session_HoverAndSymbolsRespond()
     {
@@ -318,7 +386,8 @@ public class ProtocolTests
     [Fact]
     public async Task Session_UnknownMethodReturnsMethodNotFound()
     {
-        var transcript = await RunSession(Request(1, "textDocument/formatting"));
+        // P8 之后 formatting 已是受支持方法；这里换一个真正未实现的 LSP 方法。
+        var transcript = await RunSession(Request(1, "textDocument/selectionRange"));
         var error = transcript.Single(m => m["id"]?.GetValue<int>() == 1)["error"]!;
         Assert.Equal(JsonRpcException.MethodNotFound, error["code"]!.GetValue<int>());
     }
@@ -342,6 +411,156 @@ public class ProtocolTests
 
         Assert.Equal(2, published.Length);
         Assert.Empty(published[^1]["params"]!["diagnostics"]!.AsArray());
+    }
+
+    // ---- §6.9.7 P5–P8 的协议级回归夹具 ----
+
+    /// <summary>P8：四项新能力必须在 initialize 里如实声明，否则客户端不会发请求。</summary>
+    [Fact]
+    public async Task Session_AdvertisesEmbeddedCSharpCapabilities()
+    {
+        var transcript = await RunSession(Request(1, "initialize"));
+        var capabilities = transcript.Single(m => m["id"]?.GetValue<int>() == 1)["result"]!["capabilities"]!;
+
+        Assert.NotNull(capabilities["signatureHelpProvider"]);
+        Assert.Equal(new[] { "(", "," }, capabilities["signatureHelpProvider"]!["triggerCharacters"]!
+            .AsArray().Select(n => n!.GetValue<string>()).ToArray());
+        Assert.True(capabilities["semanticTokensProvider"]!["full"]!.GetValue<bool>());
+        Assert.Contains("method", capabilities["semanticTokensProvider"]!["legend"]!["tokenTypes"]!
+            .AsArray().Select(n => n!.GetValue<string>()));
+        Assert.Contains("quickfix", capabilities["codeActionProvider"]!["codeActionKinds"]!
+            .AsArray().Select(n => n!.GetValue<string>()));
+        Assert.True(capabilities["documentFormattingProvider"]!.GetValue<bool>());
+        Assert.True(capabilities["documentRangeFormattingProvider"]!.GetValue<bool>());
+    }
+
+    /// <summary>P8 signature help：{expr} 里的方法调用给出重载与当前参数位。</summary>
+    [Fact]
+    public async Task Session_SignatureHelpResolvesInvocationInExpression()
+    {
+        const string uri = "file:///D:/workspace/Signature.ui";
+        const string text = "@using System\n<TextBlock Text={Math.Max(1, 2)} />\n";
+        var transcript = await RunSession(
+            Request(1, "initialize"),
+            Notification("initialized", new JsonObject()),
+            DidOpen(uri, text),
+            Request(2, "textDocument/signatureHelp", Position(uri, 1, 26)));
+
+        var result = transcript.Single(m => m["id"]?.GetValue<int>() == 2)["result"]!;
+        var signatures = result["signatures"]!.AsArray();
+        Assert.NotEmpty(signatures);
+        Assert.Contains("Max", string.Join(" ", signatures.Select(s => s!["label"]!.GetValue<string>())));
+        Assert.True(result["activeParameter"]!.GetValue<int>() >= 0);
+    }
+
+    /// <summary>P8 semantic tokens：LSP 3.17 的五元组 delta 编码，且不越出内嵌 C# 区间。</summary>
+    [Fact]
+    public async Task Session_SemanticTokensAreDeltaEncoded()
+    {
+        const string uri = "file:///D:/workspace/Tokens.ui";
+        const string text = "@using System\n<TextBlock Text={Math.Max(1, 2)} />\n";
+        var transcript = await RunSession(
+            Request(1, "initialize"),
+            Notification("initialized", new JsonObject()),
+            DidOpen(uri, text),
+            Request(2, "textDocument/semanticTokens/full", new JsonObject
+            {
+                ["textDocument"] = new JsonObject { ["uri"] = uri },
+            }));
+
+        var data = transcript.Single(m => m["id"]?.GetValue<int>() == 2)["result"]!["data"]!.AsArray();
+        Assert.NotEmpty(data);
+        Assert.Equal(0, data.Count % 5);
+        Assert.All(data, n => Assert.True(n!.GetValue<int>() >= 0));
+        var legend = transcript.Single(m => m["id"]?.GetValue<int>() == 1)["result"]!
+            ["capabilities"]!["semanticTokensProvider"]!["legend"]!["tokenTypes"]!.AsArray();
+        for (var i = 3; i < data.Count; i += 5)
+            Assert.True(data[i]!.GetValue<int>() < legend.Count);
+    }
+
+    /// <summary>P8 code action：模板级 EUI001 给确定性的「补 @using」修复，编辑落在 .ui 起始。</summary>
+    [Fact]
+    public async Task Session_CodeActionAddsMissingUsing()
+    {
+        const string uri = "file:///D:/workspace/Action.ui";
+        var transcript = await RunSession(
+            Request(1, "initialize"),
+            Notification("initialized", new JsonObject()),
+            DidOpen(uri, "<StackPanel />\n"),
+            Request(2, "textDocument/codeAction", new JsonObject
+            {
+                ["textDocument"] = new JsonObject { ["uri"] = uri },
+                ["range"] = new JsonObject
+                {
+                    ["start"] = new JsonObject { ["line"] = 0, ["character"] = 0 },
+                    ["end"] = new JsonObject { ["line"] = 0, ["character"] = 14 },
+                },
+                ["context"] = new JsonObject { ["diagnostics"] = new JsonArray() },
+            }));
+
+        var actions = transcript.Single(m => m["id"]?.GetValue<int>() == 2)["result"]!.AsArray();
+        Assert.Contains(actions, a => a!["title"]!.GetValue<string>().Contains("@using EclipseUI.Elements"));
+        var fix = actions.Single(a => a!["title"]!.GetValue<string>().Contains("@using"))!;
+        var edit = fix["edit"]!["changes"]![uri]![0]!;
+        Assert.Equal("@using EclipseUI.Elements" + Environment.NewLine, edit["newText"]!.GetValue<string>());
+    }
+
+    /// <summary>P8 格式化 / 区间格式化：同一批编辑，range 只按请求区间过滤。</summary>
+    [Fact]
+    public async Task Session_FormattingAndRangeFormattingAgree()
+    {
+        const string uri = "file:///D:/workspace/Format.ui";
+        const string text = "@using EclipseUI.Elements\n<StackPanel>\n   <Button />\n</StackPanel>\n";
+        var transcript = await RunSession(
+            Request(1, "initialize"),
+            Notification("initialized", new JsonObject()),
+            DidOpen(uri, text),
+            Request(2, "textDocument/formatting", new JsonObject
+            {
+                ["textDocument"] = new JsonObject { ["uri"] = uri },
+                ["options"] = new JsonObject { ["tabSize"] = 4, ["insertSpaces"] = true },
+            }),
+            Request(3, "textDocument/rangeFormatting", new JsonObject
+            {
+                ["textDocument"] = new JsonObject { ["uri"] = uri },
+                ["range"] = new JsonObject
+                {
+                    ["start"] = new JsonObject { ["line"] = 0, ["character"] = 0 },
+                    ["end"] = new JsonObject { ["line"] = 1, ["character"] = 0 },
+                },
+                ["options"] = new JsonObject { ["tabSize"] = 4, ["insertSpaces"] = true },
+            }));
+
+        var full = transcript.Single(m => m["id"]?.GetValue<int>() == 2)["result"]!.AsArray();
+        var ranged = transcript.Single(m => m["id"]?.GetValue<int>() == 3)["result"]!.AsArray();
+        Assert.NotEmpty(full);
+        Assert.True(ranged.Count <= full.Count);
+        Assert.All(full, e => Assert.NotNull(e!["newText"]));
+    }
+
+    /// <summary>P5 watcher：文件变更通知后重发已打开文档的诊断，无需手动 Reload。</summary>
+    [Fact]
+    public async Task Session_WatchedFilesRepublishDiagnostics()
+    {
+        const string uri = "file:///D:/workspace/Watched.ui";
+        var transcript = await RunSession(
+            Request(1, "initialize"),
+            Notification("initialized", new JsonObject()),
+            DidOpen(uri, "@using EclipseUI.Elements\n<Buton />\n"),
+            Notification("workspace/didChangeWatchedFiles", new JsonObject
+            {
+                ["changes"] = new JsonArray
+                {
+                    new JsonObject { ["uri"] = "file:///D:/workspace/Widget.cs", ["type"] = 2 },
+                },
+            }));
+
+        var published = transcript
+            .Where(m => m["method"]?.GetValue<string>() == "textDocument/publishDiagnostics")
+            .ToArray();
+        Assert.True(published.Length >= 2);
+        Assert.Contains(published[^1]["params"]!["diagnostics"]!.AsArray(),
+            d => d!["code"]!.GetValue<string>() == "EUI001");
     }
 
     /// <summary>把一串消息喂给真实的 server（内存流，全会话跑完），回收 server 发出的所有消息。</summary>

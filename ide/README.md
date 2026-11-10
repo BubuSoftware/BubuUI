@@ -4,137 +4,178 @@
 
 ```
 ide/
-  EclipseUI.LanguageServer/   LSP server（C#/.NET 10，stdio）——诊断/补全/悬停/大纲全在这里
+  EclipseUI.LanguageServer/   LSP server（C#/.NET 10，stdio）——全部 IDE 能力都在这里
+    Workspace/                L1–L4：MSBuild 求值 / 精确引用 / 项目 Compilation / 真生成器
+    Analysis/                 诊断 / 补全 / 悬停 / 大纲 / 跳转 / 重命名 / 内嵌 C# 语言服务
+    Server/                   JSON-RPC 协议层（声明能力、翻译 LSP 模型）
   vscode/                     VS Code 壳：TextMate grammar + 语言配置 + 片段 + 极薄的 LSP 客户端
-  build.ps1                   发布 server 到扩展目录 + 装依赖 + 跑 grammar 断言
+  build.ps1                   发布 server 到扩展目录 + 装依赖 + 跑 grammar/壳断言
 ```
 
 Rider 走 lsp4ij 接**同一个** server（见 §4），所以补全/诊断的行为在两个 IDE 里天然一致，
 差别只在壳的接线方式。
 
-## 1. 能力（当前切片）
+## 0. 架构：一个项目系统，一份项目 Compilation
+
+design/06 §6.9 之后，目录不再是「扫 dll 元数据」，所有能力都从**同一份项目 Compilation**派生：
+
+```
+工作区里的 *.csproj
+   ↓ L1  MSBuildLocator + Microsoft.Build.Evaluation.Project 求值（不执行 Target）
+   ↓     Compile / AdditionalFiles / Using / 属性最终值；归属 = 求值后 AdditionalFiles 命中
+   ↓ L2  真 CSharpCompilation：源码树 = Compile，隐式 using = Using items，
+   ↓     引用 = obj/project.assets.json（package compile assets + 被引用工程的输出）
+   ↓ L3  IDE 内跑真 TemplateGenerator（extern alias euiGen + build_property.rootnamespace），
+   ↓     生成树加回编译 —— .ui 派生组件不必先 build 就存在
+   ↓ L4  UiCatalogFactory.Build(outputCompilation) —— 目录的唯一事实源
+   ↓
+所有能力：标签/属性补全、悬停、诊断、跳转定义、重命名、signature help、
+语义着色、代码操作、格式化 —— 全部查这一份 Compilation 与这一份目录
+```
+
+口径总则：**编译时按什么，IDE 就按什么**。不自己实现 csproj glob、不解析 csproj 属性、
+不依赖 VS Code C# Dev Kit 的项目系统、不为属性跳转扩正则认成员声明。
+没有 csproj / untitled / 内存态分析时自动退回 legacy 的 dll 目录，能力优雅降级而不是消失。
+
+## 1. 能力
 
 | 能力 | 状态 | 说明 |
 |---|---|---|
-| 语法高亮 `.ui` | ✅ | 标签/属性/`@bind-`/附加属性/`@if`/`@foreach`/`@switch`/`@using`/`@code`/`@style`/两类注释；`{expr}` 内嵌 C# 词法 |
-| 语法高亮 `.eustyle` | ✅ | 类选择器、伪类、`$变量`、`theme()`、hex 色、`@states` |
-| 诊断（红波浪线） | ✅ | 直接跑编译器前端（`FrontEnd.Parse` + `Analyze`），EUI001/EUI002/EUI003/EUI031… 与 `dotnet build` 同码同 span |
-| 标签补全 | ✅ | 来自模板目录；未导入的命名空间会提示 `needs @using …` |
+| 语法高亮 `.ui` / `.eustyle` | ✅ | TextMate grammar；标签/属性/`@bind-`/附加属性/指令/注释，内嵌 C# 词法 |
+| 诊断 Tier 1 | ✅ | 每次按键跑 `FrontEnd.Parse + Analyze`，与 `dotnet build` 同码同 span |
+| 诊断 Tier 2 | ✅ | 真生成器 + 项目 Compilation 的 CS/EUI 诊断经 `#line` 映回 `.ui`；400ms debounce，只在文档版本未变时发布 |
+| `.eustyle` 诊断 | ✅ | `.eustyle` 进 `documentSelector`，`ExecuteStylesheet` 的 EUI050–052 有 LSP 红波浪线 |
+| 标签补全 | ✅ | 来自项目目录；未 build 的自家控件、`.ui` 派生组件都在；未导入的标 `needs @using` |
+| `@using` 别名补全 | ✅ | `@using Alt = Ns.Type` 的 `Alt` 作为标签候选，选中解析到目标类型 |
 | 属性 / 事件 / 组件参数 / 附加属性补全 | ✅ | 含 `Grid.Row` 形态；事件带委托签名 |
-| `@bind-` 补全 | ✅ | 只列可写目标（只读属性/事件/内容参数不出现） |
-| 属性值补全 | ✅ | 枚举成员、`bool`、`Style=` 的可样式属性名 |
-| `@` 指令补全 | ✅ | `@if/@foreach/@switch/@using/@code/@style`，带片段 |
-| `@using` 命名空间补全 | ✅ | 目录里出现过的命名空间 |
-| 悬停 | ✅ | 标签 → CLR 类型/内容模型；属性 → 类型；事件 → 处理器签名；枚举 → 成员列表 |
-| 大纲 / 面包屑 | ✅ | 元素树 + 控制流块 + `@code`，容器范围覆盖到结束标签 |
-| 表达式悬停 | ✅ | `{expr}` 内显示推断出的 C# 类型；方法组显示处理器签名（Roslyn 投影，design/06 §6.3） |
-| 表达式内 C# 补全 | ✅ | 点号后列接收者成员；裸前缀列 `@foreach` 变量 + code-behind 成员；code-behind 取 `{Name}.cs` 兄弟文件（spec/02 §2.2），`@code` 块同样计入 |
-| 跳转定义 | ✅ | `{expr}` 内标识符 → `@foreach` 变量落回本文档 foreach 头；code-behind 成员跳到兄弟 `.cs` 的声明名字（`@code` 成员暂不跳，见边界） |
-| 重命名 | ⛔ 下一片 | 需 WorkspaceEdit 反扫多文件 |
-| 语义着色 | ⛔ | TextMate 先兜住；语义 token 在投影上可接，未做 |
-| `#line` 调试映射 | ⛔ | design/06 P3 |
+| `@bind-` / 属性值 / `@` 指令 / `@using` 命名空间补全 | ✅ | 只列可写目标；枚举成员、`bool`、`Style=` 属性名 |
+| 悬停 / 大纲 | ✅ | 标签 → CLR 类型与内容模型；属性 → 类型；事件 → 处理器签名 |
+| 表达式悬停 / 内嵌 C# 补全 | ✅ | `{expr}` 与 `@code` 走 Roslyn 投影；项目 Compilation 已含 code-behind 与生成树，不重复加树 |
+| 跳转定义 | ✅ | 标签与**属性/事件/参数/附加属性**都走 Roslyn 符号查询，落在成员声明；有源码跳源码（含仓库里以源码编译的框架工程），无源码走成员级反编译（`eui-decompiled:`） |
+| 重命名 | ✅ | F2 改 `@foreach` 变量与 code-behind 类自身成员；改不全的编辑一律拒绝 |
+| signature help | ✅ | `textDocument/signatureHelp`，重载与当前参数位从同一份 Compilation 取 |
+| 语义着色 | ✅ | `textDocument/semanticTokens/full`，只着色 `{expr}` 与 `@code` 区间（模板表面仍归 TextMate） |
+| 代码操作 | ✅ | `EUI001` 补 `@using`、`EUI002` 最近属性替换、`CS0103` 在 `@code` 生成缺失成员；映不回的编辑丢弃 |
+| 格式化 / 区间格式化 | ✅ | 模板缩进按 AST 做最小行编辑；`@code` 块体交 Roslyn `Formatter` |
+| watcher 自动失效 | ✅ | `.cs/.ui/.eustyle/.csproj/Directory.Build.props/obj/project.assets.json` 变更 → 重建快照 + 重发诊断，无需手动 Reload |
+| `#line` 调试映射 | ⛔ | 生成器侧已有 `#line`，调试器接线未做（design/06 P3） |
+
+第 5 条验收的边界：**只在 `.ui` 内提供与 `.cs` 同档的 C# 能力，不接管 `.cs` 文件**
+（那由 C# Dev Kit / ReSharper 负责）。
 
 ## 2. VS Code：跑起来
 
 ```powershell
-# 一次性：发布 server 到 ide/vscode/server + 装 npm 依赖 + 跑 grammar 断言
+# 一次性：发布 server 到 ide/vscode/server + 装 npm 依赖 + 跑 grammar/壳断言
 powershell -ExecutionPolicy Bypass -File ide/build.ps1
+# 依赖已装好时可加 -SkipNpm
 ```
 
-然后二选一：
-
-- **调试**：VS Code 打开 `ide/vscode` 目录，按 `F5`（Run Extension）。
-- **安装**：`code --install-extension` 需要一个 `.vsix`（`npm i -g @vscode/vsce && vsce package`），
-  或者临时用 `code --extensionDevelopmentPath=<repo>/ide/vscode` 启动。
+然后二选一：**调试**（VS Code 打开 `ide/vscode`，F5 Run Extension）或
+**临时安装**（`code --extensionDevelopmentPath=<repo>/ide/vscode`）。
 
 开发机不发布也能用：扩展会自己找到
 `ide/EclipseUI.LanguageServer/bin/{Release,Debug}/net10.0/EclipseUI.LanguageServer.dll`。
+改完服务端要重跑 `ide/build.ps1` 并 **Developer: Reload Window**；server 是常驻进程，
+重载前一直连旧 dll，旧进程还会锁住 `ide/vscode/server/*.dll`（MSB3026/3027）。
 
-## 3. server 怎么找到模板目录
+## 3. server 怎么找到项目与目录
 
-目录**不手写**：和编译器同一条符号派生路径（`UiCatalogFactory.Build(Compilation)`，
-design/14 §14.10.2）。manifest 的查找顺序：
+**优先路径（有 csproj）**：`--workspace <root>`（扩展自动传第一个工作区文件夹）→ 向上找仓库根
+（`.git` / `*.sln*` 标记）→ 枚举 `*.csproj` 求值 → 每个项目一份 Compilation/目录。
+文档属于哪个项目完全由求值后的 `AdditionalFiles` 决定；一个文档被多个项目收，诊断逐份都算；
+不属于任何项目的磁盘文档**明确不给目录也不给诊断**（编译时不参与，IDE 不该假装它参与）。
+
+打开的文档用编辑器缓冲区覆盖磁盘，所以未保存的 `.cs` / `.ui` / `.eustyle` 立刻在补全、
+诊断与目录里可见。结构文件变化重求值，其余变化只丢快照。
+
+**legacy fallback（无 csproj / untitled / 内存态）**：仍是 `UiCatalogFactory.Build(Compilation)`
+从 `EclipseUI.Runtime.dll` 符号派生（不加载程序集），runtime 同目录下引用了 Runtime 的
+程序集也会被扫进来。查找顺序：
 
 1. `--runtime <path>`（扩展设置 `eclipseui.runtime.path`）
 2. 环境变量 `ECLIPSEUI_RUNTIME`
 3. server 自身目录下的 `EclipseUI.Runtime.dll`（发布版随包带）
 4. 从 `--workspace` 向上找仓库布局 `src/EclipseUI.Runtime/bin/{Release,Debug}/net*/`
 
-**你自己的组件**（`Component`/`Element` 派生）也能补全：runtime 同目录下**引用了
-`EclipseUI.Runtime`** 的程序集会被自动扫描（PE 元数据的 AssemblyRef 判定，不加载程序集）。
-也可以显式给：
+也可显式给 `--assembly <path>`（扩展设置 `eclipseui.catalog.assemblies`，字符串数组）。
 
-```powershell
-dotnet ide/EclipseUI.LanguageServer/bin/Debug/net10.0/EclipseUI.LanguageServer.dll `
-  --stdio --runtime src/EclipseUI.Runtime/bin/Debug/net10.0 --assembly bin/Debug/net10.0/MyApp.dll
-```
-
-VS Code 侧对应 `eclipseui.catalog.assemblies`（字符串数组）。
-
-> 找不到 runtime 时**不会**报"每个标签都未知"——语义检查直接跳过，只出语法诊断，
-> 并用 `window/showMessage` 说明缺什么。这是有意的：配置问题不该伪装成代码问题。
-> `EclipseUI: Reload Tag Catalog` 返回 0 tags 时也会弹 Warning。
+> 找不到 runtime 且没有项目时**不会**报「每个标签都未知」——语义检查直接跳过，只出语法诊断，
+> 并用 `window/showMessage` 说明缺什么。配置问题不该伪装成代码问题。
 
 ### 3.1 没有红波浪线时怎么查
 
-高亮来自 TextMate grammar，**不需要 server**；所以「有颜色但没有诊断/补全」通常说明 server 没连上
-或目录为空。按顺序查：
+0. **先看 server 日志**。扩展会给 server 传 `--log <logUri>/eclipseui-server.log --log-stderr`，
+   所以调试控制台（扩展宿主）里能直接看到：
 
-1. 输出面板 → `EclipseUI` 通道，看 `catalog: N tags from <path>`；`N=0` 就是目录没找到。
-2. 命令面板跑 `EclipseUI: Reload Tag Catalog`：0 tags 会弹 Warning，非 0 会显示数量。
-3. 编辑器右下角语言模式必须是 `eclipseui`（不是 XML/HTML）。`documentSelector` 只匹配这个
-   language id，id 不对时 server 收不到 `didOpen`，自然一条诊断都不会发。
-4. 确认扩展用的是最新 server：改完服务端要重跑 `ide/build.ps1` 并 **Developer: Reload Window**。
-   server 是常驻进程，重载前 VS Code 一直连着旧 dll；旧进程还会锁住 `ide/vscode/server/*.dll`，
-   让 `dotnet publish` 报 MSB3026/3027「文件被 .NET Host 锁定」。
-5. `build.ps1` 会把 `EclipseUI.Runtime.dll` / `EclipseUI.Rendering.dll` 一起放进 `server/`
-   （server 只读元数据、不加载程序集，所以 publish 默认不带它们）。打包后的扩展因此不依赖
-   「工作区恰好是本仓库」。
+   ```
+   projects: 19 evaluated from d:\workspace\EclipseUI (workspace …)
+   catalog: 14 tags from <project compilations>
+   open Showcase.ui · 1 project(s)
+   definition: Showcase.ui @32 -> Panels.cs
+   definition: no result · Showcase.ui @1407
+   ```
 
-语义诊断走的是编译器同一个 `FrontEnd`，只要目录里有标签，删掉 `@using` 后 `<StackPanel>`
-一定报 `EUI001`（K22，内置控件无豁免）。**零诊断 = 目录/连接问题，不是规则漏了。**
+   `open … · 0 project(s)` 就是根因：文件不在任何项目的 `AdditionalFiles` 里，
+   补全/诊断/跳转都会是空的（紧跟一行 `! … is not in any project's AdditionalFiles`）。
+   `definition: no result` 说明服务端确实拿到了请求、光标位置对不上可跳转的符号。
+1. 输出面板 → `EclipseUI` 通道，看 `projects: N evaluated from …` 与
+   `catalog: N tags from <project compilations>`；`N=0` 说明目录为空。
+2. 命令面板 `EclipseUI: Reload Tag Catalog`：0 tags 会弹 Warning。
+3. 编辑器右下角语言模式必须是 `eclipseui` / `eustyle`，否则 server 收不到 `didOpen`。
+4. 确认 `obj/project.assets.json` 存在（先 `dotnet restore`）；缺它时引用不全，
+   `Notes` 会明确提示「run `dotnet restore`」。
+5. 确认扩展用的是最新 server（见 §2 的 Reload Window）。**server 进程会被 dll 锁住**：
+   重发布前要先把窗口重载（或结束掉 `dotnet …LanguageServer.dll`），否则 `dotnet publish`
+   会报 MSB3027。
 
-## 4. Rider（下一步，零 server 改动）
+## 4. Rider（零 server 改动）
 
-lsp4ij（Red Hat，EPL-2.0，2024.2+）支持所有 IntelliJ 系 IDE。两种接法：
-
-**过渡（现在就能用）**：Settings → Languages & Frameworks → Language Servers → `+`
-新建 User-defined server：
+lsp4ij（Red Hat，EPL-2.0，2024.2+）：Settings → Languages & Frameworks →
+Language Servers → `+` 新建 User-defined server：
 
 | 字段 | 值 |
 |---|---|
 | Name | EclipseUI |
 | Command | `dotnet` |
 | Arguments | `<repo>/ide/EclipseUI.LanguageServer/bin/Release/net10.0/EclipseUI.LanguageServer.dll --stdio --workspace <repo>` |
-| Mappings | File name pattern `*.ui` → language id `eclipseui` |
+| Mappings | `*.ui` → `eclipseui`；`*.eustyle` → `eustyle` |
 
-语法高亮先靠 VS Code 那份 TextMate bundle（IntelliJ 平台原生支持导入 `.tmLanguage.json`）。
-
-**正式（后续薄插件）**：插件只做两件事——注册 `.tmLanguage.json` bundle、用
-`com.redhat.devtools.lsp4ij.server` 扩展点声明 stdio server。逻辑一行都不重复，
-因为协议层就是这里的 `LanguageServerHost`。
+watcher 由 lsp4ij 配同一组 glob（`**/*.cs`、`**/*.ui`、`**/*.eustyle`、`**/*.csproj`、
+`**/Directory.Build.props`、`**/obj/project.assets.json`）。语法高亮靠 VS Code 那份
+TextMate bundle（IntelliJ 平台原生支持导入 `.tmLanguage.json`）。
 
 ## 5. 测试
 
 ```powershell
-dotnet test tests/EclipseUI.Ide.Tests     # 84 例：光标上下文 / 补全 / 悬停 / 跳转定义 / 大纲 / 诊断 / 协议帧 / 探针投影 / 端到端会话
-cd ide/vscode; node test/tokenize.test.js  # grammar：用真实的 oniguruma 引擎逐 token 断言 scope
+dotnet test tests/EclipseUI.Ide.Tests     # 119 例：五条验收夹具 / 项目系统 / 光标 / 补全 / 悬停 / 跳转 / 重命名 / 反编译 / 大纲 / 诊断 / 协议帧 / 探针投影 / 端到端会话
+cd ide/vscode; node test/tokenize.test.js  # grammar：真实 oniguruma 引擎逐 token 断言 scope
+cd ide/vscode; node test/extension.test.js # 客户端壳：documentSelector / watcher / 参数
 ```
 
-grammar 测试值得单说：TextMate 写错不会报错，只会"某个地方忽然没颜色"。
-`node test/tokenize.test.js --dump` 会把每行每个 token 的 scope 打出来，
-包括"块定界符独占一行"这类曾经把整个文件吞掉的回归。
+`ProjectSystemTests.cs` 用真实仓库跑 L1–L4，把 design/06 §6.9.7 的五条验收做成可执行夹具：
+未 build 的控件与 `.ui` 派生组件进目录、别名补全/解析、属性补全与目录全集一致、
+框架属性/标签 F12 落仓库源码、`.ui` 的 `CS0103` 与 `.eustyle` 的 `EUI051` 都由 Tier 2 报出。
+
+grammar 测试值得单说：TextMate 写错不会报错，只会「某个地方忽然没颜色」。
+`node test/tokenize.test.js --dump` 会把每行每个 token 的 scope 打出来。
 
 ## 6. 已知边界
 
 - **全文同步**（`TextDocumentSyncKind.Full`）：.ui 都是几 KB，全量重解析比维护增量编辑映射可靠。
-- **表达式补全的边界**：投影用探针合成树走 Roslyn（design/06 §6.3），code-behind 取
-  `{Name}.cs` 兄弟文件（spec/02 §2.2）——不放兄弟文件就只有 `@foreach` 变量与 `@code` 成员；
-  找不到编译运行时（`--runtime`）时表达式分支整体优雅停用，返回空候选而非报错。
-- **跳转定义的边界**：`@code` 成员的声明在合成树里、没有可去的真实文件，跳转对它返回
-  null（不给错位置）；code-behind 跳转要求兄弟文件在磁盘上（内存态/ untitled 文档没有路径）。
-- 目录刷新是手动的：`EclipseUI: Reload Tag Catalog` 命令（`eclipseui/reloadCatalog` 请求）。
-  重新编译了 app 之后需要点一下。
-- 组件模板里的 `<ContentSlot>` 解析退化为按短名匹配目录（无 code-behind 符号），
-  与 `FrontEnd.Analyze` 的无符号语境一致。
-- server 只认 `.ui`；`.eustyle` 目前只有高亮，没有诊断（样式表编译器还没接进 LSP）。
+- **项目求值失败只掉 IDE 能力**：`dotnet build` 用 SDK 自带 MSBuild，与 LSP 进程内 Locator 加载的
+  是两条独立路径；求值挂了项目照样编译得过，Notes 里会写清原因。
+- **引用依赖 restore**：精确 dll 路径来自 `obj/project.assets.json`；没 restore 过就只有平台程序集，
+  框架控件可能补不出来。先跑一次 `dotnet restore`。
+- **跳转定义**：源码可达（含仓库里以源码编译的框架工程）跳真实文件；只有元数据（dll / NuGet）
+  才反编译成 `eui-decompiled:` 只读虚拟文档。反编译文本是重建的 C#，与原始源码不完全一致。
+  目录不认识的标签返回 null，不给错位置。
+- **重命名**：只允许 `@foreach` 变量与 code-behind 类自身成员；工作区 `.cs` 超过 500 个文件时
+  拒绝成员改名（宁可少改不错改）。P9 的 `SymbolFinder` 改造未做。
+- **代码操作 / 格式化**：编辑经偏移回映改写回 `.ui`；映不回的丢弃而不是猜。
+- **`#line` 调试映射**未做；语义着色只覆盖内嵌 C# 区间，模板表面仍由 TextMate 着色。
+- **URI 必须按编辑器格式解析**：VS Code 发 `file:///d%3A/repo/x.ui`（盘符冒号编码、盘符小写）。
+  这种写法下 .NET 的 `Uri.LocalPath` 返回 `/d:/repo/x.ui`，再经 `GetFullPath` 就永远匹配不到
+  项目里的真实路径——2026-11-11 的「脚本全绿、编辑器全废」就是这个分支。`DocumentStore.UriToPath`
+  自己解转义并按盘符/UNC 还原，`ProjectSystemTests.UriConversion_*` 与 `Fixture7_*` 钉住这个行为。
+  新增任何「从 URI 取路径」的代码都必须走它，不要直接 `new Uri(...).LocalPath`。

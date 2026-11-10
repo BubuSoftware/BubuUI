@@ -54,6 +54,12 @@ public sealed class CatalogProvider
     public string? RuntimePath { get; private set; }
 
     /// <summary>
+    /// 工作区根（VS Code/Rider 启动时传的 <c>--workspace</c>）。重命名扫工程内其余
+    /// <c>.cs</c> 引用用它；null = 宿主没传，重命名的成员分支整体停用（不给不完备的编辑）。
+    /// </summary>
+    public string? WorkspaceRoot => _options.ProbeRoot;
+
+    /// <summary>
     /// 目录构建用的探针 Compilation（TPA + Runtime + Rendering + 应用程序集，无源码树）。
     /// 表达式投影在它之上派生（加 code-behind 与 @code 合成树）；没找到 runtime 时为 null，
     /// 表达式补全/悬停与语义诊断一样整体停用。
@@ -137,6 +143,15 @@ public sealed class CatalogProvider
                 Add(candidate);
         }
 
+        // 工作区自己的构建产物：用户组件（.ui 派生类、自定义控件）在 Gallery.dll 这类
+        // app 程序集里。开发布局下 runtime 在 src/EclipseUI.Runtime/bin，同级扫描够不着它，
+        // 所以再从工作区 bin 目录里收一遍（引用了 runtime 的非框架程序集）。
+        if (_options.ProbeRoot is not null)
+        {
+            foreach (var candidate in WorkspaceAssemblies(_options.ProbeRoot))
+                Add(candidate);
+        }
+
         var compilation = CSharpCompilation.Create(
             "EclipseUICatalogProbe",
             Array.Empty<SyntaxTree>(),
@@ -162,7 +177,8 @@ public sealed class CatalogProvider
         }
     }
 
-    private static UiCatalog EmptyCatalog() =>
+    /// <summary>文档不属于任何项目时的空目录（§6.9.3 L1：不给目录、不给诊断）。</summary>
+    public static UiCatalog EmptyCatalog() =>
         new(Array.Empty<UiElementDef>(), Array.Empty<UiHiddenTag>(), Array.Empty<UiMetadataProblem>());
 
     /// <summary>
@@ -301,6 +317,65 @@ public sealed class CatalogProvider
             if (string.Equals(name, "EclipseUI.Rendering.dll", StringComparison.OrdinalIgnoreCase)) continue;
             if (ReferencesAssembly(file, "EclipseUI.Runtime")) yield return file;
         }
+    }
+
+    /// <summary>
+    /// 工作区 bin 目录里的应用/第三方程序集（引用了 EclipseUI.Runtime 的非框架 dll）。
+    /// 开发布局下 <see cref="SiblingAssemblies"/> 的起点是框架 runtime 的 bin，够不着应用
+    /// 自己的输出（samples/Gallery/bin/…/Gallery.dll）——这里补上。准入与同级扫描一致：
+    /// 只认显式引用 runtime 的程序集；<c>EclipseUI.*</c> 框架程序集排除（runtime 已由
+    /// <see cref="DiscoverRuntime"/> 定位，双份会让探针编译的类型歧义）。
+    /// </summary>
+    private IEnumerable<string> WorkspaceAssemblies(string workspaceRoot)
+    {
+        List<string> binDirectories;
+        try
+        {
+            // 只找构建产物目录（bin）；数量有上限，防巨型工作区拖慢启动。
+            binDirectories = Directory
+                .EnumerateDirectories(workspaceRoot, "bin", SearchOption.AllDirectories)
+                .Take(24)
+                .ToList();
+        }
+        catch (Exception)
+        {
+            yield break;
+        }
+
+        // 同名 dll（bin/Debug 与 bin/Release 各一份 Gallery.dll）只留最新的：
+        // 双份会进两套相同类型，探针的 GetTypeByMetadataName 直接歧义。
+        var newest = new Dictionary<string, (string Path, DateTime Time)>(StringComparer.OrdinalIgnoreCase);
+        var probed = 0;
+        foreach (var bin in binDirectories)
+        {
+            IEnumerable<string> files;
+            try
+            {
+                files = Directory.EnumerateFiles(bin, "*.dll", SearchOption.AllDirectories);
+            }
+            catch (Exception)
+            {
+                continue;
+            }
+
+            foreach (var file in files)
+            {
+                if (probed >= 200) break;
+                probed++;
+
+                var name = Path.GetFileName(file);
+                if (name.StartsWith("EclipseUI.", StringComparison.OrdinalIgnoreCase)) continue;
+                if (name.EndsWith(".resources.dll", StringComparison.OrdinalIgnoreCase)) continue;
+                if (!ReferencesAssembly(file, "EclipseUI.Runtime")) continue;
+
+                var time = File.GetLastWriteTimeUtc(file);
+                if (!newest.TryGetValue(name, out var existing) || time > existing.Time)
+                    newest[name] = (file, time);
+            }
+            if (probed >= 200) break;
+        }
+
+        foreach (var entry in newest.Values) yield return entry.Path;
     }
 
     /// <summary>读 PE 元数据的 AssemblyRef 表判断引用关系——不加载程序集（不执行用户代码）。</summary>

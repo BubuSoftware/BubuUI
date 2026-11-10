@@ -7,7 +7,7 @@
     <AssemblyName>EclipseUI.LanguageServer</AssemblyName>
     <ImplicitUsings>enable</ImplicitUsings>
     <InvariantGlobalization>true</InvariantGlobalization>
-    <Description>EclipseUI .ui language server (stdio LSP): diagnostics, completion, hover, document symbols. Shared by the VS Code and Rider shells (design/06).</Description>
+    <Description>EclipseUI .ui language server (stdio LSP): diagnostics, completion, hover, definition, rename, outline and embedded C# language services. Shared by the VS Code and Rider shells (design/06).</Description>
   </PropertyGroup>
 
   <ItemGroup>
@@ -17,11 +17,29 @@
     <ProjectReference Include="..\..\src\EclipseUI.Compiler.Metadata\EclipseUI.Compiler.Metadata.csproj" />
     <!-- 表达式探针（design/06 §6.3）：与生成器共享同一实现（生成器源码并入本项目）。 -->
     <ProjectReference Include="..\..\src\EclipseUI.Compiler.Probe\EclipseUI.Compiler.Probe.csproj" />
+    <!-- L3（design/06 §6.9.3）：IDE 内跑真 TemplateGenerator。生成器把 Compiler/Metadata/Probe
+         源码并入自己程序集，直接引用会 CS0433，所以只在这里用 extern alias euiGen，
+         公开签名只有 Initialize(IncrementalGeneratorInitializationContext)，不跨界传类型。 -->
+    <!-- PrivateAssets=all：别名只在 server 内生效，不能把这份「源码并入」的程序集传给
+         引用 server 的测试项目（否则测试侧 UiCatalog/UiElementDef 会 CS0433 撞车）。 -->
+    <ProjectReference Include="..\..\src\EclipseUI.Compiler.Generator\EclipseUI.Compiler.Generator.csproj"
+                      Aliases="euiGen" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
     <!-- 与 EclipseUI.Compiler.Metadata 保持同一版本，避免程序集绑定到两个 Roslyn 副本。 -->
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.9.2" />
+    <!-- L8 格式化/代码操作（design/06 §6.9.3 依赖增量）：锁同一 Roslyn 版本。 -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.9.2" />
+    <!-- L1 MSBuild 求值 + SDK 定位（§6.9.3 R1）。契约锁 17.11.4（最老支持 SDK 8.0.421 的
+         Microsoft.Build 版本线），ExcludeAssets=runtime 让 Locator 加载 SDK 里那份；
+         运行时程序集比包旧也不会 MissingMethodException（spike 已实测 SDK 10.0.400）。 -->
+    <PackageReference Include="Microsoft.Build" Version="17.11.4" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.Build.Locator" Version="1.11.2" />
+    <!-- 反编译跳转（design/06 §6.3 L3）：dll/nuget 引用的控件没有源码可达，用 ILSpy
+         引擎反编译类型挂到 eui-decompiled: 虚拟文档。9.x 起自带 Roslyn fork，
+         不与上面的公共 Roslyn 版本冲突。 -->
+    <PackageReference Include="ICSharpCode.Decompiler" Version="9.1.0.7988" />
   </ItemGroup>
 
 </Project>

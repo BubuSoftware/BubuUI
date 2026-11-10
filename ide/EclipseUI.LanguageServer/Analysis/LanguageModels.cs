@@ -50,10 +50,29 @@ public sealed record UiHoverResult(TextSpan Span, string Markdown);
 
 /// <summary>
 /// 跳转定义目标（L3 第一片）。<paramref name="Uri"/> 为 null 表示**本文档**内
-/// （<paramref name="Span"/> 是 .ui 偏移，如 <c>@foreach</c> 迭代变量）；否则是
-/// code-behind 兄弟文件的磁盘路径，<paramref name="Span"/> 是该文件内的偏移。
+/// （<paramref name="Span"/> 是 .ui 偏移，如 <c>@foreach</c> 迭代变量）；否则是目标
+/// 位置：磁盘路径（code-behind 兄弟文件 / 工作区 .cs / 仓库源码）或反编译虚拟文档
+/// （<c>eui-decompiled:</c> scheme，design/06 §6.3）。<paramref name="Span"/> 是该
+/// 文本内的偏移；<paramref name="Text"/> 是目标原文——协议层用它换算行位，与偏移
+/// 同源不会错位（null 时协议层按旧约定取 code-behind / 本文档文本）。
 /// </summary>
-public sealed record UiDefinition(string? Uri, TextSpan Span, string Name);
+public sealed record UiDefinition(string? Uri, TextSpan Span, string Name, string? Text = null);
+
+/// <summary>重命名的单处编辑（L3 第二片）：<paramref name="Span"/> 是所在文件内的字符区间。</summary>
+public sealed record UiTextEdit(TextSpan Span, string NewText);
+
+/// <summary>
+/// 一个文件的重命名编辑。<paramref name="Path"/> 为 null 表示当前 .ui 文档；
+/// 否则是磁盘路径（兄弟 code-behind / 工作区其他 .cs）。<paramref name="Text"/> 是
+/// 该文件当前原文——协议层用它换算行位，与编辑偏移同源，不会错位。
+/// </summary>
+public sealed record UiRenameFile(string? Path, string Text, IReadOnlyList<UiTextEdit> Edits);
+
+/// <summary><c>textDocument/rename</c> 的结果：按文件分组的编辑集。</summary>
+public sealed record UiRenameResult(IReadOnlyList<UiRenameFile> Files);
+
+/// <summary><c>textDocument/prepareRename</c> 的结果：可重命名的标识符区间 + 展示名。</summary>
+public sealed record UiPrepareRename(TextSpan Span, string Placeholder);
 
 public enum UiSymbolKind
 {

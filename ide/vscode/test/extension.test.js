@@ -20,12 +20,24 @@ const configuration = {
 
 const started = [];
 const errors = [];
+const contentProviders = [];
 
 const fakeVscode = {
+  RelativePattern: class {
+    constructor(base, pattern) {
+      this.base = base;
+      this.pattern = pattern;
+    }
+  },
   workspace: {
     getConfiguration: () => ({ get: (key) => configuration[key] }),
     workspaceFolders: [{ uri: { scheme: 'file', fsPath: workspace } }],
+    createFileSystemWatcher: (pattern) => ({ pattern, dispose() {} }),
     onDidChangeConfiguration: () => ({ dispose() {} }),
+    registerTextDocumentContentProvider: (scheme, provider) => {
+      contentProviders.push({ scheme, provider });
+      return { dispose() {} };
+    },
   },
   window: {
     showErrorMessage: (message) => errors.push(message),
@@ -72,6 +84,11 @@ assert.strictEqual(started.length, 1, 'activate must start exactly one language 
 const client = lastClient();
 const args = client.serverOptions.run.args;
 
+// 反编译虚拟文档内容提供器必须挂上（design/06 §6.3 L3 第 4 路：dll/nuget 控件跳转）。
+const decompiled = contentProviders.find((entry) => entry.scheme === 'eui-decompiled');
+assert.ok(decompiled, 'decompiled content provider must be registered for the eui-decompiled scheme');
+assert.strictEqual(typeof decompiled.provider.provideTextDocumentContent, 'function');
+
 const serverPath = args[0];
 assert.ok(serverPath.endsWith('EclipseUI.LanguageServer.dll'), `unexpected server path: ${serverPath}`);
 assert.ok(fs.existsSync(serverPath), `resolved server does not exist: ${serverPath}`);
@@ -81,8 +98,14 @@ assert.strictEqual(args[args.indexOf('--workspace') + 1], workspace, 'workspace 
 assert.strictEqual(client.serverOptions.run.command, 'dotnet');
 assert.deepStrictEqual(
   client.clientOptions.documentSelector.map((s) => s.language),
-  ['eclipseui', 'eclipseui'],
-  'only .ui documents are served');
+  ['eclipseui', 'eclipseui', 'eustyle', 'eustyle'],
+  '.ui and .eustyle documents are served');
+// L7：watcher 必须覆盖项目 Compilation 的全部输入（.eustyle 也在内）。
+const watchPatterns = client.clientOptions.synchronize.fileEvents.map((w) => w.pattern.pattern);
+for (const expected of ['**/*.cs', '**/*.ui', '**/*.eustyle', '**/*.csproj',
+  '**/Directory.Build.props', '**/obj/project.assets.json']) {
+  assert.ok(watchPatterns.includes(expected), `missing file watcher for ${expected}`);
+}
 
 // 2) 显式配置优先
 configuration['server.path'] = 'D:/custom/EclipseUI.LanguageServer.dll';

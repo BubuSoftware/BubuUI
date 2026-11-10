@@ -1,61 +1,123 @@
 using EclipseUI.Compiler;
 using EclipseUI.LanguageServer.Workspace;
+using Microsoft.CodeAnalysis;
 
 namespace EclipseUI.LanguageServer.Analysis;
 
 /// <summary>
-/// IDE 能力的门面：文档 + 目录 → 诊断/补全/悬停/大纲。刻意不依赖任何 LSP 类型，
+/// IDE 能力的门面：文档 + 项目系统 → 诊断/补全/悬停/大纲。刻意不依赖任何 LSP 类型，
 /// 这样 VS Code（stdio LSP）、Rider（lsp4ij）、测试三处驱动的是**同一套**行为
 /// （design/06 §6.2「一份共享资产，两个薄壳」）。
+///
+/// §6.9：有项目归属的文档一律走项目 Compilation（L2/L3/L4）；没有项目系统（内存态测试、
+/// untitled、无 csproj 的工作区）才退回 legacy 的 dll 目录，且「不属于任何项目」的磁盘文档
+/// 按口径不给目录也不给诊断。
 /// </summary>
 public sealed class LanguageService
 {
-    private readonly CatalogProvider _catalogs;
+    private readonly CatalogProvider _legacy;
+    private readonly ProjectWorkspace? _projects;
     private readonly DocumentStore _documents;
-    private readonly Dictionary<string, (int Version, string CodeBehind, DocumentAnalysis Analysis)> _cache =
+    private readonly Dictionary<string, (int Version, string CodeBehind, ProjectSnapshot? Snapshot, DocumentAnalysis Analysis)> _cache =
         new(StringComparer.Ordinal);
 
-    public LanguageService(CatalogProvider catalogs, DocumentStore documents)
+    public LanguageService(CatalogProvider catalogs, DocumentStore documents, ProjectWorkspace? projects = null)
     {
-        _catalogs = catalogs;
+        _legacy = catalogs;
+        _projects = projects;
         _documents = documents;
     }
 
-    public UiCatalog Catalog => _catalogs.Catalog;
+    /// <summary>无文档上下文时的目录（命令面板/能力声明用）：项目快照优先，否则 legacy。</summary>
+    public UiCatalog Catalog => _projects?.DefaultCatalog ?? _legacy.Catalog;
+
+    /// <summary>当前目录是不是由项目 Compilation 派生的（日志/提示需要说清来源）。</summary>
+    public bool UsesProjectCatalog => _projects?.DefaultCatalog is not null;
 
     public DocumentStore Documents => _documents;
 
-    /// <summary>取（或重算）当前文档的分析结果：同一版本 + 同一文本 + 同一 code-behind 只算一次。</summary>
+    public IReadOnlyList<string> Notes
+    {
+        get
+        {
+            var notes = new List<string>(_legacy.Notes);
+            if (_projects is not null) notes.AddRange(_projects.Notes);
+            return notes;
+        }
+    }
+
+    /// <summary>手动刷新 / watcher 触发后由宿主调用。</summary>
+    public void Reload()
+    {
+        _legacy.Reload();
+        _projects?.Invalidate(Array.Empty<string>());
+        _cache.Clear();
+    }
+
+    /// <summary>L7：watcher 变更 → 项目 dirty → 重建并让宿主重发诊断。</summary>
+    public void Invalidate(IEnumerable<string> paths)
+    {
+        _projects?.Invalidate(paths);
+        _cache.Clear();
+    }
+
+    private static bool IsTemplate(string uri) =>
+        !DocumentStore.UriToPath(uri).EndsWith(".eustyle", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>文档归属的全部项目快照（§6.9.3 L1：多项目命中时都算，不选一个）。</summary>
+    public IReadOnlyList<ProjectSnapshot> Snapshots(string uri) =>
+        _projects?.ResolveAll(DocumentStore.UriToPath(uri)) ?? Array.Empty<ProjectSnapshot>();
+
+    /// <summary>取（或重算）当前文档的分析结果：版本 + 文本 + code-behind + 项目快照都不变才复用。</summary>
     public DocumentAnalysis? Analyze(string uri)
     {
         if (!_documents.TryGet(uri, out var document)) return null;
+        var project = Snapshots(uri).FirstOrDefault();
+        var (catalog, compilation, _) = Current(uri, project);
         var (codeBehind, codeBehindPath) = ReadCodeBehind(DocumentStore.UriToPath(uri));
         if (_cache.TryGetValue(uri, out var cached)
             && cached.Version == document.Version
+            && ReferenceEquals(cached.Snapshot, project)
             && string.Equals(cached.CodeBehind, codeBehind ?? "", StringComparison.Ordinal)
             && string.Equals(cached.Analysis.Text, document.Text, StringComparison.Ordinal))
             return cached.Analysis;
 
-        // code-behind 与探针 Compilation 一起传：表达式投影在此之上派生（design/06 §6.3）。
-        // 路径也一起传——跳转定义要落到兄弟文件上（spec/02 §2.2）。
-        var analysis = DocumentAnalysis.Create(document.Text, document.FileName, Catalog,
-            _catalogs.Compilation, codeBehind, codeBehindPath);
-        _cache[uri] = (document.Version, codeBehind ?? "", analysis);
+        var analysis = DocumentAnalysis.Create(document.Text, document.FileName, catalog,
+            compilation, codeBehind, codeBehindPath, project, _projects);
+        _cache[uri] = (document.Version, codeBehind ?? "", project, analysis);
         return analysis;
     }
 
+    private DocumentAnalysis? AnalyzeIn(string uri, ProjectSnapshot project)
+    {
+        if (!_documents.TryGet(uri, out var document)) return null;
+        var (codeBehind, codeBehindPath) = ReadCodeBehind(DocumentStore.UriToPath(uri));
+        return DocumentAnalysis.Create(document.Text, document.FileName, project.Catalog,
+            project.Compilation, codeBehind, codeBehindPath, project, _projects);
+    }
+
+    private (UiCatalog Catalog, Compilation? Compilation, bool Unowned) Current(string uri, ProjectSnapshot? project)
+    {
+        if (project is not null) return (project.Catalog, project.Compilation, false);
+        var path = DocumentStore.UriToPath(uri);
+        if (_projects is not null && _projects.IsUnowned(path))
+            return (CatalogProvider.EmptyCatalog(), null, true);
+        return (_legacy.Catalog, _legacy.Compilation, false);
+    }
+
     /// <summary>
-    /// 同目录同名 <c>{Name}.cs</c>（spec/02 §2.2 的文件契约）——code-behind 是 partial 类的
-    /// 另一半，<c>{expr}</c> 里的字段/方法/handler 都靠它解析。半截文件也没关系：探针按
-    /// 当下文本编译，用户改完保存下一次请求自然就好。
+    /// 同目录同名 <c>{Name}.cs</c>（spec/02 §2.2 的文件契约）。打开的 .cs 用编辑器缓冲区
+    /// 覆盖磁盘（L2/R4）：未保存的 code-behind 成员立刻在 <c>{expr}</c> 里可见。
     /// </summary>
-    private static (string? Text, string? Path) ReadCodeBehind(string path)
+    private (string? Text, string? Path) ReadCodeBehind(string path)
     {
         try
         {
             if (path.Length == 0 || !path.EndsWith(".ui", StringComparison.OrdinalIgnoreCase))
                 return (null, null);
             var candidate = Path.ChangeExtension(path, ".cs");
+            if (_projects is not null && _projects.TryBuffer(candidate, out var buffered))
+                return (buffered, candidate);
             return File.Exists(candidate) ? (File.ReadAllText(candidate), candidate) : (null, null);
         }
         catch (Exception)
@@ -65,44 +127,122 @@ public sealed class LanguageService
         }
     }
 
-    public void Forget(string uri) => _cache.Remove(uri);
-
-    /// <summary>当前文件的诊断（指向 code-behind 的那些留给 C# 语言服务报，避免两处重复）。</summary>
-    public IReadOnlyList<UiDiagnostic> GetDiagnostics(string uri)
+    public void Forget(string uri)
     {
-        var analysis = Analyze(uri);
-        if (analysis is null) return Array.Empty<UiDiagnostic>();
+        _cache.Remove(uri);
+        _projects?.ForgetBuffer(uri);
+    }
 
+    /// <summary>didOpen / didChange：项目快照要用编辑器缓冲区覆盖磁盘（L2，R4）。</summary>
+    public void ApplyBuffer(string uri, string text) => _projects?.ApplyBuffer(uri, text);
+
+    /// <summary>
+    /// 诊断双通道（§6.9.4）：Tier 1（每次按键，FrontEnd.Parse + Analyze on 缓冲区目录）+
+    /// Tier 2（项目 Compilation 的生成器/CS 诊断，经 #line 回映）。多项目命中时逐份都算，
+    /// 与 dotnet build 一致；不属于任何项目的文档明确不给诊断。
+    /// </summary>
+    public IReadOnlyList<UiDiagnostic> GetDiagnostics(string uri, bool includeTier2 = true)
+    {
         var path = DocumentStore.UriToPath(uri);
-        return analysis.Diagnostics
-            .Where(d => d.Source is null || string.Equals(d.Source.Path, path, StringComparison.OrdinalIgnoreCase))
-            .OrderBy(d => d.Span.Start)
-            .ThenBy(d => d.Code, StringComparer.Ordinal)
+        var projects = Snapshots(uri);
+        if (_projects is not null && _projects.IsUnowned(path)) return Array.Empty<UiDiagnostic>();
+
+        var result = new List<UiDiagnostic>();
+
+        // .eustyle 不是模板：语法/语义诊断全部来自真生成器（ExecuteStylesheet 的
+        // EUI050–052），不能拿 FrontEnd 去解析样式表（§6.9.4）。
+        if (path.EndsWith(".eustyle", StringComparison.OrdinalIgnoreCase))
+        {
+            if (includeTier2)
+                foreach (var project in projects)
+                    foreach (var diagnostic in project.Diagnostics)
+                        if (SamePath(diagnostic.Path, path)) result.Add(diagnostic.Diagnostic);
+        }
+        else if (projects.Count > 0)
+        {
+            foreach (var project in projects)
+            {
+                var analysis = AnalyzeIn(uri, project);
+                if (analysis is not null) result.AddRange(Visible(analysis.Diagnostics, path));
+                if (includeTier2)
+                    foreach (var diagnostic in project.Diagnostics)
+                        if (SamePath(diagnostic.Path, path)) result.Add(diagnostic.Diagnostic);
+            }
+        }
+        else
+        {
+            var analysis = Analyze(uri);
+            if (analysis is not null) result.AddRange(Visible(analysis.Diagnostics, path));
+        }
+
+        return result
+            .DistinctBy(static d => (d.Code, d.Span.Start, d.Span.Length, d.Message))
+            .OrderBy(static d => d.Span.Start)
+            .ThenBy(static d => d.Code, StringComparer.Ordinal)
             .ToArray();
     }
 
+    private static IEnumerable<UiDiagnostic> Visible(IEnumerable<UiDiagnostic> diagnostics, string path) =>
+        diagnostics.Where(d => d.Source is null ||
+                               string.Equals(d.Source.Path, path, StringComparison.OrdinalIgnoreCase));
+
+    private static bool SamePath(string a, string b) =>
+        string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>该文档所属项目的目录（多项目命中时取第一份；诊断仍逐份都算）。</summary>
+    public UiCatalog CatalogForUri(string uri) => Current(uri, Snapshots(uri).FirstOrDefault()).Catalog;
+
+    private UiCatalog CatalogFor(string uri) => CatalogForUri(uri);
+
     public UiCompletionList Complete(string uri, int offset)
     {
+        if (!IsTemplate(uri)) return UiCompletionList.Empty;
         var analysis = Analyze(uri);
-        return analysis is null ? UiCompletionList.Empty : CompletionProvider.Complete(analysis, Catalog, offset);
+        return analysis is null ? UiCompletionList.Empty : CompletionProvider.Complete(analysis, CatalogFor(uri), offset);
     }
 
     public UiHoverResult? Hover(string uri, int offset)
     {
+        if (!IsTemplate(uri)) return null;
         var analysis = Analyze(uri);
-        return analysis is null ? null : HoverProvider.Hover(analysis, Catalog, offset);
+        return analysis is null ? null : HoverProvider.Hover(analysis, CatalogFor(uri), offset);
     }
 
-    /// <summary>跳转定义（L3 第一片）：表达式标识符 → foreach 头或 code-behind 声明。</summary>
+    /// <summary>跳转定义（L6）：标签与属性都走项目 Compilation 的符号查询（§6.9.3）。</summary>
     public UiDefinition? Definition(string uri, int offset)
     {
+        if (!IsTemplate(uri)) return null;
         var analysis = Analyze(uri);
-        return analysis is null ? null : DefinitionProvider.Definition(analysis, offset);
+        if (analysis is null) return null;
+        var project = Snapshots(uri).FirstOrDefault();
+        var (catalog, compilation, _) = Current(uri, project);
+        return DefinitionProvider.Definition(analysis, offset,
+            project?.Evaluation.Directory ?? _legacy.WorkspaceRoot, catalog, compilation);
+    }
+
+    /// <summary>反编译虚拟文档内容（eui-decompiled: scheme，客户端内容提供器取回）。</summary>
+    public string? DecompiledContent(string uri) => DecompileProvider.Content(uri);
+
+    public UiPrepareRename? PrepareRename(string uri, int offset)
+    {
+        if (!IsTemplate(uri)) return null;
+        var analysis = Analyze(uri);
+        return analysis is null ? null : RenameProvider.Prepare(analysis, offset);
+    }
+
+    public UiRenameResult? Rename(string uri, int offset, string newName)
+    {
+        if (!IsTemplate(uri)) return null;
+        var analysis = Analyze(uri);
+        var project = Snapshots(uri).FirstOrDefault();
+        var root = project?.Evaluation.Directory ?? _legacy.WorkspaceRoot;
+        return analysis is null ? null : RenameProvider.Rename(analysis, offset, newName, root);
     }
 
     public IReadOnlyList<UiSymbol> GetSymbols(string uri)
     {
+        if (!IsTemplate(uri)) return Array.Empty<UiSymbol>();
         var analysis = Analyze(uri);
-        return analysis is null ? Array.Empty<UiSymbol>() : SymbolProvider.Build(analysis, Catalog);
+        return analysis is null ? Array.Empty<UiSymbol>() : SymbolProvider.Build(analysis, CatalogFor(uri));
     }
 }

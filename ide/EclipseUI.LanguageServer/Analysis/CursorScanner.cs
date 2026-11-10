@@ -23,6 +23,12 @@ public enum CursorKind
     /// <summary><c>{|}</c>：C# 表达式（含 <c>@if</c>/<c>@foreach</c> 的条件）。</summary>
     Expression,
 
+    /// <summary>
+    /// <c>@code {| … }</c>：块内是真实 C# 文档文本（K21），跳转定义在成员树上解析。
+    /// 补全/悬停对它保持与文本相同的行为（不做 @code 内补全，v1 口径）。
+    /// </summary>
+    CodeBlock,
+
     /// <summary><c>@i|</c>：指令名。</summary>
     Directive,
 
@@ -41,6 +47,40 @@ public sealed record ForeachScope
 
     /// <summary>变量名在文档里的起点（跳转定义落回 foreach 头用）；头解析不了为 -1。</summary>
     public int NameOffset { get; init; } = -1;
+}
+
+/// <summary>
+/// 解析成功的 <c>@foreach</c> 头：变量名、集合表达式与它们在文档里的区间。
+/// 跳转定义落回变量名、重命名扫集合表达式里的引用，都要这组偏移。
+/// </summary>
+public sealed record ForeachHeader(
+    string VarName,
+    string Collection,
+    int NameOffset,
+    int CollectionStart,
+    int CollectionEnd);
+
+/// <summary>
+/// 全文档收集到的一个表达式（<see cref="CursorScanner.CollectExpressions"/>）：
+/// 重命名的引用扫描按它逐个探针。foreach 头不是普通表达式——整体不是合法 C#，
+/// 只探测它的集合表达式区间（<see cref="ForeachHeader"/> 有精确偏移）。
+/// </summary>
+public sealed record CollectedExpression
+{
+    /// <summary>表达式正文起点（定界符后首字符）。</summary>
+    public int Start { get; init; }
+
+    /// <summary>表达式正文终点（闭定界符位置，不含）。</summary>
+    public int End { get; init; }
+
+    /// <summary>指令名（<c>if</c>/<c>foreach</c>/<c>switch</c>/<c>else if</c>）；普通 <c>{expr}</c> 为空。</summary>
+    public string Directive { get; init; } = "";
+
+    /// <summary>该表达式外围的 foreach 作用域链（外层在前）——环境构建的骨架。</summary>
+    public IReadOnlyList<ForeachScope> ForeachStack { get; init; } = Array.Empty<ForeachScope>();
+
+    /// <summary><see cref="Directive"/> 为 foreach 且头解析成功时的头信息；其余 null。</summary>
+    public ForeachHeader? Header { get; init; }
 }
 
 /// <summary>
@@ -111,8 +151,8 @@ public static class CursorScanner
         var i = 0;
         var blockDepth = 0;
         var expectBlockBrace = false;
-        var foreaches = new List<(string VarName, string Collection, int Depth, int NameOffset)>();
-        (string? VarName, string Collection, int NameOffset) pendingForeach = (null, "", -1);
+        var foreaches = new List<(ForeachHeader Header, int Depth)>();
+        ForeachHeader? pendingForeach = null;
 
         while (i < text.Length)
         {
@@ -123,15 +163,15 @@ public static class CursorScanner
                 if (j < text.Length && text[j] == '{')
                 {
                     blockDepth++;
-                    if (pendingForeach.VarName is { Length: > 0 } pendingName)
-                        foreaches.Add((pendingName, pendingForeach.Collection, blockDepth, pendingForeach.NameOffset));
-                    pendingForeach = (null, "", -1);
+                    if (pendingForeach is not null)
+                        foreaches.Add((pendingForeach, blockDepth));
+                    pendingForeach = null;
                     expectBlockBrace = false;
                     i = j + 1;
                     continue;
                 }
                 // 头后没有块（半截输入/语法坏）：该 foreach 不进环境，不能凭空猜作用域。
-                pendingForeach = (null, "", -1);
+                pendingForeach = null;
                 expectBlockBrace = false;
             }
 
@@ -179,6 +219,8 @@ public static class CursorScanner
                 string word = text.Substring(i + 1, wordEnd - i - 1);
 
                 // @code / @style：整块是 C#/Eustyle，不是模板上下文，直接跳过。
+                // @code 块内是**真实文档文本**（K21 透传）——跳转定义要在块内解析 C#，
+                // 单独给一个 Kind；@style 是 Eustyle 样式表，光标在内一律按文本。
                 if (word is "code" or "style")
                 {
                     int brace = SkipWhitespace(text, wordEnd);
@@ -186,7 +228,17 @@ public static class CursorScanner
                     {
                         int close = CSharpSnippet.FindMatchingClose(text, brace);
                         int stop = close < 0 ? text.Length : close + 1;
-                        if (offset > i && offset < stop) return Plain(open, offset);
+                        if (offset > i && offset < stop)
+                        {
+                            if (word == "code")
+                                return new CursorContext
+                                {
+                                    Kind = CursorKind.CodeBlock,
+                                    TokenStart = offset,
+                                    OpenTags = open,
+                                };
+                            return Plain(open, offset);
+                        }
                         i = stop;
                         continue;
                     }
@@ -194,14 +246,16 @@ public static class CursorScanner
 
                 if (word is "if" or "foreach" or "switch")
                 {
-                    var atDirective = new CursorContext
-                    {
-                        Kind = CursorKind.Directive,
-                        Prefix = text.Substring(i, Math.Min(offset, wordEnd) - i),
-                        TokenStart = i,
-                        OpenTags = open,
-                    };
-                    if (offset >= i && offset <= wordEnd) return atDirective;
+                    // 惰性构造：offset 可能已被前面的跳过区间（@code 块、注释）越过，
+                    // 先判范围再取原文——offset < i 时 Substring 会得到负长度。
+                    if (offset >= i && offset <= wordEnd)
+                        return new CursorContext
+                        {
+                            Kind = CursorKind.Directive,
+                            Prefix = text.Substring(i, offset - i),
+                            TokenStart = i,
+                            OpenTags = open,
+                        };
 
                     int next = wordEnd;
                     int paren = SkipWhitespace(text, wordEnd);
@@ -225,11 +279,11 @@ public static class CursorScanner
                         // @foreach 的头在块开启前先记下：`{` 真出现（expectBlockBrace 命中）才压栈。
                         pendingForeach = word == "foreach" && close >= 0
                             ? ParseForeachHeader(text, paren + 1, close - paren - 1)
-                            : (null, "", -1);
+                            : null;
                     }
                     else
                     {
-                        pendingForeach = (null, "", -1);
+                        pendingForeach = null;
                     }
 
                     expectBlockBrace = true;
@@ -386,7 +440,7 @@ public static class CursorScanner
 
     private static (int Next, CursorContext? Context, string? PushTag) ScanOpenTag(
         string text, int start, int offset, List<string> open,
-        List<(string VarName, string Collection, int Depth, int NameOffset)> foreaches)
+        List<(ForeachHeader Header, int Depth)> foreaches)
     {
         int nameStart = start + 1;
         int j = nameStart;
@@ -397,6 +451,7 @@ public static class CursorScanner
             return (j, new CursorContext
             {
                 Kind = CursorKind.TagName,
+                TagName = tagName, // 完整名：跳转定义要按它查目录（Prefix 只是已敲的前缀）
                 Prefix = text.Substring(nameStart, Math.Max(0, offset - nameStart)),
                 TokenStart = nameStart,
                 OpenTags = open,
@@ -531,40 +586,86 @@ public static class CursorScanner
 
     /// <summary>把内部 foreach 栈快照成对外形态（返回后扫描继续推进，不能共享可变列表）。</summary>
     private static ForeachScope[] SnapshotForeaches(
-        List<(string VarName, string Collection, int Depth, int NameOffset)> scopes) =>
+        List<(ForeachHeader Header, int Depth)> scopes) =>
         scopes.Count == 0
             ? Array.Empty<ForeachScope>()
             : scopes.Select(static s => new ForeachScope
                 {
-                    VarName = s.VarName,
-                    Collection = s.Collection,
-                    NameOffset = s.NameOffset,
+                    VarName = s.Header.VarName,
+                    Collection = s.Header.Collection,
+                    NameOffset = s.Header.NameOffset,
                 })
                 .ToArray();
 
     /// <summary>
-    /// 解析 <c>@foreach</c> 括号内文本为（变量名, 集合表达式, 变量名文档偏移）。<c>in</c> 是
-    /// foreach 头专有关键字，取最后一个 <c> in </c> 分割；左侧最后一段是变量名
-    /// （兼容 <c>var x</c> 与 <c>Type x</c>）。解析失败返回 null 变量名——该层不进环境，
-    /// 而不是猜一个错答案。偏移按文档绝对位置给（跳转定义落回 foreach 头用）。
+    /// 全文档收集所有表达式（重命名的引用扫描用，L3 第二片）。复用 <see cref="Scan"/>
+    /// 的同一套边界规则（注释/@code/引号/括号配对）——绝不复制第二套判定。每记录一个
+    /// 表达式就跳过它的内部（<see cref="CSharpSnippet.FindMatchingClose"/> 原子消费括号对，
+    /// 表达式里不会再出现表达式上下文），代价 O(n)。
     /// </summary>
-    private static (string? VarName, string Collection, int NameOffset) ParseForeachHeader(
-        string text, int start, int length)
+    public static IReadOnlyList<CollectedExpression> CollectExpressions(string text)
+    {
+        var results = new List<CollectedExpression>();
+        var offset = 0;
+        while (offset <= text.Length)
+        {
+            var context = Scan(text, offset);
+            if (context.Kind == CursorKind.Expression && context.ExpressionStart >= 0)
+            {
+                var header = context.Directive == "foreach"
+                    ? ParseForeachHeader(text, context.ExpressionStart,
+                        context.ExpressionEnd - context.ExpressionStart)
+                    : null;
+                results.Add(new CollectedExpression
+                {
+                    Start = context.ExpressionStart,
+                    End = context.ExpressionEnd,
+                    Directive = context.Directive,
+                    ForeachStack = context.OpenForeaches,
+                    Header = header,
+                });
+                // 跳过表达式内部：下一次扫描从闭定界符之后开始。
+                offset = context.ExpressionEnd + 1;
+                continue;
+            }
+            if (offset >= text.Length) break;
+            offset++;
+        }
+        return results;
+    }
+
+    /// <summary>
+    /// 解析 <c>@foreach</c> 括号内文本为头信息。<c>in</c> 是 foreach 头专有关键字，取
+    /// 最后一个 <c> in </c> 分割；左侧最后一段是变量名（兼容 <c>var x</c> 与 <c>Type x</c>）。
+    /// 解析失败返回 null——该层不进环境，而不是猜一个错答案。变量名与集合的偏移都按
+    /// 文档绝对位置给（跳转定义落回变量名、重命名扫集合引用用）。
+    /// </summary>
+    public static ForeachHeader? ParseForeachHeader(string text, int start, int length)
     {
         var header = text.Substring(start, length);
         var trimmed = header.Trim();
+        if (trimmed.Length == 0) return null;
         int trimStart = header.Length - header.TrimStart().Length;
         int inIndex = trimmed.LastIndexOf(" in ", StringComparison.Ordinal);
-        if (inIndex <= 0) return (null, "", -1);
-        var collection = trimmed.Substring(inIndex + 4).Trim();
-        if (collection.Length == 0) return (null, "", -1);
+        if (inIndex <= 0) return null;
+        var after = trimmed.Substring(inIndex + 4);
+        var collection = after.Trim();
+        if (collection.Length == 0) return null;
         var left = trimmed.Substring(0, inIndex).TrimEnd();
         int lastSpace = left.LastIndexOf(' ');
         var varName = (lastSpace >= 0 ? left.Substring(lastSpace + 1) : left).Trim();
-        if (varName.Length == 0 || !IsIdentStart(varName[0])) return (null, "", -1);
-        // 变量名紧跟最后一个空格（left 已去尾空白），偏移在原文里精确对齐。
+        if (varName.Length == 0 || !IsIdentStart(varName[0])) return null;
+
+        // 变量名紧跟最后一个空格（left 已去尾空白）；集合在 " in " 之后去首尾空白。
+        // 偏移都在 trimmed 坐标里算好再加 trimStart，落到原文精确对齐。
         int nameInTrimmed = lastSpace >= 0 ? lastSpace + 1 : 0;
-        return (varName, collection, start + trimStart + nameInTrimmed);
+        int collectionStart = inIndex + 4 + (after.Length - after.TrimStart().Length);
+        int docStart = start + trimStart;
+        return new ForeachHeader(
+            varName, collection,
+            docStart + nameInTrimmed,
+            docStart + collectionStart,
+            docStart + collectionStart + collection.Length);
     }
 
     private static int SkipWhitespace(string text, int i)

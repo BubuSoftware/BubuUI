@@ -36,7 +36,10 @@ void Log(string message)
 }
 
 var catalogs = new CatalogProvider(arguments.Catalog);
-var service = new LanguageService(catalogs, new DocumentStore());
+// §6.9：项目系统驱动的单一 Compilation。没有 csproj / untitled / 内存态分析会自动
+// 退回 legacy 的 dll 目录，所以测试和独立打开 .ui 都不会突然失去能力。
+var projects = new ProjectWorkspace(arguments.Catalog, Log);
+var service = new LanguageService(catalogs, new DocumentStore(), projects);
 
 using var shutdown = new CancellationTokenSource();
 
