@@ -58,6 +58,8 @@ public sealed class Emitter
     private readonly IReadOnlyList<EustyleRule> _styleRules;
     /// <summary>本组件 @style 块的 @states 声明（E5）：__RegisterStyles 先发注册序列。</summary>
     private readonly IReadOnlyList<EustyleStateDecl> _styleStates;
+    /// <summary>编译期符号派生的可样式属性目录（Style= 内联发射的目标字段唯一来源）。</summary>
+    private readonly StylePropertyCatalog _styleProperties;
     /// <summary>自身 code-behind 组件的插槽（spec/02 §4.12.5）——TemplateGenerator 按
     /// code-behind 符号精确匹配传入；分析器的短名近似只用于诊断，发射以此为准。</summary>
     private readonly IReadOnlyDictionary<string, UiSlotDef> _ownSlots;
@@ -79,7 +81,8 @@ public sealed class Emitter
         IReadOnlyList<string>? usings = null,
         IReadOnlyList<UiCodeBlock>? codeBlocks = null,
         IReadOnlyList<EustyleRule>? styleRules = null,
-        IReadOnlyList<EustyleStateDecl>? styleStates = null)
+        IReadOnlyList<EustyleStateDecl>? styleStates = null,
+        StylePropertyCatalog? styleProperties = null)
     {
         _doc = doc;
         _accessibility = accessibility;
@@ -91,6 +94,7 @@ public sealed class Emitter
         _codeBlocks = codeBlocks ?? Array.Empty<UiCodeBlock>();
         _styleRules = styleRules ?? Array.Empty<EustyleRule>();
         _styleStates = styleStates ?? Array.Empty<EustyleStateDecl>();
+        _styleProperties = styleProperties ?? StylePropertyCatalog.Empty;
         _ownSlots = ownSlots ?? new Dictionary<string, UiSlotDef>(StringComparer.Ordinal);
         // #line 的文件名不是 C# 字符串字面量：反斜杠原样写入，否则映射路径会变成双反斜杠。
         _linePath = filePath.Replace("\"", "\\\"");
@@ -428,7 +432,7 @@ public sealed class Emitter
             // E2：元素级内联样式——local 层直赋（最高优先级），每条声明独立 #line 映射到值 span。
             if (attr.Name == "Style" && attr.StyleSetters is { Count: > 0 } setters)
             {
-                foreach (var (statement, valueSpan) in EustyleGenerator.EmitLocalSetters(setters, v))
+                foreach (var (statement, valueSpan) in EustyleGenerator.EmitLocalSetters(setters, v, _styleProperties))
                     Mapped(valueSpan, statement);
                 continue;
             }
@@ -602,7 +606,7 @@ public sealed class Emitter
             }
             if (attr.Name == "Style" && attr.StyleSetters is { Count: > 0 } styleSetters)
             {
-                foreach (var (statement, valueSpan) in EustyleGenerator.EmitLocalSetters(styleSetters, v))
+                foreach (var (statement, valueSpan) in EustyleGenerator.EmitLocalSetters(styleSetters, v, _styleProperties))
                     Mapped(valueSpan, statement);
                 continue;
             }

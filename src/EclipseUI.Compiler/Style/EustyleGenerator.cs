@@ -31,48 +31,28 @@ public static class EustyleGenerator
 
     /// <summary>
     /// 元素级 <c>Style="…"</c> 的 local 直赋语句（E2，design/17 §4.8②）：每条声明一行
-    /// 写 local 层（四层级联的最高层）——background/foreground/corner-radius/focus-ring-width
-    /// 直调 <c>Visual.SetXxx</c> 静态 setter（theme() 双色升级为 Resource 变体属性），
-    /// padding/font-size 落 Panel/TextBlock 的 StyledProperty 字段。返回 (语句, 值 span)
-    /// 序列，调用方逐条做 #line 映射（诊断与断点跟回 .ui 属性值）。
+    /// <c>target.SetValue(&lt;目录里的目标字段&gt;, &lt;值&gt;)</c> 写 local 层。
+    /// 目标字段与 theme() 资源字段全部来自 <see cref="StylePropertyCatalog"/>——不再为每个属性
+    /// 手写 switch 分支；加属性只需在运行时注册字段 + StyleBuilder setter，发射侧零改动。
+    /// 返回 (语句, 值 span) 序列，调用方逐条做 #line 映射。
     /// </summary>
     public static IReadOnlyList<(string Statement, TextSpan Span)> EmitLocalSetters(
-        IReadOnlyList<EustyleSetter> setters, string target)
+        IReadOnlyList<EustyleSetter> setters, string target, StylePropertyCatalog properties)
     {
         var statements = new List<(string, TextSpan)>(setters.Count);
         foreach (var setter in setters)
         {
-            var number = setter.Value as EustyleNumber;
-            var statement = setter.Property switch
-            {
-                "Background" when setter.Value is EustyleTheme theme =>
-                    $"{VisualSetter("SetBackgroundResource", target)}{ThemeLiteral(theme)});",
-                "Background" =>
-                    $"{VisualSetter("SetBackground", target)}{ValueLiteral(setter.Value)});",
-                "Foreground" when setter.Value is EustyleTheme theme =>
-                    $"{VisualSetter("SetForegroundResource", target)}{ThemeLiteral(theme)});",
-                "Foreground" =>
-                    $"{VisualSetter("SetForeground", target)}{ValueLiteral(setter.Value)});",
-                "CornerRadius" =>
-                    $"{VisualSetter("SetCornerRadius", target)}{NumberLiteral(number)});",
-                "FocusRingWidth" =>
-                    $"{VisualSetter("SetFocusRingWidth", target)}{NumberLiteral(number)});",
-                "Padding" =>
-                    $"{target}.SetValue(global::EclipseUI.Elements.Panel.PaddingProperty, {NumberLiteral(number)});",
-                "FontSize" =>
-                    $"{target}.SetValue(global::EclipseUI.Elements.TextBlock.FontSizeProperty, {NumberLiteral(number)});",
-                _ => throw new InvalidOperationException(
-                    $"unknown style property '{setter.Property}' in local setter emission"),
-            };
-            statements.Add((statement, setter.ValueSpan));
+            var definition = properties.Find(setter.Property)
+                ?? throw new InvalidOperationException(
+                    $"style property '{setter.Property}' is not in the derived catalog");
+            var field = definition.FieldFor(setter.Value is EustyleTheme)
+                ?? throw new InvalidOperationException(
+                    $"style property '{setter.Property}' has no theme resource field");
+            statements.Add(($"{target}.SetValue({field}, {ValueLiteral(setter.Value)});",
+                setter.ValueSpan));
         }
         return statements;
     }
-
-    /// <summary>调用形态的 Visual 静态 setter 前缀：与手写 C# 的
-    /// <c>Visual.SetBackground(el, color)</c> 同一 API（非 null 值即 local 层直写）。</summary>
-    private static string VisualSetter(string method, string target) =>
-        $"global::EclipseUI.Rendering.Visual.{method}({target}, ";
 
     private static void EmitRule(StringBuilder sb, EustyleRule rule, string registry, string indent)
     {

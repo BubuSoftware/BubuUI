@@ -511,7 +511,8 @@ public static class TemplateAnalyzer
     /// 已经 <c>attr.ValueSpan.Start</c> 偏移映射回宿主 .ui 文件。
     /// </summary>
     private static void ValidateStyleAttribute(UiAttribute attr, IReadOnlyCollection<string>? styleClasses,
-        IReadOnlyDictionary<string, string>? localStyleClasses, List<UiDiagnostic> diags)
+        IReadOnlyDictionary<string, string>? localStyleClasses, StylePropertyCatalog properties,
+        List<UiDiagnostic> diags)
     {
         if (attr.IsBind)
         {
@@ -558,7 +559,7 @@ public static class TemplateAnalyzer
 
         // Style= 字面量：解析声明序列（失败诊断已报，不回写 → 生成侧跳过）
         var styleDiags = new List<UiDiagnostic>();
-        var declarations = Eustyle.ParseDeclarations(attr.Value, "", styleDiags, attr.ValueSpan.Start);
+        var declarations = Eustyle.ParseDeclarations(attr.Value, "", styleDiags, properties, attr.ValueSpan.Start);
         diags.AddRange(styleDiags);
         if (!styleDiags.Exists(static d => d.IsError))
             attr.StyleSetters = declarations.Setters;
@@ -688,7 +689,8 @@ public static class TemplateAnalyzer
             // Style= 只允许字面量声明序列（Eustyle 解析，EUI050–052 定位到属性值 span）。
             if (attr.Name is "Class" or "Style")
             {
-                ValidateStyleAttribute(attr, styleClasses, localStyleClasses, diags);
+                ValidateStyleAttribute(attr, styleClasses, localStyleClasses,
+                    catalog.StyleProperties, diags);
                 continue;
             }
             // G4：附加属性（design/14 §14.5.5）——Owner.Prop 点号形式查目录附加属性表。

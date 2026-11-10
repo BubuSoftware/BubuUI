@@ -154,16 +154,44 @@ registry.Define("primary", s => s.Background(new ThemeColor(Dark: ..., Light: ..
 | ✅ E4 | 同名段重复（`.panel > Button` ×2） | **合并**（CSS 同选择器多块 = 声明合并，声明序后者胜） |
 | 不做 | `*`、属性选择器、兄弟组合 `~`/`+`、多类交集 `.a.b` | —（报 `EUI048`「已保留未实现」口径） |
 
-### 4.3 属性表（属性名目录 = StyleBuilder 公共 setter 集，单一来源）
+### 4.3 属性表（符号派生目录，单一来源）
 
-| 样式表属性 | setter | 值类型 |
-|------------|--------|--------|
-| `background` | `Background` | color / theme 双色 |
-| `foreground` | `Foreground` | 同上 |
-| `padding` | `Padding` | length（逻辑单位 double） |
-| `corner-radius` | `CornerRadius` | length |
+✅ 落地（2026-11-10）：**编译器侧不再有任何手写的属性表**。一次 Roslyn 符号扫描
+（`StylePropertyCatalogFactory`，随 `UiCatalog` 走同一条 `CompilationProvider` 管道）产出
+`StylePropertyCatalog`，Parser 的名字/值形态校验、EUI051 的支持列表、`EmitLocalSetters`
+的目标字段、theme() 准入全部读这一份数据：
 
-属性集随 StyleBuilder 扩容同步扩容（编译器目录从 setter 枚举生成，不手维护两份表）。
+- 从 `StyleBuilder` 的 public 实例 setter（排除泛型 `Set<T>`）推出**属性集**与值形态
+  （`Color`/`ThemeColor` → color，`double` → number）；同名 `Color`/`ThemeColor` 重载合并，
+  并决定是否接受 `theme()`。
+- 按约定找 `public static StyledProperty<T>` 字段 `{Name}Property` / `{Name}ResourceProperty`，
+  校验 `T` 与 setter 形态一致，产出 `global::` 全限定字段名供 `Style=` 发射
+  `el.SetValue(<字段>, <值>)`。
+- 声明不合规（缺字段、字段歧义、形态不符）进目录 `Problems`，构建期以 `EUI026` 报出；
+  `StylePropertyCatalogTests` 用反射把目录与 `StyleBuilder` 的公开 setter 集对死，防漂移。
+
+当前目录（自动派生，非手写）：
+
+| 规范名（CLR 原名） | 值形态 | 目标字段 | theme() |
+|---|---|---|---|
+| `Background` | color | `Visual.BackgroundProperty` | ✅ `BackgroundResourceProperty` |
+| `Foreground` | color | `Visual.ForegroundProperty` | ✅ `ForegroundResourceProperty` |
+| `CornerRadius` | number | `Visual.CornerRadiusProperty` | — |
+| `FocusRingWidth` | number | `Visual.FocusRingWidthProperty` | — |
+| `Padding` | number | `Panel.PaddingProperty` | — |
+| `FontSize` | number | `TextBlock.FontSizeProperty` | — |
+
+**命名**：属性名就是控件/属性对象的原始 CLR 名（`CornerRadius`、`FontSize`），与 `.ui` 模板属性
+的书写一致，**大小写敏感、精确匹配**：`StylePropertyCatalog.Find` 按 `Ordinal` 比较，没有别名、
+没有大小写或 `-`/`_` 归一化。因此 `corner-radius` / `cornerradius` / `CORNERRADIUS` 一律未命中，
+报 **EUI051**（消息提示使用大小写敏感的 CLR 名并列出目录支持项）。不设旧写法兼容层。
+大写开头的属性名与嵌套类型选择器由前瞻到 `{` / `;` 区分（选择器一定开块）。
+
+加新样式属性：运行时注册 `StyledProperty` 字段 + 加 `StyleBuilder` setter（+ painter 读取点），
+**Compiler/Generator 零改动**；属性名自动成为样式表可写名，旧手写四处表已删除。
+
+待办：目录尚未带出 `OwnerType` / `Inherits` / `Invalidate` 与「适用标签类型」，因此
+「`Padding` 写在 `Button` 上静默无效」仍只靠约定，未升级为编译期诊断。
 
 ### 4.4 值语法
 
@@ -171,11 +199,11 @@ registry.Define("primary", s => s.Background(new ThemeColor(Dark: ..., Light: ..
 $primary: theme(#22c55e, #16a34a);     // SCSS 编译期变量（E1 就支持：纯常量替换）
 
 .primary {
-  background: $primary;                 // ThemeColor 双色
-  background: #22c55e;                  // 字面量（三/六/八位 hex）
-  background: theme(#2a3040, #ffffff);  // 双色函数 → new ThemeColor(Dark, Light)
-  padding: 16;                          // 逻辑单位裸数字
-  corner-radius: 12;
+  Background: $primary;                 // ThemeColor 双色
+  Background: #22c55e;                  // 字面量（三/六/八位 hex）
+  Background: theme(#2a3040, #ffffff);  // 双色函数 → new ThemeColor(Dark, Light)
+  Padding: 16;                          // 逻辑单位裸数字
+  CornerRadius: 12;
 }
 ```
 
@@ -190,19 +218,19 @@ $primary: theme(#22c55e, #16a34a);     // SCSS 编译期变量（E1 就支持：
 
 ```scss
 .panel {
-  background: theme(#2a3040, #ffffff);
-  padding: 16;
+  Background: theme(#2a3040, #ffffff);
+  Padding: 16;
 
   > Button {                      // 自动命名 → 派生类 panel__button
-    padding: 8 16;                // （多值 padding 支持与否随 StyleBuilder 形态，E1 落定）
+    Padding: 8 16;                // （多值 padding 支持与否随 StyleBuilder 形态，E1 落定）
   }
 
   TextBlock.title {               // 后代 + 类约束 → panel__text-title
-    font-size: 20;
+    FontSize: 20;
   }
 
   > Button:hover {                // 派生类的伪类变体
-    padding: 8 16;
+    Padding: 8 16;
   }
 }
 ```
@@ -229,18 +257,18 @@ $primary: theme(#22c55e, #16a34a);     // SCSS 编译期变量（E1 就支持：
 $accent: theme(#22c55e, #16a34a);
 
 .card {
-  background: theme(#2a3040, #ffffff);
-  corner-radius: 12;
-  padding: 16;
+  Background: theme(#2a3040, #ffffff);
+  CornerRadius: 12;
+  Padding: 16;
 
   &.primary {                      // 不做 .a.b 交集——E1 报保留；用双类叠加替代
-    background: $accent;
+    Background: $accent;
   }
 
-  &:hover   { background: theme(#30d158, #1aad52); }
-  &:pressed { background: theme(#1e8e4e, #128a40); }
+  &:hover   { Background: theme(#30d158, #1aad52); }
+  &:pressed { Background: theme(#1e8e4e, #128a40); }
 
-  > Button { padding: 8 16; }
+  > Button { Padding: 8 16; }
 }
 ```
 
@@ -294,12 +322,12 @@ public static class StyleBootstrap
     $card-bg: theme(#2a3040, #ffffff);
 
     .card {
-        background: $card-bg;
-        corner-radius: 12;
+        Background: $card-bg;
+        CornerRadius: 12;
 
-        &:hover { background: theme(#30d158, #1aad52); }  // 变体同 .eustyle
+        &:hover { Background: theme(#30d158, #1aad52); }  // 变体同 .eustyle
     }
-    .primary { foreground: theme(#e8ecf4, #1a1f2e); }
+    .primary { Foreground: theme(#e8ecf4, #1a1f2e); }
 }
 
 @code { /* ... */ }
@@ -320,14 +348,15 @@ public static class StyleBootstrap
 **② 元素级 `Style="…"` 属性**（HTML `style=""` 的对应物）——✅ E2 落地（EUI031 原保留语义之一）：
 
 ```html
-<Button Style="background: #c45499; corner-radius: 18">inline</Button>
+<Button Style="Background: #c45499; CornerRadius: 18">inline</Button>
 ```
 
-- 语义：**local 层直赋**（§2.1 最高优先级）——生成代码直译为 `Visual.SetXxx` 系 setter 调用，
+- 语义：**local 层直赋**（§2.1 最高优先级）——生成代码直译为
+  `el.SetValue(<目录里的 StyledProperty 字段>, <值>)`，目标字段由 §4.3 的符号派生目录给出，
   运行时零新机制。
 - **只允许静态值**：不支持变体（元素属性没有「状态」语境——CSS 同样不允许 `style=""`
   里写 `:hover`），状态外观一律走类名通道；`theme()` 双色允许（local 层存 `ThemeColor`）。
-- 值校验复用 EUI048–050，诊断定位到属性值 span。
+- 值校验复用 EUI050–052，诊断定位到属性值 span。
 
 **取舍记录**：不做「块内类名不加前缀直进全局表」的文件级全局注入形态——作用域是内联样式的
 核心价值；要全局复用请写 `.eustyle`（同一语法，挪个位置而已）。
@@ -417,8 +446,8 @@ E4 依赖 E1+E2；E5 收尾开放性。0.1 alpha 出口只需 E3（+ 可选 E1�
 | 双通道治理（手写 Define × 样式表） | EUI052 Warning + 约定样式表唯一来源；生成器覆盖手写场景逐步收敛 |
 | SCSS 兼容蔓延 | §4.7 明确不做清单；新特性先过「编译期直配」一致性门槛 |
 | 注册位上限 | 32 位掩码充足；不够升 long（段键 record 同步扩字段，一次性迁移） |
-| 焦点环宽度等主题参数不可类覆盖 | StyleBuilder 暴露 `outline-width` setter（E3 顺手项，painter 读 class 值回落令牌） |
-| `padding: 8 16` 多值 | **已定案（2026-11-12）**：E1 单值（StyleBuilder `Padding` 为 `double`）；四边独立/多值待属性系统引入 Thickness 支持后扩，此前样式表多值一律报 `EUI050`，不做运行时兜底 |
+| 焦点环宽度等主题参数不可类覆盖 | ✅ E3：目录里的 `FocusRingWidth`（`StyleBuilder.FocusRingWidth` + `Visual.FocusRingWidthProperty`），painter 读 class 值回落令牌 |
+| `Padding: 8 16` 多值 | **已定案（2026-11-12）**：E1 单值（StyleBuilder `Padding` 为 `double`）；四边独立/多值待属性系统引入 Thickness 支持后扩，此前样式表多值一律报 `EUI050`，不做运行时兜底 |
 
 ---
 

@@ -44,6 +44,11 @@ public sealed class TemplateGenerator : IIncrementalGenerator
         context.RegisterSourceOutput(catalogProvider, static (spc, catalog) =>
             ReportCatalogProblems(spc, catalog));
 
+        // design/17 §4.3：样式属性目录级诊断出口（与标签目录同口径，一次编译只报一次）。
+        // 问题来自引用程序集符号（多数宿主不编译 Rendering 源码），没有源位置，故用 Location.None。
+        context.RegisterSourceOutput(catalogProvider, static (spc, catalog) =>
+            ReportStylePropertyProblems(spc, catalog.StyleProperties));
+
         // 逐文件语义事实（code-behind 表面 + 探针）：输入挂 Compilation 故每轮重建，但输出是值相等
         // record——无关改动下值不变，下游逐文件 SourceOutput 按值命中 Cached/Unchanged
         // （design/14 §14.10.3/§14.11.2 的验收口径）。不再 Collect 成批：单文件变化只重跑该文件。
@@ -92,9 +97,11 @@ public sealed class TemplateGenerator : IIncrementalGenerator
             .Collect()
             .Combine(rootNamespace)
             .Combine(styleStates)
-            .Combine(handwrittenDefines);
+            .Combine(handwrittenDefines)
+            .Combine(catalogProvider);
         context.RegisterSourceOutput(styleSheets, static (spc, data) => ExecuteStylesheet(spc,
-            data.Left.Left.Left, data.Left.Left.Right, data.Left.Right, data.Right));
+            data.Left.Left.Left.Left, data.Left.Left.Left.Right, data.Left.Left.Right,
+            data.Left.Right, data.Right.StyleProperties));
 
         // E2（design/17 §5）：全局样式类名目录——.eustyle 的类名 + 各 .ui 的 @style 块类名
         // （组件前缀 {Component}__）。产出是值相等 record，combine 进逐文件管道供
@@ -104,7 +111,9 @@ public sealed class TemplateGenerator : IIncrementalGenerator
             .Where(static file => Path.GetExtension(file.Path) is ".eustyle" or ".ui")
             .Select(static (file, ct) => new UiFileInput(file.Path, file.GetText(ct)?.ToString() ?? ""))
             .Combine(styleStates)
-            .Select(static (pair, _) => ExtractStyleClasses(pair.Left, pair.Right))
+            .Combine(catalogProvider)
+            .Select(static (pair, _) => ExtractStyleClasses(pair.Left.Left, pair.Left.Right,
+                pair.Right.StyleProperties))
             .Collect()
             .Select(static (facts, _) => StyleClassCatalog.Build(facts))
             .WithTrackingName("StyleClassCatalog");
@@ -332,8 +341,8 @@ public sealed class TemplateGenerator : IIncrementalGenerator
         {
             var blockDiags = new List<UiDiagnostic>();
             // E5：跨文件注册名（@states 全局并集）兜底校验——本文件声明已在解析器预扫闭环。
-            var sheet = Eustyle.Parse(block.Code, input.Path, blockDiags, block.CodeSpan.Start,
-                styleClasses.States);
+            var sheet = Eustyle.Parse(block.Code, input.Path, blockDiags, catalog.StyleProperties,
+                block.CodeSpan.Start, styleClasses.States);
             diags.AddRange(blockDiags);
             if (blockDiags.Exists(static d => d.IsError)) continue;
             var collapsed = EustyleCollapse.Flatten(sheet, diags);
@@ -412,7 +421,9 @@ public sealed class TemplateGenerator : IIncrementalGenerator
             doc.Nodes.OfType<UiCodeBlock>().ToList(),
             styleRules,
             // E5：本文件 @style 块的 @states 声明——Build 首行的 __RegisterStyles 先注册状态位
-            localStates).Emit();
+            localStates,
+            // design/17 §4.3：Style= 内联发射的目标字段来自同一份符号派生目录
+            catalog.StyleProperties).Emit();
 
         spc.AddSource($"{className}.{StableHash(input.Path)}.g.cs", code);
     }
@@ -424,13 +435,14 @@ public sealed class TemplateGenerator : IIncrementalGenerator
     /// 产出空集——主管道 Error 已短路生成，半成品目录没有意义。
     /// E5：<paramref name="externalStates"/> 是全局 @states 目录（跨文件注册名引用的兜底校验）。
     /// </summary>
-    private static StyleSourceFact ExtractStyleClasses(UiFileInput input, StyleStatesCatalog externalStates)
+    private static StyleSourceFact ExtractStyleClasses(UiFileInput input, StyleStatesCatalog externalStates,
+        StylePropertyCatalog properties)
     {
         var extension = Path.GetExtension(input.Path);
         if (extension == ".eustyle")
         {
             var diags = new List<UiDiagnostic>();
-            var sheet = Eustyle.Parse(input.Text, input.Path, diags, 0, externalStates.Names);
+            var sheet = Eustyle.Parse(input.Text, input.Path, diags, properties, 0, externalStates.Names);
             if (diags.Exists(static d => d.IsError))
                 return new StyleSourceFact(input.Path,
                     ImmutableArray<StyleClassRef>.Empty, ImmutableArray<InjectRuleData>.Empty,
@@ -461,8 +473,8 @@ public sealed class TemplateGenerator : IIncrementalGenerator
         foreach (var block in doc.Nodes.OfType<UiStyleBlock>())
         {
             var blockDiags = new List<UiDiagnostic>();
-            var sheet = Eustyle.Parse(block.Code, input.Path, blockDiags, block.CodeSpan.Start,
-                externalStates.Names);
+            var sheet = Eustyle.Parse(block.Code, input.Path, blockDiags, properties,
+                block.CodeSpan.Start, externalStates.Names);
             if (blockDiags.Exists(static d => d.IsError)) continue;
             var collapsed = EustyleCollapse.Flatten(sheet, new List<UiDiagnostic>());
             var localNames = new HashSet<string>(collapsed.Rules.Select(static r => r.ClassName), StringComparer.Ordinal);
@@ -646,7 +658,8 @@ public sealed class TemplateGenerator : IIncrementalGenerator
     /// </summary>
     private static void ExecuteStylesheet(SourceProductionContext spc,
         ImmutableArray<UiFileInput> files, string rootNamespace,
-        StyleStatesCatalog statesCatalog, ImmutableArray<HandwrittenDefine> handwritten)
+        StyleStatesCatalog statesCatalog, ImmutableArray<HandwrittenDefine> handwritten,
+        StylePropertyCatalog properties)
     {
         if (files.IsEmpty) return;
 
@@ -657,7 +670,7 @@ public sealed class TemplateGenerator : IIncrementalGenerator
         {
             var text = SourceText.From(file.Text);
             var diags = new List<UiDiagnostic>();
-            var sheet = Eustyle.Parse(file.Text, file.Path, diags, 0, statesCatalog.Names);
+            var sheet = Eustyle.Parse(file.Text, file.Path, diags, properties, 0, statesCatalog.Names);
             // E4：嵌套塌缩——派生类进 Define 序列，命名冲突 EUI053 进同一诊断流（Error 短路）。
             var collapsed = EustyleCollapse.Flatten(sheet, diags);
             foreach (var diag in diags)
@@ -763,6 +776,21 @@ public sealed class TemplateGenerator : IIncrementalGenerator
                 : problem.Code;
             Report(spc, "", EmptySourceText,
                 UiDiagnostics.Error(code, problem.Message, UiSpan.Zero, problem.Source));
+        }
+    }
+
+    /// <summary>
+    /// design/17 §4.3：样式属性目录的声明问题出口。问题多数来自引用程序集
+    /// （Rendering.dll）的符号，没有源声明位置，统一用 Location.None 报 EUI026，
+    /// 保证「加了 StyleBuilder setter 却漏了 StyledProperty 字段」这类漂移在构建期可见。
+    /// </summary>
+    private static void ReportStylePropertyProblems(SourceProductionContext spc, StylePropertyCatalog properties)
+    {
+        foreach (var problem in properties.Problems)
+        {
+            var descriptor = new DiagnosticDescriptor(problem.Code, problem.Code, "{0}", "EclipseUI",
+                RoslynSeverity.Error, isEnabledByDefault: true);
+            spc.ReportDiagnostic(Diagnostic.Create(descriptor, Location.None, problem.Message));
         }
     }
 

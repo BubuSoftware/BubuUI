@@ -212,7 +212,8 @@ public sealed class UiCatalog : IEquatable<UiCatalog>
         IEnumerable<UiElementDef> elements,
         IEnumerable<UiHiddenTag> hiddenTags,
         IEnumerable<UiMetadataProblem> problems,
-        IEnumerable<UiAttachedPropDef>? attachedProperties = null)
+        IEnumerable<UiAttachedPropDef>? attachedProperties = null,
+        StylePropertyCatalog? styleProperties = null)
     {
         _byTag = elements
             .GroupBy(e => e.Tag, StringComparer.Ordinal)
@@ -251,7 +252,13 @@ public sealed class UiCatalog : IEquatable<UiCatalog>
             .OrderBy(p => p.OwnerTag, StringComparer.Ordinal)
             .ThenBy(p => p.Name, StringComparer.Ordinal)
             .ToList();
+        // 编译期派生的可样式属性表面（design/17 §4.3）：与标签表面同一次符号扫描产出，
+        // 随 UiCatalog 一起走增量缓存；缺省空目录仅供无符号语境的静态前端。
+        StyleProperties = styleProperties ?? StylePropertyCatalog.Empty;
     }
+
+    /// <summary>可样式属性目录（StyleBuilder setter + StyledProperty 字段派生，单一来源）。</summary>
+    public StylePropertyCatalog StyleProperties { get; }
 
     public IReadOnlyList<UiElementDef> Elements { get; }
 
@@ -344,7 +351,8 @@ public sealed class UiCatalog : IEquatable<UiCatalog>
         && CatalogValueEq.Sequence(Elements, other.Elements)
         && CatalogValueEq.Sequence(HiddenTags, other.HiddenTags)
         && CatalogValueEq.Sequence(Problems, other.Problems)
-        && CatalogValueEq.Sequence(AttachedProperties, other.AttachedProperties);
+        && CatalogValueEq.Sequence(AttachedProperties, other.AttachedProperties)
+        && StyleProperties.Equals(other.StyleProperties);
 
     public override bool Equals(object? obj) => Equals(obj as UiCatalog);
 
@@ -354,7 +362,8 @@ public sealed class UiCatalog : IEquatable<UiCatalog>
         hash = CatalogValueEq.AddSequence(hash, Elements);
         hash = CatalogValueEq.AddSequence(hash, HiddenTags);
         hash = CatalogValueEq.AddSequence(hash, Problems);
-        return CatalogValueEq.AddSequence(hash, AttachedProperties);
+        hash = CatalogValueEq.AddSequence(hash, AttachedProperties);
+        return CatalogValueEq.Add(hash, StyleProperties);
     }
 }
 

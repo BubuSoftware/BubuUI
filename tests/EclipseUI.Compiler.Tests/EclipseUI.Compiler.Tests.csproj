@@ -17,6 +17,9 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\EclipseUI.Compiler.Generator\EclipseUI.Compiler.Generator.csproj" />
     <ProjectReference Include="..\..\src\EclipseUI.Runtime\EclipseUI.Runtime.csproj" />
+    <!-- design/17 §4.3：样式属性目录由 StyleBuilder / StyledProperty 符号派生，
+         生成器测试与一致性测试需要渲染程序集随测试输出一起可用。 -->
+    <ProjectReference Include="..\..\src\EclipseUI.Rendering\EclipseUI.Rendering.csproj" />
   </ItemGroup>
 
   <!-- 测试目录来自扫描真实运行时（design/14 §14.11.1），与无头前端测试共用一份实现 -->

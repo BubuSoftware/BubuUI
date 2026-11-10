@@ -57,8 +57,17 @@ public static class UiTestCatalogs
             .Select(p => (MetadataReference)MetadataReference.CreateFromFile(p))
             .ToList();
         references.Add(MetadataReference.CreateFromFile(RuntimeAssembly.Location));
+        // design/17 §4.3：样式属性目录从 StyleBuilder setter + StyledProperty 字段符号派生，
+        // 探针编译必须像真实宿主一样引用渲染程序集，否则得到空目录。
+        // 按路径取而非 typeof(...)：本文件同时被两种测试项目编译，不强加编译期引用。
+        var rendering = Path.Combine(Path.GetDirectoryName(RuntimeAssembly.Location)!,
+            "EclipseUI.Rendering.dll");
+        if (File.Exists(rendering)) references.Add(MetadataReference.CreateFromFile(rendering));
         return references;
     }
+
+    /// <summary>扫描真实运行时 + 渲染程序集得到的可样式属性目录（design/17 §4.3）。</summary>
+    public static StylePropertyCatalog StyleProperties() => BuiltIn().StyleProperties;
 
     /// <summary>把目录画成可评审的文本表面，用于仓库内 golden 快照文件（design/14 §14.11.1）。</summary>
     public static string RenderSurface(UiCatalog catalog)

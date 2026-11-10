@@ -9,9 +9,9 @@ namespace EclipseUI.Compiler;
 /// 运行时仍只有「类名直配」一种机制——无选择器引擎。
 /// <code>
 /// .panel {
-///   background: …;
-///   &gt; Button { padding: 8; }        → Define("panel__button", …) + 注入规则
-///   TextBlock.title { font-size: 20; } → Define("panel__text-block-title", …) + 注入规则
+///   Background: …;
+///   &gt; Button { Padding: 8; }        → Define("panel__button", …) + 注入规则
+///   TextBlock.title { FontSize: 20; } → Define("panel__text-block-title", …) + 注入规则
 /// }
 /// </code>
 /// 命名规则：<c>{父派生名}__{kebab(类型名)}{-类约束}</c>（全小写）。同一派生名的多个嵌套段

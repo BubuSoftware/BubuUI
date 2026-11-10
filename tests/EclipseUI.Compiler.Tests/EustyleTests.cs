@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using EclipseUI.Compiler;
 using EclipseUI.Compiler.Generator;
+using EclipseUI.TestKit;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Text;
@@ -19,17 +20,20 @@ public class EustyleTests
 {
     // ---------- 解析器 ----------
 
+    /// <summary>真实符号派生的属性目录（扫描 Runtime + Rendering，绝不手写固定表）。</summary>
+    private static StylePropertyCatalog Catalog => UiTestCatalogs.StyleProperties();
+
     private static (EustyleStylesheet Sheet, List<UiDiagnostic> Diags) Parse(string source, int offset = 0)
     {
         var diags = new List<UiDiagnostic>();
-        var sheet = Eustyle.Parse(source, "test.eustyle", diags, offset);
+        var sheet = Eustyle.Parse(source, "test.eustyle", diags, Catalog, offset);
         return (sheet, diags);
     }
 
     [Fact]
     public void ClassRule_ParsesThemeAndNumberSetters()
     {
-        var (sheet, diags) = Parse(".card {\n    background: theme(#22a064, #1c8c58);\n    corner-radius: 12;\n}");
+        var (sheet, diags) = Parse(".card {\n    Background: theme(#22a064, #1c8c58);\n    CornerRadius: 12;\n}");
 
         Assert.Empty(diags);
         var rule = Assert.Single(sheet.Rules);
@@ -55,7 +59,7 @@ public class EustyleTests
     [Fact]
     public void HexForms_ExpandShortAndParseAlpha()
     {
-        var (sheet, diags) = Parse(".a { background: #abc; }\n.b { background: #aabbcc; }\n.c { background: #aabbcc80; }");
+        var (sheet, diags) = Parse(".a { Background: #abc; }\n.b { Background: #aabbcc; }\n.c { Background: #aabbcc80; }");
 
         Assert.Empty(diags);
         var short_ = Assert.IsType<EustyleColor>(sheet.Rules[0].Setters.Single().Value);
@@ -78,11 +82,11 @@ public class EustyleTests
     {
         const string source = """
             .primary {
-                background: #22a064;
-                &:hover { background: #30ba78; }
-                &:pressed { background: #187e4e; }
+                Background: #22a064;
+                &:hover { Background: #30ba78; }
+                &:pressed { Background: #187e4e; }
             }
-            .secondary:hover { background: #30ba78; }
+            .secondary:hover { Background: #30ba78; }
             """;
 
         var (sheet, diags) = Parse(source);
@@ -102,7 +106,7 @@ public class EustyleTests
     [Fact]
     public void ActiveAlias_MapsToPressedVariant()
     {
-        var (sheet, diags) = Parse(".btn:active { background: #fff; }");
+        var (sheet, diags) = Parse(".btn:active { Background: #fff; }");
 
         Assert.Empty(diags);
         Assert.Equal(EustyleVariant.Pressed, sheet.Rules[0].Setters.Single().Variant);
@@ -114,7 +118,7 @@ public class EustyleTests
         const string source = """
             $primary: theme(#22a064, #1c8c58);
             $alias: $primary;
-            .x { background: $primary; foreground: $alias; }
+            .x { Background: $primary; Foreground: $alias; }
             """;
 
         var (sheet, diags) = Parse(source);
@@ -130,7 +134,7 @@ public class EustyleTests
     [Fact]
     public void Comments_AreIgnored()
     {
-        var (sheet, diags) = Parse("// header note\n.card { /* inline */ background: #fff; } // trailing");
+        var (sheet, diags) = Parse("// header note\n.card { /* inline */ Background: #fff; } // trailing");
 
         Assert.Empty(diags);
         var rule = Assert.Single(sheet.Rules);
@@ -154,19 +158,19 @@ public class EustyleTests
     [Fact]
     public void NumberForColorProperty_ReportsEUI052()
     {
-        Assert.Equal(UiDiagnostics.StyleValueType, CodeOf(".x { background: 12; }"));
+        Assert.Equal(UiDiagnostics.StyleValueType, CodeOf(".x { Background: 12; }"));
     }
 
     [Fact]
     public void ColorForNumberProperty_ReportsEUI052()
     {
-        Assert.Equal(UiDiagnostics.StyleValueType, CodeOf(".x { padding: #fff; }"));
+        Assert.Equal(UiDiagnostics.StyleValueType, CodeOf(".x { Padding: #fff; }"));
     }
 
     [Fact]
     public void UnitSuffix_ReportsEUI052_WithLogicalUnitHint()
     {
-        var (_, diags) = Parse(".x { padding: 16px; }");
+        var (_, diags) = Parse(".x { Padding: 16px; }");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.StyleValueType, diag.Code);
         Assert.Contains("not '16px'", diag.Message);
@@ -175,25 +179,25 @@ public class EustyleTests
     [Fact]
     public void UndefinedVariable_ReportsEUI052()
     {
-        Assert.Equal(UiDiagnostics.StyleValueType, CodeOf(".x { background: $nope; }"));
+        Assert.Equal(UiDiagnostics.StyleValueType, CodeOf(".x { Background: $nope; }"));
     }
 
     [Fact]
     public void InvalidHexColor_ReportsEUI052()
     {
-        Assert.Equal(UiDiagnostics.StyleValueType, CodeOf(".x { background: #12g; }"));
+        Assert.Equal(UiDiagnostics.StyleValueType, CodeOf(".x { Background: #12g; }"));
     }
 
     [Fact]
     public void UnknownPseudoClass_ReportsEUI050()
     {
-        Assert.Equal(UiDiagnostics.StyleSyntax, CodeOf(".x:spinning { background: #fff; }"));
+        Assert.Equal(UiDiagnostics.StyleSyntax, CodeOf(".x:spinning { Background: #fff; }"));
     }
 
     [Fact]
     public void UnterminatedRule_ReportsEUI050()
     {
-        Assert.Equal(UiDiagnostics.StyleSyntax, CodeOf(".x { background: #fff;"));
+        Assert.Equal(UiDiagnostics.StyleSyntax, CodeOf(".x { Background: #fff;"));
     }
 
     [Fact]
@@ -225,7 +229,7 @@ public class EustyleTests
     [Fact]
     public void Generator_EmitsDefineChainWithFullyQualifiedTypes()
     {
-        var (sheet, diags) = Parse(".primary { background: theme(#22a064, #1c8c58); }\n.flat { background: #aaa; corner-radius: 1.5; }");
+        var (sheet, diags) = Parse(".primary { Background: theme(#22a064, #1c8c58); }\n.flat { Background: #aaa; CornerRadius: 1.5; }");
         Assert.Empty(diags);
 
         var code = EustyleGenerator.EmitDefines(sheet, "registry");
@@ -266,6 +270,10 @@ public class EustyleTests
             .Split(Path.PathSeparator)
             .Select(path => (MetadataReference)MetadataReference.CreateFromFile(path))
             .Append(MetadataReference.CreateFromFile(typeof(EclipseUI.Component).Assembly.Location))
+            // design/17 §4.3：样式属性目录由符号扫描得出，探针编译必须引用渲染程序集
+            .Append(MetadataReference.CreateFromFile(Path.Combine(
+                Path.GetDirectoryName(typeof(EclipseUI.Component).Assembly.Location)!,
+                "EclipseUI.Rendering.dll")))
             .ToList();
         var compilation = CSharpCompilation.Create(
             "StyleProbe",
@@ -307,7 +315,7 @@ public class EustyleTests
             @using EclipseUI.Elements
             <StackPanel />
             @style {
-                .demo { corner-radius: 12; }
+                .demo { CornerRadius: 12; }
             }
             """;
 
@@ -345,7 +353,7 @@ public class EustyleTests
     {
         const string ui = """
             <StackPanel>
-                @style { .demo { background: #fff; } }
+                @style { .demo { Background: #fff; } }
             </StackPanel>
             """;
 
@@ -361,10 +369,10 @@ public class EustyleTests
         const string sheet = """
             $primary: theme(#22a064, #1c8c58);
             .primary {
-                background: $primary;
-                &:hover { background: #30ba78; }
-                &:pressed { background: #187e4e; }
-                &:disabled { background: #2e3e3a; }
+                Background: $primary;
+                &:hover { Background: #30ba78; }
+                &:pressed { Background: #187e4e; }
+                &:disabled { Background: #2e3e3a; }
             }
             """;
 
@@ -396,14 +404,14 @@ public class EustyleTests
     private static (EustyleDeclarations Decl, List<UiDiagnostic> Diags) ParseDeclarations(string source, int offset = 0)
     {
         var diags = new List<UiDiagnostic>();
-        var decl = Eustyle.ParseDeclarations(source, "test.ui", diags, offset);
+        var decl = Eustyle.ParseDeclarations(source, "test.ui", diags, Catalog, offset);
         return (decl, diags);
     }
 
     [Fact]
     public void StyleDeclarations_ParseColorsAndNumbers()
     {
-        var (decl, diags) = ParseDeclarations("background: #c45499; corner-radius: 18");
+        var (decl, diags) = ParseDeclarations("Background: #c45499; CornerRadius: 18");
 
         Assert.Empty(diags);
         Assert.Equal(2, decl.Setters.Count);
@@ -417,7 +425,7 @@ public class EustyleTests
     [Fact]
     public void StyleDeclarations_ThemeValue_ParsesPair()
     {
-        var (decl, diags) = ParseDeclarations("foreground: theme(#2a3040, #ffffff);");
+        var (decl, diags) = ParseDeclarations("Foreground: theme(#2a3040, #ffffff);");
 
         Assert.Empty(diags);
         var theme = Assert.IsType<EustyleTheme>(Assert.Single(decl.Setters).Value);
@@ -427,7 +435,7 @@ public class EustyleTests
     [Fact]
     public void StyleDeclarations_ClassRule_ReportsEUI050()
     {
-        var (_, diags) = ParseDeclarations(".card { background: #fff; }");
+        var (_, diags) = ParseDeclarations(".card { Background: #fff; }");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.StyleSyntax, diag.Code);
         Assert.Contains("class rules are not allowed", diag.Message);
@@ -436,7 +444,7 @@ public class EustyleTests
     [Fact]
     public void StyleDeclarations_Variable_ReportsEUI050()
     {
-        var (_, diags) = ParseDeclarations("$pad: 8; padding: $pad;");
+        var (_, diags) = ParseDeclarations("$pad: 8; Padding: $pad;");
         Assert.Contains(diags, d => d.Code == UiDiagnostics.StyleSyntax && d.Message.Contains("'$variable'"));
     }
 
@@ -452,26 +460,26 @@ public class EustyleTests
     public void StyleDeclarations_Spans_OffsetToHostFile()
     {
         // attr.ValueSpan.Start 传入 offset——诊断与 setter 值 span 都是宿主 .ui 绝对位置
-        var (decl, diags) = ParseDeclarations("padding: 4px;", offset: 37);
+        var (decl, diags) = ParseDeclarations("Padding: 4px;", offset: 37);
         Assert.Equal(UiDiagnostics.StyleValueType, Assert.Single(diags).Code);
 
-        var (ok, _) = ParseDeclarations("padding: 4;", offset: 37);
-        Assert.Equal(37 + "padding: ".Length, Assert.Single(ok.Setters).ValueSpan.Start);
+        var (ok, _) = ParseDeclarations("Padding: 4;", offset: 37);
+        Assert.Equal(37 + "Padding: ".Length, Assert.Single(ok.Setters).ValueSpan.Start);
     }
 
     [Fact]
     public void LocalSetters_EmitVisualCallsAndPropertyFields()
     {
         var (decl, diags) = ParseDeclarations(
-            "background: #c45499; foreground: theme(#10131a, #f5f7fb); corner-radius: 18; focus-ring-width: 2; padding: 16; font-size: 20");
+            "Background: #c45499; Foreground: theme(#10131a, #f5f7fb); CornerRadius: 18; FocusRingWidth: 2; Padding: 16; FontSize: 20");
         Assert.Empty(diags);
 
-        var code = EustyleGenerator.EmitLocalSetters(decl.Setters, "__el3");
+        var code = EustyleGenerator.EmitLocalSetters(decl.Setters, "__el3", Catalog);
 
-        Assert.Contains("global::EclipseUI.Rendering.Visual.SetBackground(__el3, new global::EclipseUI.Rendering.Color(196, 84, 153));", code.Select(c => c.Statement));
-        Assert.Contains("global::EclipseUI.Rendering.Visual.SetForegroundResource(__el3, new global::EclipseUI.Rendering.ThemeColor(new global::EclipseUI.Rendering.Color(16, 19, 26), new global::EclipseUI.Rendering.Color(245, 247, 251)));", code.Select(c => c.Statement));
-        Assert.Contains("global::EclipseUI.Rendering.Visual.SetCornerRadius(__el3, 18);", code.Select(c => c.Statement));
-        Assert.Contains("global::EclipseUI.Rendering.Visual.SetFocusRingWidth(__el3, 2);", code.Select(c => c.Statement));
+        Assert.Contains("__el3.SetValue(global::EclipseUI.Rendering.Visual.BackgroundProperty, new global::EclipseUI.Rendering.Color(196, 84, 153));", code.Select(c => c.Statement));
+        Assert.Contains("__el3.SetValue(global::EclipseUI.Rendering.Visual.ForegroundResourceProperty, new global::EclipseUI.Rendering.ThemeColor(new global::EclipseUI.Rendering.Color(16, 19, 26), new global::EclipseUI.Rendering.Color(245, 247, 251)));", code.Select(c => c.Statement));
+        Assert.Contains("__el3.SetValue(global::EclipseUI.Rendering.Visual.CornerRadiusProperty, 18);", code.Select(c => c.Statement));
+        Assert.Contains("__el3.SetValue(global::EclipseUI.Rendering.Visual.FocusRingWidthProperty, 2);", code.Select(c => c.Statement));
         Assert.Contains("__el3.SetValue(global::EclipseUI.Elements.Panel.PaddingProperty, 16);", code.Select(c => c.Statement));
         Assert.Contains("__el3.SetValue(global::EclipseUI.Elements.TextBlock.FontSizeProperty, 20);", code.Select(c => c.Statement));
 
@@ -485,16 +493,16 @@ public class EustyleTests
 
     private const string SheetWithCard = """
         .card {
-            background: theme(#2a3040, #ffffff);
-            corner-radius: 12;
+            Background: theme(#2a3040, #ffffff);
+            CornerRadius: 12;
         }
-        .primary { foreground: #e8ecf4; }
+        .primary { Foreground: #e8ecf4; }
         """;
 
     private const string TemplateWithCard = """
         @using EclipseUI.Elements
         <StackPanel>
-            <Button Class="card primary" Style="corner-radius: 18; padding: 8">go</Button>
+            <Button Class="card primary" Style="CornerRadius: 18; Padding: 8">go</Button>
         </StackPanel>
         """;
 
@@ -510,7 +518,7 @@ public class EustyleTests
         AssertGeneratedCodeParses(code);
 
         Assert.Contains("el1.Classes = new global::System.String[] { \"card\", \"primary\" };", code);
-        Assert.Contains("global::EclipseUI.Rendering.Visual.SetCornerRadius(el1, 18);", code);
+        Assert.Contains("el1.SetValue(global::EclipseUI.Rendering.Visual.CornerRadiusProperty, 18);", code);
         Assert.Contains("el1.SetValue(global::EclipseUI.Elements.Panel.PaddingProperty, 8);", code);
     }
 
@@ -560,7 +568,7 @@ public class EustyleTests
                 <Button Class="demo" />
             </StackPanel>
             @style {
-                .demo { corner-radius: 12; }
+                .demo { CornerRadius: 12; }
             }
             """;
 
@@ -696,10 +704,10 @@ public class EustyleTests
     {
         const string source = """
             .panel {
-                background: #222222;
-                > Button { padding: 8; }
-                TextBlock.title { font-size: 20; }
-                .title { corner-radius: 4; }
+                Background: #222222;
+                > Button { Padding: 8; }
+                TextBlock.title { FontSize: 20; }
+                .title { CornerRadius: 4; }
             }
             """;
 
@@ -731,10 +739,10 @@ public class EustyleTests
     {
         const string source = """
             .panel {
-                > Button { padding: 8; }
-                TextBlock.title { font-size: 20; }
-                .title { corner-radius: 4; }
-                > Button { > Text { corner-radius: 2; } }
+                > Button { Padding: 8; }
+                TextBlock.title { FontSize: 20; }
+                .title { CornerRadius: 4; }
+                > Button { > Text { CornerRadius: 2; } }
             }
             """;
 
@@ -765,9 +773,9 @@ public class EustyleTests
         // CSS 同选择器多块 = 声明合并（声明序后者胜）；同名子嵌套同理递归聚合
         const string source = """
             .panel {
-                > Button { padding: 8; }
-                > Button { corner-radius: 2; > Text { font-size: 12; } }
-                > Button:hover { padding: 4; }
+                > Button { Padding: 8; }
+                > Button { CornerRadius: 2; > Text { FontSize: 12; } }
+                > Button:hover { Padding: 4; }
             }
             """;
 
@@ -790,8 +798,8 @@ public class EustyleTests
     public void NestedCollapse_CollidesWithExplicitClass_ReportsEUI053()
     {
         const string source = """
-            .panel__button { padding: 99; }
-            .panel { > Button { padding: 8; } }
+            .panel__button { Padding: 99; }
+            .panel { > Button { Padding: 8; } }
             """;
 
         var (sheet, _) = Parse(source);
@@ -806,8 +814,8 @@ public class EustyleTests
         // '> Button:hover {}' 与 '> Button { &:hover {} }' 两种写法等价——都归派生类的 Hover 变体
         const string source = """
             .panel {
-                > Button:hover { padding: 4; }
-                > Label { &:focus { font-size: 15; } }
+                > Button:hover { Padding: 4; }
+                > Label { &:focus { FontSize: 15; } }
             }
             """;
 
@@ -823,7 +831,7 @@ public class EustyleTests
     [Fact]
     public void NestedSelectorInsideVariantBlock_ReportsEUI050()
     {
-        var (_, diags) = Parse(".a { &:hover { > Button { padding: 8; } } }");
+        var (_, diags) = Parse(".a { &:hover { > Button { Padding: 8; } } }");
 
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.StyleSyntax, diag.Code);
@@ -835,8 +843,8 @@ public class EustyleTests
     {
         const string source = """
             .panel {
-                background: #222222;
-                > Button { padding: 8; }
+                Background: #222222;
+                > Button { Padding: 8; }
             }
             """;
 
@@ -853,10 +861,10 @@ public class EustyleTests
 
     private const string NestedSheet = """
         .panel {
-            background: theme(#2a3040, #ffffff);
-            > Button { padding: 8; }
+            Background: theme(#2a3040, #ffffff);
+            > Button { Padding: 8; }
         }
-        .primary { foreground: #e8ecf4; }
+        .primary { Foreground: #e8ecf4; }
         """;
 
     [Fact]
@@ -957,8 +965,8 @@ public class EustyleTests
             </StackPanel>
             @style {
                 .panel {
-                    background: #222222;
-                    > Button { corner-radius: 6; }
+                    Background: #222222;
+                    > Button { CornerRadius: 6; }
                 }
             }
             """;
@@ -992,7 +1000,7 @@ public class EustyleTests
         string source, IReadOnlyCollection<string>? externalStates = null, int offset = 0)
     {
         var diags = new List<UiDiagnostic>();
-        var sheet = Eustyle.Parse(source, "test.eustyle", diags, offset, externalStates);
+        var sheet = Eustyle.Parse(source, "test.eustyle", diags, Catalog, offset, externalStates);
         return (sheet, diags);
     }
 
@@ -1002,10 +1010,10 @@ public class EustyleTests
         const string source = """
             @states { spinning; }
             .spinner {
-                background: theme(#2a3040, #ffffff);
-                &:spinning { foreground: #22c55e; }
+                Background: theme(#2a3040, #ffffff);
+                &:spinning { Foreground: #22c55e; }
             }
-            .busy:spinning { corner-radius: 4; }
+            .busy:spinning { CornerRadius: 4; }
             """;
 
         var (sheet, diags) = ParseWithStates(source);
@@ -1040,12 +1048,12 @@ public class EustyleTests
     {
         // 声明写在规则之后同样可用（预扫两遍解析）；重复声明去重。
         const string source = """
-            .spinner:loading { background: #22c55e; }
+            .spinner:loading { Background: #22c55e; }
             @states {
                 loading;
                 loading, busy;
             }
-            .busy:busy { foreground: #fff; }
+            .busy:busy { Foreground: #fff; }
             """;
 
         var (sheet, diags) = ParseWithStates(source);
@@ -1061,8 +1069,8 @@ public class EustyleTests
         const string source = """
             @states { spinning; }
             .card {
-                background: #222222;
-                > Button:spinning { foreground: #22c55e; }
+                Background: #222222;
+                > Button:spinning { Foreground: #22c55e; }
             }
             """;
 
@@ -1076,7 +1084,7 @@ public class EustyleTests
     [Fact]
     public void StatesDeclaration_UndeclaredName_ReportsEUI050()
     {
-        var (_, diags) = ParseWithStates(".spinner:loading { background: #fff; }");
+        var (_, diags) = ParseWithStates(".spinner:loading { Background: #fff; }");
 
         // EUI050 是 Error → 产物整体短路（无效状态归属不进产物，断言只看诊断）。
         var diag = Assert.Single(diags);
@@ -1100,7 +1108,7 @@ public class EustyleTests
     {
         // 本文件未声明、外部目录（其他样式来源的 @states 并集）已声明 → 引用通过；
         // 外部目录也没有 → 报错。
-        const string source = ".spinner:loading { background: #fff; }";
+        const string source = ".spinner:loading { Background: #fff; }";
 
         var (sheet, okDiags) = ParseWithStates(source, ["loading"]);
         Assert.Empty(okDiags);
@@ -1118,7 +1126,7 @@ public class EustyleTests
             <StackPanel />
             @style {
                 @states { spinning; }
-                .demo:spinning { corner-radius: 18; }
+                .demo:spinning { CornerRadius: 18; }
             }
             """;
 
@@ -1136,7 +1144,7 @@ public class EustyleTests
     {
         // 元素属性没有「状态」语境（design/17 §4.8②）——@states 与一切 @ 指令不适用。
         // 直测 ParseDeclarations（.ui 属性值里的 '@' 由 Lexer 指令通道处理，是既有限制）。
-        var (_, diags) = ParseDeclarations("background: #fff; @states { loading; }");
+        var (_, diags) = ParseDeclarations("Background: #fff; @states { loading; }");
 
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.StyleSyntax, diag.Code);
@@ -1148,8 +1156,8 @@ public class EustyleTests
     {
         // 宿主 code-behind 手写 Define("card", …) × 样式表 .card → EUI054 Warning（不短路生成）。
         const string sheet = """
-            .card { background: theme(#2a3040, #ffffff); }
-            .unique { padding: 8; }
+            .card { Background: theme(#2a3040, #ffffff); }
+            .unique { Padding: 8; }
             """;
         const string codeBehind = """
             using EclipseUI.Rendering;
@@ -1174,7 +1182,7 @@ public class EustyleTests
     [Fact]
     public void DualChannel_NoOverlap_NoDiagnostics()
     {
-        const string sheet = ".unique { padding: 8; }";
+        const string sheet = ".unique { Padding: 8; }";
         const string codeBehind = """
             using EclipseUI.Rendering;
             public partial class Probe
@@ -1188,5 +1196,104 @@ public class EustyleTests
 
         var result = RunWith(codeBehind, new TestAdditionalText("app.eustyle", sheet));
         Assert.Empty(result.Diagnostics);
+    }
+
+    // ---------- design/17 §4.3：符号派生目录 + CLR 原名规范名 ----------
+
+    [Fact]
+    public void CanonicalClrNames_ParseToCatalogSetters()
+    {
+        var (sheet, diags) = Parse(".a { CornerRadius: 8; FontSize: 20; FocusRingWidth: 2; }");
+
+        Assert.Empty(diags);
+        Assert.Equal(new[] { "CornerRadius", "FontSize", "FocusRingWidth" },
+            sheet.Rules.Single().Setters.Select(s => s.Property));
+    }
+
+    [Theory]
+    [InlineData("corner-radius")]
+    [InlineData("cornerradius")]
+    [InlineData("Corner_Radius")]
+    [InlineData("CORNERRADIUS")]
+    [InlineData("background")]  // 大小写敏感：Background 存在，全小写不存在
+    public void LegacyOrCaseVariantNames_AreRejectedWithEUI051(string legacy)
+    {
+        // 只认控件原始 CLR 名，无 kebab 别名、无大小写/分隔符归一化。
+        var (_, diags) = Parse($".a {{ {legacy}: 8; }}");
+
+        var diag = Assert.Single(diags);
+        Assert.Equal(UiDiagnostics.StyleUnknownProperty, diag.Code);
+        Assert.Contains(legacy, diag.Message);
+        Assert.Contains("case-sensitive CLR name", diag.Message);
+    }
+
+    [Fact]
+    public void StyleDeclarations_LegacySpelling_ReportsEUI051()
+    {
+        var (_, diags) = ParseDeclarations("corner-radius: 18");
+        Assert.Equal(UiDiagnostics.StyleUnknownProperty, Assert.Single(diags).Code);
+    }
+
+    [Fact]
+    public void PascalCaseProperty_IsNotParsedAsNestedTypeSelector()
+    {
+        var (sheet, diags) = Parse("""
+            .card {
+                CornerRadius: 8;
+                > Button { CornerRadius: 4; }
+                TextBlock.hint { FontSize: 12; }
+            }
+            """);
+
+        Assert.Empty(diags);
+        var rule = Assert.Single(sheet.Rules);
+        Assert.Equal("CornerRadius", Assert.Single(rule.Setters).Property);
+        Assert.Equal(2, rule.Nested.Count);
+        Assert.All(rule.Nested, n => Assert.Single(n.Setters));
+
+        var collapsed = EustyleCollapse.Flatten(sheet, new List<UiDiagnostic>());
+        Assert.Equal(3, collapsed.Rules.Count); // 根类 + 两个派生类
+    }
+
+    [Fact]
+    public void UnknownPascalCaseProperty_ReportsEUI051WithDerivedNameList()
+    {
+        var (_, diags) = Parse(".a { Bogus: 1; }");
+        var diag = Assert.Single(diags);
+        Assert.Equal(UiDiagnostics.StyleUnknownProperty, diag.Code);
+        Assert.Contains("Bogus", diag.Message);
+        Assert.Contains("CornerRadius", diag.Message); // 支持列表来自目录，不再是手写数组
+    }
+
+    [Fact]
+    public void ThemeValue_RejectedWhenCatalogHasNoResourceField()
+    {
+        var synthetic = new StylePropertyCatalog(
+            new[] { new StylePropertyDef("Accent", StyleValueKind.Color,
+                "global::EclipseUI.Rendering.Visual.BackgroundProperty", null,
+                "global::EclipseUI.Rendering.Visual") },
+            Array.Empty<UiMetadataProblem>());
+        var diags = new List<UiDiagnostic>();
+        Eustyle.Parse(".a { Accent: theme(#000000, #ffffff); }", "synthetic.eustyle", diags, synthetic);
+
+        var diag = Assert.Single(diags);
+        Assert.Equal(UiDiagnostics.StyleValueType, diag.Code);
+        Assert.Contains("theme(dark, light)", diag.Message);
+    }
+
+    [Fact]
+    public void Generator_CanonicalStyleAttribute_EmitsCatalogField()
+    {
+        var result = Run(new TestAdditionalText("Probe.ui", """
+            @using EclipseUI.Elements
+            <Button Style="CornerRadius: 18; Padding: 8">go</Button>
+            """));
+
+        Assert.Null(result.Exception);
+        Assert.Empty(result.Diagnostics);
+        var code = SourceOf(result, hint => hint.Contains("Probe."));
+        Assert.Contains("SetValue(global::EclipseUI.Rendering.Visual.CornerRadiusProperty, 18)", code);
+        Assert.Contains("SetValue(global::EclipseUI.Elements.Panel.PaddingProperty, 8)", code);
+        AssertGeneratedCodeParses(code);
     }
 }

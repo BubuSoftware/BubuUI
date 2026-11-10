@@ -172,6 +172,17 @@
 > 画廊 `@states { spinning; }` + spinner 双芯片演示（idle 灰 / 翻位绿）。**769 个用例
 > （Headless 359 / Compiler 304 / Rendering 106），全绿**。
 >
+> **样式属性单一来源 + CLR 原名规范名（2026-11-10，design/17 §4.3）**：删掉编译器侧手写的
+> 6 项属性字典、诊断名数组与 `EmitLocalSetters` switch——`UiCatalog.StyleProperties` 由 Roslyn
+> 从 `StyleBuilder` 公开 setter + `StyledProperty` 静态字段派生，Parser 校验、EUI051 支持列表、
+> `Style=` 目标字段与 theme() 准入共用一份；声明漂移以 `EUI026` 报出。属性名一律用控件原始
+> CLR 名（`CornerRadius`/`FontSize`），**大小写敏感、精确匹配**：无别名、无归一化，
+> `corner-radius` 这类旧写法不再兼容，直接报 `EUI051`；`Style=` 统一发
+> `el.SetValue(<目录字段>, <值>)`。
+> `StylePropertyCatalogTests` 用反射把目录与运行时 setter 集对死防漂移；画廊 `app.eustyle` /
+> `Showcase.ui` 已改用规范名。全量 784 例（359/319/106），除本机
+> `PixelGoldens_MatchBaseline` 的像素哈希差异（改动前既有的环境差异）外 0 回归。
+>
 > **S-C 最小主题资源已通过（2026-11-09，D100）**：`ThemeColor` 暗亮双色——`Visual.BackgroundResource/
 > ForegroundResource`（解析优先级 resource > 静态覆盖 > 主题令牌）+ `StyleBuilder` 双色重载；
 > painter 在**段构建期**按 `ElementTheme.IsLight` 解析，换主题 `ReplaceTheme` 丢段重建即随新表刷新

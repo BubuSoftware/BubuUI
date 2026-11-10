@@ -287,7 +287,7 @@ public sealed class ElementPainter
     {
         // S-B/E5：TextBlock 也可携带 class/local 背景（注册位状态芯片等——四层值盒有值即画，
         // 主题资源最先解析）；null = 维持文字控件透明惯例，不加背景命令。
-        // 圆角读 class/local 覆盖（.spinner 的 corner-radius），未设置回落按钮半径令牌。
+        // 圆角读 class/local 覆盖（.spinner 的 CornerRadius），未设置回落按钮半径令牌。
         var chipBackground = Visual.GetBackgroundResource(block)?.Resolve(_theme) ?? Visual.GetBackground(block);
         if (chipBackground is { } chipColor)
             _paintList.Add(new FillRoundedRect(rect, Visual.GetCornerRadius(block) ?? _theme.ButtonRadius, chipColor));

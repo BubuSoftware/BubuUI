@@ -59,6 +59,12 @@ public static class UiCatalogFactory
         return new Scanner(compilation).Build();
     }
 
+    /// <summary>扫描口径复用出口：样式属性目录与标签目录共用同一套候选程序集/类型遍历规则。</summary>
+    internal static IEnumerable<IAssemblySymbol> CandidateAssembliesFor(Compilation compilation) =>
+        Scanner.CandidateAssemblies(compilation);
+
+    internal static IEnumerable<INamedTypeSymbol> WalkTypesFor(INamespaceSymbol ns) => Scanner.WalkTypes(ns);
+
     private sealed class Scanner
     {
         private readonly Compilation _compilation;
@@ -98,11 +104,14 @@ public static class UiCatalogFactory
             var attached = new List<UiAttachedPropDef>();
             var attachedSeen = new Dictionary<(string Owner, string Name), string>();
 
-            // 没有运行时锚点的编译（例如纯 C# 测试项目）得到空目录，而不是异常
-            if (_element is null && _component is null)
-                return new UiCatalog(exposed, hidden, problems);
+            // 样式属性表面与标签表面同一次符号扫描产出（design/17 §4.3 单一来源）
+            var styleProperties = StylePropertyCatalogFactory.Build(_compilation);
 
-            foreach (var assembly in CandidateAssemblies())
+            // 没有运行时锚点的编译（例如纯 C# 测试项目）得到空标签目录，而不是异常
+            if (_element is null && _component is null)
+                return new UiCatalog(exposed, hidden, problems, styleProperties: styleProperties);
+
+            foreach (var assembly in CandidateAssemblies(_compilation))
             {
                 // C5：来源标记——EUI019/020/021 使用点口径只对引用程序集成立（design/14 §14.5.4）；
                 // 源项目控件的声明错误归 EUI026，用点仍落 EUI002（design/14 §14.9.1 v2 口径）。
@@ -149,24 +158,26 @@ public static class UiCatalogFactory
                 }
             }
 
-            return new UiCatalog(exposed, hidden, problems, attached);
+            return new UiCatalog(exposed, hidden, problems, attached, styleProperties);
         }
 
         // ---- 扫描范围 ----
 
-        private IEnumerable<IAssemblySymbol> CandidateAssemblies()
+        /// <summary>候选程序集：源程序集 + 直接引用运行时的引用程序集。
+        /// internal 供 <see cref="StylePropertyCatalogFactory"/> 复用同一扫描口径。</summary>
+        internal static IEnumerable<IAssemblySymbol> CandidateAssemblies(Compilation compilation)
         {
-            yield return _compilation.Assembly;
-            foreach (var reference in _compilation.References)
+            yield return compilation.Assembly;
+            foreach (var reference in compilation.References)
             {
-                if (_compilation.GetAssemblyOrModuleSymbol(reference) is not IAssemblySymbol assembly) continue;
-                if (SymbolEqualityComparer.Default.Equals(assembly, _compilation.Assembly)) continue;
+                if (compilation.GetAssemblyOrModuleSymbol(reference) is not IAssemblySymbol assembly) continue;
+                if (SymbolEqualityComparer.Default.Equals(assembly, compilation.Assembly)) continue;
                 if (!ReferencesRuntime(assembly)) continue;
                 yield return assembly;
             }
         }
 
-        private static bool ReferencesRuntime(IAssemblySymbol assembly)
+        internal static bool ReferencesRuntime(IAssemblySymbol assembly)
         {
             if (assembly.Identity.Name == RuntimeAssemblyName) return true;
             foreach (var module in assembly.Modules)
@@ -175,7 +186,8 @@ public static class UiCatalogFactory
             return false;
         }
 
-        private static IEnumerable<INamedTypeSymbol> WalkTypes(INamespaceSymbol namespaceSymbol)
+        /// <summary>命名空间/嵌套类型全遍历（internal 供样式属性目录复用）。</summary>
+        internal static IEnumerable<INamedTypeSymbol> WalkTypes(INamespaceSymbol namespaceSymbol)
         {
             foreach (var member in namespaceSymbol.GetMembers())
             {

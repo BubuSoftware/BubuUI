@@ -17,6 +17,9 @@ namespace EclipseUI.Compiler;
 ///        | @states 声明的注册名（E5；本文件声明优先，未声明查 <paramref name="externalStates"/>）
 /// 注释 := // 行注释 | /* 块注释 */
 ///
+/// 属性名就是控件/属性对象的原始 CLR 名（<c>CornerRadius</c>），<b>大小写敏感、精确匹配</b>：
+/// 无别名、无归一化，<c>corner-radius</c> / <c>cornerradius</c> 一律报 EUI051。
+/// 可写属性集、值形态与目标字段一律来自编译期符号派生的 <see cref="StylePropertyCatalog"/>。
 /// 诊断：EUI050（语法 / 不支持形态 / 注册名未声明）、EUI051（未知属性）、EUI052（值类型不符，含未定义变量）。
 /// 嵌套结构选择器（E4，design/17 §4.5）只产结构（<see cref="EustyleNested"/>）——塌缩命名、
 /// 冲突查重（EUI053）与注入规则由 <c>EustyleCollapse</c> 统一完成；变体块内不允许嵌套选择器。
@@ -25,19 +28,6 @@ namespace EclipseUI.Compiler;
 /// </summary>
 public static class Eustyle
 {
-    /// <summary>属性目录（E1）：属性名 → StyleBuilder setter 名 + 期望值形态（color/number）。
-    /// 目录随 StyleBuilder 扩容同步扩容（design/17 §4.3：setter 集即单一来源）。</summary>
-    private static readonly Dictionary<string, (string Setter, string Kind)> Properties =
-        new(StringComparer.Ordinal)
-        {
-            ["background"] = ("Background", "color"),
-            ["foreground"] = ("Foreground", "color"),
-            ["padding"] = ("Padding", "number"),
-            ["corner-radius"] = ("CornerRadius", "number"),
-            ["font-size"] = ("FontSize", "number"),
-            ["focus-ring-width"] = ("FocusRingWidth", "number"),
-        };
-
     private static readonly Dictionary<string, EustyleVariant> States =
         new(StringComparer.Ordinal)
         {
@@ -57,10 +47,11 @@ public static class Eustyle
     /// （@style 块传 <c>UiStyleBlock.CodeSpan.Start</c>，.eustyle 文件传 0）——
     /// 产出的诊断 span 一律是宿主文件的绝对 span。<paramref name="externalStates"/> 是
     /// 全局目录里已声明的注册名（其他样式来源的 @states 并集，E5）——本文件未声明时兜底校验。
+    /// <paramref name="properties"/> 是编译期从符号派生的可样式属性目录（唯一事实源）。
     /// </summary>
     public static EustyleStylesheet Parse(string text, string filePath, List<UiDiagnostic> diagnostics,
-        int spanOffset = 0, IReadOnlyCollection<string>? externalStates = null)
-        => new Impl(text, diagnostics, spanOffset, externalStates).Document();
+        StylePropertyCatalog properties, int spanOffset = 0, IReadOnlyCollection<string>? externalStates = null)
+        => new Impl(text, diagnostics, spanOffset, externalStates, properties).Document();
 
     /// <summary>
     /// 只收集 <c>@states</c> 声明（E5 第一级目录收集）：预扫全文——不做规则解析，
@@ -68,7 +59,8 @@ public static class Eustyle
     /// </summary>
     public static IReadOnlyList<EustyleStateDecl> CollectStates(string text, string filePath,
         List<UiDiagnostic> diagnostics, int spanOffset = 0)
-        => new Impl(text, diagnostics, spanOffset, null).SnapshotDeclaredStates();
+        // 预扫只看 @states 块，不解析声明——属性目录不参与，传空目录即可。
+        => new Impl(text, diagnostics, spanOffset, null, StylePropertyCatalog.Empty).SnapshotDeclaredStates();
 
     /// <summary>
     /// 解析元素级 <c>Style="…"</c> 的声明序列（E2，design/17 §4.8②）：
@@ -76,8 +68,10 @@ public static class Eustyle
     /// 状态外观一律走类名通道。诊断码与样式表一致（EUI050/EUI051/EUI052），
     /// span 经 <paramref name="spanOffset"/> 映射回宿主 .ui 文件。
     /// </summary>
-    public static EustyleDeclarations ParseDeclarations(string text, string filePath, List<UiDiagnostic> diagnostics, int spanOffset = 0)
-        => new Impl(text, diagnostics, spanOffset, externalStates: null, scanStates: false).DeclarationList();
+    public static EustyleDeclarations ParseDeclarations(string text, string filePath, List<UiDiagnostic> diagnostics,
+        StylePropertyCatalog properties, int spanOffset = 0)
+        => new Impl(text, diagnostics, spanOffset, externalStates: null, properties: properties,
+            scanStates: false).DeclarationList();
 
     private sealed class Impl
     {
@@ -87,16 +81,18 @@ public static class Eustyle
         private readonly Dictionary<string, EustyleValue> _vars =
             new(StringComparer.Ordinal);
         private readonly IReadOnlyCollection<string> _externalStates;
+        private readonly StylePropertyCatalog _properties;
         private readonly List<EustyleStateDecl> _declaredStates = [];
         private int _i;
 
         public Impl(string s, List<UiDiagnostic> diags, int offset, IReadOnlyCollection<string>? externalStates,
-            bool scanStates = true)
+            StylePropertyCatalog properties, bool scanStates = true)
         {
             _s = s;
             _diags = diags;
             _offset = offset;
             _externalStates = externalStates ?? Array.Empty<string>();
+            _properties = properties ?? StylePropertyCatalog.Empty;
             // E5 预扫：@states 声明序无关（先声明先可用）。Style= 的声明序列不开预扫——
             // 元素属性没有状态语境，@ 块应走 '@' 分支报错而不是被预扫静默吞掉。
             if (scanStates) CollectStates();
@@ -460,9 +456,10 @@ public static class Eustyle
                     ParseVariantBlock(setters, seenVariants, className);
                     continue;
                 }
-                // E4 嵌套结构选择器：'>Button' / 'TextBlock.title' / '.title'（属性名一律小写，
-                // PascalCase 开头即类型选择器；'.' 开头是类约束后代）。
-                if (c == '>' || c == '.' || char.IsUpper(c))
+                // E4 嵌套结构选择器：'>Button' / 'TextBlock.title' / '.title'。
+                // 属性规范名改用 CLR 原名（PascalCase）后，大写开头不再是类型选择器的充分条件：
+                // 前瞻到第一个 '{' 或 ';'/'}' ——嵌套选择器一定开块，声明一定以分号（或块尾）收尾。
+                if (c == '>' || c == '.' || (char.IsUpper(c) && LooksLikeNestedSelector()))
                 {
                     if (nestedOut is null)
                     {
@@ -556,6 +553,34 @@ public static class Eustyle
             return new EustyleNested(direct, typeName, constraint, selectorSpan, setters, nested);
         }
 
+        /// <summary>
+        /// 区分「大写开头的属性规范名」与「大写开头的嵌套类型选择器」：从当前位置前瞻到
+        /// 第一个 '{' 或 ';'/'}'——选择器一定开块，声明一定以分号（或所在块尾）收尾。
+        /// ':' 之后选择器跟的是状态名（后续还有 ':' 或 '{'），属性跟的是值（#hex / 数字 / theme(...)），
+        /// 两者同样由这一条前瞻规则分开，不需要目录参与。
+        /// </summary>
+        private bool LooksLikeNestedSelector()
+        {
+            var i = _i;
+            while (i < _s.Length && (char.IsLetterOrDigit(_s[i]) || _s[i] == '-' || _s[i] == '_')) i++;
+            while (i < _s.Length)
+            {
+                while (i < _s.Length && char.IsWhiteSpace(_s[i])) i++;
+                if (i >= _s.Length) return false;
+                var c = _s[i];
+                if (c is '{' or '>' or '.') return true;
+                if (c is ';' or '}') return false;
+                if (c == ':')
+                {
+                    i++;
+                    while (i < _s.Length && (char.IsLetterOrDigit(_s[i]) || _s[i] == '-' || _s[i] == '_')) i++;
+                    continue;
+                }
+                return false; // 值或注释的起始字符
+            }
+            return false;
+        }
+
         /// <summary>错误消息里的选择器显示名（类型/约束组合）。</summary>
         private static string SelectorLabel(string? typeName, string? constraint) =>
             typeName is null ? "." + constraint
@@ -630,29 +655,41 @@ public static class Eustyle
             }
             if (value is null) return;
 
-            if (!Properties.TryGetValue(prop, out var binding))
+            // 属性目录是编译期从 StyleBuilder setter + StyledProperty 字段派生的唯一事实源：
+            // 名字（大小写敏感的 CLR 原名）、值形态、theme() 准入与目标字段都从这里取。
+            var definition = _properties.Find(prop);
+            if (definition is null)
             {
                 ErrorSpan(propSpan,
-                    $"unknown style property '{prop}'; supported: " +
-                    string.Join(", ", SortedPropertyNames()) + " (EUI051)",
+                    $"unknown style property '{prop}'; use the case-sensitive CLR name; supported: " +
+                    string.Join(", ", _properties.SortedNames()) + " (EUI051)",
                     UiDiagnostics.StyleUnknownProperty);
                 return;
             }
 
             // 值形态校验：color 属性接受颜色/theme 双色；number 属性只接受裸数字（EUI052）。
-            var actualKind = value is EustyleNumber ? "number" : "color";
-            if (actualKind != binding.Kind)
+            var actualKind = value is EustyleNumber ? StyleValueKind.Number : StyleValueKind.Color;
+            if (actualKind != definition.Kind)
             {
                 ErrorSpan(value.Span,
-                    $"property '{prop}' expects a {binding.Kind} value; " +
+                    $"property '{prop}' expects a {KindName(definition.Kind)} value; " +
                     DescribeValue(value) + " is not one (EUI052)",
                     UiDiagnostics.StyleValueType);
                 return;
             }
+            if (value is EustyleTheme && !definition.AllowsTheme)
+            {
+                ErrorSpan(value.Span,
+                    $"property '{prop}' does not accept theme(dark, light); " +
+                    "only properties with a ThemeColor resource overload do (EUI052)",
+                    UiDiagnostics.StyleValueType);
+                return;
+            }
 
+            // 规范名（CLR 原名）进 AST：类通道 s.Name(...) 与 local 通道查目录都用它。
             if (current.Count == 0)
             {
-                setters.Add(new EustyleSetter(EustyleVariant.None, binding.Setter, value, propSpan, value.Span));
+                setters.Add(new EustyleSetter(EustyleVariant.None, definition.Name, value, propSpan, value.Span));
             }
             else
             {
@@ -660,13 +697,13 @@ public static class Eustyle
                 {
                     if (registered is null && variant != EustyleVariant.None && !seenVariants.Contains(variant))
                         seenVariants.Add(variant);
-                    setters.Add(new EustyleSetter(variant, binding.Setter, value, propSpan, value.Span, registered));
+                    setters.Add(new EustyleSetter(variant, definition.Name, value, propSpan, value.Span, registered));
                 }
             }
         }
 
-        private static string SortedPropertyNames() =>
-            string.Join(", ", new[] { "background", "corner-radius", "focus-ring-width", "font-size", "foreground", "padding" });
+        private static string KindName(StyleValueKind kind) =>
+            kind == StyleValueKind.Number ? "number" : "color";
 
         private static string DescribeValue(EustyleValue value) => value switch
         {

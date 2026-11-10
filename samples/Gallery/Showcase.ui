@@ -5,9 +5,9 @@
     // Showcase__-prefixed registrations at component initialization. E2 lets
     // templates reference them via Class="..." (local-first resolution).
     .demo-scope {
-        corner-radius: 12;
+        CornerRadius: 12;
 
-        &:hover { corner-radius: 4; }
+        &:hover { CornerRadius: 4; }
     }
 }
 
@@ -24,7 +24,7 @@
     </StackPanel>
 
     <TextBlock FontSize="13">Styles - Class= resolves through the shared catalog; Style= writes the local layer (local beats class)</TextBlock>
-    <Button Class="primary" Style="corner-radius: 18">class=primary paint + inline corner-radius override</Button>
+    <Button Class="primary" Style="CornerRadius: 18">class=primary paint + inline CornerRadius override</Button>
     <Button Class="tool primary">tool + primary stacked (array order: later wins)</Button>
 
     <TextBlock FontSize="13">Nested collapse - structural selectors compile to derived classes and inject into the static subtree (E4)</TextBlock>
