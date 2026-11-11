@@ -1224,9 +1224,12 @@ public sealed class TemplateGenerator : IIncrementalGenerator
         IReadOnlyList<(ITypeSymbol Type, string Name)> env, List<UiDiagnostic> diags)
     {
         // 控件目标看 PropDef；组件目标看 ParamDef（spec/02 §4.4.3 回调由父推送实现，源校验同规则）。
+        // 组件还要有双向通道（{P}Changed）才继续：否则 EUI040 已经说过目标不可绑，再报源不可写
+        // 只是同一处写法的第二个错，与控件侧「目标不在表面就早退」保持同一口径。
         string? clrType = null;
         if (attr.PropDef is { CanWrite: true }) clrType = attr.PropDef.ClrTypeDisplayName;
-        else if (attr.ParamDef is { CanWrite: true, IsDelegate: false, IsContent: false } p) clrType = p.ClrTypeDisplayName;
+        else if (attr.ParamDef is { CanWrite: true, IsDelegate: false, IsContent: false, ChangedCallbackName: not null } p)
+            clrType = p.ClrTypeDisplayName;
         if (!attr.IsBind || clrType is null) return;
         if (attr.Kind != AttrValueKind.Expression || string.IsNullOrWhiteSpace(attr.Value)) return;
 

@@ -738,6 +738,10 @@ public static class UiCatalogFactory
             // 否则 override 会把基类的参数/插槽静默丢掉。重复处理同一声明会把它误报成
             // 重复插槽声明，并让基类定义覆盖派生定义（Required/形状以派生声明为准）。
             var seenMembers = new HashSet<string>(StringComparer.Ordinal);
+            // {P}Changed 的配对在基链走完之后做（声明顺序不影响配对），但形状要按符号判：
+            // UiParameterDef 只存显示名，没法可靠地做类型身份比较，所以这里另记符号。
+            var parameterTypes = new Dictionary<string, ITypeSymbol>(StringComparer.Ordinal);
+            var delegateInvokes = new Dictionary<string, IMethodSymbol>(StringComparer.Ordinal);
             for (var current = type; current is not null && current.SpecialType != SpecialType.System_Object; current = current.BaseType)
             {
                 foreach (var member in current.GetMembers().OfType<IPropertySymbol>())
@@ -800,6 +804,9 @@ public static class UiCatalogFactory
                             IsContent: false,
                             ContentIsMultiple: false,
                             ChangedCallbackName: null);
+                        parameterTypes[member.Name] = member.Type;
+                        if (member.Type is INamedTypeSymbol { DelegateInvokeMethod: { } invoke })
+                            delegateInvokes[member.Name] = invoke;
                     }
 
                     if (slot is not null)
@@ -863,13 +870,47 @@ public static class UiCatalogFactory
                 }
             }
 
-            // 双向参数的回调形状：{P}Changed 必须是同名参数上的委托（design/14 §14.6.1）
+            // 双向参数的回调形状（design/14 §14.6.1 / spec/02 §4.4.3 规则 1）：{P}Changed 必须是
+            // 「Action<T> 形态」——恰好一个参数，且类型就是 P 的类型。只判「是委托」会放过
+            // Action / Action<string>，生成 cmp0.PChanged = v => … 才由 C# 报 CS1593/CS1503：
+            // 分析器放行、dotnet build 红（D73 → D110）。类型用**身份**比较而不是隐式转换：
+            // 生成的 lambda 形参由目标委托推断，随后直接进 EqualityComparer<T>.Equals 与赋值，
+            // Action<object> 收 int 在语义上是合法转换，但生成代码编译不过。
             var names = parameters.Keys.ToList();
             foreach (var name in names)
             {
                 var changedName = name + "Changed";
-                if (parameters.TryGetValue(changedName, out var changed) && changed.IsDelegate)
-                    parameters[name] = parameters[name] with { ChangedCallbackName = changedName };
+                if (!parameters.TryGetValue(changedName, out var changed) || !changed.IsDelegate) continue;
+                var target = parameters[name];
+                // 委托参数是事件、内容参数是 build-once 快照：两者都不是绑定目标，配对无意义
+                // （使用点由 EUI040 的专门分支说明，不需要再叠加一条形状原因）。
+                if (target.IsDelegate || target.IsContent) continue;
+
+                string? problem = null;
+                var friendly = parameterTypes.TryGetValue(name, out var declared)
+                    ? Display(declared)
+                    : target.ClrTypeDisplayName;
+                if (changed.DelegateArity != 1)
+                {
+                    // arity 为 0 有两种来源：Action（本就无参）与返回非 void 的委托（EUI028 已报，arity 未回填）。
+                    // 消息统一按「期望形状」说，不猜是哪一种。
+                    problem = $"'{changedName}' must be 'Action<{friendly}>' (void, exactly one parameter) to receive " +
+                              $"the value written back; it takes {changed.DelegateArity} argument(s)";
+                }
+                else if (delegateInvokes.TryGetValue(changedName, out var invoke)
+                         && parameterTypes.TryGetValue(name, out var parameterType)
+                         && !SymbolEqualityComparer.Default.Equals(parameterType, invoke.Parameters[0].Type))
+                {
+                    problem = $"'{changedName}' takes {Display(invoke.Parameters[0].Type)} but '{name}' is " +
+                              $"{Display(parameterType)}; the generated callback assigns and compares values of " +
+                              "that type, so both must be the same type";
+                }
+
+                parameters[name] = target with
+                {
+                    ChangedCallbackName = problem is null ? changedName : null,
+                    ChangedShapeProblem = problem,
+                };
             }
         }
 

@@ -862,11 +862,17 @@ public static class TemplateAnalyzer
                 }
                 else if (!paramDef.CanWrite || paramDef.IsDelegate || paramDef.IsContent || paramDef.ChangedCallbackName is null)
                 {
-                    var why = paramDef.IsContent
-                        ? "; the content parameter is build-once and cannot be bound"
-                        : paramDef.IsDelegate
-                            ? "; delegate parameters are events, not two-way sources"
-                            : $"; the component must also declare '[UiParameter] public Action<{paramDef.ClrTypeDisplayName}>? {paramDef.Name}Changed'";
+                    // 形状问题的原因来自目录（扫描期按符号判过 arity 与类型身份，D110）：
+                    // 只说「缺少回调」会把人引去加一个已经存在的成员。
+                    var why = !paramDef.CanWrite
+                        ? "; the parameter must be a public property with a public setter, otherwise the write-back cannot compile"
+                        : paramDef.IsContent
+                            ? "; the content parameter is build-once and cannot be bound"
+                            : paramDef.IsDelegate
+                                ? "; delegate parameters are events, not two-way sources"
+                                : paramDef.ChangedShapeProblem is { } shapeProblem
+                                    ? "; " + shapeProblem
+                                    : $"; the component must also declare '[UiParameter] public Action<{paramDef.ClrTypeDisplayName}>? {paramDef.Name}Changed'";
                     diags.Add(UiDiagnostics.Error(UiDiagnostics.BindTargetInvalid,
                         $"@bind-{attr.Name} on '{element.Tag}' needs a writable [UiParameter] and a '{paramDef.Name}Changed' delegate parameter{why}",
                         attr.NameSpan));

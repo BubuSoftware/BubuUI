@@ -54,20 +54,27 @@ public class BindTargetTests
         public override SourceText? GetText(CancellationToken cancellationToken = default) => _text;
     }
 
-    private static GeneratorRunResult Run(string ui, string codeBehind = Controls)
+    private static CSharpCompilation Compile(string codeBehind, out UiFixture fixture)
     {
-        var fixture = NamespaceDeclarationFixture.Prepare(UiPath, codeBehind);
+        fixture = NamespaceDeclarationFixture.Prepare(UiPath, codeBehind);
         var references = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!)
             .Split(System.IO.Path.PathSeparator)
             .Select(path => (MetadataReference)MetadataReference.CreateFromFile(path))
             .ToList();
         references.Add(MetadataReference.CreateFromFile(typeof(Element).Assembly.Location));
 
-        var compilation = CSharpCompilation.Create(
+        return CSharpCompilation.Create(
             "BindTargetProbe",
             new[] { CSharpSyntaxTree.ParseText(fixture.CodeBehind, path: "Probe.cs") },
             references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+    }
+
+    private static CSharpCompilation Compile(string codeBehind) => Compile(codeBehind, out _);
+
+    private static GeneratorRunResult Run(string ui, string codeBehind = Controls)
+    {
+        var compilation = Compile(codeBehind, out var fixture);
 
         var driver = CSharpGeneratorDriver.Create(
             new[] { new TemplateGenerator().AsSourceGenerator() },
@@ -99,6 +106,90 @@ public class BindTargetTests
 
         Assert.Empty(result.Diagnostics);
         Assert.Contains("ColorChanged", result.GeneratedSources.Single().SourceText.ToString());
+    }
+
+    // ---- 有 {P}Changed 但形状不对：仍是 EUI040，且说清期望形状（D110） ----
+
+    /// <summary>
+    /// 只判「是委托」会放过 <c>Action</c>：分析器放行，生成 <c>cmp0.CountChanged = v =&gt; …</c>
+    /// 才由 C# 报 CS1593——「编辑器绿、build 红」。扫描期按符号判 arity，使用点就能说清。
+    /// </summary>
+    [Fact]
+    public void ChangedCallbackWithNoPayload_ReportsEui040WithExpectedShape()
+    {
+        const string codeBehind = """
+            public partial class Probe { public int count; }
+
+            public class Counter : global::EclipseUI.Component
+            {
+                [global::EclipseUI.UiParameter] public int Count { get; set; }
+                [global::EclipseUI.UiParameter] public global::System.Action? CountChanged { get; set; }
+            }
+            """;
+
+        var result = Run(Ui("@bind-Count={count}", "Counter"), codeBehind);
+
+        Assert.Empty(result.GeneratedSources);
+        var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI040");
+        Assert.Contains("'CountChanged'", diag.GetMessage());
+        Assert.Contains("Action<int>", diag.GetMessage());
+        Assert.Contains("takes 0 argument(s)", diag.GetMessage());
+        // 形状问题不是声明错误：参数本身合法，只是不能做双向目标。
+        Assert.DoesNotContain(result.Diagnostics, d => d.Id == "EUI028");
+    }
+
+    [Fact]
+    public void ChangedCallbackWithDifferentPayloadType_ReportsEui040()
+    {
+        const string codeBehind = """
+            public partial class Probe { public int count; }
+
+            public class Counter : global::EclipseUI.Component
+            {
+                [global::EclipseUI.UiParameter] public int Count { get; set; }
+                [global::EclipseUI.UiParameter] public global::System.Action<string?>? CountChanged { get; set; }
+            }
+            """;
+
+        var result = Run(Ui("@bind-Count={count}", "Counter"), codeBehind);
+
+        Assert.Empty(result.GeneratedSources);
+        var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI040");
+        Assert.Contains("'CountChanged'", diag.GetMessage());
+        Assert.Contains("but 'Count' is", diag.GetMessage());
+        Assert.Contains("must be the same type", diag.GetMessage());
+    }
+
+    /// <summary>
+    /// 形状不对的回调不进双向通道：这是补全与生成的共同输入（<c>ChangedCallbackName</c> 为 null）。
+    /// 若这里回填了名字，补全会把不可绑的目标列出来——那正是 EUI040 与候选列表打架的老问题。
+    /// </summary>
+    [Fact]
+    public void Catalog_RejectsChangedCallbackWithWrongShape()
+    {
+        const string codeBehind = """
+            public partial class Probe { public int count; }
+
+            public class Counter : global::EclipseUI.Component
+            {
+                [global::EclipseUI.UiParameter] public int Count { get; set; }
+                [global::EclipseUI.UiParameter] public global::System.Action? CountChanged { get; set; }
+
+                [global::EclipseUI.UiParameter] public int Total { get; set; }
+                [global::EclipseUI.UiParameter] public global::System.Action<int>? TotalChanged { get; set; }
+            }
+            """;
+
+        var result = Run("@using EclipseUI.Elements\n<StackPanel><Counter /></StackPanel>", codeBehind);
+        var catalog = EclipseUI.Compiler.Metadata.UiCatalogFactory.Build(Compile(codeBehind));
+        var counter = catalog.Elements.Single(e => e.Tag == "Counter");
+
+        Assert.Empty(result.Diagnostics);                              // 不声明 @bind 时一切正常
+        Assert.Null(counter.Parameters["Count"].ChangedCallbackName);
+        Assert.Contains("Action<int>", counter.Parameters["Count"].ChangedShapeProblem!);
+        // 形状正确的照旧：回填名字、无形状问题——上面的收紧没有扩大化。
+        Assert.Equal("TotalChanged", counter.Parameters["Total"].ChangedCallbackName);
+        Assert.Null(counter.Parameters["Total"].ChangedShapeProblem);
     }
 
     // ---- 名字存在但不可绑：EUI040 + 原因 ----

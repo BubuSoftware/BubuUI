@@ -103,6 +103,12 @@ public sealed record UiAttachedPropDef(
 /// 类型只接受 <c>IReadOnlyList&lt;Element&gt;</c>（多根）或 <c>Element?</c>（单根），其余在扫描期进
 /// EUI021 问题。内容参数 build-once，不可作为 <c>@bind</c> 目标，也不可经 <c>P=</c> 赋值。</param>
 /// <param name="DelegateArity">委托参数的调用参数个数（0 = 非委托）。生成包装 lambda 用。</param>
+/// <param name="ChangedCallbackName">双向通道：同名 <c>{P}Changed</c> 参数且形状正确时回填，否则 null。</param>
+/// <param name="ChangedShapeProblem">声明了 <c>{P}Changed</c> 但**形状不对**时的原因（design/14 §14.6.1）。
+/// 形状指 <c>Action&lt;T&gt;</c>：恰好一个参数、且类型与 <c>P</c> 相同。生成代码的
+/// <c>PChanged = v =&gt; …</c> 里 lambda 的形参类型由目标委托推断，再拿去做
+/// <c>EqualityComparer{T}.Default.Equals(source, v)</c> 与赋值——所以两边类型必须同一个，
+/// 不是「能隐式转换」就够。null 且 <see cref="ChangedCallbackName"/> 为 null 表示压根没有回调。</param>
 public sealed record UiParameterDef(
     string Name,
     string ClrTypeDisplayName,
@@ -113,7 +119,8 @@ public sealed record UiParameterDef(
     int DelegateArity,
     bool IsContent,
     bool ContentIsMultiple,
-    string? ChangedCallbackName);
+    string? ChangedCallbackName,
+    string? ChangedShapeProblem = null);
 
 public sealed record UiSlotDef(
     string Name,
