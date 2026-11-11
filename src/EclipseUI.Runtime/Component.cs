@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace EclipseUI;
 
@@ -19,6 +20,8 @@ public abstract class Component : IDisposable
     private long _nextSequence;
     private volatile bool _disposed;
     private volatile bool _isMounted;
+    private string[]? _ownRootClasses;
+    private IReadOnlyList<string>? _outerClasses;
 
     public Element Root { get; private set; } = null!;
 
@@ -47,6 +50,44 @@ public abstract class Component : IDisposable
         // Dispose 递归释放被 Track 的子组件与作用域资源，绑定监听随之解除（G4/K33）。
         Root.AddHandler(Element.UnmountedEvent, HandleRootUnmounted);
         _isMounted = true;
+        // 标签上的 Class= 可能早于 Mount 登记（手写调用），此时 Root 还不存在——这里补做一次。
+        if (_outerClasses is { Count: > 0 })
+            ApplyOuterClasses();
+    }
+
+    /// <summary>
+    /// 组件标签上的 <c>Class=</c>（spec/02 §4.12.6）：类集作用在 <see cref="Root"/> 上。
+    /// 组件不派生 <see cref="Element"/>（spec/03 §5.3），标签上的元素级属性只能在根元素上兑现；
+    /// 这里把外部类与根自身声明的类合并——自身类在前、外部类在后（同属性冲突时外部覆盖内部，
+    /// 与 <c>Class</c> 在控件上「后写者胜」的应用序一致）。
+    /// </summary>
+    /// <remarks>
+    /// 可重复调用：根级 <c>Class={expr}</c> 每轮 <see cref="Render"/> 都会调，自身类只在首次调用时
+    /// 快照，所以不会累积。传空集 = 撤销外部类、只留自身类（与 <c>Class=""</c> 的语义对齐）。
+    /// </remarks>
+    public void ApplyClasses(IReadOnlyList<string>? names)
+    {
+        if (_disposed) return;
+        _outerClasses = names ?? Array.Empty<string>();
+        if (_isMounted)
+            ApplyOuterClasses();
+    }
+
+    private void ApplyOuterClasses()
+    {
+        _ownRootClasses ??= Root.Classes.Count > 0 ? Root.Classes.ToArray() : Array.Empty<string>();
+        var outer = _outerClasses ?? Array.Empty<string>();
+        if (outer.Count == 0)
+        {
+            Root.Classes = _ownRootClasses;
+            return;
+        }
+
+        var merged = new string[_ownRootClasses.Length + outer.Count];
+        Array.Copy(_ownRootClasses, merged, _ownRootClasses.Length);
+        for (var i = 0; i < outer.Count; i++)
+            merged[_ownRootClasses.Length + i] = outer[i];
+        Root.Classes = merged;
     }
 
     private void HandleRootUnmounted(RoutedEventArgs args)

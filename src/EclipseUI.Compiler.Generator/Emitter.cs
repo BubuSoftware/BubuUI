@@ -381,6 +381,43 @@ public sealed class Emitter
     private static string ClassArrayLiteral(IEnumerable<string> names) =>
         "new global::System.String[] { " + string.Join(", ", names.Select(StaticStringLiteral)) + " }";
 
+    /// <summary>
+    /// Class= 的三种形态（字面量 / 空列表 + 塌缩注入 / 表达式）。控件与组件的差别只有「写到哪里」：
+    /// 控件直接赋 <c>Classes</c>；组件的目标是根元素，经 <c>ApplyClasses</c> 与组件自身声明的类
+    /// 合并（spec/02 §4.12.6）。<paramref name="call"/> 为真时目标已经是方法名。
+    /// </summary>
+    private void EmitClassAttribute(UiAttribute attr, UiElement element, string target,
+        EmitContext ctx, bool call)
+    {
+        var pending = element.InjectedClasses;
+        // E4：塌缩注入的派生类排在解析类名之后（design/17 §2.2 派生类胜）。
+        if (attr.ClassNames is { Count: > 0 } names)
+        {
+            var all = pending is { Count: > 0 } ? names.Concat(pending) : (IEnumerable<string>)names;
+            MappedToken(AttrSpan(attr), ClassStatement(target, ClassArrayLiteral(all), call) + ";", attr.Value.Trim());
+        }
+        else if (attr.ClassNames is not null)
+        {
+            // Class=""（空类列表）：仅注入命中时发注入数组；无注入保持 no-op
+            if (pending is { Count: > 0 })
+                Mapped(attr.ValueSpan, ClassStatement(target, ClassArrayLiteral(pending), call) + ";");
+        }
+        else if (attr.Kind == AttrValueKind.Expression)
+        {
+            // 表达式形态拿不到编译期类列表——塌缩注入跳过（design/17 §4.5-3 明示边界）
+            var expr = attr.Value.Trim();
+            var body = attr.ClassListKind == UiClassListKind.Collection
+                ? $"global::System.Linq.Enumerable.ToArray({expr})"
+                : $"{expr}.Split(new[] {{ ' ', '\\t', '\\r', '\\n' }}, global::System.StringSplitOptions.RemoveEmptyEntries)";
+            // 赋值形态与字面量同源：控件写 Classes 左值，组件的目标已经是方法名。
+            EmitDynamicUpdate(body, attr.ValueSpan, ctx,
+                call ? target : $"{target}.Classes", interpolate: false, call: call);
+        }
+    }
+
+    private static string ClassStatement(string target, string names, bool call) =>
+        call ? $"{target}({names})" : $"{target}.Classes = {names}";
+
     private string EmitElement(UiElement element, string? parentVar, EmitContext ctx)
     {
         var def = element.ResolvedDef!;
@@ -405,27 +442,7 @@ public sealed class Emitter
             // E4：塌缩注入的派生类排在解析类名之后（design/17 §2.2 派生类胜）。
             if (attr.Name == "Class")
             {
-                var pending = element.InjectedClasses;
-                if (attr.ClassNames is { Count: > 0 } names)
-                {
-                    var all = pending is { Count: > 0 } ? names.Concat(pending) : (IEnumerable<string>)names;
-                    MappedToken(span, $"{v}.Classes = {ClassArrayLiteral(all)};", attr.Value.Trim());
-                }
-                else if (attr.ClassNames is not null)
-                {
-                    // Class=""（空类列表）：仅注入命中时发注入数组；无注入保持 no-op
-                    if (pending is { Count: > 0 })
-                        Mapped(attr.ValueSpan, $"{v}.Classes = {ClassArrayLiteral(pending)};");
-                }
-                else if (attr.Kind == AttrValueKind.Expression)
-                {
-                    // 表达式形态拿不到编译期类列表——塌缩注入跳过（design/17 §4.5-3 明示边界）
-                    var expr = attr.Value.Trim();
-                    var body = attr.ClassListKind == UiClassListKind.Collection
-                        ? $"global::System.Linq.Enumerable.ToArray({expr})"
-                        : $"{expr}.Split(new[] {{ ' ', '\\t', '\\r', '\\n' }}, global::System.StringSplitOptions.RemoveEmptyEntries)";
-                    EmitDynamicUpdate(body, attr.ValueSpan, ctx, $"{v}.Classes", interpolate: false);
-                }
+                EmitClassAttribute(attr, element, v, ctx, call: false);
                 continue;
             }
 
@@ -508,7 +525,8 @@ public sealed class Emitter
     }
 
     /// <summary>
-    /// 组件标签（spec/02 §4.12）：顺序固定 new → 作用域登记 → 参数（源码顺序）→ 内容 → Mount() → 挂父级。
+    /// 组件标签（spec/02 §4.12）：顺序固定 new → 作用域登记 → 参数（源码顺序）→ 内容 →
+    /// 元素级属性（Class/Style/附加属性，作用于 <c>Root</c>，§4.12.6）→ Mount() → 挂父级。
     /// 参数形态：字面量 §4.2、动态推送 §4.3.3（U{N}/R{N} + EqualityComparer 保护）、
     /// 委托事件 §4.6.2、@bind 回调+推送 §4.4.3、默认内容 §4.12.3。
     /// </summary>
@@ -518,13 +536,14 @@ public sealed class Emitter
         var clrType = def.ClrTypeDisplayName;
 
         // 字段提升：根级存在动态参数（推送 U 捕获组件变量）或 @bind 推送时需要字段；
-        // E2：根级 Class={expr} 同样走 U 捕获组件变量，一并提升。
+        // E2：根级 Class={expr} / 附加属性={expr} 同样走 U 捕获组件变量（写的是 <c>cmp.Root</c>），一并提升。
         // 委托参数/字面量是 build-once，局部即可；块/内容内一律局部（§4.4.3 规则 5）。
         bool needsField = ctx.IsRoot && element.Attributes.Any(attr =>
             (attr.ParamDef is { IsDelegate: false, IsContent: false } && (attr.IsBind ||
                 (!attr.IsBind && attr.Kind == AttrValueKind.Expression))) ||
             (attr.Name == "Class" && !attr.IsBind && attr.Kind == AttrValueKind.Expression &&
-             attr.ClassNames is null));
+             attr.ClassNames is null) ||
+            (attr.AttachedDef is not null && !attr.IsBind && attr.Kind == AttrValueKind.Expression));
         var n = _varCounter++;
         string v;
         if (needsField)
@@ -550,67 +569,20 @@ public sealed class Emitter
             Line($"{ctx.ScopeVar}.AddDisposable({v});");
         }
 
+        // ① 参数与 Ref：必须在 Mount() 之前（Build 读参数）。元素级属性（Class / Style / 附加属性）
+        // 推迟到 Mount() 之后——它们的目标是组件根元素，而不是组件实例（§4.12.6）。
         foreach (var attr in element.Attributes)
         {
             if (attr.Name == "Key") continue; // EUI010 已报
+            if (attr.RefTarget is not null)
+            {
+                // C5：Ref（spec/02 §4.14）——组件按实例赋给 code-behind 字段（design/14 §14.6.4）。
+                MappedToken(AttrSpan(attr), $"{attr.RefTarget} = {v};", attr.RefTarget);
+                continue;
+            }
+            if (attr.AttachedDef is not null || attr.Name is "Class" or "Style") continue;
+
             var span = AttrSpan(attr);
-            // C5：Ref（spec/02 §4.14）——组件按实例赋给 code-behind 字段（design/14 §14.6.4）。
-            if (attr.RefTarget is { } refField)
-            {
-                MappedToken(span, $"{refField} = {v};", refField);
-                continue;
-            }
-            // G4：附加属性（design/14 §14.5.5）——组件实例也是 Element，可携带 Grid.Row 等；
-            // 生成侧与控件一致直调宿主静态 setter。
-            if (attr.AttachedDef is { } attached)
-            {
-                if (attr.IsBind) continue;                        // EUI040 已报
-                if (attr.Kind == AttrValueKind.Literal)
-                {
-                    if (attr.ConvertedLiteral is not null)
-                        MappedToken(span,
-                            $"{attached.OwnerClrName}.{attached.SetterMethod}({v}, {attr.ConvertedLiteral});",
-                            attr.ConvertedLiteral);
-                }
-                else if (attr.Kind == AttrValueKind.Expression)
-                {
-                    EmitAttachedDynamic(attached, v, attr.Value, attr.ValueSpan, ctx);
-                }
-                continue;
-            }
-
-            // E2：组件实例同为 Element——Class/Style 语义与控件一致（样式类/局部覆盖写在实例上）。
-            // E4：塌缩注入同控件口径（派生类排后；表达式形态跳过）。
-            if (attr.Name == "Class")
-            {
-                var pending = element.InjectedClasses;
-                if (attr.ClassNames is { Count: > 0 } names)
-                {
-                    var all = pending is { Count: > 0 } ? names.Concat(pending) : (IEnumerable<string>)names;
-                    MappedToken(span, $"{v}.Classes = {ClassArrayLiteral(all)};", attr.Value.Trim());
-                }
-                else if (attr.ClassNames is not null)
-                {
-                    if (pending is { Count: > 0 })
-                        Mapped(attr.ValueSpan, $"{v}.Classes = {ClassArrayLiteral(pending)};");
-                }
-                else if (attr.Kind == AttrValueKind.Expression && attr.ClassNames is null)
-                {
-                    var expr = attr.Value.Trim();
-                    var body = attr.ClassListKind == UiClassListKind.Collection
-                        ? $"global::System.Linq.Enumerable.ToArray({expr})"
-                        : $"{expr}.Split(new[] {{ ' ', '\\t', '\\r', '\\n' }}, global::System.StringSplitOptions.RemoveEmptyEntries)";
-                    EmitDynamicUpdate(body, attr.ValueSpan, ctx, $"{v}.Classes", interpolate: false);
-                }
-                continue;
-            }
-            if (attr.Name == "Style" && attr.StyleSetters is { Count: > 0 } styleSetters)
-            {
-                foreach (var (statement, valueSpan) in EustyleGenerator.EmitLocalSetters(styleSetters, v, _styleProperties))
-                    Mapped(valueSpan, statement);
-                continue;
-            }
-
             var p = attr.ParamDef;
             if (p is null) continue;          // 未解析名 EUI002 / 保留语法已报
             if (p.IsContent) continue;        // P= 写内容参数 EUI021 已报；内容由子节点提供
@@ -665,11 +637,6 @@ public sealed class Emitter
             // @bind 无回调 / 字面量写委托参数 / :bind 等非法形态：Analyzer 已报，不生成
         }
 
-        // E4：无 Class 属性但被塌缩注入命中的组件实例——发注入类列表（同控件口径）。
-        if (element.InjectedClasses is { Count: > 0 } cmpInjected &&
-            element.Attributes.All(static a => a.Name != "Class"))
-            Line($"{v}.Classes = {ClassArrayLiteral(cmpInjected)};");
-
         // 默认内容（§4.12.3）：build-once 静态展开到 List<Element>，再单根/多根赋参数。
         var contentParam = def.Parameters.Values.FirstOrDefault(p => p.IsContent);
         if (contentParam is not null)
@@ -706,9 +673,66 @@ public sealed class Emitter
 
         Line($"{v}.Mount();");
 
+        // ② 元素级属性（§4.12.6）：目标是 cmp.Root，所以要排在 Mount() 之后、挂父级之前。
+        foreach (var attr in element.Attributes)
+        {
+            if (attr.Name == "Key" || attr.RefTarget is not null) continue;
+            if (attr.AttachedDef is null && attr.Name is not ("Class" or "Style")) continue;
+            EmitComponentElementAttribute(attr, element, v, ctx);
+        }
+
+        // E4：无 Class 属性但被塌缩注入命中的组件——注入类同样落在根元素上。
+        if (element.InjectedClasses is { Count: > 0 } cmpInjected &&
+            element.Attributes.All(static a => a.Name != "Class"))
+            Line($"{v}.ApplyClasses({ClassArrayLiteral(cmpInjected)});");
+
         if (parentVar is not null)
             Line($"{parentVar}.Children.Add({v}.Root);");
         return $"{v}.Root";
+    }
+
+    /// <summary>
+    /// 组件标签上的元素级属性（spec/02 §4.12.6）：Class / Style / 附加属性。三者都写到
+    /// <c>cmp.Root</c>——<c>Component</c> 不派生 <c>Element</c>（spec/03 §5.3），写在组件实例上会得到
+    /// CS1061/CS1503（历史上分析器放行、生成代码编译不过）。因此必须在 <c>Mount()</c> 之后发射
+    /// （Root 那时才存在）。
+    /// </summary>
+    private void EmitComponentElementAttribute(UiAttribute attr, UiElement element, string cmp, EmitContext ctx)
+    {
+        var root = $"{cmp}.Root";
+
+        // G4：附加属性（design/14 §14.5.5）——组件标签上的 Grid.Row 等落到根元素上，
+        // 布局语义即「组件占据的那个格子」。
+        if (attr.AttachedDef is { } attached)
+        {
+            if (attr.IsBind) return;                        // EUI040 已报
+            if (attr.Kind == AttrValueKind.Literal)
+            {
+                if (attr.ConvertedLiteral is not null)
+                    MappedToken(AttrSpan(attr),
+                        $"{attached.OwnerClrName}.{attached.SetterMethod}({root}, {attr.ConvertedLiteral});",
+                        attr.ConvertedLiteral);
+            }
+            else if (attr.Kind == AttrValueKind.Expression)
+            {
+                EmitAttachedDynamic(attached, root, attr.Value, attr.ValueSpan, ctx);
+            }
+            return;
+        }
+
+        // E2/E4：样式类与局部样式覆盖同样作用于根元素；Class 经 ApplyClasses 与组件自身
+        // 在根上声明的类合并（外部类在后 = 冲突时外部胜）。
+        if (attr.Name == "Class")
+        {
+            EmitClassAttribute(attr, element, $"{cmp}.ApplyClasses", ctx, call: true);
+            return;
+        }
+
+        if (attr.StyleSetters is { Count: > 0 } setters)
+        {
+            foreach (var (statement, valueSpan) in EustyleGenerator.EmitLocalSetters(setters, root, _styleProperties))
+                Mapped(valueSpan, statement);
+        }
     }
 
     /// <summary>组件参数动态推送（§4.3.3）：相等保护下写参数并失效子组件；根级 U{N}、块级 R{N}。</summary>
@@ -1022,25 +1046,31 @@ public sealed class Emitter
             BlockUpdate($"{prefix} = {body}", firstExprSpan, prefix.Length + 3 + firstExprOffset, ctx);
     }
 
+    /// <summary>
+    /// 动态写入的两种语句形态：赋值 <c>target = body</c>（默认）与调用 <c>target(body)</c>
+    /// （<paramref name="call"/>，组件标签的 <c>Class={expr}</c> 走 <c>ApplyClasses</c>）。
+    /// </summary>
     private void EmitDynamicUpdate(string expression, TextSpan span, EmitContext ctx,
-        string target, bool interpolate)
+        string target, bool interpolate, bool call = false)
     {
         var trimmed = expression.Trim();
         // 插值文本 $\"{(expr)}\" 的表达式前缀是 $ \" { ( 共 4 个字符。
         var body = interpolate ? $"$\"{{({trimmed})}}\"" : trimmed;
         var bodyOffset = interpolate ? 4 : 0;
+        var prefix = call ? $"{target}(" : $"{target} = ";
+        var suffix = call ? ")" : "";
+        var statement = $"{prefix}{body}{suffix}";
 
         if (ctx.IsContent)
         {
             // 组件内容是 build-once 快照：直接赋值，不生成 U/R（spec/02 §4.12.3 规则 8）。
-            MappedToken(span, $"{target} = {body};", trimmed);
+            MappedToken(span, $"{statement};", trimmed);
             return;
         }
-        var statement = $"{target} = {body}";
         if (ctx.IsRoot)
-            RootUpdate(statement, span, target.Length + 3 + bodyOffset);
+            RootUpdate(statement, span, prefix.Length + bodyOffset);
         else
-            BlockUpdate(statement, span, target.Length + 3 + bodyOffset, ctx);
+            BlockUpdate(statement, span, prefix.Length + bodyOffset, ctx);
     }
 
     /// <summary>

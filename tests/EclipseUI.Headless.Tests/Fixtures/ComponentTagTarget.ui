@@ -1,0 +1,19 @@
+@namespace EclipseUI.Headless.Tests
+@using EclipseUI.Elements
+
+@* spec/02 §4.12.6 端到端夹具：组件标签上的 Class / Style / 附加属性都落在 Root 上。
+   根元素自带本文件 @style 声明的类（ComponentTagTarget__own），用来验证「外部类合并到自身类之后」。 *@
+
+@style {
+    .own {
+        CornerRadius: 6;
+    }
+}
+
+<WrapPanel Class="own">
+    <TextBlock FontSize="12">{label}</TextBlock>
+</WrapPanel>
+
+@code {
+    public string label = "target";
+}
