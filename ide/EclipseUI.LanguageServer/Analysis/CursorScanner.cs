@@ -25,7 +25,7 @@ public enum CursorKind
 
     /// <summary>
     /// <c>@code {| … }</c>：块内是真实 C# 文档文本（K21），跳转定义在成员树上解析。
-    /// 补全/悬停对它保持与文本相同的行为（不做 @code 内补全，v1 口径）。
+    /// 悬停/重命名/补全都按 C# 处理（design/18 阶段 1–2：补全走 Roslyn CompletionService）。
     /// </summary>
     CodeBlock,
 
@@ -231,12 +231,19 @@ public static class CursorScanner
                         if (offset > i && offset < stop)
                         {
                             if (word == "code")
+                            {
+                                // 补全的默认替换区间：光标处的标识符前缀（不含点号——
+                                // Roslyn 候选自带 item.Span，逐字回映后才是权威区间）。
+                                int wordStart = offset;
+                                while (wordStart > brace + 1 && IsIdentChar(text[wordStart - 1])) wordStart--;
                                 return new CursorContext
                                 {
                                     Kind = CursorKind.CodeBlock,
-                                    TokenStart = offset,
+                                    TokenStart = wordStart,
+                                    Prefix = text.Substring(wordStart, offset - wordStart),
                                     OpenTags = open,
                                 };
+                            }
                             return Plain(open, offset);
                         }
                         i = stop;

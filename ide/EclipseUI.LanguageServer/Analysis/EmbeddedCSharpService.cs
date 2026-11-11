@@ -139,7 +139,17 @@ public static class EmbeddedCSharpService
         if (block is null) return null;
         try
         {
-            var bodyStart = memberTree.ToString().IndexOf(block.Code, StringComparison.Ordinal);
+            // design/18 §5.2：项目模式走统一映射（发射时记录）；legacy 合成树仍按块体原文定位。
+            var bodyStart = -1;
+            if (analysis.GeneratedDocument is { } generated && ReferenceEquals(generated.Tree, memberTree))
+            {
+                if (generated.Mappings.TryMapToGenerated(block.CodeSpan, out var mapped))
+                    bodyStart = mapped.Start;
+            }
+            else
+            {
+                bodyStart = memberTree.ToString().IndexOf(block.Code, StringComparison.Ordinal);
+            }
             if (bodyStart < 0) return null;
             var compilation = analysis.CompilationContains(memberTree)
                 ? probe.Compilation
@@ -186,6 +196,50 @@ public static class EmbeddedCSharpService
         }
         return null;
     }
+
+    // ---- @code 光标符号（design/18 阶段 1：悬停 / 重命名共享入口） ----
+
+    /// <summary>
+    /// <c>@code</c> 块内光标处的符号 + 其标识符在 .ui 的区间。投影/绑定复用 <see cref="At"/>
+    /// （真实成员树 + 项目 Compilation），回映走统一映射服务
+    /// （<see cref="DocumentAnalysis.TryMapMemberSpanToUi"/>）。解析不出或映不回返回 null——不猜。
+    /// </summary>
+    public static (ISymbol Symbol, UiSpan Span)? CodeBlockSymbolAt(DocumentAnalysis analysis, int offset)
+    {
+        var context = CursorScanner.Scan(analysis.Text, offset);
+        if (context.Kind != CursorKind.CodeBlock) return null;
+        var projection = At(analysis, offset, out var treeOffset, out _);
+        if (projection is null) return null;
+        try
+        {
+            var token = projection.Tree.GetRoot().FindToken(treeOffset);
+            var (symbol, span) = SymbolAtToken(projection.Model, token);
+            if (symbol is null) return null;
+            if (!analysis.TryMapMemberSpanToUi(new UiSpan(span.Start, span.Length), out var uiSpan)) return null;
+            return (symbol, uiSpan);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>token 处的符号与其标识符的树内区间（声明取声明器名字，引用取 IdentifierName）。</summary>
+    private static (ISymbol? Symbol, Microsoft.CodeAnalysis.Text.TextSpan Span) SymbolAtToken(
+        SemanticModel model, SyntaxToken token) => token.Parent switch
+    {
+        IdentifierNameSyntax identifier =>
+            (model.GetSymbolInfo(identifier).Symbol ?? model.GetDeclaredSymbol(identifier), identifier.Span),
+        VariableDeclaratorSyntax variable => (model.GetDeclaredSymbol(variable), variable.Identifier.Span),
+        ParameterSyntax parameter => (model.GetDeclaredSymbol(parameter), parameter.Identifier.Span),
+        MethodDeclarationSyntax method => (model.GetDeclaredSymbol(method), method.Identifier.Span),
+        PropertyDeclarationSyntax property => (model.GetDeclaredSymbol(property), property.Identifier.Span),
+        LocalDeclarationStatementSyntax local when local.Declaration.Variables.Count == 1 =>
+            (model.GetDeclaredSymbol(local.Declaration.Variables[0]), local.Declaration.Variables[0].Identifier.Span),
+        SingleVariableDesignationSyntax designation => (model.GetDeclaredSymbol(designation), designation.Identifier.Span),
+        TypeDeclarationSyntax type => (model.GetDeclaredSymbol(type), type.Identifier.Span),
+        _ => (null, default),
+    };
 
     // ---- 签名帮助 ----
 

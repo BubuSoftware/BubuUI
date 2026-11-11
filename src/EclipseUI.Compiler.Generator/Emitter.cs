@@ -39,7 +39,20 @@ public sealed class Emitter
     }
 
     private sealed record FieldDecl(int N, string Prefix, string Type);
-    private sealed record UMethod(string Name, string Body);
+    private sealed record UMethod(string Name, StringBuilder Body);
+
+    /// <summary>
+    /// 待回写的映射（design/18 §5.2）：发射时先记在**当时写入的缓冲区**里，
+    /// 缓冲区并入目标时随 <see cref="AppendMapped"/> 平移；Emit 收尾只收已并入 _sb 的。
+    /// </summary>
+    private sealed class PendingMapping
+    {
+        public TextSpan Original;
+        public StringBuilder Buffer = null!;
+        public int Offset;
+        public int Length;
+        public bool Verbatim;
+    }
 
     private readonly UiDocument _doc;
     private readonly string _accessibility;
@@ -64,6 +77,9 @@ public sealed class Emitter
     /// code-behind 符号精确匹配传入；分析器的短名近似只用于诊断，发射以此为准。</summary>
     private readonly IReadOnlyDictionary<string, UiSlotDef> _ownSlots;
     private readonly string _linePath;
+    private readonly string _filePath;
+    private readonly bool _captureMappings;
+    private readonly List<PendingMapping> _pendingMappings = new();
     private readonly StringBuilder _sb = new();
     private readonly StringBuilder _body = new();
     private readonly List<FieldDecl> _fields = new();
@@ -98,6 +114,9 @@ public sealed class Emitter
         _ownSlots = ownSlots ?? new Dictionary<string, UiSlotDef>(StringComparer.Ordinal);
         // #line 的文件名不是 C# 字符串字面量：反斜杠原样写入，否则映射路径会变成双反斜杠。
         _linePath = filePath.Replace("\"", "\\\"");
+        _filePath = filePath;
+        // design/18 §5.2：只有 IDE 开了旁路窗口才记录映射；build 路径恒 false，零开销。
+        _captureMappings = IdeSourceMappingSideband.IsActive;
     }
 
     public string Emit()
@@ -163,7 +182,7 @@ public sealed class Emitter
 
         _sb.AppendLine("    protected override global::EclipseUI.Element Build()");
         _sb.AppendLine("    {");
-        _sb.Append(_body);
+        AppendMapped(_sb, _body);
         _sb.AppendLine("    }");
 
         if (_renderCalls.Count > 0)
@@ -181,12 +200,57 @@ public sealed class Emitter
             _sb.AppendLine();
             _sb.Append("    private void ").Append(method.Name).AppendLine("()");
             _sb.AppendLine("    {");
-            _sb.Append(method.Body);
+            AppendMapped(_sb, method.Body);
             _sb.AppendLine("    }");
         }
 
         _sb.AppendLine("}");
+        PublishMappings();
         return _sb.ToString();
+    }
+
+    /// <summary>
+    /// 缓冲区并入：文本追加之外，把记在源缓冲区里的映射平移到目标缓冲区坐标。
+    /// 链式并入（R 临时缓冲 → _body → _sb）每次只平移一级，偏移自然累加。
+    /// </summary>
+    private void AppendMapped(StringBuilder target, StringBuilder source)
+    {
+        var delta = target.Length;
+        target.Append(source);
+        if (!_captureMappings) return;
+        foreach (var pending in _pendingMappings)
+            if (ReferenceEquals(pending.Buffer, source))
+            {
+                pending.Offset += delta;
+                pending.Buffer = target;
+            }
+    }
+
+    private void RecordPending(TextSpan original, int offset, int length, bool verbatim)
+    {
+        if (!_captureMappings) return;
+        _pendingMappings.Add(new PendingMapping
+        {
+            Original = original,
+            Buffer = _out,
+            Offset = offset,
+            Length = length,
+            Verbatim = verbatim,
+        });
+    }
+
+    private void PublishMappings()
+    {
+        if (!_captureMappings) return;
+        var mappings = new List<IdeSourceMapping>(_pendingMappings.Count);
+        foreach (var pending in _pendingMappings)
+        {
+            // 防御：只收已并入最终缓冲区的映射（正常路径全部满足）。
+            if (!ReferenceEquals(pending.Buffer, _sb)) continue;
+            mappings.Add(new IdeSourceMapping(pending.Original.Start, pending.Original.Length,
+                pending.Offset, pending.Length, pending.Verbatim));
+        }
+        IdeSourceMappingSideband.Record(_filePath, mappings.ToArray());
     }
 
     private string NewVar(string prefix) => $"{prefix}{_varCounter++}";
@@ -206,6 +270,9 @@ public sealed class Emitter
         if (el == sl && ec <= sc) ec = sc + 1;
         _sb.Append("#line (").Append(sl).Append(", ").Append(sc).Append(") - (")
             .Append(el).Append(", ").Append(ec).Append(") \"").Append(_linePath).Append('"').AppendLine();
+        // 块体逐字透传 → 1:1 映射（子区间可按偏移差双向换算）。此时 _out == _sb，坐标即最终坐标。
+        RecordPending(new TextSpan(block.CodeSpan.Start, block.Code.Length),
+            _sb.Length, block.Code.Length, verbatim: true);
         _sb.Append(block.Code);
         // 原文不以换行结尾时补一个，保证 #line hidden 独立成行
         if (block.Code.Length > 0 && !block.Code.EndsWith("\n")) _sb.AppendLine();
@@ -225,8 +292,34 @@ public sealed class Emitter
     /// <paramref name="userOffset"/> 是用户表达式在 <paramref name="text"/> 内的偏移：
     /// 令表达式起点精确落回 span 起始列；生成前缀更长时钳制 sc=1（行仍精确，列尽力）。
     /// 随后 hidden，使未映射行指回生成文件。
+    ///
+    /// design/18 §5.2：发射的同时记录 SourceMapping。<paramref name="userLength"/> &gt; 0 时
+    /// 记表达式级 1:1 映射（原文逐字进入生成代码）；否则记语句级映射（生成代码包了
+    /// cast/lambda/前缀，只支持整段对应，子区间换算不猜）。#line 输出不受记录影响。
     /// </summary>
-    private void Mapped(TextSpan span, string text, int userOffset = 0)
+    private void Mapped(TextSpan span, string text, int userOffset = 0, int userLength = 0,
+        IReadOnlyList<(TextSpan Span, int Offset, int Length)>? moreExpressions = null,
+        TextSpan? mappingSpan = null)
+    {
+        var genStart = EmitMappedLine(span, text, userOffset);
+        if (!_captureMappings) return;
+        // #line 用 span（历史逐字不变）；映射原文可另给 mappingSpan——静态 run 的词法
+        // Span 会伸进后随表达式，照单记录会与表达式映射重叠而被双向拒绝。
+        var original = mappingSpan ?? span;
+        if (userLength > 0)
+            RecordPending(new TextSpan(TrimmedStart(original), userLength),
+                genStart + _indent * 4 + Math.Max(0, userOffset), userLength, verbatim: true);
+        else
+            RecordPending(TrimmedSpan(original), genStart + _indent * 4, text.Length, verbatim: false);
+        // 插值文本一行多个表达式：#line 仍只对齐首个（历史行为），映射每个都记（design/18 §5.2）。
+        if (moreExpressions is null) return;
+        foreach (var (exprSpan, offset, length) in moreExpressions)
+            RecordPending(new TextSpan(TrimmedStart(exprSpan), length),
+                genStart + _indent * 4 + offset, length, verbatim: true);
+    }
+
+    /// <summary>只发 #line + 文本 + hidden（与历史输出逐字一致），返回文本行在缓冲区内的起点。</summary>
+    private int EmitMappedLine(TextSpan span, string text, int userOffset)
     {
         var start = span.Start;
         var end = Math.Max(start, span.End);
@@ -240,16 +333,87 @@ public sealed class Emitter
         if (el == sl && ec <= sc) ec = sc + 1;
         _out.Append("#line (").Append(sl).Append(", ").Append(sc).Append(") - (")
             .Append(el).Append(", ").Append(ec).Append(") \"").Append(_linePath).Append('"').AppendLine();
+        var genStart = _out.Length;
         Line(text);
         _out.AppendLine("#line hidden");
+        return genStart;
     }
 
-    /// <summary>从生成文本里定位用户 token 的列偏移，省去每个调用点手算前缀长度。</summary>
+    /// <summary>
+    /// 从生成文本里定位用户 token 的列偏移，省去每个调用点手算前缀长度。
+    /// #line 沿用首个 IndexOf（历史行为逐字不变）；SourceMapping 则按**标识符边界**
+    /// 找出全部出现（bind 的 readSource/writeSource 两次出现都记，重命名才能两处同改），
+    /// 原文侧同样按边界定位 token——转换过的字面量（ConvertedLiteral 与原文不同）定位不到
+    /// 就退语句级映射，不猜。
+    /// </summary>
     private void MappedToken(TextSpan span, string text, string userToken)
     {
         var offset = userToken.Length == 0 ? -1 : text.IndexOf(userToken, StringComparison.Ordinal);
-        Mapped(span, text, offset > 0 ? offset : 0);
+        var genStart = EmitMappedLine(span, text, offset > 0 ? offset : 0);
+        if (!_captureMappings) return;
+
+        if (userToken.Length > 0 && FindTokenInOriginal(span, userToken) is { } original)
+        {
+            var recorded = false;
+            foreach (var at in TokenOccurrences(text, userToken))
+            {
+                RecordPending(original, genStart + _indent * 4 + at, userToken.Length, verbatim: true);
+                recorded = true;
+            }
+            if (recorded) return;
+        }
+        RecordPending(TrimmedSpan(span), genStart + _indent * 4, text.Length, verbatim: false);
     }
+
+    private int TrimmedStart(TextSpan span)
+    {
+        var start = span.Start;
+        var end = Math.Max(start, span.End);
+        while (start < end && start < _doc.Text.Length && char.IsWhiteSpace(_doc.Text[start])) start++;
+        return start;
+    }
+
+    private TextSpan TrimmedSpan(TextSpan span)
+    {
+        var start = TrimmedStart(span);
+        return new TextSpan(start, Math.Max(start, span.End) - start);
+    }
+
+    /// <summary>在原文 span 范围内按标识符边界找 token；找不到（如转换后的字面量）返回 null。</summary>
+    private TextSpan? FindTokenInOriginal(TextSpan span, string token)
+    {
+        var start = Math.Max(0, span.Start);
+        var end = Math.Min(Math.Max(start, span.End), _doc.Text.Length);
+        if (end - start < token.Length) return null;
+        for (var i = start; i <= end - token.Length; i++)
+        {
+            if (string.CompareOrdinal(_doc.Text, i, token, 0, token.Length) != 0) continue;
+            if (!BoundaryOk(_doc.Text, i, token.Length, start, end)) continue;
+            return new TextSpan(i, token.Length);
+        }
+        return null;
+    }
+
+    private static IEnumerable<int> TokenOccurrences(string text, string token)
+    {
+        for (var i = 0; i <= text.Length - token.Length; i++)
+        {
+            if (string.CompareOrdinal(text, i, token, 0, token.Length) != 0) continue;
+            if (!BoundaryOk(text, i, token.Length, 0, text.Length)) continue;
+            yield return i;
+        }
+    }
+
+    /// <summary>token 两端不得与标识符字符粘连（"v" 不该命中 "var" 的首字母）。</summary>
+    private static bool BoundaryOk(string text, int start, int length, int windowStart, int windowEnd)
+    {
+        var end = start + length;
+        if (start > windowStart && IsIdentChar(text[start - 1]) && IsIdentChar(text[start])) return false;
+        if (end < windowEnd && IsIdentChar(text[end - 1]) && IsIdentChar(text[end])) return false;
+        return true;
+    }
+
+    private static bool IsIdentChar(char c) => char.IsLetterOrDigit(c) || c == '_' || c == '@';
 
     /// <summary>
     /// 根级动态构造写入实例方法，局部变量不可捕获；只提升真正被 U 写入的元素/run。
@@ -286,7 +450,8 @@ public sealed class Emitter
         return local;
     }
 
-    private string CreateU(string statement, TextSpan span, int tokenOffset)
+    private string CreateU(string statement, TextSpan span, int tokenOffset, int userLength = 0,
+        IReadOnlyList<(TextSpan Span, int Offset, int Length)>? moreExpressions = null)
     {
         var name = $"U{_fnCounter++}";
         var sb = new StringBuilder();
@@ -294,23 +459,25 @@ public sealed class Emitter
         var savedIndent = _indent;
         _out = sb;
         _indent = 2;
-        Mapped(span, $"{statement};", tokenOffset);
+        Mapped(span, $"{statement};", tokenOffset, userLength, moreExpressions);
         _out = savedOut;
         _indent = savedIndent;
-        _uMethods.Add(new UMethod(name, sb.ToString()));
+        _uMethods.Add(new UMethod(name, sb));
         return name;
     }
 
     /// <summary>组件级动态写入：U 方法 + Build 首次调用 + Render 登记。语句形态由调用方拼装。</summary>
-    private void RootUpdate(string statement, TextSpan span, int tokenOffset)
+    private void RootUpdate(string statement, TextSpan span, int tokenOffset, int userLength = 0,
+        IReadOnlyList<(TextSpan Span, int Offset, int Length)>? moreExpressions = null)
     {
-        var name = CreateU(statement, span, tokenOffset);
+        var name = CreateU(statement, span, tokenOffset, userLength, moreExpressions);
         Line($"{name}();");
         _renderCalls.Add($"{name}();");
     }
 
     /// <summary>块内动态写入：R 局部函数 + 首次调用 + 作用域渲染动作。语句形态由调用方拼装。</summary>
-    private void BlockUpdate(string statement, TextSpan span, int tokenOffset, EmitContext ctx)
+    private void BlockUpdate(string statement, TextSpan span, int tokenOffset, EmitContext ctx, int userLength = 0,
+        IReadOnlyList<(TextSpan Span, int Offset, int Length)>? moreExpressions = null)
     {
         var name = $"R{_fnCounter++}";
         var sb = new StringBuilder();
@@ -318,13 +485,13 @@ public sealed class Emitter
         var savedIndent = _indent;
         _out = sb;
         _indent = savedIndent + 1;
-        Mapped(span, $"{statement};", tokenOffset);
+        Mapped(span, $"{statement};", tokenOffset, userLength, moreExpressions);
         _out = savedOut;
         _indent = savedIndent;
 
         Line($"void {name}()");
         Line("{");
-        _out.Append(sb);
+        AppendMapped(_out, sb);
         Line("}");
         Line($"{name}();");
         Line($"{ctx.ScopeVar}.AddRenderAction({name});");
@@ -757,7 +924,7 @@ public sealed class Emitter
             Line("}");
             _out = savedOut;
             _indent = savedIndent;
-            _uMethods.Add(new UMethod(name, sb.ToString()));
+            _uMethods.Add(new UMethod(name, sb));
             Line($"{name}();");
             _renderCalls.Add($"{name}();");
             return;
@@ -782,7 +949,7 @@ public sealed class Emitter
 
         Line($"void {local}()");
         Line("{");
-        _out.Append(sbLocal);
+        AppendMapped(_out, sbLocal);
         Line("}");
         Line($"{local}();");
         Line($"{ctx.ScopeVar}.AddRenderAction({local});");
@@ -977,8 +1144,12 @@ public sealed class Emitter
             {
                 if (segment.Kind == TextSegmentKind.Static)
                 {
+                    // 词法 FlushText 的 Span 会越过静态文本伸进后随的 {expr}（Lexer.cs FlushText
+                    // 用 _i 作终点）；映射原文若照单全收会与表达式映射重叠而被双向拒绝。
+                    // #line 仍用原 Span（golden 不变），映射原文钳到实际文本长度。
                     Mapped(segment.Span,
-                        $"((global::EclipseUI.ITextContentHost){elementVar}).AddRun({UiLiterals.EscapeString(segment.Text)});");
+                        $"((global::EclipseUI.ITextContentHost){elementVar}).AddRun({UiLiterals.EscapeString(segment.Text)});",
+                        mappingSpan: new TextSpan(segment.Span.Start, segment.Text.Length));
                     continue;
                 }
 
@@ -1017,8 +1188,12 @@ public sealed class Emitter
         }
 
         var parts = new StringBuilder("$\"");
+        var prefix = $"{elementVar}.{target}";
         var firstExprSpan = segments[0].Span;
         int firstExprOffset = 0;
+        int firstExprLength = 0;
+        // 一行插值多个表达式：#line 只对齐首个（golden 不变），SourceMapping 每个都记。
+        var moreExpressions = new List<(TextSpan Span, int Offset, int Length)>();
         bool seenExpr = false;
         foreach (var segment in segments)
         {
@@ -1027,23 +1202,29 @@ public sealed class Emitter
                 parts.Append(EscapeInterpolation(segment.Text));
                 continue;
             }
+            var trimmedExpr = segment.Text.Trim();
+            // 表达式在生成语句里的偏移：前缀 + " = " + '$"…{' + '('。
+            var offset = prefix.Length + 3 + parts.Length + 2;
             if (!seenExpr)
             {
-                // 表达式在生成文本里的偏移：'{' + '(' 两个前缀。
                 firstExprSpan = segment.Span;
-                firstExprOffset = parts.Length + 2;
+                firstExprOffset = offset;
+                firstExprLength = trimmedExpr.Length;
                 seenExpr = true;
             }
-            parts.Append('{').Append('(').Append(segment.Text.Trim()).Append(')').Append('}');
+            else
+            {
+                moreExpressions.Add((segment.Span, offset, trimmedExpr.Length));
+            }
+            parts.Append('{').Append('(').Append(trimmedExpr).Append(')').Append('}');
         }
         parts.Append('"');
 
         var body = parts.ToString();
-        var prefix = $"{elementVar}.{target}";
         if (ctx.IsRoot)
-            RootUpdate($"{prefix} = {body}", firstExprSpan, prefix.Length + 3 + firstExprOffset);
+            RootUpdate($"{prefix} = {body}", firstExprSpan, firstExprOffset, firstExprLength, moreExpressions);
         else
-            BlockUpdate($"{prefix} = {body}", firstExprSpan, prefix.Length + 3 + firstExprOffset, ctx);
+            BlockUpdate($"{prefix} = {body}", firstExprSpan, firstExprOffset, ctx, firstExprLength, moreExpressions);
     }
 
     /// <summary>
@@ -1068,9 +1249,9 @@ public sealed class Emitter
             return;
         }
         if (ctx.IsRoot)
-            RootUpdate(statement, span, prefix.Length + bodyOffset);
+            RootUpdate(statement, span, prefix.Length + bodyOffset, trimmed.Length);
         else
-            BlockUpdate(statement, span, prefix.Length + bodyOffset, ctx);
+            BlockUpdate(statement, span, prefix.Length + bodyOffset, ctx, trimmed.Length);
     }
 
     /// <summary>
@@ -1087,13 +1268,13 @@ public sealed class Emitter
 
         if (ctx.IsContent)
         {
-            Mapped(span, $"{statement};", prefix.Length);
+            Mapped(span, $"{statement};", prefix.Length, trimmed.Length);
             return;
         }
         if (ctx.IsRoot)
-            RootUpdate(statement, span, prefix.Length);
+            RootUpdate(statement, span, prefix.Length, trimmed.Length);
         else
-            BlockUpdate(statement, span, prefix.Length, ctx);
+            BlockUpdate(statement, span, prefix.Length, ctx, trimmed.Length);
     }
 
     private string EmitIf(UiIf node, string? parentVar, EmitContext ctx)

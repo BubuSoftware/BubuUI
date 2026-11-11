@@ -503,7 +503,11 @@ public sealed class TemplateGenerator : IIncrementalGenerator
             // design/17 §4.3：Style= 内联发射的目标字段来自同一份符号派生目录
             catalog.StyleProperties).Emit();
 
-        spc.AddSource($"{className}.{StableHash(input.Path)}.g.cs", code);
+        var hintName = $"{className}.{StableHash(input.Path)}.g.cs";
+        // design/18 §5.2：IDE 旁路窗口开着时，把本轮发射记录的映射与 hint name 关联
+        // （build 路径 IsActive=false，SetHintName 直接返回，零开销）。
+        IdeSourceMappingSideband.SetHintName(input.Path, hintName);
+        spc.AddSource(hintName, code);
     }
 
     /// <summary>

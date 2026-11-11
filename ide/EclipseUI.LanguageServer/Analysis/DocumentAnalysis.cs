@@ -90,6 +90,7 @@ public sealed class DocumentAnalysis
     private readonly ProjectWorkspace? _workspace;
     private readonly string? _codeBehind;
     private readonly string? _codeBehindPath;
+    private readonly string? _documentPath;
     private SyntaxTree? _codeBehindTree;
     private SyntaxTree? _memberTree;
     private ExpressionProbe? _probe;
@@ -108,7 +109,8 @@ public sealed class DocumentAnalysis
         string? codeBehind,
         string? codeBehindPath,
         ProjectSnapshot? project,
-        ProjectWorkspace? workspace)
+        ProjectWorkspace? workspace,
+        string? documentPath)
     {
         Text = text;
         Positions = positions;
@@ -123,6 +125,7 @@ public sealed class DocumentAnalysis
         _codeBehindPath = codeBehindPath;
         _project = project;
         _workspace = workspace;
+        _documentPath = documentPath;
     }
 
     public string Text { get; }
@@ -178,7 +181,7 @@ public sealed class DocumentAnalysis
 
     public static DocumentAnalysis Create(string text, string fileName, UiCatalog catalog,
         Compilation? baseCompilation = null, string? codeBehindText = null, string? codeBehindPath = null,
-        ProjectSnapshot? project = null, ProjectWorkspace? workspace = null)
+        ProjectSnapshot? project = null, ProjectWorkspace? workspace = null, string? documentPath = null)
     {
         var positions = new PositionMap(text);
         var diagnostics = new List<UiDiagnostic>();
@@ -192,7 +195,7 @@ public sealed class DocumentAnalysis
         {
             return new DocumentAnalysis(text, positions, null,
                 diagnostics.ToArray(), Array.Empty<string>(), Array.Empty<string>(),
-                new Dictionary<string, string?>(), ex.Message, baseCompilation, codeBehindText, codeBehindPath, project, workspace);
+                new Dictionary<string, string?>(), ex.Message, baseCompilation, codeBehindText, codeBehindPath, project, workspace, documentPath);
         }
 
         var imports = new List<string>();
@@ -229,7 +232,7 @@ public sealed class DocumentAnalysis
 
         return new DocumentAnalysis(text, positions, ast, diagnostics.ToArray(), imports,
             TemplateAnalyzer.EnclosingNamespaces(ast.Namespace), aliases,
-            internalError, baseCompilation, codeBehindText, codeBehindPath, project, workspace);
+            internalError, baseCompilation, codeBehindText, codeBehindPath, project, workspace, documentPath);
     }
 
     /// <summary>
@@ -271,6 +274,20 @@ public sealed class DocumentAnalysis
     public ProjectWorkspace? Workspace => _workspace;
 
     /// <summary>
+    /// 本 .ui 的生成文档（design/18 §5.2）：项目模式且发射时记下了旁路映射才有；
+    /// legacy dll 目录 / 内存态分析为 null。键按完整路径归一（与 GeneratorHost 同口径）。
+    /// </summary>
+    public GeneratedDocument? GeneratedDocument =>
+        _project is not null && _documentPath is not null && _documentPath.Length > 0
+        && Path.IsPathRooted(_documentPath)
+        && _project.GeneratedDocuments.TryGetValue(Path.GetFullPath(_documentPath), out var document)
+            ? document
+            : null;
+
+    /// <summary>统一双向映射服务（编辑类功能唯一入口）；无生成文档时 null。</summary>
+    public DocumentMappingService? Mappings => GeneratedDocument?.Mappings;
+
+    /// <summary>
     /// <c>@code</code> 合成树里的 span → .ui 文档偏移。块体在树文本里逐字透传（K21），
     /// <see cref="string.IndexOf(string, StringComparison)"/> 定位所在块后按偏移差回映——
     /// 与重命名的引用回映（RenameProvider）同一公式。span 不落在任何块体内返回 false。
@@ -280,6 +297,10 @@ public sealed class DocumentAnalysis
     {
         uiSpan = default;
         if (_memberTree is null || Ast is null) return false;
+        // design/18 §5.2：项目模式优先走统一映射服务（发射时记录，不做文本搜索）。
+        // 映射表就是这棵树的权威坐标；映不回即 false，不再退回 IndexOf 猜。
+        if (GeneratedDocument is { } generated && ReferenceEquals(generated.Tree, _memberTree))
+            return generated.Mappings.TryMapToOriginal(span, out uiSpan);
         var treeText = _memberTree.ToString();
         foreach (var block in Ast.Nodes.OfType<UiCodeBlock>())
         {

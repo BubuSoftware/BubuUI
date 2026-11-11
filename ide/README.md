@@ -180,7 +180,9 @@ grammar 测试值得单说：TextMate 写错不会报错，只会「某个地方
 - **代码操作 / 格式化**：编辑经偏移回映改写回 `.ui`；映不回的丢弃而不是猜。
 - **`@code` 块内的补全 / 悬停 / 重命名缺失**：三者都只接 `{expr}`（分派键为
   `CursorKind.Expression`），`@code` 的 `CursorKind.CodeBlock` 落进 `default`。这是从未实现的
-  缺口而非回归，成因与两条修法见 [design/06 §6.9.10](../design/06-ide-support.md)。
+  缺口而非回归，成因与两条修法见 [design/06 §6.9.10](../design/06-ide-support.md)；
+  Razor 的生成文档/映射机制与可借鉴的 P0–P3 路线见
+  [design/18](../design/18-razor-csharp-intellisense.md)。
 - **`#line` 调试映射**未做；语义着色只覆盖内嵌 C# 区间，模板表面仍由 TextMate 着色。
 - **URI 必须按编辑器格式解析**：VS Code 发 `file:///d%3A/repo/x.ui`（盘符冒号编码、盘符小写）。
   这种写法下 .NET 的 `Uri.LocalPath` 返回 `/d:/repo/x.ui`，再经 `GetFullPath` 就永远匹配不到

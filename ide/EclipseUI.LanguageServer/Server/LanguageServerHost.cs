@@ -50,7 +50,7 @@ public sealed class LanguageServerHost
                 return null;
 
             case "textDocument/completion":
-                return Completion(request.Parameters);
+                return await CompletionAsync(request.Parameters).ConfigureAwait(false);
 
             case "textDocument/hover":
                 return Hover(request.Parameters);
@@ -59,10 +59,10 @@ public sealed class LanguageServerHost
                 return Definition(request.Parameters);
 
             case "textDocument/prepareRename":
-                return PrepareRename(request.Parameters);
+                return await PrepareRenameAsync(request.Parameters).ConfigureAwait(false);
 
             case "textDocument/rename":
-                return Rename(request.Parameters);
+                return await RenameAsync(request.Parameters).ConfigureAwait(false);
 
             case "textDocument/documentSymbol":
                 return DocumentSymbols(request.Parameters);
@@ -92,6 +92,10 @@ public sealed class LanguageServerHost
             // 按 scheme 取文本时回传 uri，服务端从缓存反编译文本里取。
             case "eclipseui/decompiledContent":
                 return DecompiledContent(request.Parameters);
+
+            // design/18 §6 阶段 0：当前 .ui 的生成 C# + 双向映射表（对标 razor/generatedDocumentContents）。
+            case "eclipseui/generatedDocument":
+                return GeneratedDocument(request.Parameters);
 
             default:
                 throw new JsonRpcException(JsonRpcException.MethodNotFound, $"unknown method '{request.Method}'");
@@ -214,7 +218,8 @@ public sealed class LanguageServerHost
                 },
                 ["completionProvider"] = new JsonObject
                 {
-                    ["triggerCharacters"] = new JsonArray("<", "/", " ", "\"", "@", "-", ".", ":"),
+                    // "(" 服务 @code 内 `if (|` 这类 C# 上下文（design/18 阶段 2）。
+                    ["triggerCharacters"] = new JsonArray("<", "/", " ", "\"", "@", "-", ".", ":", "("),
                     ["resolveProvider"] = false,
                 },
                 ["hoverProvider"] = true,
@@ -250,12 +255,21 @@ public sealed class LanguageServerHost
         };
     }
 
-    private JsonNode? Completion(JsonNode? parameters)
+    private async Task<JsonNode?> CompletionAsync(JsonNode? parameters)
     {
         var (uri, offset) = Position(parameters);
         if (uri is null) return null;
 
-        var list = _service.Complete(uri, offset);
+        // LSP triggerKind：1=Invoked，2=TriggerCharacter，3=TriggerForIncompleteCompletions。
+        // 只有 2 带 triggerCharacter；其余按主动调用（Roslyn CompletionTrigger.Invoke）。
+        char? trigger = null;
+        if (Int(parameters?["context"], "triggerKind") == 2)
+        {
+            var character = String(parameters?["context"], "triggerCharacter");
+            if (character is { Length: > 0 }) trigger = character[0];
+        }
+
+        var list = await _service.CompleteAsync(uri, offset, trigger).ConfigureAwait(false);
         var items = new JsonArray();
         var document = _service.Documents.TryGet(uri, out var doc) ? doc : null;
         var positions = document is null ? null : new PositionMap(document.Text);
@@ -278,13 +292,26 @@ public sealed class LanguageServerHost
                     ["value"] = item.Documentation,
                 };
             if (item.SortText is not null) entry["sortText"] = item.SortText;
+            if (item.FilterText is not null) entry["filterText"] = item.FilterText;
+            if (item.Preselect) entry["preselect"] = true;
+            if (item.CommitCharacters is { Count: > 0 } commits)
+            {
+                var array = new JsonArray();
+                foreach (var commit in commits) array.Add(commit);
+                entry["commitCharacters"] = array;
+            }
+            // LSP tags 只支持 Deprecated=1；Roslyn 4.9.2 的公开补全项没有弃用标记，
+            // 目录候选将来可用 Tags 表达。其余 Roslyn 标签已用于派生 kind。
+            if (item.Tags is not null && item.Tags.Contains("Deprecated"))
+                entry["tags"] = new JsonArray(1);
 
-            // 显式 textEdit：让替换范围与扫描器判定的 token 一致（@bind- / Owner.Name 都靠它）。
+            // 显式 textEdit：per-item 区间优先（Roslyn 候选每项自带），共享区间兜底
+            // （@bind- / Owner.Name 这些目录候选靠它对齐扫描器判定的 token）。
             if (positions is not null)
             {
                 entry["textEdit"] = new JsonObject
                 {
-                    ["range"] = ToRange(positions, list.Replacement),
+                    ["range"] = ToRange(positions, item.Replacement ?? list.Replacement),
                     ["newText"] = item.Text,
                 };
             }
@@ -298,7 +325,7 @@ public sealed class LanguageServerHost
 
         return new JsonObject
         {
-            ["isIncomplete"] = false,
+            ["isIncomplete"] = list.IsIncomplete,
             ["items"] = items,
         };
     }
@@ -390,16 +417,46 @@ public sealed class LanguageServerHost
     }
 
     /// <summary>
-    /// 重命名（L3 第二片）。prepareRename 告诉客户端"这里能不能改"；rename 返回
-    /// WorkspaceEdit.changes——当前 .ui 用请求里的 uri，兄弟 .cs / 工作区 .cs 换成
-    /// 磁盘路径的 file uri，各自用自己原文的 PositionMap 换算行位。
+    /// 生成文档查看（eclipseui/generatedDocument，design/18 §6 阶段 0）：返回生成 C# 全文、
+    /// hint name 与映射表。没有项目归属/错误短路没产出时返回 null，客户端显示空文档。
     /// </summary>
-    private JsonNode? PrepareRename(JsonNode? parameters)
+    private JsonNode? GeneratedDocument(JsonNode? parameters)
+    {
+        var uri = String(parameters, "uri");
+        if (uri is null) return null;
+        var generated = _service.GeneratedDocumentFor(uri);
+        if (generated is null) return null;
+
+        var mappings = new JsonArray();
+        foreach (var mapping in generated.Mappings.Mappings)
+            mappings.Add(new JsonObject
+            {
+                ["originalStart"] = mapping.Original.Start,
+                ["originalLength"] = mapping.Original.Length,
+                ["generatedStart"] = mapping.Generated.Start,
+                ["generatedLength"] = mapping.Generated.Length,
+                ["verbatim"] = mapping.Verbatim,
+            });
+        return new JsonObject
+        {
+            ["hintName"] = generated.HintName,
+            ["content"] = generated.Tree.ToString(),
+            ["mappings"] = mappings,
+        };
+    }
+
+    /// <summary>
+    /// 重命名（L3 第二片；阶段 3 起项目模式走 Roslyn Renamer）。prepareRename 告诉客户端
+    /// "这里能不能改"；rename 返回 WorkspaceEdit.changes——当前 .ui 用请求里的 uri，
+    /// 其他 .ui / 兄弟 .cs / 工作区 .cs 换成磁盘路径的 file uri，各自用自己原文的
+    /// PositionMap 换算行位。
+    /// </summary>
+    private async Task<JsonNode?> PrepareRenameAsync(JsonNode? parameters)
     {
         var (uri, offset) = Position(parameters);
         if (uri is null) return null;
 
-        var prepare = _service.PrepareRename(uri, offset);
+        var prepare = await _service.PrepareRenameAsync(uri, offset).ConfigureAwait(false);
         if (prepare is null) return null;
         if (!_service.Documents.TryGet(uri, out var document)) return null;
         var positions = new PositionMap(document.Text);
@@ -411,14 +468,14 @@ public sealed class LanguageServerHost
         };
     }
 
-    private JsonNode? Rename(JsonNode? parameters)
+    private async Task<JsonNode?> RenameAsync(JsonNode? parameters)
     {
         var (uri, offset) = Position(parameters);
         if (uri is null) return null;
         var newName = String(parameters, "newName");
         if (string.IsNullOrEmpty(newName)) return null;
 
-        var result = _service.Rename(uri, offset, newName);
+        var result = await _service.RenameAsync(uri, offset, newName).ConfigureAwait(false);
         if (result is null) return null;
 
         var changes = new JsonObject();
@@ -755,6 +812,15 @@ public sealed class LanguageServerHost
         UiCompletionKind.Field => CompletionKindDto.Field,
         UiCompletionKind.Method => CompletionKindDto.Method,
         UiCompletionKind.Variable => CompletionKindDto.Variable,
+        UiCompletionKind.Class => CompletionKindDto.Class,
+        UiCompletionKind.Interface => CompletionKindDto.Interface,
+        UiCompletionKind.Struct => CompletionKindDto.Struct,
+        UiCompletionKind.Enum => CompletionKindDto.Enum,
+        UiCompletionKind.Constant => CompletionKindDto.Constant,
+        UiCompletionKind.TypeParameter => CompletionKindDto.TypeParameter,
+        UiCompletionKind.Operator => CompletionKindDto.Operator,
+        UiCompletionKind.Snippet => CompletionKindDto.Snippet,
+        UiCompletionKind.Text => CompletionKindDto.Text,
         _ => CompletionKindDto.Text,
     };
 

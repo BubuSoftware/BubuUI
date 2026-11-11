@@ -31,6 +31,9 @@
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.9.2" />
     <!-- L8 格式化/代码操作（design/06 §6.9.3 依赖增量）：锁同一 Roslyn 版本。 -->
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.9.2" />
+    <!-- design/18 阶段 2：@code 补全走 Roslyn CompletionService（MefHostServices 组合
+         C# completion provider）。Features 与 Workspaces/CSharp 锁同一版本，避免双份 Roslyn。 -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Features" Version="4.9.2" />
     <!-- L1 MSBuild 求值 + SDK 定位（§6.9.3 R1）。契约锁 17.11.4（最老支持 SDK 8.0.421 的
          Microsoft.Build 版本线），ExcludeAssets=runtime 让 Locator 加载 SDK 里那份；
          运行时程序集比包旧也不会 MissingMethodException（spike 已实测 SDK 10.0.400）。 -->

@@ -613,3 +613,43 @@ C 只保留为「无 csproj / untitled / 内存态」的运行时 fallback，不
 **待拍板**：是否按 A 路线补齐这三项（只做悬停 / 三项一起做），以及是否接受 B 路线引入
 Workspaces 服务层的依赖。在拍板前，`@code` 的补全 / 悬停 / 重命名按**已知缺口**对待，
 不计入第 5 条已闭合范围。
+
+> 2026-11-11 补记：把 Razor/Blazor 的生成文档模型、VS Code 虚拟 HTML 链路与 EclipseUI 的对照
+> 整理成了 [18 · Razor C# 智能提示借鉴](./18-razor-csharp-intellisense.md)。本文的 A/B 路线在
+> 该文 §5 展开为 P0–P3，并给出落地顺序、验收清单与待拍板项。
+
+> 2026-11-11 再补（阶段 0 落地）：design/18 的**阶段 0 已实施**——生成器旁路产出 `SourceMapping`、
+> 新增统一 `DocumentMappingService`（双向、完整包含才映射、失败不猜）、`eclipseui/generatedDocument`
+> 可观测性请求；现有诊断/跳转/`@code` 投影改走该服务，行为不变。落地形态与关键偏差
+> （4.9.2 无 `RegisterHostOutput` → 静态 opt-in 旁路；生成树 `FilePath` 带生成器前缀；
+> `CompletionService`/`Renamer` 的 4.9.2 真实签名；静态 run 词法 Span 越界 → `mappingSpan`）
+> 见 [design/18 §12](./18-razor-csharp-intellisense.md)。**注意**：阶段 0 只是映射底座，
+> 上表 `@code` 的补全/悬停/重命名三项缺口**仍未闭合**（属阶段 1–3），在它们落地前继续按已知缺口对待。
+
+> 2026-11-11 三补（阶段 1 落地）：design/18 阶段 1 已实施——`@code` 的**悬停与重命名闭合**
+> （上表第 4、5 条验收）：共享入口 `EmbeddedCSharpService.CodeBlockSymbolAt`（真实成员树绑定 +
+> 统一映射服务回映），`HoverProvider`/`RenameProvider` 各增 `CodeBlock` 分支；局部变量/参数按
+> **声明源区间**匹配引用（跨编译 identity 不可靠、同名会误伤），任一处映不回整体拒绝。
+> 阶段 1 重命名沿用 `SemanticModel` 引用扫描（`Renamer`/`Solution` 需阶段 2 的 Workspace，留阶段 3）；
+> `@code` 里声明的成员暂拒绝重命名（阶段 3 覆盖）。**仅剩补全**未闭合（阶段 2–3）。
+> 细节与偏差见 [design/18 §12.9](./18-razor-csharp-intellisense.md)。
+
+> 2026-11-11 四补（阶段 2 落地）：design/18 阶段 2 已实施——`@code` 的**补全闭合**
+> （上表第 1–3 条验收）：每快照一个 `AdhocWorkspace`（`EditorDocumentWorkspace`，与 L3 同一份
+> Compilation 派生），`@code` 内补全直接跑 Roslyn `CompletionService`——局部变量/关键字/
+> snippet/扩展方法/await 上下文全部来自 Roslyn，不手写枚举；候选编辑区间经统一映射服务
+> 回映、映不回丢项。B 路线的 Workspaces/Features 依赖已接受（锁 4.9.2）。**注意**：await
+> 上下文实测为「装饰不过滤」（可等待类型加描述前缀，候选不裁剪），与 `.cs` 一致；
+> `{expr}` 补全迁移与 `Renamer` 重命名属阶段 3，未闭合。细节、API 真相与延迟实测
+> （cold 282–1445ms / warm 71ms）见 [design/18 §12.10](./18-razor-csharp-intellisense.md)。
+
+> 2026-11-11 五补（阶段 3 落地）：design/18 阶段 3（§5.6）已实施——**`{expr}` 补全迁到真实
+> 生成文档**（项目模式下 `{task.}`/裸标识符/foreach 内 `{t.}` 都跑 Roslyn `CompletionService`，
+> 与 `.cs` 同机；legacy 探针保留给无快照场景），**重命名改走 `Renamer` + Solution diff**
+> （源 `.cs` 直接交付，生成文档编辑经统一映射服务回映 `.ui`，任一处映不回整体拒绝）。
+> 第 5 条（重命名）自此覆盖 `@code` 声明成员、跨文档引用（含其他 `.ui`）与 `@bind` 双出现去重；
+> `@foreach` 迭代变量因生成代码里是无映射的 lambda 参数，预路由回 legacy 文档内路径。
+> **两个实测偏差**：① `SourceText.GetTextChanges` 对多处小改会退化成整篇替换，改用
+> `Document.GetTextChangesAsync`（自动回落语法树 diff）；② 4.9.2 的 Renamer 对可解冲突
+> （同名成员）不抛异常，交付前比对编译错误数、引入新错误即拒绝。细节与 API 订正见
+> [design/18 §12.11](./18-razor-csharp-intellisense.md)。

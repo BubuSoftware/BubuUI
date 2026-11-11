@@ -23,11 +23,27 @@ public enum UiCompletionKind
 
     /// <summary>表达式投影：<c>@foreach</c> 迭代变量等局部量。</summary>
     Variable,
+
+    /// <summary>Roslyn 补全（design/18 §5.3）：类型/接口/结构/枚举等符号类别。</summary>
+    Class,
+    Interface,
+    Struct,
+    Enum,
+    Constant,
+    TypeParameter,
+    Operator,
+    Snippet,
+    Text,
 }
 
-/// <param name="InsertText">写入文本；原生 LSP 补全项恒为纯文本，片段形态由 <paramref name="IsSnippet"/> 决定。</param>
+/// <param name="InsertText">写入文本；原生 LSP 补全项恒为纯文本，片段形态由 <paramref name="IsSnippet"/> 决定
+/// （宿主翻译成 <c>insertTextFormat</c>：PlainText/Snippet）。</param>
 /// <param name="SortText">排序键（LSP <c>sortText</c>）：默认按标签字母序会打乱"已导入优先"，
 /// 所以用前缀数字分组——0 可见标签 / 1 属性 / 2 保留 / 3 附加属性。</param>
+/// <param name="Replacement">per-item 替换区间（design/18 §5.3）；null 时用列表共享区间。
+/// Roslyn 补全每项自带编辑范围（<c>item.Span</c> 经映射服务回映），不能共享一个区间。</param>
+/// <param name="Tags">Roslyn 标签（Class/Method/Snippet…）；宿主只把 LSP 支持的
+/// <c>Deprecated</c> 翻成 <c>tags</c>，其余用于派生 <see cref="Kind"/>。</param>
 public sealed record UiCompletionItem(
     string Label,
     UiCompletionKind Kind,
@@ -35,13 +51,23 @@ public sealed record UiCompletionItem(
     string? Documentation = null,
     string? InsertText = null,
     bool IsSnippet = false,
-    string? SortText = null)
+    string? SortText = null,
+    TextSpan? Replacement = null,
+    string? FilterText = null,
+    IReadOnlyList<string>? CommitCharacters = null,
+    IReadOnlyList<string>? Tags = null,
+    bool Preselect = false)
 {
     public string Text => InsertText ?? Label;
 }
 
-/// <summary>一次补全的全部候选共享同一个替换区间（光标处只有一个 token）。</summary>
-public sealed record UiCompletionList(TextSpan Replacement, IReadOnlyList<UiCompletionItem> Items)
+/// <summary>
+/// 一次补全的候选。<paramref name="Replacement"/> 是共享替换区间（目录候选：光标处只有一个
+/// token）；Roslyn 候选逐项带 <see cref="UiCompletionItem.Replacement"/>，共享区间仅作兜底。
+/// <paramref name="IsIncomplete"/>：列表未穷尽（Roslyn 建议模式），客户端应随输入重新请求。
+/// </summary>
+public sealed record UiCompletionList(
+    TextSpan Replacement, IReadOnlyList<UiCompletionItem> Items, bool IsIncomplete = false)
 {
     public static readonly UiCompletionList Empty = new(TextSpan.Zero, Array.Empty<UiCompletionItem>());
 }

@@ -23,6 +23,9 @@ public sealed class ProjectSnapshot
     public required IReadOnlyList<SyntaxTree> GeneratedTrees { get; init; }
     public required IReadOnlyList<ProjectDiagnostic> Diagnostics { get; init; }
     public required IReadOnlyList<string> Notes { get; init; }
+
+    /// <summary>每个 .ui 的生成文档 + 双向映射（design/18 §5.2）；键 = .ui 完整路径。</summary>
+    public required IReadOnlyDictionary<string, GeneratedDocument> GeneratedDocuments { get; init; }
 }
 
 /// <summary>
@@ -405,6 +408,7 @@ public sealed class ProjectWorkspace
             GeneratedTrees = generated.GeneratedTrees,
             Diagnostics = diagnostics,
             Notes = notes,
+            GeneratedDocuments = generated.GeneratedDocuments,
         };
     }
 

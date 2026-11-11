@@ -128,9 +128,18 @@ public static class DefinitionProvider
             b => offset >= b.CodeSpan.Start && offset <= b.CodeSpan.Start + b.CodeSpan.Length);
         if (block is null) return null;
 
-        var treeText = memberTree.ToString();
-        var bodyStart = treeText.IndexOf(block.Code, StringComparison.Ordinal);
-        if (bodyStart < 0) return null;
+        // design/18 §5.2：项目模式走统一映射（发射时记录）；legacy 合成树仍按块体原文定位。
+        int bodyStart;
+        if (analysis.GeneratedDocument is { } generated && ReferenceEquals(generated.Tree, memberTree))
+        {
+            if (!generated.Mappings.TryMapToGenerated(block.CodeSpan, out var mapped)) return null;
+            bodyStart = mapped.Start;
+        }
+        else
+        {
+            bodyStart = memberTree.ToString().IndexOf(block.Code, StringComparison.Ordinal);
+            if (bodyStart < 0) return null;
+        }
         var treeOffset = bodyStart + (offset - block.CodeSpan.Start);
 
         // 项目模式下 @code 生成树已在项目 Compilation 里（L3），重复 AddSyntaxTrees 会让

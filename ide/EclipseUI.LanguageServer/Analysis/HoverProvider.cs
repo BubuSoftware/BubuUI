@@ -44,6 +44,9 @@ public static class HoverProvider
             case CursorKind.Expression:
                 return ExpressionHover(analysis, catalog, context, offset);
 
+            case CursorKind.CodeBlock:
+                return CodeBlockHover(analysis, offset);
+
             case CursorKind.Directive:
             {
                 var (name, span) = WordAt(analysis.Text, context.TokenStart);
@@ -93,6 +96,29 @@ public static class HoverProvider
             markdown += $"\n\ntarget: `{target.TypeDisplay}`";
         return new UiHoverResult(span, markdown);
     }
+
+    /// <summary>
+    /// <c>@code</c> 块内悬停（design/18 阶段 1）：光标处符号经真实成员树绑定，
+    /// 局部变量/参数/字段/属性/方法/类型分别给出类型或签名。解析不出返回 null——不猜。
+    /// </summary>
+    private static UiHoverResult? CodeBlockHover(DocumentAnalysis analysis, int offset)
+    {
+        if (EmbeddedCSharpService.CodeBlockSymbolAt(analysis, offset) is not { } hit) return null;
+        var markdown = SymbolMarkdown(hit.Symbol);
+        return markdown is null ? null : new UiHoverResult(hit.Span, markdown);
+    }
+
+    private static string? SymbolMarkdown(ISymbol symbol) => symbol switch
+    {
+        ILocalSymbol local => $"**{local.Name}** — local variable\n\ntype: `{Display(local.Type)}`",
+        IParameterSymbol parameter => $"**{parameter.Name}** — parameter\n\ntype: `{Display(parameter.Type)}`",
+        IFieldSymbol field => $"**{field.Name}** — field\n\ntype: `{Display(field.Type)}`",
+        IPropertySymbol property => $"**{property.Name}** — property\n\ntype: `{Display(property.Type)}`",
+        IEventSymbol @event => $"**{@event.Name}** — event\n\ntype: `{Display(@event.Type)}`",
+        IMethodSymbol method => $"**{method.Name}** — method\n\n`{Signature(method)}`",
+        INamedTypeSymbol type => $"**{type.Name}** — {type.TypeKind.ToString().ToLowerInvariant()}",
+        _ => null,
+    };
 
     /// <summary>展示格式：去掉可空修饰符（oblivious 的 code-behind 类型会被显示成 <c>string?</c>，是噪音）。</summary>
     private static readonly SymbolDisplayFormat DisplayFormat =

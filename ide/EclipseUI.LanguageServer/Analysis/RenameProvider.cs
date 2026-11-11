@@ -44,6 +44,13 @@ public static class RenameProvider
     private sealed record MemberTarget(ISymbol Symbol) : RenameTarget;
 
     /// <summary>
+    /// <c>@code</c> 方法体内的局部变量/参数（design/18 阶段 1）：作用域就在成员树里，
+    /// 引用不会出现在 <c>{expr}</c> 或别的文件。<paramref name="DeclarationSpan"/> 是声明在
+    /// 成员树里的区间——按它匹配引用（跨编译实例的符号 identity 不可靠，源区间稳定）。
+    /// </summary>
+    private sealed record CodeScopedTarget(ISymbol Symbol, RoslynTextSpan DeclarationSpan) : RenameTarget;
+
+    /// <summary>
     /// prepareRename：告诉客户端光标处是否可改名 + 替换区间。不可重命名（标签名上、
     /// 点号上、外部类型成员上）返回 null，客户端据此给出"无法重命名"。
     /// </summary>
@@ -102,6 +109,11 @@ public static class RenameProvider
                 extraCodeBehindFiles.AddRange(codeBehindFiles.Skip(1));
                 break;
             }
+
+            case CodeScopedTarget codeScoped:
+                // @code 局部变量/参数：引用全在成员树，逐处经映射服务回映；任一处映不回整体拒绝。
+                if (!CollectCodeScopedEdits(analysis, probe, codeScoped, newName, uiEdits)) return null;
+                break;
         }
 
         var files = new List<UiRenameFile> { new(null, analysis.Text, uiEdits) };
@@ -119,6 +131,8 @@ public static class RenameProvider
         if (probe is null) return null;
         var text = analysis.Text;
         var context = CursorScanner.Scan(text, offset);
+        if (context.Kind == CursorKind.CodeBlock)
+            return ResolveCodeBlockTarget(analysis, offset, context);
         if (context.Kind != CursorKind.Expression || context.ExpressionStart < 0) return null;
 
         // foreach 头：光标在变量名上 → 变量目标；在集合表达式上 → 常规符号路径。
@@ -166,6 +180,33 @@ public static class RenameProvider
         return Classify(probe, located.Value, targetSpan, context.OpenForeaches) is { } resolved
             ? (resolved.Target, resolved.Span, context)
             : null;
+    }
+
+    /// <summary>
+    /// <c>@code</c> 块内的重命名目标（design/18 阶段 1）：光标处符号经真实成员树绑定。
+    /// 局部变量/参数 → <see cref="CodeScopedTarget"/>（引用只在成员树）；code-behind 类自身
+    /// 成员（声明在兄弟 .cs）→ 复用 <see cref="MemberTarget"/> 全套路径。<c>@code</c> 里声明的
+    /// 成员、外部类型成员不在阶段 1 范围（阶段 3 的 Renamer 覆盖），返回 null 拒绝。
+    /// </summary>
+    private static (RenameTarget Target, TextSpan Span, CursorContext Context)? ResolveCodeBlockTarget(
+        DocumentAnalysis analysis, int offset, CursorContext context)
+    {
+        if (EmbeddedCSharpService.CodeBlockSymbolAt(analysis, offset) is not { } hit) return null;
+        var (symbol, span) = hit;
+
+        if (symbol is ILocalSymbol or IParameterSymbol)
+        {
+            var declaration = symbol.Locations.FirstOrDefault(static l => l.IsInSource)?.SourceSpan ?? default;
+            return (new CodeScopedTarget(symbol, declaration), span, context);
+        }
+
+        var probe = analysis.Probe!;
+        if (probe.ThisType is null || symbol.ContainingType is null ||
+            !SameSymbol(SignatureOf(symbol.ContainingType), SignatureOf(probe.ThisType)))
+            return null;
+        var location = symbol.Locations.FirstOrDefault(static l => l.IsInSource);
+        if (location?.SourceTree is null || !analysis.IsCodeBehindTree(location.SourceTree)) return null;
+        return (new MemberTarget(symbol), span, context);
     }
 
     /// <summary>
@@ -308,6 +349,74 @@ public static class RenameProvider
             foreach (var span in SymbolReferenceSpans(memberTree.GetRoot(), model, targetSignature))
                 edits.Add(new UiTextEdit(
                     new TextSpan(block.CodeSpan.Start + (span.Start - bodyStart), span.Length), newName));
+        }
+    }
+
+    // ---- @code 局部变量/参数出现点（design/18 阶段 1） ----
+
+    /// <summary>
+    /// 扫成员树里目标局部变量/参数的声明与全部引用，逐处经统一映射服务回映到 .ui。
+    /// 按**声明源区间**匹配（不是符号 identity——跨编译实例不可靠；也不是名字——同名局部变量
+    /// 会误伤）。任何一处映不回返回 false，调用方拒绝整个重命名。找不到任何出现点也返回 false。
+    /// </summary>
+    private static bool CollectCodeScopedEdits(
+        DocumentAnalysis analysis, ExpressionProbe probe,
+        CodeScopedTarget target, string newName, List<UiTextEdit> edits)
+    {
+        var memberTree = analysis.MemberTree;
+        if (memberTree is null) return false;
+        var augmented = analysis.CompilationContains(memberTree)
+            ? probe.Compilation
+            : probe.Compilation.AddSyntaxTrees(memberTree);
+        var model = augmented.GetSemanticModel(memberTree);
+        var found = false;
+        foreach (var span in CodeScopedReferenceSpans(memberTree.GetRoot(), model, target.DeclarationSpan))
+        {
+            if (!analysis.TryMapMemberSpanToUi(new TextSpan(span.Start, span.Length), out var uiSpan))
+                return false;
+            edits.Add(new UiTextEdit(uiSpan, newName));
+            found = true;
+        }
+        return found;
+    }
+
+    /// <summary>声明源区间与目标一致的局部变量/参数的所有出现点（声明器 + 引用）。</summary>
+    private static IEnumerable<RoslynTextSpan> CodeScopedReferenceSpans(
+        SyntaxNode root, SemanticModel model, RoslynTextSpan declarationSpan)
+    {
+        foreach (var node in root.DescendantNodes())
+        {
+            ISymbol? symbol;
+            RoslynTextSpan span;
+            switch (node)
+            {
+                case IdentifierNameSyntax identifier:
+                    symbol = model.GetSymbolInfo(identifier).Symbol;
+                    span = identifier.Span;
+                    break;
+                case VariableDeclaratorSyntax declarator:
+                    symbol = model.GetDeclaredSymbol(declarator);
+                    span = declarator.Identifier.Span;
+                    break;
+                case ParameterSyntax parameter:
+                    symbol = model.GetDeclaredSymbol(parameter);
+                    span = parameter.Identifier.Span;
+                    break;
+                case SingleVariableDesignationSyntax designation:
+                    symbol = model.GetDeclaredSymbol(designation);
+                    span = designation.Identifier.Span;
+                    break;
+                case ForEachStatementSyntax forEach:
+                    symbol = model.GetDeclaredSymbol(forEach);
+                    span = forEach.Identifier.Span;
+                    break;
+                default:
+                    continue;
+            }
+            if (symbol is not (ILocalSymbol or IParameterSymbol)) continue;
+            if (symbol.Locations.FirstOrDefault(static l => l.IsInSource)?.SourceSpan is { } declaration
+                && declaration == declarationSpan)
+                yield return span;
         }
     }
 
@@ -473,8 +582,16 @@ public static class RenameProvider
     private static bool SamePath(string left, string right) =>
         string.Equals(Path.GetFullPath(left), Path.GetFullPath(right), StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// 光标是否落在 @foreach 迭代变量上（声明或引用）。阶段 3 路由用：迭代变量在生成代码里
+    /// 是 SetTemplate lambda 的参数，声明处**没有 .ui 映射**，Renamer 必整体拒绝——
+    /// 这类目标始终走本文档内的 legacy 路径（作用域 = 本文档，天然完备）。
+    /// </summary>
+    internal static bool IsForeachVariable(DocumentAnalysis analysis, int offset) =>
+        ResolveTarget(analysis, offset)?.Target is ForeachVarTarget;
+
     /// <summary>合法 C# 标识符（保留关键字拒绝；var 是上下文关键字，允许）。</summary>
-    private static bool IsIdentifier(string name)
+    internal static bool IsIdentifier(string name)
     {
         if (name.Length == 0 || !(char.IsAsciiLetter(name[0]) || name[0] == '_')) return false;
         for (var i = 1; i < name.Length; i++)

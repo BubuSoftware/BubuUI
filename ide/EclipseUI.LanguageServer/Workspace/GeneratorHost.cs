@@ -1,10 +1,12 @@
 extern alias euiGen;
 
 using System.Collections.Immutable;
+using EclipseUI.LanguageServer.Analysis;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis.Text;
+using UiSpan = EclipseUI.Compiler.TextSpan;
 
 namespace EclipseUI.LanguageServer.Workspace;
 
@@ -12,7 +14,8 @@ namespace EclipseUI.LanguageServer.Workspace;
 public sealed record GeneratorResult(
     Compilation Compilation,
     IReadOnlyList<SyntaxTree> GeneratedTrees,
-    ImmutableArray<Diagnostic> Diagnostics);
+    ImmutableArray<Diagnostic> Diagnostics,
+    IReadOnlyDictionary<string, GeneratedDocument> GeneratedDocuments);
 
 /// <summary>
 /// L3（design/06 §6.9.3）：在 IDE 进程里跑**真的** <c>TemplateGenerator</c>。
@@ -25,17 +28,37 @@ public sealed record GeneratorResult(
 /// 同时喂 <c>build_property.rootnamespace</c>（生成器唯一读的 analyzer 选项）与
 /// AdditionalTexts = 项目求值的 .ui + .eustyle。生成树加回编译后再 Build 目录，
 /// 于是 .ui 派生组件（Counter/TaskList/…）未 build 时也自然在目录里。
+///
+/// design/18 §5.2：跑驱动期间开生成器旁路窗口（<c>IdeSourceMappingSideband</c>），
+/// 发射器在写 #line 的同时记录 SourceMapping；跑完按 .ui 路径 Take，与 hint name
+/// 对应的生成树配对成 <see cref="GeneratedDocument"/>。每次 Run 新建驱动 → 全部文件
+/// 必然重新发射，取到的就是本轮产物。旁路 API 只有 BCL 类型，不跨 alias 传 Roslyn 类型。
 /// </summary>
 public static class GeneratorHost
 {
+    // 旁路收集器是进程级静态、按 .ui 路径键控：两个并发 Run 会互相覆盖条目、
+    // Take 走对方的映射（甚至配错生成树）。整个「开窗口 → 跑驱动 → Take」必须串行。
+    private static readonly object RunGate = new();
+
     public static GeneratorResult Run(
         Compilation compilation,
         IEnumerable<(string Path, string Text)> additionalFiles,
         CSharpParseOptions parseOptions,
         string rootNamespace)
     {
-        var texts = additionalFiles
+        lock (RunGate) return RunCore(compilation, additionalFiles, parseOptions, rootNamespace);
+    }
+
+    private static GeneratorResult RunCore(
+        Compilation compilation,
+        IEnumerable<(string Path, string Text)> additionalFiles,
+        CSharpParseOptions parseOptions,
+        string rootNamespace)
+    {
+        var files = additionalFiles
             .Where(static f => Path.GetExtension(f.Path) is ".ui" or ".eustyle")
+            .ToArray();
+        var texts = files
             .Select(static f => (AdditionalText)new InMemoryAdditionalText(f.Path, f.Text))
             .ToArray();
 
@@ -51,10 +74,34 @@ public static class GeneratorHost
             },
             texts, parseOptions, provider);
 
-        driver = driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out var diagnostics);
+        Compilation output;
+        ImmutableArray<Diagnostic> diagnostics;
+        using (euiGen::EclipseUI.Compiler.Generator.IdeSourceMappingSideband.Enable())
+        {
+            driver = driver.RunGeneratorsAndUpdateCompilation(compilation, out output, out diagnostics);
+        }
         var input = new HashSet<SyntaxTree>(compilation.SyntaxTrees);
         var generated = output.SyntaxTrees.Where(tree => !input.Contains(tree)).ToArray();
-        return new GeneratorResult(output, generated, diagnostics);
+
+        var documents = new Dictionary<string, GeneratedDocument>(StringComparer.OrdinalIgnoreCase);
+        foreach (var file in files)
+        {
+            if (Path.GetExtension(file.Path) != ".ui") continue;
+            var sideband = euiGen::EclipseUI.Compiler.Generator.IdeSourceMappingSideband.Take(file.Path);
+            if (sideband is null) continue;
+            // Roslyn 4.9.2 的生成树 FilePath 带生成器前缀（程序集名\生成器类型\hintName），
+            // 只有末段才是 AddSource 的 hint name——按末段匹配。
+            var tree = generated.FirstOrDefault(t =>
+                string.Equals(Path.GetFileName(t.FilePath), sideband.HintName, StringComparison.Ordinal));
+            if (tree is null) continue;
+            var mappings = sideband.Mappings.Select(static m => new SourceMapping(
+                new UiSpan(m.OriginalStart, m.OriginalLength),
+                new UiSpan(m.GeneratedStart, m.GeneratedLength),
+                m.Verbatim)).ToArray();
+            documents[Path.GetFullPath(file.Path)] = new GeneratedDocument(
+                sideband.HintName, tree, DocumentMappingService.Create(mappings));
+        }
+        return new GeneratorResult(output, generated, diagnostics, documents);
     }
 
     private sealed class InMemoryAdditionalText : AdditionalText
