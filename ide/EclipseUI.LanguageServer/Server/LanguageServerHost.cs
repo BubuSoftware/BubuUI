@@ -72,7 +72,7 @@ public sealed class LanguageServerHost
                 return SignatureHelp(request.Parameters);
 
             case "textDocument/semanticTokens/full":
-                return SemanticTokens(request.Parameters);
+                return await SemanticTokensAsync(request.Parameters).ConfigureAwait(false);
 
             case "textDocument/codeAction":
                 return CodeActions(request.Parameters);
@@ -544,28 +544,25 @@ public sealed class LanguageServerHost
         };
     }
 
-    /// <summary>semanticTokens/full：只编码 {expr} / @code 区间，delta 编码由这里做（LSP 3.17）。</summary>
-    private JsonNode? SemanticTokens(JsonNode? parameters)
+    /// <summary>semanticTokens/full：只编码 {expr} / @code 区间，delta 编码由这里做（LSP 3.17）。
+    /// 项目模式的分类走 Roslyn Classifier（异步），legacy 回落探针投影。</summary>
+    private async Task<JsonNode?> SemanticTokensAsync(JsonNode? parameters)
     {
         var uri = String(parameters, "textDocument", "uri");
         if (uri is null) return null;
-        var analysis = _service.Analyze(uri);
         var data = new JsonArray();
-        if (analysis is not null)
+        var lastLine = 0;
+        var lastCharacter = 0;
+        foreach (var token in await _service.SemanticTokensAsync(uri).ConfigureAwait(false))
         {
-            var lastLine = 0;
-            var lastCharacter = 0;
-            foreach (var token in EmbeddedCSharpService.SemanticTokens(analysis))
-            {
-                var deltaLine = token.Line - lastLine;
-                data.Add(deltaLine);
-                data.Add(deltaLine == 0 ? token.Character - lastCharacter : token.Character);
-                data.Add(token.Length);
-                data.Add(token.TokenType);
-                data.Add(token.TokenModifiers);
-                lastLine = token.Line;
-                lastCharacter = token.Character;
-            }
+            var deltaLine = token.Line - lastLine;
+            data.Add(deltaLine);
+            data.Add(deltaLine == 0 ? token.Character - lastCharacter : token.Character);
+            data.Add(token.Length);
+            data.Add(token.TokenType);
+            data.Add(token.TokenModifiers);
+            lastLine = token.Line;
+            lastCharacter = token.Character;
         }
         return new JsonObject { ["data"] = data };
     }

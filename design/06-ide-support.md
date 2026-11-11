@@ -653,3 +653,14 @@ Workspaces 服务层的依赖。在拍板前，`@code` 的补全 / 悬停 / 重�
 > `Document.GetTextChangesAsync`（自动回落语法树 diff）；② 4.9.2 的 Renamer 对可解冲突
 > （同名成员）不抛异常，交付前比对编译错误数、引入新错误即拒绝。细节与 API 订正见
 > [design/18 §12.11](./18-razor-csharp-intellisense.md)。
+
+> 2026-11-11 六补（阶段 4 落地）：design/18 阶段 4（§5.8）已实施——**语义着色改走 Roslyn
+> `Classifier`**：项目模式对生成文档整篇分类，逐区间经统一映射服务回映 `.ui`（`{expr}`/`@code`
+> 逐字区间映得回，生成独有代码无映射天然丢弃，模板表面仍归 TextMate），映不回丢弃不猜；
+> legacy 回落探针投影，行为不回归。**代码修复与签名帮助保留手写**：4.9.2 的 `CodeFixService`
+> 与 `SignatureHelpService`（含全部内置 `CodeFixProvider`）经反射核对都是 **internal**，无公开
+> 入口，接它只能反射 internal API、撞「锁版本 / 不猜」硬边界——故模板级 EUI001/EUI002 与
+> CS0103 缺失成员修复、`SignatureHelp` 均保留（§5.8 本就允许「否则保留」）。**诊断一致性**
+> 由构造保证：补全 / 重命名 / 着色同走 `EditorDocumentWorkspace.For(snapshot)`，与 Tier 2 诊断
+> 同一份 Compilation，无分叉。至此 design/18 阶段 0–4 全部闭合。细节与 API 真相表见
+> [design/18 §12.12](./18-razor-csharp-intellisense.md)。

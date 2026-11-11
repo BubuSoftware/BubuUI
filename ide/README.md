@@ -58,7 +58,7 @@ design/06 §6.9 之后，目录不再是「扫 dll 元数据」，所有能力�
 | 跳转定义 | ✅ | 标签与**属性/事件/参数/附加属性**都走 Roslyn 符号查询，落在成员声明；有源码跳源码（含仓库里以源码编译的框架工程），无源码走成员级反编译（`eui-decompiled:`） |
 | 重命名 | ✅ | F2 改 `@foreach` 变量与 code-behind 类自身成员；改不全的编辑一律拒绝。**仅 `{expr}`**，`@code` 块内不支持 |
 | signature help | ✅ | `textDocument/signatureHelp`，重载与当前参数位从同一份 Compilation 取 |
-| 语义着色 | ✅ | `textDocument/semanticTokens/full`，只着色 `{expr}` 与 `@code` 区间（模板表面仍归 TextMate） |
+| 语义着色 | ✅ | `textDocument/semanticTokens/full`，只着色 `{expr}` 与 `@code` 区间（模板表面仍归 TextMate）；项目模式走 Roslyn `Classifier` 对生成文档分类再经统一映射回映，legacy 回落探针投影（design/18 §12.12） |
 | 代码操作 | ✅ | `EUI001` 补 `@using`、`EUI002` 最近属性替换、`CS0103` 把缺失成员生成到 `@code` 块（触发点仍是属性表达式，`@code` 块内不产生快速修复）；映不回的编辑丢弃 |
 | 格式化 / 区间格式化 | ✅ | 模板缩进按 AST 做最小行编辑；`@code` 块体交 Roslyn `Formatter` |
 | watcher 自动失效 | ✅ | `.cs/.ui/.eustyle/.csproj/Directory.Build.props/obj/project.assets.json` 变更 → 重建快照 + 重发诊断，无需手动 Reload |

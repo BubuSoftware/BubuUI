@@ -249,6 +249,20 @@ public sealed class LanguageService
     /// </summary>
     public GeneratedDocument? GeneratedDocumentFor(string uri) => Analyze(uri)?.GeneratedDocument;
 
+    /// <summary>
+    /// 语义着色路由（design/18 §5.8）：项目模式走 Roslyn Classifier（异步，真实生成文档 +
+    /// 统一映射回映）；legacy / 无生成文档回落探针投影路径。宿主只负责 delta 编码。
+    /// </summary>
+    public async Task<IReadOnlyList<UiSemanticToken>> SemanticTokensAsync(
+        string uri, CancellationToken cancellationToken = default)
+    {
+        if (!IsTemplate(uri)) return Array.Empty<UiSemanticToken>();
+        var analysis = Analyze(uri);
+        if (analysis is null) return Array.Empty<UiSemanticToken>();
+        return await EmbeddedCSharpService.SemanticTokensAsync(
+            analysis, DocumentStore.UriToPath(uri), cancellationToken).ConfigureAwait(false);
+    }
+
     /// <summary>legacy 入口（同步）：探针扫描路径。项目模式的 Roslyn 重命名走异步版本。</summary>
     public UiPrepareRename? PrepareRename(string uri, int offset)
     {

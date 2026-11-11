@@ -1,6 +1,6 @@
 # 18 · Razor/Blazor 的 C# 智能提示：技术方案、VS Code 链路与 EclipseUI 借鉴
 
-> 状态：调研 + 方案建议（2026-11-11）；**阶段 0–1 已实施**（阶段 0：SourceMapping + 统一映射服务 + `eclipseui/generatedDocument`；阶段 1：`@code` 悬停 + 重命名。落地细节与偏差见 §12），阶段 2–3 进行中，阶段 4（P2）本轮不排。
+> 状态：调研 + 方案建议（2026-11-11）；**阶段 0–4 已实施**（阶段 0：SourceMapping + 统一映射服务 + `eclipseui/generatedDocument`；阶段 1：`@code` 悬停 + 重命名；阶段 2：`EditorDocumentWorkspace` + `@code` 补全；阶段 3：`{expr}` 补全迁移 + `Renamer` 重命名；阶段 4：语义着色 Roslyn 化，代码修复 / 签名帮助按 4.9.2 可用性保留。落地细节与偏差见 §12）。
 > 关联：[design/06 §6.9.3 / §6.9.6 / §6.9.10](./06-ide-support.md)、[ide/README.md](../ide/README.md)、[spec/02](../spec/02-generated-code-contract.md)。
 > 结论：Razor 的 C# 能力来自「真实生成文档 + Roslyn 语言服务 + 双向位置映射 + 语言路由」；
 > EclipseUI 已经具备同源生成器、项目 Compilation 与目录，缺的是 **Document 层**与**统一映射服务**，
@@ -945,7 +945,7 @@ Task<Solution> Renamer.RenameSymbolAsync(
 ### 12.8 本轮范围
 
 按 §6 落地顺序实施**阶段 0–3**；阶段 4（P2 语义着色 / 代码修复 / 签名帮助 Roslyn 化）本轮不排
-（§10 第 5 条建议）。§10 其余待拍板项按本文自身建议执行：P0→P1 顺序、接受 Workspaces/Features
+（§10 第 5 条建议；**后续已落地，见 §12.12**）。§10 其余待拍板项按本文自身建议执行：P0→P1 顺序、接受 Workspaces/Features
 依赖（锁 4.9.2）、允许旁路元数据（不改生成文本）、`@code` 验收按 §7.2。D 编号由维护者分配，本文不代填。
 
 ### 12.9 阶段 1 落地：`@code` 悬停 + 重命名（2026-11-11）
@@ -1117,3 +1117,67 @@ legacy）。`EclipseUI.Ide.Tests` **184/184**（170+14，全量并行两遍绿�
 `EclipseUI.Rendering.Tests` **106/106**；全解决方案构建 0 警告 0 错误。
 design/18 §5.6（`{expr}` 补全迁移 + `Renamer` 重命名）闭合；design/06 §6.9.10 第 5 条
 （重命名）自此覆盖 `@code` 声明成员与跨文档引用。
+
+### 12.12 阶段 4 落地：语义着色 Roslyn 化；代码修复 / 签名帮助按可用性保留（2026-11-11）
+
+§5.8 的四项里，**语义着色**接上了 Roslyn `Classifier`；**代码修复**与**签名帮助**经
+4.9.2 真实程序集反射核对后**保留手写**（对应服务是 internal，见下表）；**诊断一致性**
+由构造已保证，无需改动。这闭合 §12.8 暂缓的阶段 4（P2）。
+
+**API 真相（对 NuGet 缓存里 4.9.2 实际程序集反射探针，非文档转述）**：
+
+| 类型 | 所在程序集 | 公开性 | 结论 |
+|---|---|---|---|
+| `Classification.Classifier` | Workspaces | **public static** | `GetClassifiedSpansAsync(Document, TextSpan, ct)` → `Task<ImmutableArray<ClassifiedSpan>>`；另有 `GetClassifiedSpans(SemanticModel, TextSpan, Workspace, ct)` |
+| `Classification.ClassifiedSpan` | Workspaces | **public readonly struct** | `TextSpan` + `ClassificationType`（string） |
+| `Classification.ClassificationTypeNames` | Workspaces | **public** | 全部常量（`class name`/`field name`/`keyword - control`/…） |
+| `CodeFixes.CodeFixService` | Features | **internal**（反射查无公开入口） | 无法直接调 |
+| `CodeFixes.CodeFix` / `CodeFixCollection` | Features | **internal** | 同上 |
+| 内置 `CodeFixProvider` 具体子类 | Workspaces/Features/CSharp.Features | **0 个 public** | 内置修复全 internal |
+| `SignatureHelp.SignatureHelpService` | Features | **internal**（反射查无公开入口） | 无法直接调 |
+| `SignatureHelp.SignatureHelpItems`/`Item`/`TriggerInfo`/`TriggerReason` | Features | **internal** | 同上 |
+
+> 反编译 dump（`/tmp/*-decomp`）对这两个服务**不完整**（未含 `CodeFixService`/
+> `SignatureHelpService` 类型），不能据其判断公开性；以反射探针 + 包内 XML 文档
+> （只收公开成员，两者均无条目）双重核对为准。
+
+**决策一：语义着色 → Roslyn `Classifier`（已实施）**。项目模式对**生成文档**整篇分类，
+每个 `ClassifiedSpan` 经统一映射服务 `TryMapToOriginal` 回映 `.ui`——`{expr}` 与 `@code`
+块体都是逐字映射（§12.5 / `SourceMappingTests` round-trip 已证），子区间映得回；生成独有
+代码（类声明 / `Build` / `Track` 等）无映射天然丢弃，**模板表面仍归 TextMate**。映不回或
+归并不到 legend 的类型丢弃而不是猜（R6）。无生成文档 / 分类异常回落既有探针投影路径
+（`SemanticTokens`），行为不回归。Roslyn 粒度更细（字符串拆 escape、控制关键字单列、
+record/扩展方法/常量各有专名），`MapClassification` 归并到 16 类 legend；`identifier`/
+`text`/`punctuation`/事件等映不上的返回 -1 丢弃，与迷你分类器「不认识就不着色」一致。
+
+**决策二：代码修复 → 保留确定性修复（不接 internal `CodeFixService`）**。4.9.2 的
+`CodeFixService` 与全部内置 `CodeFixProvider` 都是 internal，唯一公开面是供第三方**编写**
+修复的 `CodeFixProvider` 抽象类与 `CodeAction`/`ApplyChangesOperation`，没有「按诊断取内置
+修复」的公开入口。接它只能反射 internal API——脆弱且撞 §8「锁版本 / 不猜」硬边界，故不做。
+现状保留：模板级 EUI001/EUI002 走目录确定性修复，`@code` 相关的 CS0103 缺失成员由
+`AddMissingMemberFix` 生成（目标类型取自目录属性，映不出类型丢弃整个 action）。
+
+**决策三：签名帮助 → 保留 `EmbeddedCSharpService.SignatureHelp`**。`SignatureHelpService`
+及其模型在 4.9.2 全 internal，符合 §5.8「可用且稳定才替换，**否则保留**」的保留分支。
+现有实现（投影 + `InvocationExpressionSyntax` + `GetSymbolInfo`/`CandidateSymbols`/
+`GetMemberGroup`）已给重载与当前参数位，协议测试覆盖。
+
+**决策四：诊断一致性 → 构造已保证，无改动**。补全 / 重命名 / 语义着色都走
+`EditorDocumentWorkspace.For(project)`，它直接以 `snapshot.Compilation` 为事实源（§12.10）；
+Tier 2 诊断来自**同一快照**的生成器运行。单快照 → 单 Compilation → 单 workspace → 同一份
+生成文档，不存在「Tier 2 与补全看不同代代码」的分叉。
+
+**链路**（语义着色）：
+
+| 层 | 文件 | 职责 |
+|---|---|---|
+| 分类 + 回映 | `ide/.../Analysis/EmbeddedCSharpService.cs` | 新增 `SemanticTokensAsync(analysis, uiPath, ct)`：生成文档 → `Classifier.GetClassifiedSpansAsync` → 逐区间 `TryMapToOriginal` → `MapClassification` 归并 → `ToTokens`（排序/去重叠/行位，与 legacy 共用）。`SemanticTokens` 抽出 `ToTokens` 复用 |
+| 服务入口 | `ide/.../Analysis/LanguageService.cs` | 新增 `SemanticTokensAsync(uri, ct)`：非模板/无分析返回空，否则委托 provider |
+| 协议 | `ide/.../Server/LanguageServerHost.cs` | `semanticTokens/full` 改 async 分派；delta 编码仍在宿主 |
+| 测试 | `tests/.../SemanticColoringTests.cs`（新增） | 4 例：token 只落 C# 岛内 / 关键符号语义类型（field/property/method/variable）/ 关键字与数字 / legacy 回落与同步逐字一致 |
+
+**验证**：`EclipseUI.Ide.Tests` **188/188**（184 + 新增 `SemanticColoringTests` 4）；
+`EclipseUI.Compiler.Tests` **375/375**（生成文本 / `#line` golden 契约不变）、
+`EclipseUI.Headless.Tests` **372/372**、`EclipseUI.Rendering.Tests` **106/106**；
+全解决方案构建 0 警告 0 错误。design/18 §5.8 闭合（语义着色 Roslyn 化；代码修复 / 签名帮助
+按 4.9.2 可用性保留并记录）；D 编号由维护者分配，本文不代填。

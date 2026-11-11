@@ -3,6 +3,7 @@ using EclipseUI.Compiler;
 using EclipseUI.Compiler.Metadata;
 using EclipseUI.Compiler.Probe;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.Classification;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Formatting;
@@ -293,6 +294,7 @@ public static class EmbeddedCSharpService
     /// <summary>
     /// 只着色 <c>{expr}</c> 与 <c>@code</c> 区间（模板表面仍归 TextMate）。每个区间各自投影一次，
     /// token 的树内偏移按 BodyStart 回映到 .ui；同位置重叠 token 丢弃而不是猜（R6）。
+    /// legacy / 无生成文档时的路径；项目模式优先走 <see cref="SemanticTokensAsync"/>。
     /// </summary>
     public static IReadOnlyList<UiSemanticToken> SemanticTokens(DocumentAnalysis analysis)
     {
@@ -320,6 +322,50 @@ public static class EmbeddedCSharpService
             Collect(projection, block.CodeSpan.Start, hits);
         }
 
+        return ToTokens(hits, positions);
+    }
+
+    /// <summary>
+    /// design/18 §5.8：项目模式用 Roslyn <see cref="Classifier"/> 对**生成文档**分类，
+    /// 经统一映射服务把每个分类区间回映到 .ui——只有 {expr}/@code 的逐字区间映得回，
+    /// 生成独有代码（类声明/Build/Track 等）天然被丢弃，模板表面仍归 TextMate。
+    /// 映不回或分类不了的区间丢弃而不是猜（R6）。无生成文档 / 分类失败回落
+    /// <see cref="SemanticTokens"/> 的探针投影路径，行为不回归。
+    /// </summary>
+    public static async Task<IReadOnlyList<UiSemanticToken>> SemanticTokensAsync(
+        DocumentAnalysis analysis, string uiPath, CancellationToken cancellationToken)
+    {
+        if (analysis.GeneratedDocument is not { } generated || analysis.Project is not { } project)
+            return SemanticTokens(analysis);
+        var document = EditorDocumentWorkspace.For(project).GeneratedDocumentFor(uiPath);
+        if (document is null) return SemanticTokens(analysis);
+        try
+        {
+            var text = await document.GetTextAsync(cancellationToken).ConfigureAwait(false);
+            var spans = await Classifier.GetClassifiedSpansAsync(
+                document, new Microsoft.CodeAnalysis.Text.TextSpan(0, text.Length), cancellationToken)
+                .ConfigureAwait(false);
+            var hits = new List<(int Start, int Length, int Type)>();
+            foreach (var span in spans)
+            {
+                if (!generated.Mappings.TryMapToOriginal(
+                        new UiSpan(span.TextSpan.Start, span.TextSpan.Length), out var ui)) continue;
+                var type = MapClassification(span.ClassificationType);
+                if (type < 0 || ui.Length <= 0) continue;
+                hits.Add((ui.Start, ui.Length, type));
+            }
+            return ToTokens(hits, analysis.Positions);
+        }
+        catch (Exception)
+        {
+            return SemanticTokens(analysis);
+        }
+    }
+
+    /// <summary>按起点排序、丢弃重叠与零宽，再换算行位（两条着色路径共用，R6 同口径）。</summary>
+    private static IReadOnlyList<UiSemanticToken> ToTokens(
+        List<(int Start, int Length, int Type)> hits, PositionMap positions)
+    {
         var result = new List<UiSemanticToken>();
         var lastEnd = -1;
         foreach (var hit in hits.OrderBy(static h => h.Start))
@@ -331,6 +377,40 @@ public static class EmbeddedCSharpService
         }
         return result;
     }
+
+    /// <summary>
+    /// Roslyn 分类类型 → L8 legend 索引。Roslyn 粒度更细（字符串拆 escape、控制关键字单列、
+    /// record/扩展方法/常量各有专名），这里归并到 16 类 legend；映不上的（identifier/text/
+    /// punctuation/事件等）返回 -1 丢弃，与迷你分类器「不认识就不着色」一致。
+    /// </summary>
+    private static int MapClassification(string classificationType) => classificationType switch
+    {
+        ClassificationTypeNames.NamespaceName => SemanticTokenTypes.IndexOf("namespace"),
+        ClassificationTypeNames.ClassName or ClassificationTypeNames.RecordClassName
+            => SemanticTokenTypes.IndexOf("class"),
+        ClassificationTypeNames.StructName or ClassificationTypeNames.RecordStructName
+            => SemanticTokenTypes.IndexOf("struct"),
+        ClassificationTypeNames.EnumName => SemanticTokenTypes.IndexOf("enum"),
+        ClassificationTypeNames.InterfaceName => SemanticTokenTypes.IndexOf("interface"),
+        ClassificationTypeNames.DelegateName or ClassificationTypeNames.ModuleName
+            or ClassificationTypeNames.TypeParameterName => SemanticTokenTypes.IndexOf("type"),
+        ClassificationTypeNames.MethodName or ClassificationTypeNames.ExtensionMethodName
+            => SemanticTokenTypes.IndexOf("method"),
+        ClassificationTypeNames.PropertyName => SemanticTokenTypes.IndexOf("property"),
+        ClassificationTypeNames.FieldName or ClassificationTypeNames.EnumMemberName
+            or ClassificationTypeNames.ConstantName => SemanticTokenTypes.IndexOf("field"),
+        ClassificationTypeNames.LocalName => SemanticTokenTypes.IndexOf("variable"),
+        ClassificationTypeNames.ParameterName => SemanticTokenTypes.IndexOf("parameter"),
+        ClassificationTypeNames.Keyword or ClassificationTypeNames.ControlKeyword
+            or ClassificationTypeNames.PreprocessorKeyword => SemanticTokenTypes.IndexOf("keyword"),
+        ClassificationTypeNames.StringLiteral or ClassificationTypeNames.VerbatimStringLiteral
+            or ClassificationTypeNames.StringEscapeCharacter => SemanticTokenTypes.IndexOf("string"),
+        ClassificationTypeNames.NumericLiteral => SemanticTokenTypes.IndexOf("number"),
+        ClassificationTypeNames.Operator or ClassificationTypeNames.OperatorOverloaded
+            => SemanticTokenTypes.IndexOf("operator"),
+        ClassificationTypeNames.Comment => SemanticTokenTypes.IndexOf("comment"),
+        _ => -1,
+    };
 
     private static void Collect(Projection projection, int uiStart, List<(int Start, int Length, int Type)> hits)
     {
