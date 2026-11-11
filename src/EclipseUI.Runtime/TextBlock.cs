@@ -88,6 +88,9 @@ public sealed class TextBlock : Panel, ITextContentHost
     {
         Children.Add(run);
         _runs.Add(run);
+        // run 的文字画在 TextBlock 的 retained 段里（段键是 block.RenderVersion）：
+        // run 属性变化必须连带失效 block 渲染，否则复用段保留旧文字。
+        run.PropertyChanged += (_, _) => InvalidateRender();
     }
 
     public TextRun AddRun(string text)

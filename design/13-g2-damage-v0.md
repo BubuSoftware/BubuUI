@@ -36,9 +36,18 @@
 | 控件按下态 | `Button` / `CheckBox` | `IsPressed` 是普通字段，需显式 `InvalidateRender()` |
 | 焦点变化 | `FocusManager.Focus/ClearFocus` | 旧、新元素都 bump（焦点环 + 键盘态） |
 | 子树增删 | `ElementCollection.Add/Remove/Clear` | owner bump；新增/移除元素由快照 diff 兜底 |
+| TextRun 属性变更 | `TextBlock.AddRun` 订阅 `run.PropertyChanged` | run 文字画在 block 自身段里（段键 = block.RenderVersion）：run 变化连带 bump block（D113） |
 
 `Arrange` 级属性（如 `Padding`）即使不改变自身像素，也会移动子元素——快照矩形 diff 兜底，
 不依赖控件自觉。
+
+**D113 回归（2026-11-12）**：上表曾漏「父元素自绘读取子元素属性」这一来源——`PaintTextBlock`
+把全部 run 的文字画进 TextBlock 自身段，但 `run.Text` 变更只 bump run 的 RenderVersion，
+block 段键不变 → 复用旧文字段：模型已更新、像素陈旧。画廊表现为点 +1 数字不变；
+TextBlock 被拉伸到整行宽，悬停文字后空白区命中 block → 伪类态变 → 段失配重画才显示新值
+（「鼠标移过去才变」的真实机制）。CheckBox 勾选走自身属性/结构增删，不受影响。
+「retained == 全量」金标准两边同复用旧段抓不到（同 D97 盲区）；
+`RetainedPaintTests.RunTextChanged_RepaintsBlockSegment_WithNewText` 用记录型绘制器锁定。
 
 ### DG-2：painter 做快照 diff，不做 dirty 传播
 

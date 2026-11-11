@@ -292,6 +292,45 @@ public class RetainedPaintTests
             $"{context}: label probe at {textProbe}, background at {lastRounded}");
     }
 
+    // ---- D93 回归：run 文字变化必须失效 TextBlock 段 ----
+    // PaintTextBlock 把全部 run 的文字画进 block 自身段（段键 block.RenderVersion）；
+    // 曾只 bump run 版本 → block 段原样复用，模型更新但像素陈旧（画廊点 +1 数字不变，
+    // 悬停 TextBlock 空白区才重画）。「retained == 全量」金标准两边同复用旧段抓不到，
+    // 用记录型绘制器锁「run 改字后的构建必须画新字」。
+
+    [Fact]
+    public void RunTextChanged_RepaintsBlockSegment_WithNewText()
+    {
+        var root = new StackPanel();
+        var block = new TextBlock { FontSize = 14 };
+        var run = block.AddRun("0");
+        root.Children.Add(block);
+        Layout(root);
+        var recorder = new RecordingTextPainter();
+        var painter = new ElementPainter(textPainter: recorder);
+
+        _ = painter.Build(root, Surface);
+        Assert.Contains("0", recorder.Painted);
+
+        recorder.Painted.Clear();
+        run.Text = "5"; // 同宽字符：block 矩形不变，排除尺寸失配兜底
+        Layout(root);
+        _ = painter.Build(root, Surface);
+        Assert.Contains("5", recorder.Painted);
+    }
+
+    /// <summary>记录每次 Paint 收到的文本，供段复用回归断言。</summary>
+    private sealed class RecordingTextPainter : ITextPainter
+    {
+        public List<string> Painted { get; } = new();
+
+        public TextLineMetrics Measure(string text, double fontSize)
+            => new(fontSize, fontSize * 0.4, text.Length * fontSize * 0.5);
+
+        public void Paint(DisplayList list, string text, double fontSize, Point topLeft, Color color)
+            => Painted.Add(text);
+    }
+
     /// <summary>产出品红小方块的探针文本绘制器：命令可按颜色识别、无字体依赖。</summary>
     private sealed class RectTextPainter : ITextPainter
     {
