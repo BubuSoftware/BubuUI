@@ -291,7 +291,9 @@ public static class CursorScanner
                     continue;
                 }
 
-                if (word == "using")
+                // @using |（命名空间 / 别名目标）与 @namespace |（spec/02 §2.2 的必填声明）：
+                // 光标在指令名之后、行尾之前时都按「指令参数」处理，补全器按 Directive 分流。
+                if (word is "using" or "namespace")
                 {
                     int lineEnd = text.IndexOf('\n', i);
                     if (lineEnd < 0) lineEnd = text.Length;
@@ -301,7 +303,7 @@ public static class CursorScanner
                         return new CursorContext
                         {
                             Kind = CursorKind.DirectiveArgument,
-                            Directive = "using",
+                            Directive = word,
                             Prefix = text.Substring(argStart, Math.Max(0, Math.Min(offset, lineEnd) - argStart)),
                             TokenStart = argStart,
                             OpenTags = open,

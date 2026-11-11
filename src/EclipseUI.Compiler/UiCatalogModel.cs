@@ -141,6 +141,21 @@ public sealed record UiHiddenTag(
     string Reason);
 
 /// <summary>
+/// 第二组件来源（spec/02 §2.3）：一个 <c>.ui</c> 文件声明的组件。
+/// <para>
+/// 目录是纯符号扫描，而生成器读不到自己的产物（<c>*.g.cs</c>），所以「这个标签是组件」
+/// 在输入编译里只可能有两种证据：code-behind 的基类，或者这个清单。清单由调用方喂入——
+/// 生成器从 <c>AdditionalTextsProvider</c>、IDE 项目系统从 <c>AdditionalFiles</c> 取，
+/// 两边都是「项目里的 .ui 文件」，因此同源。
+/// </para>
+/// <para>
+/// <paramref name="Namespace"/> 是模板 <c>@namespace</c> 的声明值（缺失时为 null，此时不按
+/// 命名空间过滤——缺声明本身由 EUI055 报，不在这里重复）。
+/// </para>
+/// </summary>
+public sealed record UiComponentDeclaration(string Tag, string? Namespace);
+
+/// <summary>
 /// 一个模板标签的完整形状。手写 <see cref="Equals(UiElementDef?)"/>：
 /// 记录的位置成员里字典/列表按引用比较，会让 §14.10.3 的管道值比较永远判定"已变化"。
 /// </summary>
@@ -157,6 +172,21 @@ public sealed record UiElementDef(
     IReadOnlyList<UiMetadataProblem> Problems,
     bool IsFromReferencedAssembly = false)
 {
+    /// <summary>
+    /// 类型上**存在但不能作为 <c>@bind-</c> 目标**的公开成员名 → 原因短语（spec/01 §4.5）。
+    /// 与 <see cref="Properties"/> 互补：可样式属性在这里不会出现，出现的一定是「名字认得、绑定不行」，
+    /// 使用点因此能把 EUI040（不是绑定目标）与 EUI002（根本没有这个属性）分开报。
+    /// 原因短语接在 <c>'{名字}' of '{标签}'</c> 之后成为完整句子（首词小写、无句号）。
+    /// </summary>
+    public IReadOnlyDictionary<string, string> NonBindableProperties { get; init; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// <paramref name="name"/> 不是绑定目标时的原因；名字压根不存在（或就是可绑属性）返回 null。
+    /// </summary>
+    public string? BindRejection(string name) =>
+        NonBindableProperties.TryGetValue(name, out var reason) ? reason : null;
+
     public bool Equals(UiElementDef? other)
     {
         if (other is null) return false;
@@ -171,6 +201,7 @@ public sealed record UiElementDef(
             && CatalogValueEq.Map(Events, other.Events)
             && CatalogValueEq.Map(Parameters, other.Parameters)
             && CatalogValueEq.Map(Slots, other.Slots)
+            && CatalogValueEq.Map(NonBindableProperties, other.NonBindableProperties)
             && CatalogValueEq.Sequence(Problems, other.Problems);
     }
 
@@ -187,6 +218,7 @@ public sealed record UiElementDef(
         hash = CatalogValueEq.AddMap(hash, Events);
         hash = CatalogValueEq.AddMap(hash, Parameters);
         hash = CatalogValueEq.AddMap(hash, Slots);
+        hash = CatalogValueEq.AddMap(hash, NonBindableProperties);
         return CatalogValueEq.AddSequence(hash, Problems);
     }
 }

@@ -25,7 +25,7 @@ public class CodeBehindConflictTests
         public UiAdditionalText(string path, string content)
         {
             Path = path;
-            _text = SourceText.From(content);
+            _text = SourceText.From(NamespaceDeclarationFixture.Ensure(path, content));
         }
 
         public override string Path { get; }
@@ -41,16 +41,18 @@ public class CodeBehindConflictTests
             .ToList();
         references.Add(MetadataReference.CreateFromFile(typeof(Component).Assembly.Location));
 
+        var fixture = NamespaceDeclarationFixture.Prepare(UiPath, codeBehind);
+
         // 带 path 的语法树：诊断位置必须能定位到 code-behind 行，而不是 .ui。
         var compilation = CSharpCompilation.Create(
             "TemplateProbe",
-            new[] { CSharpSyntaxTree.ParseText(codeBehind, path: "Probe.cs") },
+            new[] { CSharpSyntaxTree.ParseText(fixture.CodeBehind, path: "Probe.cs") },
             references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
         var driver = CSharpGeneratorDriver.Create(
             new[] { new TemplateGenerator().AsSourceGenerator() },
-            new AdditionalText[] { new UiAdditionalText(UiPath, ui) });
+            new AdditionalText[] { new UiAdditionalText(UiPath, fixture.Ui(ui)) });
         return driver.RunGenerators(compilation).GetRunResult().Results.Single();
     }
 

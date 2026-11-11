@@ -26,7 +26,7 @@ public class LineSpanMappingTests
         public ProbeText(string path, string content)
         {
             Path = path;
-            _text = SourceText.From(content);
+            _text = SourceText.From(NamespaceDeclarationFixture.Ensure(path, content));
         }
 
         public override string Path { get; }
@@ -90,12 +90,13 @@ public class LineSpanMappingTests
             .Select(path => (MetadataReference)MetadataReference.CreateFromFile(path))
             .ToList();
         references.Add(MetadataReference.CreateFromFile(typeof(Component).Assembly.Location));
+        var fixture = NamespaceDeclarationFixture.Prepare(uiPath, codeBehind);
         var compilation = CSharpCompilation.Create("LineSpanProbe",
-            new[] { CSharpSyntaxTree.ParseText(codeBehind) }, references,
+            new[] { CSharpSyntaxTree.ParseText(fixture.CodeBehind) }, references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
         GeneratorDriver driver = CSharpGeneratorDriver.Create(
             new[] { new TemplateGenerator().AsSourceGenerator() },
-            new AdditionalText[] { new ProbeText(uiPath, ui) });
+            new AdditionalText[] { new ProbeText(uiPath, fixture.Ui(ui)) });
         var updated = driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out _);
         var code = updated.GetRunResult().Results.Single().GeneratedSources.Single().SourceText.ToString();
         return (code, output);

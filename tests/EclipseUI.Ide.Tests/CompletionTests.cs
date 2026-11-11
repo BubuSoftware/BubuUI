@@ -93,6 +93,27 @@ public class CompletionTests
         Assert.DoesNotContain(list.Items, i => i.Label is "@bind-Class" or "@bind-Key");
     }
 
+    /// <summary>
+    /// spec/01 §4.5：候选 = 目录里的可绑属性，一个不多一个不少。
+    /// 「不多个」靠目录的 <c>NonBindableProperties</c> 逐项对齐——只读、没有 <c>{P}Property</c>
+    /// 的公开属性在目录里记了原因，它们不该出现在候选里（诊断负责解释为什么绑不了）。
+    /// </summary>
+    [Fact]
+    public void Bindings_ListExactlyTheBindableProperties()
+    {
+        var (service, uri, offset) = TestHost.Open(Using + "<Button @bind-|");
+        var labels = service.Complete(uri, offset).Items.Select(i => i.Label).ToList();
+
+        var button = TestHost.Catalog.Elements.Single(e => e.Tag == "Button");
+        foreach (var property in button.Properties.Keys)
+            Assert.Contains("@bind-" + property, labels);
+
+        foreach (var name in new[] { "IsEnabled", "IsHovered", "Parent", "Classes" })
+            Assert.DoesNotContain("@bind-" + name, labels);
+        Assert.All(button.NonBindableProperties.Keys,
+            name => Assert.DoesNotContain("@bind-" + name, labels));
+    }
+
     [Fact]
     public void Values_OfferBooleanLiterals()
     {

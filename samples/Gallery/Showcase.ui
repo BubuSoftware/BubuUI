@@ -1,4 +1,10 @@
+@namespace Gallery
 @using EclipseUI.Elements
+
+@* 控件展示区（G4 布局切片）：Grid 行列布局（Auto/固定/星号轨道 + 附加属性落格）、WrapPanel
+   流式换行、ScrollViewer 滚动、VirtualizingStackPanel 列表虚拟化。这个组件没有 .cs——
+   模板走真实编译管线，Grid.Row/Grid.Column 生成直调静态 setter，Ref 把面板交给下面的 @code
+   字段（spec/02 §2.7 第二组件来源）。 *@
 
 @style {
     // Component-scoped stylesheet (E1, design/17 4.8): class names compile to
@@ -100,4 +106,8 @@
 @code {
     public int mode;
     public string[] rows = { "row A", "row B" };
+
+    // spec/02 §2.7：组件没有 .cs。Ref 的目标字段由模板自己声明——@code 成员就是生成的
+    // partial 类的成员，模板内的 Ref={…} 与外部消费者（GalleryScene）看到的是同一个字段。
+    public VirtualizingStackPanel virtualList = null!;
 }

@@ -1,3 +1,4 @@
+@namespace Gallery
 @using EclipseUI.Elements
 
 <StackPanel Gap="4">
@@ -5,3 +6,10 @@
         <CheckBox @bind-Checked={extra}>Extra enabled</CheckBox>
     }
 </StackPanel>
+
+@* spec/02 §2.7 第二组件来源：这个组件没有 .cs。状态是模板内部状态，@code 就够；
+   要对外暴露参数（[UiParameter]）才需要同名 partial 类。 *@
+@code {
+    public bool showExtra;
+    public bool extra;
+}

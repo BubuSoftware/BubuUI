@@ -35,10 +35,26 @@ public sealed class TemplateGenerator : IIncrementalGenerator
             .Where(static file => Path.GetExtension(file.Path) is ".ui")
             .Select(static (file, ct) => new UiFileInput(file.Path, file.GetText(ct)?.ToString() ?? ""));
 
+        // spec/02 §2.7「第二组件来源」：每个 .ui 文件本身就是一条组件声明——标签 = 文件名，
+        // 命名空间 = 该文件声明的 @namespace。目录建在输入编译上、看不到自己的产物（.g.cs），
+        // 这份清单就是「.ui 也是组件来源」的唯一凭据，同时消掉 IDE（生成后编译）与编译器
+        // （输入编译）之间的目录分叉。
+        // 清单只有 (Tag, @namespace) 两项：改模板正文不改变目录值，下游仍按值命中缓存
+        // （§14.10.3）。清单本身也逐项比，文件增删或 @namespace 改动才让目录重建。
+        var templateComponents = context.AdditionalTextsProvider
+            .Where(static file => Path.GetExtension(file.Path) is ".ui")
+            .Select(static (file, ct) => UiComponentScanner.FromFile(
+                file.Path, file.GetText(ct)?.ToString() ?? ""))
+            .Collect()
+            .Select(static (declarations, _) => UiComponentDeclarations.Build(declarations))
+            .WithTrackingName("TemplateComponents");
+
         // 模板表面每轮从符号重建（design/14 §14.10.3：派生目录是唯一事实源，不允许手写缓存）。
         // UiCatalog 逐字段实现结构相等，所以控件 API 没变时下游仍按值命中缓存、不重生成代码。
-        var catalogProvider = context.CompilationProvider
-            .Select(static (compilation, _) => UiCatalogFactory.Build(compilation));
+        var catalogProvider = templateComponents
+            .Combine(context.CompilationProvider)
+            .Select(static (pair, _) => UiCatalogFactory.Build(pair.Right, pair.Left.Items))
+            .WithTrackingName("TemplateCatalog");
 
         // D74 ②：目录级诊断出口（design/14 §14.9.1）。挂在 catalogProvider 而不是逐文件管道，
         // 保证同一条元数据问题无论项目里有多少个 .ui 文件都只报一次。
@@ -138,25 +154,46 @@ public sealed class TemplateGenerator : IIncrementalGenerator
         var codeBlocks = doc.Nodes.OfType<UiCodeBlock>().ToList();
 
         var type = validName ? FindCodeBehind(compilation, className) : null;
-        if (validName)
+        if (validName && type is not null)
         {
-            if (type is null && codeBlocks.Count == 0)
-            {
-                // K23 ④ / K25：EUI005 放宽为「@code 或同名 partial 至少其一」
-                codeBehindDiags.Add(UiDiagnostics.Error(UiDiagnostics.CodeBehindMissing,
-                    $"no code-behind class '{className}' found and the template has no @code block; " +
-                    "add a partial class with that name or declare members in @code", UiSpan.Zero));
-            }
-            else if (type is not null && type.ContainingType is not null)
+            if (type.ContainingType is not null)
             {
                 codeBehindDiags.Add(UiDiagnostics.Error(UiDiagnostics.CodeBehindNested,
                     $"code-behind class '{className}' must be top-level", UiSpan.Zero));
             }
-            else if (type is not null && !IsPartial(type))
+            else if (!IsPartial(type))
             {
                 codeBehindDiags.Add(UiDiagnostics.Error(UiDiagnostics.CodeBehindNotPartial,
                     $"code-behind class '{className}' must be declared partial", UiSpan.Zero));
             }
+        }
+
+        // spec/02 §2.7：不再要求「同名 .cs 或 @code 至少其一」。.ui 是独立组件来源——
+        // 没有 code-behind、没有 @code 的纯展示组件完全合法（EUI005 停用）。
+
+        // spec/02 §2.2：@namespace 是必填契约——缺失（EUI055）与「与 code-behind 不一致」
+        // （EUI056）都在这里报。解析层不报，保证内存态解析（IDE Tier1 / 单测内联模板）不被强制。
+        // 没有保留值：`global` 只是普通名字。处于全局命名空间的 code-behind 无法与任何声明相等
+        // （C# 写不出 global namespace 声明），按 EUI056 提示把它搬进命名空间。
+        var declaredNamespace = doc.Namespace;
+        if (declaredNamespace is null)
+        {
+            codeBehindDiags.Add(UiDiagnostics.Error(UiDiagnostics.NamespaceMissing,
+                $"'{className}.ui' must declare its namespace: add '@namespace " +
+                $"{SuggestedNamespace(type, rootNamespace)}' (spec/02 §2.2)", UiSpan.Zero));
+        }
+        else if (type is not null &&
+                 !string.Equals(NamespaceName(type), declaredNamespace, StringComparison.Ordinal))
+        {
+            var codeBehindNamespace = NamespaceName(type);
+            codeBehindDiags.Add(UiDiagnostics.Error(UiDiagnostics.NamespaceMismatch,
+                codeBehindNamespace.Length == 0
+                    ? $"code-behind class '{className}' is in the global namespace, but '@namespace " +
+                      $"{declaredNamespace}' is declared; move '{className}' into a namespace — a template " +
+                      "always generates into a named namespace (spec/02 §2.2)"
+                    : $"'@namespace {declaredNamespace}' does not match code-behind class '{className}' " +
+                      $"(declared in '{codeBehindNamespace}')",
+                doc.NamespaceSpan));
         }
 
         // D57/EUI045（spec/02 §10）：code-behind 与生成成员/基类成员冲突。
@@ -184,7 +221,8 @@ public sealed class TemplateGenerator : IIncrementalGenerator
         // 否则「模板在上、@code 在下」会让前置 {expr} 集体误报 EUI007/EUI024/EUI029/EUI037。
         // K23 ④：无 code-behind 时类壳归属项目根命名空间（Razor 口径），探针树与成员树必须
         // 用同一命名空间，否则 partial 类合并不了、探针看不到 @code 成员。
-        var effectiveNamespace = type is null ? SanitizeNamespace(rootNamespace) : NamespaceName(type);
+        var effectiveNamespace = declaredNamespace
+            ?? (type is null ? SanitizeNamespace(rootNamespace) : NamespaceName(type));
         var accessibility = type is null ? "public" : AccessibilityOf(type);
         var memberTrees = BuildCodeMemberTrees(codeBlocks, type, className, effectiveNamespace, usings, compilation);
         var probe = new ExpressionProbe(compilation, type, className, effectiveNamespace, memberTrees, usings);
@@ -210,8 +248,10 @@ public sealed class TemplateGenerator : IIncrementalGenerator
                 classKinds.OrderBy(fact => fact.SpanStart).ToImmutableArray());
         }
 
+        // 无 code-behind、无 @code：没有成员作用域可探针，但类壳仍要落到模板声明的命名空间
+        // ——纯 .ui 组件（spec/02 §2.7）就是走这条路生成的，之前这里的空串会让它掉进全局命名空间。
         return new UiFileFacts(
-            "internal", "", "", slots,
+            accessibility, effectiveNamespace, "", slots,
             codeBehindDiags.ToImmutableArray(),
             probeDiags.ToImmutableArray(),
             ImmutableArray<ItemTypeFact>.Empty,
@@ -227,11 +267,22 @@ public sealed class TemplateGenerator : IIncrementalGenerator
     /// K21/K25：@code 成员与生成保留名的冲突（EUI045）。对块体原文做轻量成员名提取
     /// （字段/属性/方法/嵌套类型声明的标识符），撞保留名报在 .ui 的成员 span；
     /// 内容粒度的其余校验（语句合法性、与 .cs 的重复）由探针 Compilation 与 C# 兜底。
+    ///
+    /// spec/02 §2.7：同一遍扫描还顺手报 EUI057——`@code` 里的 [UiParameter]/[UiSlot]/
+    /// [UiContent] 到不了别的模板（目录只看输入编译），这是最容易被误解的一处。
     /// </summary>
     private static void ProbeCodeMemberConflicts(IReadOnlyList<UiCodeBlock> blocks, List<UiDiagnostic> diags)
     {
+        // 合成前缀 "class __EuiProbe\n{\n" 的长度：成员/特性 span 减去它即块体内偏移。
+        const int prefixLength = 20;
         foreach (var block in blocks)
         {
+            var container = CSharpSyntaxTree.ParseText("class __EuiProbe\n{\n" + block.Code + "\n}")
+                .GetCompilationUnitRoot().DescendantNodes().OfType<TypeDeclarationSyntax>().First();
+
+            foreach (var member in container.Members)
+                ProbeTemplateOnlyAttribute(member, block, prefixLength, diags);
+
             foreach (var (name, nameOffset, nameLength) in ExtractMemberNames(block.Code))
             {
                 string? reason = name is "Build" or "Render"
@@ -242,6 +293,33 @@ public sealed class TemplateGenerator : IIncrementalGenerator
                 if (reason is null) continue;
                 var span = new UiSpan(block.CodeSpan.Start + nameOffset, nameLength);
                 diags.Add(UiDiagnostics.Error(UiDiagnostics.CodeBehindConflict, reason, span));
+            }
+        }
+    }
+
+    /// <summary>
+    /// spec/02 §2.7：`@code` 里的模板元数据特性只在本模板内部可见。目录由输入编译构建，
+    /// 生成产物里的成员对它不可见，所以别的模板用 <c>&lt;This P="…" /&gt;</c> 会得到 EUI002。
+    /// 不报会让用户以为参数声明成功了——这是「想要对外参数就写 .cs」的唯一原因。
+    /// </summary>
+    private static void ProbeTemplateOnlyAttribute(MemberDeclarationSyntax member, UiCodeBlock block,
+        int prefixLength, List<UiDiagnostic> diags)
+    {
+        foreach (var list in member.AttributeLists)
+        {
+            foreach (var attribute in list.Attributes)
+            {
+                var name = attribute.Name.ToString();
+                var shortName = name.Substring(name.LastIndexOf('.') + 1);
+                if (shortName is not ("UiParameter" or "UiSlot" or "UiContent")) continue;
+                var span = attribute.Name.GetLocation().SourceSpan;
+                var offset = span.Start - prefixLength;
+                if (offset < 0 || offset + span.Length > block.Code.Length) continue;
+                diags.Add(UiDiagnostics.Warning(UiDiagnostics.ParameterInCodeBlock,
+                    $"[{shortName}] in @code is visible only inside this template; the catalog is built " +
+                    "from the input compilation, so other templates cannot see it — declare it in the " +
+                    "matching .cs file to expose it (spec/02 §2.7)",
+                    new UiSpan(block.CodeSpan.Start + offset, span.Length)));
             }
         }
     }
@@ -950,6 +1028,15 @@ public sealed class TemplateGenerator : IIncrementalGenerator
     private static string NamespaceName(INamedTypeSymbol type) =>
         type.ContainingNamespace.IsGlobalNamespace ? "" : type.ContainingNamespace.ToDisplayString();
 
+    /// <summary>EUI055 的修复建议：优先 code-behind 的命名空间，其次项目根命名空间。</summary>
+    private static string SuggestedNamespace(INamedTypeSymbol? type, string rootNamespace)
+    {
+        var fromType = type is null ? "" : NamespaceName(type);
+        if (fromType.Length > 0) return fromType;
+        var sanitized = SanitizeNamespace(rootNamespace);
+        return sanitized.Length > 0 ? sanitized : "My.App";
+    }
+
     /// <summary>
     /// K23 ④：项目根命名空间仅在每段都是合法标识符时采用（MSBuild 可能给出空串或
     /// 带点的占位值）；不合法落 global 命名空间，交由生成代码的可见性自然成立。
@@ -1320,6 +1407,31 @@ internal sealed record ItemTypeFact(int SpanStart, string Type);
 
 /// <summary>@switch selector 的值类型事实（K29）：ValueSpan.Start → 全限定类型名。</summary>
 internal sealed record SwitchTypeFact(int SpanStart, string Type);
+
+/// <summary>
+/// spec/02 §2.7：项目里全部 <c>.ui</c> 文件构成的组件声明清单（「第二组件来源」）。
+/// 逐元素值相等——清单只随文件增删或 <c>@namespace</c> 改动变化，改模板正文不会让目录重建
+/// （design/14 §14.10.3）；排序让文件枚举顺序不参与比较。
+/// </summary>
+internal sealed record UiComponentDeclarations(ImmutableArray<UiComponentDeclaration> Items)
+{
+    public static UiComponentDeclarations Build(ImmutableArray<UiComponentDeclaration?> declarations) => new(
+        declarations.Where(static d => d is not null)
+            .Select(static d => d!)
+            .OrderBy(static d => d.Tag, StringComparer.Ordinal)
+            .ThenBy(static d => d.Namespace ?? "", StringComparer.Ordinal)
+            .ToImmutableArray());
+
+    public bool Equals(UiComponentDeclarations? other) =>
+        other is not null && Items.SequenceEqual(other.Items);
+
+    public override int GetHashCode()
+    {
+        var hash = 17;
+        foreach (var item in Items) hash = unchecked(hash * 397 + item.GetHashCode());
+        return hash;
+    }
+}
 
 /// <summary>逐文件语义事实：值相等是增量缓存的前提（ImmutableArray 默认引用相等，必须逐元素比）。</summary>
 internal sealed record UiFileFacts(

@@ -1,4 +1,6 @@
+@namespace Gallery
 @using EclipseUI.Elements
+@using System.Collections.Generic
 
 <StackPanel Gap="4">
     <TextBlock FontSize="20">Tasks</TextBlock>
@@ -9,3 +11,8 @@
         </ListBoxItem>
     }
 </StackPanel>
+
+@* spec/02 §2.7 第二组件来源：组件本身没有 .cs；TaskItem 是普通模型类型，住在自己的 .cs 里。 *@
+@code {
+    public List<TaskItem> tasks = new();
+}

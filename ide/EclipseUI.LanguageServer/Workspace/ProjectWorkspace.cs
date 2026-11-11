@@ -12,7 +12,8 @@ public sealed record ProjectDiagnostic(string Path, UiDiagnostic Diagnostic);
 
 /// <summary>
 /// 一个项目的快照（design/06 §6.9 L2/L3/L4）：真源码 + 精确引用 + 正确选项的 Compilation，
-/// 跑真生成器后的生成树，以及由它派生的**唯一**目录。每项目一份，消除跨项目同名假歧义。
+/// 跑真生成器后的生成树，以及**与编译器同源**的目录（输入编译 + .ui 声明清单，spec/02 §2.7）。
+/// 每项目一份，消除跨项目同名假歧义。
 /// </summary>
 public sealed class ProjectSnapshot
 {
@@ -386,7 +387,11 @@ public sealed class ProjectWorkspace
             if (TryRead(path, out var text)) additional.Add((path, text));
 
         var generated = GeneratorHost.Run(compilation, additional, parseOptions, evaluation.RootNamespace);
-        var catalog = UiCatalogFactory.Build(generated.Compilation);
+        // spec/02 §2.7：目录与编译器同源——输入编译 + .ui 声明清单。
+        // 此前这里建在生成后编译上（看得见 .g.cs 里的 `: Component`），而真正跑构建的生成器
+        // 看不见自己的产物，于是同一个标签「编辑器里绿、dotnet build 报 EUI001」。
+        // 清单来自 AdditionalFiles，与生成器读的 AdditionalTexts 是同一批文件、同一份提取器。
+        var catalog = UiCatalogFactory.Build(compilation, UiComponentScanner.FromFiles(additional));
         var diagnostics = MapDiagnostics(evaluation, generated.Diagnostics, generated.Compilation);
 
         _log?.Invoke($"project '{evaluation.AssemblyName}': {trees.Count} trees, " +

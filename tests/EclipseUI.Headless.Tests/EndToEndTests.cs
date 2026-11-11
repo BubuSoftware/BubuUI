@@ -263,3 +263,27 @@ public class TaskListEndToEndTests
         Assert.True(alpha.Done);
     }
 }
+
+/// <summary>
+/// spec/02 §2.7「第二组件来源」：Gallery 的四个组件都没有同名 <c>.cs</c>。
+/// <c>@code</c> 里声明的成员就是生成 partial 类的成员——模板里的 <c>Ref={…}</c> 与外部
+/// 消费者（GalleryScene）看到的是同一个字段，不需要额外一层 code-behind 转接。
+/// </summary>
+public class TemplateOnlyComponentTests
+{
+    [Fact]
+    public void CodeDeclaredField_IsTheRefTarget_AndIsExternallyReachable()
+    {
+        var component = new Showcase();
+        var root = new HeadlessRoot(component); // 构造即 Mount，Ref 已在 Build 里赋值
+
+        Assert.NotNull(component.virtualList);
+
+        // 外部消费者（GalleryScene 同款接线）：字段对外可见、可直接注入工厂，无需 code-behind。
+        component.virtualList.ItemFactory = i => new Button { Label = $"item {i}" };
+        root.UpdateLayout();
+
+        Assert.Same(component.virtualList, root.Content.Descendants<VirtualizingStackPanel>().Single());
+        Assert.NotEmpty(component.virtualList.Children);
+    }
+}

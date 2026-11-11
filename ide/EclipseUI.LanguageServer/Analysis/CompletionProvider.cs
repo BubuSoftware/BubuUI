@@ -26,7 +26,7 @@ public static class CompletionProvider
             CursorKind.AttributeValue => Values(analysis, catalog, context, replacement),
             CursorKind.Expression => Expressions(analysis, catalog, context, offset),
             CursorKind.Directive => Directives(replacement),
-            CursorKind.DirectiveArgument => Namespaces(catalog, context, replacement),
+            CursorKind.DirectiveArgument => Namespaces(analysis, catalog, context, replacement),
             _ => UiCompletionList.Empty,
         };
     }
@@ -271,28 +271,43 @@ public static class CompletionProvider
         return new UiCompletionList(replacement, items);
     }
 
+    /// <summary>
+    /// <c>@bind-</c> 的候选：**只列能作为双向目标的东西**（spec/01 §4.5）——控件是具名
+    /// <c>{P}Property</c> 的公开可写属性，组件是「可写 + 有 <c>{P}Changed</c>」的参数。
+    /// 事件、内容/委托参数、只读或没有回调的参数一律不列：补全列表就是「敲了就能过编译」，
+    /// 不可绑的名字由诊断（EUI040）负责解释，不在候选里充当噪声。
+    /// </summary>
     private static UiCompletionList Bindings(UiElementDef? element, TextSpan replacement)
     {
         var items = new List<UiCompletionItem>();
         if (element is null) return new UiCompletionList(replacement, items);
 
-        foreach (var property in element.Properties.Values.OrderBy(static p => p.Name, StringComparer.Ordinal))
+        // 组件的双向通道只有参数（{P}Changed 回调，spec/02 §4.4.3）：它身上就算有 StyledProperty
+        // 属性也不是绑定目标（分析器报「not a component parameter」），所以不列。
+        if (element.Origin != UiElementOrigin.Component)
         {
-            if (!property.CanWrite || ReservedAttributes.Contains(property.Name, StringComparer.Ordinal)) continue;
-            items.Add(new UiCompletionItem(
-                "@bind-" + property.Name,
-                UiCompletionKind.Property,
-                "two-way · " + TypeNames.Short(property.ClrTypeDisplayName),
-                "source must be a writable field/property (EUI037)"));
+            foreach (var property in element.Properties.Values.OrderBy(static p => p.Name, StringComparer.Ordinal))
+            {
+                if (!property.CanWrite || ReservedAttributes.Contains(property.Name, StringComparer.Ordinal)) continue;
+                items.Add(new UiCompletionItem(
+                    "@bind-" + property.Name,
+                    UiCompletionKind.Property,
+                    "two-way · " + TypeNames.Short(property.ClrTypeDisplayName),
+                    "source must be a writable field/property (EUI037)",
+                    SortText: "0" + property.Name));
+            }
         }
 
         foreach (var parameter in element.Parameters.Values.OrderBy(static p => p.Name, StringComparer.Ordinal))
         {
-            if (!parameter.CanWrite || parameter.IsContent) continue;
-            var detail = parameter.ChangedCallbackName is null
-                ? "two-way needs {P}Changed (EUI040)"
-                : "two-way · " + TypeNames.Short(parameter.ClrTypeDisplayName);
-            items.Add(new UiCompletionItem("@bind-" + parameter.Name, UiCompletionKind.Parameter, detail));
+            if (!parameter.CanWrite || parameter.IsContent || parameter.IsDelegate) continue;
+            if (parameter.ChangedCallbackName is null) continue;   // 没有 {P}Changed → 双向不成立（EUI040）
+            items.Add(new UiCompletionItem(
+                "@bind-" + parameter.Name,
+                UiCompletionKind.Parameter,
+                "two-way · " + TypeNames.Short(parameter.ClrTypeDisplayName),
+                $"writes back through `{parameter.ChangedCallbackName}`",
+                SortText: "1" + parameter.Name));
         }
 
         return new UiCompletionList(replacement, items);
@@ -345,6 +360,10 @@ public static class CompletionProvider
     {
         var items = new List<UiCompletionItem>
         {
+            // spec/02 §2.2：必填，且要与同名 code-behind 的命名空间一致（EUI055/EUI056）。
+            new("@namespace", UiCompletionKind.Directive, "declare this template's namespace",
+                "required; the generator errors when it is missing (EUI055) or disagrees with the code-behind (EUI056)",
+                "@namespace ${1:Gallery}", IsSnippet: true),
             new("@if", UiCompletionKind.Directive, "conditional block", "renders the block when the condition is true",
                 "@if (${1:condition}) {\n\t$0\n}", IsSnippet: true),
             new("@foreach", UiCompletionKind.Directive, "repeated block",
@@ -366,16 +385,26 @@ public static class CompletionProvider
         return new UiCompletionList(replacement, items);
     }
 
-    private static UiCompletionList Namespaces(UiCatalog catalog, CursorContext context, TextSpan replacement)
+    private static UiCompletionList Namespaces(
+        DocumentAnalysis analysis, UiCatalog catalog, CursorContext context, TextSpan replacement)
     {
-        var items = catalog.Elements
+        var items = new List<UiCompletionItem>();
+
+        // @namespace 补的是「本模板自己的命名空间」：已声明值 > 项目根命名空间，
+        // 排在控件所在命名空间之前（spec/02 §2.2 要求它与 code-behind 一致）。
+        var self = analysis.Ast?.Namespace ?? analysis.Project?.Evaluation.RootNamespace;
+        if (context.Directive == "namespace" && !string.IsNullOrWhiteSpace(self))
+            items.Add(new UiCompletionItem(self!, UiCompletionKind.Namespace, "this template",
+                "must match the code-behind class namespace", SortText: "0" + self));
+
+        items.AddRange(catalog.Elements
             .Select(e => TypeNames.NamespaceOf(e.ClrTypeDisplayName))
             .Where(static ns => ns is not null)
             .Select(static ns => ns!)
             .Distinct(StringComparer.Ordinal)
             .OrderBy(static ns => ns, StringComparer.Ordinal)
-            .Select(ns => new UiCompletionItem(ns, UiCompletionKind.Namespace, "namespace"))
-            .ToList();
+            .Where(ns => ns != self)
+            .Select(ns => new UiCompletionItem(ns, UiCompletionKind.Namespace, "namespace")));
         return new UiCompletionList(replacement, items);
     }
 

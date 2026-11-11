@@ -2,32 +2,39 @@
   "EclipseUI component template": {
     "prefix": "uisurface",
     "body": [
+      "@namespace ${1:Gallery}",
       "@using EclipseUI.Elements",
       "",
-      "<${1:StackPanel} Gap=\"8\">",
+      "<${2:StackPanel} Gap=\"8\">",
       "    ${0}",
-      "</${1:StackPanel}>",
+      "</${2:StackPanel}>",
       "",
       "@code {",
       "    ",
       "}"
     ],
-    "description": ".ui 骨架：@using + 单根元素 + @code 成员块"
+    "description": ".ui 骨架：@namespace（必填）+ @using + 单根元素 + @code 成员块"
   },
   "Component template (code-behind)": {
     "prefix": "uicomponent",
     "body": [
+      "@namespace ${1:Gallery}",
       "@using EclipseUI.Elements",
       "",
-      "<${1:StackPanel}>",
+      "<${2:StackPanel}>",
       "    ${0}",
-      "</${1:StackPanel}>",
+      "</${2:StackPanel}>",
       "",
       "@code {",
-      "    [UiParameter] public string ${2:Title} { get; set; } = \"\";",
+      "    [UiParameter] public string ${3:Title} { get; set; } = \"\";",
       "}"
     ],
     "description": "带 [UiParameter] 的组件模板（可被其它模板当标签使用）"
+  },
+  "@namespace": {
+    "prefix": "uns",
+    "body": ["@namespace ${1:Gallery}"],
+    "description": "命名空间声明（必填；必须与同名 code-behind 一致）"
   },
   "@if": {
     "prefix": "uif",

@@ -145,6 +145,36 @@ public class DiagnosticTests
         Assert.Equal("Buton".Length, diagnostic.Span.Length);
     }
 
+    /// <summary>
+    /// spec/01 §4.5：<c>@bind-P</c> 的 P 存在但不可绑时，IDE 必须报 EUI040（并说清为什么），
+    /// 而不是「未知属性」EUI002——后者会把人带去改拼写。与生成器共用同一份目录判断，
+    /// 所以 Tier 1 与编译期的结论天然一致。
+    /// </summary>
+    [Fact]
+    public void BindOnExistingButUnbindableProperty_ReportsEui040()
+    {
+        var (service, uri, _) = TestHost.Open(Using + "<Button @bind-IsEnabled={count} />");
+        // 只看 Tier 1：Tier 2 跑真生成器时同一处会再报一次（span 相同），这里要的是「IDE 立刻就能说清」。
+        var diagnostics = service.GetDiagnostics(uri, includeTier2: false);
+
+        Assert.DoesNotContain(diagnostics, d => d.Code == UiDiagnostics.UnknownProperty);
+        var diagnostic = Assert.Single(diagnostics, d => d.Code == UiDiagnostics.BindTargetInvalid);
+        Assert.Contains("IsEnabledProperty", diagnostic.Message);
+        // 报在属性名上，且覆盖整个 `@bind-IsEnabled`（属性名前缀也是这条诊断的一部分）
+        Assert.Equal(Using.Length + "<Button ".Length, diagnostic.Span.Start);
+        Assert.Equal("@bind-IsEnabled".Length, diagnostic.Span.Length);
+    }
+
+    [Fact]
+    public void BindOnMissingProperty_StillReportsEui002()
+    {
+        var (service, uri, _) = TestHost.Open(Using + "<Button @bind-Lable={count} />");
+        var diagnostics = service.GetDiagnostics(uri, includeTier2: false);
+
+        Assert.DoesNotContain(diagnostics, d => d.Code == UiDiagnostics.BindTargetInvalid);
+        Assert.Contains(diagnostics, d => d.Code == UiDiagnostics.UnknownProperty);
+    }
+
     [Fact]
     public void EmptyCatalog_ProducesNoTagDiagnostics()
     {

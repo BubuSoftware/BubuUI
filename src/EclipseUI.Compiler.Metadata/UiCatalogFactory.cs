@@ -53,10 +53,16 @@ public static class UiCatalogFactory
     /// <summary>保留属性名（design/01 §4.13）；控件暴露它们会与语法冲突 → 元数据问题。</summary>
     private static readonly string[] ReservedNames = { "Key", "Ref", "Class", "Style" };
 
-    public static UiCatalog Build(Compilation compilation)
+    /// <summary>
+    /// 构建模板目录。<paramref name="declarations"/> 是「第二组件来源」（spec/02 §2.3）：
+    /// <c>.ui</c> 文件声明的组件，由调用方从项目文件清单提取。为 null 时目录只看符号，
+    /// 与加这个参数之前完全一致——现有调用点与测试夹具无需改动。
+    /// </summary>
+    public static UiCatalog Build(Compilation compilation,
+        IReadOnlyList<UiComponentDeclaration>? declarations = null)
     {
         if (compilation is null) throw new ArgumentNullException(nameof(compilation));
-        return new Scanner(compilation).Build();
+        return new Scanner(compilation, declarations).Build();
     }
 
     /// <summary>扫描口径复用出口：样式属性目录与标签目录共用同一套候选程序集/类型遍历规则。</summary>
@@ -80,9 +86,23 @@ public static class UiCatalogFactory
         private readonly INamedTypeSymbol? _spanGeneric;
         private readonly INamedTypeSymbol? _readOnlySpanGeneric;
 
-        public Scanner(Compilation compilation)
+        private readonly IReadOnlyList<UiComponentDeclaration> _declarations;
+
+        // 纯 .ui 组件（输入编译里没有对应类型）合成时用的空表面：共享实例，值比较逐项比，
+        // 不依赖引用相等（§14.10.3）。
+        private static readonly IReadOnlyDictionary<string, UiPropDef> NoProperties =
+            new Dictionary<string, UiPropDef>(StringComparer.Ordinal);
+        private static readonly IReadOnlyDictionary<string, UiEventDef> NoEvents =
+            new Dictionary<string, UiEventDef>(StringComparer.Ordinal);
+        private static readonly IReadOnlyDictionary<string, UiParameterDef> NoParameters =
+            new Dictionary<string, UiParameterDef>(StringComparer.Ordinal);
+        private static readonly IReadOnlyDictionary<string, UiSlotDef> NoSlots =
+            new Dictionary<string, UiSlotDef>(StringComparer.Ordinal);
+
+        public Scanner(Compilation compilation, IReadOnlyList<UiComponentDeclaration>? declarations)
         {
             _compilation = compilation;
+            _declarations = declarations ?? Array.Empty<UiComponentDeclaration>();
             _element = compilation.GetTypeByMetadataName(ElementMetadataName);
             _component = compilation.GetTypeByMetadataName(ComponentMetadataName);
             _routedEvent = compilation.GetTypeByMetadataName(RoutedEventMetadataName);
@@ -103,6 +123,9 @@ public static class UiCatalogFactory
             var problems = new List<UiMetadataProblem>();
             var attached = new List<UiAttachedPropDef>();
             var attachedSeen = new Dictionary<(string Owner, string Name), string>();
+            // 扫描到的全部类型名（不分命名空间、不管是否进目录）：合成纯 .ui 组件前用它判断
+            // 「输入编译里到底有没有这个名字」，避免给一个命名空间写错的 .ui 造出同名假标签。
+            var knownTypeNames = new HashSet<string>(StringComparer.Ordinal);
 
             // 样式属性表面与标签表面同一次符号扫描产出（design/17 §4.3 单一来源）
             var styleProperties = StylePropertyCatalogFactory.Build(_compilation);
@@ -119,6 +142,7 @@ public static class UiCatalogFactory
                     !SymbolEqualityComparer.Default.Equals(assembly, _compilation.Assembly);
                 foreach (var type in WalkTypes(assembly.GlobalNamespace))
                 {
+                    knownTypeNames.Add(type.Name);
                     if (IsStaticEventHost(type))
                     {
                         problems.Add(Problem(UiDiagnostics.MetadataDeclarationInvalid, type, null,
@@ -158,7 +182,46 @@ public static class UiCatalogFactory
                 }
             }
 
+            // spec/02 §2.3「第二组件来源」的另一半：输入编译里连类型都没有的纯 .ui 组件。
+            // 类型存在时已经走到上面（因而能带上 .cs 里的 [UiParameter]）；这里只补符号缺失的，
+            // 形状取最小——无内容、无参数、无事件。要参数就写 .cs。
+            AppendTemplateOnlyComponents(exposed, hidden, knownTypeNames);
+
             return new UiCatalog(exposed, hidden, problems, attached, styleProperties);
+        }
+
+        private void AppendTemplateOnlyComponents(List<UiElementDef> exposed, List<UiHiddenTag> hidden,
+            HashSet<string> knownTypeNames)
+        {
+            // 按标签顺序追加：文件枚举顺序变化不该改变目录形状（值相等是增量缓存的基础）。
+            foreach (var declaration in _declarations.OrderBy(static d => d.Tag, StringComparer.Ordinal))
+            {
+                var tag = declaration.Tag;
+                if (exposed.Any(e => string.Equals(e.Tag, tag, StringComparison.Ordinal))) continue;
+                // 类型存在但被挡在目录外（抽象、不可见、[UiIgnore]…）：让既有诊断说话，
+                // 合成一份空的只会把真实原因盖掉。
+                if (hidden.Any(h => string.Equals(h.Tag, tag, StringComparison.Ordinal))) continue;
+                // 编译里存在同名类型但命名空间对不上（@namespace 写错）：不合成。合成的名字
+                // 必然指向一个不存在的类型，生成侧会变成 CS0246；而命名空间不符本身已由生成器
+                // 的 EUI056 报出，使用点保持 EUI001。
+                if (knownTypeNames.Contains(tag)) continue;
+
+                var clrName = string.IsNullOrEmpty(declaration.Namespace)
+                    ? "global::" + tag
+                    : "global::" + declaration.Namespace + "." + tag;
+                exposed.Add(new UiElementDef(
+                    tag,
+                    clrName,
+                    UiElementOrigin.Component,
+                    UiContentModel.None,
+                    ContentTarget: null,
+                    NoProperties,
+                    NoEvents,
+                    NoParameters,
+                    NoSlots,
+                    Array.Empty<UiMetadataProblem>(),
+                    IsFromReferencedAssembly: false));
+            }
         }
 
         // ---- 扫描范围 ----
@@ -224,7 +287,31 @@ public static class UiCatalogFactory
                 if (_element is not null && SymbolEqualityComparer.Default.Equals(current, _element))
                     return UiElementOrigin.Control;
             }
+
+            // spec/02 §2.3「第二组件来源」：有同名 .ui 声明的类型就是组件，不要求 code-behind
+            // 显式写基类。只放宽「没写基类」这一条——显式派生了别的类时仍按继承链判定，
+            // 否则一个恰好同名的无关类型会被认成组件，然后在生成侧撞 CS0263。
+            if (type.BaseType is { SpecialType: SpecialType.System_Object } && DeclaredAsTemplate(type))
+                return UiElementOrigin.Component;
             return null;
+        }
+
+        /// <summary>
+        /// 该类型是否被同名 <c>.ui</c> 声明为组件。命名空间必须一致——两个目录下同名的
+        /// <c>Card</c> 不能互相认领；模板缺 <c>@namespace</c> 时没有可比对的声明值
+        /// （EUI055 会报），此时只按标签名认。
+        /// </summary>
+        private bool DeclaredAsTemplate(INamedTypeSymbol type)
+        {
+            var ns = type.ContainingNamespace?.ToDisplayString();
+            foreach (var declaration in _declarations)
+            {
+                if (!string.Equals(declaration.Tag, type.Name, StringComparison.Ordinal)) continue;
+                if (declaration.Namespace is null
+                    || string.Equals(ns, declaration.Namespace, StringComparison.Ordinal))
+                    return true;
+            }
+            return false;
         }
 
         private bool IsPubliclyVisible(INamedTypeSymbol type)
@@ -379,7 +466,8 @@ public static class UiCatalogFactory
         private UiElementDef Describe(INamedTypeSymbol type, UiElementOrigin origin, bool fromReferencedAssembly)
         {
             var problems = new List<UiMetadataProblem>();
-            var properties = CollectProperties(type, problems);
+            var rejections = new Dictionary<string, string>(StringComparer.Ordinal);
+            var properties = CollectProperties(type, problems, rejections);
             var events = CollectEvents(type, problems);
             var content = origin == UiElementOrigin.Component
                 ? RejectClassLevelContentOnComponent(type, problems)
@@ -387,7 +475,24 @@ public static class UiCatalogFactory
             var parameters = new Dictionary<string, UiParameterDef>(StringComparer.Ordinal);
             var slots = new Dictionary<string, UiSlotDef>(StringComparer.Ordinal);
             if (origin == UiElementOrigin.Component)
+            {
                 CollectComponentMembers(type, parameters, slots, problems);
+
+                // 组件只认 [UiParameter]（spec/02 §4.4.3）：属性是不是 StyledProperty 在这里无关，
+                // 没有 [UiParameter] 就没有 {P}Changed、没有双向通道——原因统一改写成参数口径。
+                var slotProperties = new HashSet<string>(
+                    slots.Values.Select(s => s.PropertyName), StringComparer.Ordinal);
+                foreach (var name in parameters.Keys)
+                {
+                    rejections.Remove(name);
+                    slotProperties.Remove(name);           // 参数与槽同名时参数胜出（§14.6.1）
+                }
+                foreach (var name in rejections.Keys.ToList())
+                    if (!slotProperties.Contains(name)) rejections[name] = "carries no [UiParameter] attribute";
+                foreach (var name in slotProperties)
+                    if (!properties.ContainsKey(name))
+                        rejections[name] = "is a [UiSlot] (content property), not a value parameter";
+            }
 
             if (origin == UiElementOrigin.Component && parameters.Values.Count(p => p.IsContent) > 1)
                 problems.Add(Problem(UiDiagnostics.MetadataDeclarationInvalid, type, null,
@@ -414,10 +519,24 @@ public static class UiCatalogFactory
                 Sorted(parameters),
                 Sorted(slots),
                 problems,
-                fromReferencedAssembly);
+                fromReferencedAssembly)
+            {
+                NonBindableProperties = new Dictionary<string, string>(rejections, StringComparer.Ordinal),
+            };
         }
 
-        private Dictionary<string, UiPropDef> CollectProperties(INamedTypeSymbol type, List<UiMetadataProblem> problems)
+        /// <summary>
+        /// 模板可见属性（spec/02 §4.2）：public 实例属性 + 同名 <c>{Name}Property</c> StyledProperty 字段。
+        /// <para>
+        /// <paramref name="rejections"/> 收集**其余公开属性的不可绑原因**（spec/01 §4.5，EUI040）：
+        /// 目录里没有它们，但使用点写 <c>@bind-{Name}</c> 时必须能说清「是名字打错了」还是
+        /// 「属性存在但不是绑定目标」——两种情形动作完全不同（改拼写 vs 换目标/加 StyledProperty）。
+        /// 只记原因、不记声明处问题：`Parent`/`IsHovered` 这类只读成员在控件上大量存在，
+        /// 逐条报声明诊断会把每个控件的每个继承成员都变成错误。
+        /// </para>
+        /// </summary>
+        private Dictionary<string, UiPropDef> CollectProperties(INamedTypeSymbol type, List<UiMetadataProblem> problems,
+            Dictionary<string, string> rejections)
         {
             var result = new Dictionary<string, UiPropDef>(StringComparer.Ordinal);
             for (var current = type; current is not null && current.SpecialType != SpecialType.System_Object; current = current.BaseType)
@@ -426,32 +545,63 @@ public static class UiCatalogFactory
                 {
                     if (member.IsStatic || member.IsIndexer) continue;
                     if (member.DeclaredAccessibility != Accessibility.Public) continue;
-                    if (member.GetMethod is null || member.SetMethod is null) continue;
-                    if (member.GetMethod.DeclaredAccessibility != Accessibility.Public) continue;
+                    if (result.ContainsKey(member.Name) || rejections.ContainsKey(member.Name)) continue;
+
+                    if (HasIgnore(member))
+                    {
+                        rejections[member.Name] = "is hidden with [UiIgnore]";
+                        continue;
+                    }
+                    // Roslyn 的 GetMethod/SetMethod 对**非 public 访问器**返回 null（reflection 才区分
+                    // "没有" 与 "internal"），所以两种情况共用一条原因——对模板来说都是不可读写。
+                    if (member.GetMethod is null)
+                    {
+                        rejections[member.Name] = "has no public getter";
+                        continue;
+                    }
+                    if (member.SetMethod is null)
+                    {
+                        rejections[member.Name] = "is read-only (it has no public setter)";
+                        continue;
+                    }
                     // init/required 的 setter 不能被生成代码赋值（spec/02 §4.4 用普通赋值），也不参与暴露
-                    if (member.SetMethod.DeclaredAccessibility != Accessibility.Public
-                        || member.SetMethod.IsInitOnly || member.IsRequired) continue;
-                    if (HasIgnore(member) || result.ContainsKey(member.Name)) continue;
+                    if (member.SetMethod.IsInitOnly || member.IsRequired)
+                    {
+                        rejections[member.Name] = "can only be set in an object initializer (init/required)";
+                        continue;
+                    }
 
                     var field = FindField(type, member.Name + "Property");
-                    if (field is null) continue;                       // 普通 CLR 属性不暴露（design/14 §14.4.2）
+                    if (field is null)
+                    {
+                        // 普通 CLR 属性不暴露（design/14 §14.4.2）——赋值也不行，绑定更不行。
+                        rejections[member.Name] =
+                            $"is not backed by a StyledProperty (there is no '{member.Name}Property' field)";
+                        continue;
+                    }
                     if (field.DeclaredAccessibility != Accessibility.Public
                         || !field.IsStatic || !field.IsReadOnly)
                     {
                         problems.Add(Problem(UiDiagnostics.PropertyNotBindable, current, member.Name,
                             $"'{member.Name}Property' must be a public static readonly StyledProperty field"));
+                        rejections[member.Name] =
+                            $"declares '{member.Name}Property', which is not a public static readonly StyledProperty field";
                         continue;
                     }
                     if (!IsStyledPropertyOf(field.Type, out var valueType) || valueType is null)
                     {
                         problems.Add(Problem(UiDiagnostics.PropertyNotBindable, current, member.Name,
                             $"'{member.Name}Property' is not a StyledProperty<T>"));
+                        rejections[member.Name] = $"declares '{member.Name}Property', which is not a StyledProperty<T>";
                         continue;
                     }
                     if (!SymbolEqualityComparer.Default.Equals(valueType, member.Type))
                     {
                         problems.Add(Problem(UiDiagnostics.PropertyNotBindable, current, member.Name,
                             $"'{member.Name}Property' is StyledProperty<{Display(valueType)}> but '{member.Name}' is {Display(member.Type)}"));
+                        rejections[member.Name] =
+                            $"declares '{member.Name}Property' as StyledProperty<{Display(valueType)}> " +
+                            $"but is declared as {Display(member.Type)}";
                         continue;
                     }
 

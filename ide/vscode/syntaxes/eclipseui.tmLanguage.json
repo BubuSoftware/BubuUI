@@ -39,6 +39,7 @@
         { "include": "#switch-directive" },
         { "include": "#code-block" },
         { "include": "#style-block" },
+        { "include": "#namespace-directive" },
         { "include": "#using-directive" },
         { "include": "#else-directive" },
         { "include": "#unknown-directive" }
@@ -137,6 +138,20 @@
       },
       "endCaptures": { "1": { "name": "punctuation.section.block.end.eclipseui" } },
       "patterns": [{ "include": "source.eustyle" }]
+    },
+
+    "namespace-directive": {
+      "comment": "spec/02 §2.2：@namespace 必填，值是点分命名空间；没有保留值（global 只是普通名字，全局命名空间的 code-behind 无法匹配任何声明，报 EUI056）。",
+      "patterns": [
+        {
+          "match": "(@)(namespace)\\b\\s+([A-Za-z_][A-Za-z0-9_.]*)",
+          "captures": {
+            "1": { "name": "punctuation.definition.directive.eclipseui" },
+            "2": { "name": "keyword.control.namespace.eclipseui" },
+            "3": { "name": "entity.name.namespace.eclipseui" }
+          }
+        }
+      ]
     },
 
     "using-directive": {

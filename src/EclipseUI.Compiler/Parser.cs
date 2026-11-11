@@ -14,6 +14,9 @@ public sealed class Parser
     private Token _tok;
     private string _lastEndTag = "";
     private int _switchDepth;
+    private string? _namespace;
+    private TextSpan _namespaceSpan;
+    private bool _namespaceSeen;
 
     public Parser(string text, List<UiDiagnostic> diags)
     {
@@ -27,7 +30,7 @@ public sealed class Parser
     {
         var nodes = ParseNodeList(Terminator.Document, null);
         NormalizeChildren(nodes);
-        return new UiDocument(fileName, _text, nodes);
+        return new UiDocument(fileName, _text, nodes, _namespace, _namespaceSpan);
     }
 
     private List<UiNode> ParseNodeList(Terminator terminator, string? endTag)
@@ -87,7 +90,7 @@ public sealed class Parser
                     break;
 
                 case TokenKind.Directive:
-                    ParseDirectiveInto(list);
+                    ParseDirectiveInto(list, terminator == Terminator.Document);
                     break;
 
                 case TokenKind.BlockClose:
@@ -273,12 +276,39 @@ public sealed class Parser
         }
     }
 
-    private void ParseDirectiveInto(List<UiNode> list)
+    private void ParseDirectiveInto(List<UiNode> list, bool topLevel)
     {
         var directive = _tok; // 不在此处 Advance：块指令要先设 lexer 标志再取下一个 token
 
         switch (directive.Text)
         {
+            // spec/02 §2.2：@namespace 必填、只能出现在顶层、只能一个。解析层只负责收集与
+            // 形状校验；「缺失」与「与 code-behind 不一致」由生成器报（EUI055/EUI056），
+            // 这样内存态解析（IDE 的 Tier1、单测内联模板）不会被强制。
+            case "namespace":
+                Advance();
+                if (!topLevel)
+                {
+                    Diag(UiDiagnostics.Syntax,
+                        "'@namespace' must be declared at the top level of the template", directive.Span);
+                    break;
+                }
+                if (string.IsNullOrWhiteSpace(directive.Aux))
+                {
+                    Diag(UiDiagnostics.Syntax,
+                        "'@namespace' requires a namespace name: @namespace My.App", directive.Span);
+                    break;
+                }
+                if (_namespaceSeen)
+                {
+                    Diag(UiDiagnostics.Syntax,
+                        "duplicate '@namespace' declaration; a template may declare it only once", directive.Span);
+                    break;
+                }
+                _namespaceSeen = true;
+                _namespace = directive.Aux!.Trim();
+                _namespaceSpan = directive.InnerSpan;
+                break;
             case "if":
                 ParseIfInto(list, directive);
                 break;
@@ -623,7 +653,7 @@ public sealed class Parser
                         current.Children.Add(ParseTextRun());
                         break;
                     case TokenKind.Directive:
-                        ParseDirectiveInto(current.Children);
+                        ParseDirectiveInto(current.Children, topLevel: false);
                         break;
                     default:
                         Diag(UiDiagnostics.Syntax,

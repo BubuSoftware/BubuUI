@@ -310,7 +310,9 @@ public sealed class DocumentAnalysis
 
             // ---- legacy：基编译零源码树，code-behind 与 @code 合成树由探针自己加 ----
             INamedTypeSymbol? legacyType = null;
-            var legacyNamespace = "";
+            // spec/02 §2.2：显式 @namespace 优先（无保留值，`global` 也只是普通名字）。否则 @code
+            // 成员树与探针树会拿到与生成器不同的命名空间，partial 合并不上、{expr} 看不到 @code 成员。
+            var legacyNamespace = Ast.Namespace is { Length: > 0 } declaredNs ? declaredNs : "";
             if (!string.IsNullOrEmpty(_codeBehind))
             {
                 var parseOptions = (_baseCompilation.SyntaxTrees.FirstOrDefault()?.Options as CSharpParseOptions)
@@ -323,7 +325,7 @@ public sealed class DocumentAnalysis
                 {
                     if (declaration.Identifier.ValueText != Ast.ClassName) continue;
                     legacyType = model.GetDeclaredSymbol(declaration);
-                    legacyNamespace = NamespaceOf(declaration);
+                    if (legacyNamespace.Length == 0) legacyNamespace = NamespaceOf(declaration);
                     break;
                 }
             }

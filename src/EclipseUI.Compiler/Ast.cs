@@ -272,12 +272,15 @@ public sealed class UiSwitchSection
 
 public sealed class UiDocument
 {
-    public UiDocument(string fileName, string text, List<UiNode> nodes)
+    public UiDocument(string fileName, string text, List<UiNode> nodes,
+        string? namespaceDeclaration = null, TextSpan namespaceSpan = default)
     {
         FileName = fileName;
         Text = text;
         Nodes = nodes;
         Lines = new LineMap(text);
+        Namespace = namespaceDeclaration;
+        NamespaceSpan = namespaceSpan;
     }
 
     public string FileName { get; }
@@ -285,4 +288,13 @@ public sealed class UiDocument
     public List<UiNode> Nodes { get; }
     public LineMap Lines { get; }
     public string ClassName => System.IO.Path.GetFileNameWithoutExtension(FileName);
+
+    /// <summary>
+    /// <c>@namespace Foo.Bar</c> 的声明值（spec/02 §2.2）。<c>null</c> = 未声明——
+    /// 生成器把它当 Error（EUI055），解析层不报，便于内存态解析与增量编辑。
+    /// </summary>
+    public string? Namespace { get; }
+
+    /// <summary>命名空间名在原文中的 span（诊断定位）；未声明时为 default。</summary>
+    public TextSpan NamespaceSpan { get; }
 }

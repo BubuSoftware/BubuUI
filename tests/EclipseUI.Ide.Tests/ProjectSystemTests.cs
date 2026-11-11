@@ -1,3 +1,5 @@
+using EclipseUI.Compiler;
+using EclipseUI.Compiler.Metadata;
 using EclipseUI.LanguageServer.Analysis;
 using EclipseUI.LanguageServer.Workspace;
 using Xunit;
@@ -184,11 +186,13 @@ public class ProjectSystemTests
         var text = File.ReadAllText(path);
         fixture.Service.Documents.Open(uri, text, 1);
 
-        // Ref={virtualList} → Showcase.cs 的字段声明（属性名光标与 {} 内光标同落点）。
+        // Ref={virtualList} → 本文档 @code 里的字段声明（spec/02 §2.7：组件没有 .cs，
+        // 字段就是生成的 partial 类的成员，符号的定义位置按 #line 映射回 .ui 的 @code 块）。
         var refJump = fixture.Service.Definition(uri, text.IndexOf("Ref={", StringComparison.Ordinal) + 1);
         Assert.NotNull(refJump);
-        Assert.EndsWith("Showcase.cs", refJump!.Uri, StringComparison.OrdinalIgnoreCase);
-        Assert.True(File.Exists(refJump.Uri!), "Ref target must be the code-behind on disk");
+        Assert.Null(refJump!.Uri); // 落在本文档
+        Assert.Equal("virtualList", refJump.Name);
+        Assert.Equal(text.LastIndexOf("virtualList", StringComparison.Ordinal), refJump.Span.Start);
 
         // Class="demo-scope" → 本文档 @style 块的 .demo-scope 规则（Uri 为空 = 跳本文档）。
         var localClass = fixture.Service.Definition(uri, text.IndexOf("\"demo-scope\"", StringComparison.Ordinal) + 2);
@@ -221,7 +225,8 @@ public class ProjectSystemTests
         var fixture = Create();
         var uiPath = fixture.Gallery("Prefs.ui");
         var uiUri = DocumentStore.PathToUri(uiPath);
-        const string uiText = "@using EclipseUI.Elements\n<TextBlock FontSize={notDeclaredAnywhere} />\n";
+        const string uiText =
+            "@using EclipseUI.Elements\n<TextBlock FontSize={notDeclaredAnywhere} />\n@namespace Gallery\n";
         fixture.Service.Documents.Open(uiUri, uiText, 1);
         fixture.Service.ApplyBuffer(uiUri, uiText);
         Assert.Contains(fixture.Service.GetDiagnostics(uiUri), d => d.Code == "CS0103");
@@ -282,6 +287,76 @@ public class ProjectSystemTests
         // 能力不是「无声空」：目录非空，补全有候选。
         Assert.NotEmpty(fixture.Service.CatalogForUri(uri).Elements);
         Assert.NotEmpty(fixture.Service.Complete(uri, text.IndexOf("<Button", StringComparison.Ordinal) + 1).Items);
+    }
+
+    /// <summary>
+    /// spec/02 §2.2：<c>@namespace</c> 必填，且要与 code-behind 一致。IDE 侧走 Tier 2——
+    /// 生成器的 EUI055/EUI056 经同一份映射回映到 <c>.ui</c>，与 <c>dotnet build</c> 同码同 span。
+    /// Tier 1 不报是刻意的：必填约束不绑架解析层，否则打字中间态满屏红。
+    /// </summary>
+    [Fact]
+    public void Fixture8_NamespaceContractIsEnforcedByTier2()
+    {
+        var fixture = Create();
+        var path = fixture.Gallery("Prefs.ui");
+        var uri = DocumentStore.PathToUri(path);
+
+        // ① 缺声明 → EUI055
+        const string missing = "@using EclipseUI.Elements\n<TextBlock>hi</TextBlock>\n";
+        fixture.Service.Documents.Open(uri, missing, 1);
+        fixture.Service.ApplyBuffer(uri, missing);
+        Assert.Contains(fixture.Service.GetDiagnostics(uri), d => d.Code == "EUI055");
+
+        // ② 没有同名 .cs 时没有可比对的对象：不报 EUI056，声明值直接生效（spec/02 §2.7）。
+        //    EUI056 的「不一致」路径由 Compiler.Tests 的 NamespaceDirectiveTests 覆盖。
+        const string renamed =
+            "@using EclipseUI.Elements\n@namespace NotGallery\n<TextBlock>hi</TextBlock>\n";
+        fixture.Service.Documents.Change(uri, renamed, 2);
+        fixture.Service.ApplyBuffer(uri, renamed);
+        Assert.DoesNotContain(fixture.Service.GetDiagnostics(uri), d => d.Code is "EUI055" or "EUI056");
+
+        // ③ 写对 → 目录里就是这个命名空间下的组件（声明值而非文件名猜的）
+        const string right =
+            "@using EclipseUI.Elements\n@namespace Gallery\n<TextBlock>hi</TextBlock>\n";
+        fixture.Service.Documents.Change(uri, right, 3);
+        fixture.Service.ApplyBuffer(uri, right);
+        var diagnostics = fixture.Service.GetDiagnostics(uri);
+        Assert.DoesNotContain(diagnostics, d => d.Code is "EUI055" or "EUI056");
+        Assert.NotEmpty(fixture.Service.CatalogForUri(uri).Elements);
+    }
+
+    /// <summary>
+    /// spec/02 §2.7：目录必须「与编译器同源」。用真实仓库钉这一条——
+    /// 输入编译（无 .g.cs）+ <c>.ui</c> 声明清单 与 生成后编译（能看见 <c>: Component</c> 基类）
+    /// 必须给出同一份标签表。两者一偏离，就是「编辑器绿、<c>dotnet build</c> 红」。
+    /// </summary>
+    [Fact]
+    public void Fixture9_InputCatalogMatchesThePostGenerationCatalog()
+    {
+        var fixture = Shared.Value;
+        var snapshot = Assert.Single(fixture.Workspace.ResolveAll(fixture.Gallery("Counter.ui")));
+
+        var input = snapshot.Compilation.RemoveSyntaxTrees(snapshot.GeneratedTrees);
+        var files = snapshot.Evaluation.AdditionalFiles
+            .Where(path => path.EndsWith(".ui", StringComparison.Ordinal))
+            .Select(path => (Path: path, Text: File.ReadAllText(path)));
+        var fromInput = UiCatalogFactory.Build(input, UiComponentScanner.FromFiles(files));
+        var fromOutput = UiCatalogFactory.Build(snapshot.Compilation);
+
+        var expected = fromOutput.Elements
+            .Select(e => $"{e.Tag}:{e.Origin}").OrderBy(s => s, StringComparer.Ordinal).ToList();
+        var actual = fromInput.Elements
+            .Select(e => $"{e.Tag}:{e.Origin}").OrderBy(s => s, StringComparer.Ordinal).ToList();
+
+        Assert.NotEmpty(expected);
+        Assert.Equal(expected, actual);
+
+        // 快照里的目录就是「输入编译 + 清单」那一份（不是生成后的），组件身份来自 .ui 本身。
+        // 四个 Gallery 组件都没有同名 .cs（spec/02 §2.7 的活样例），所以这四条同时钉住了
+        // 「纯 .ui 也能当标签用」——它们此前只靠生成后编译里的 `: Component` 才进目录。
+        foreach (var tag in new[] { "Counter", "Prefs", "Showcase", "TaskList" })
+            Assert.Equal(UiElementOrigin.Component,
+                snapshot.Catalog.Elements.Single(e => e.Tag == tag).Origin);
     }
 
     /// <summary>与 VS Code <c>Uri.toString()</c> 同形：小写盘符 + <c>%3A</c>。</summary>

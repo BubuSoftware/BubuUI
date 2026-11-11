@@ -1,3 +1,4 @@
+@namespace Gallery
 @using EclipseUI.Elements
 
 <StackPanel Gap="8">

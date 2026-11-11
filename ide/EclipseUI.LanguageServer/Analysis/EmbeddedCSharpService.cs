@@ -76,7 +76,10 @@ public static class EmbeddedCSharpService
             var type = probe.ThisType;
             var namespaceName = type?.ContainingNamespace is { IsGlobalNamespace: false } ns
                 ? ns.ToDisplayString()
-                : analysis.Project?.Evaluation.RootNamespace ?? "";
+                // spec/02 §2.2：声明优先于项目根命名空间推导。
+                : analysis.Ast.Namespace is { Length: > 0 } declaredNs
+                    ? declaredNs
+                    : analysis.Project?.Evaluation.RootNamespace ?? "";
             var className = type?.Name ?? analysis.Ast.ClassName;
             var accessibility = type is null || type.DeclaredAccessibility == Accessibility.Public
                 ? "public" : "internal";

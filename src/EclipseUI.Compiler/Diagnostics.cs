@@ -38,6 +38,9 @@ public static class UiDiagnostics
     public const string UnknownProperty = "EUI002";
     public const string LiteralFormat = "EUI003";
     public const string EventNeedsExpression = "EUI004";
+    // EUI005（缺少 code-behind）已随 spec/02 §2.7「第二组件来源」停用：`.ui` 本身就是组件
+    // 的一种来源，没有同名 .cs、没有 @code 的纯展示组件完全合法。编号不复用；常量保留，
+    // 供外部工具按号位识别历史诊断。
     public const string CodeBehindMissing = "EUI005";
     public const string TextNotAllowed = "EUI006";
     public const string ForEachItemTypeUnknown = "EUI007";
@@ -105,6 +108,17 @@ public static class UiDiagnostics
     // E5（design/17 §5/§8）：双通道冲突——样式表类与手写 C# Define 同名注册。
     // Warning 不短路（运行时「后注册覆盖」既有语义不变）；约定样式表为唯一来源。
     public const string StyleDualChannelConflict = "EUI054";
+
+    // spec/02 §2.2：@namespace 是必填契约。EUI055 = 整个模板没声明；EUI056 = 声明了但与
+    // 同名 code-behind 类型的命名空间不一致（两者都是 Error，短路生成器产物）。
+    // 形状错误（空名、分号、非法字符、重复、非顶层）走语法诊断 EUI100，不占新码。
+    public const string NamespaceMissing = "EUI055";
+    public const string NamespaceMismatch = "EUI056";
+
+    // spec/02 §2.7：@code 里的 [UiParameter]/[UiSlot]/[UiContent] 只在本模板内可见——
+    // 目录建在输入编译上（生成器读不到自己的产物），其他模板看不到这些参数。Warning 不短路：
+    // 模板自身仍然合法，只是「对外 API」这件事没发生。要暴露参数请写同名 .cs。
+    public const string ParameterInCodeBlock = "EUI057";
 
     // 语法诊断
     public const string Syntax = "EUI100";

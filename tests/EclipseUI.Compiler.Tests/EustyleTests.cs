@@ -248,17 +248,24 @@ public class EustyleTests
 
     private sealed class TestAdditionalText : AdditionalText
     {
-        private readonly SourceText _text;
+        private readonly string _content;
 
         public TestAdditionalText(string path, string content)
         {
             Path = path;
-            _text = SourceText.From(content);
+            _content = content;
         }
 
         public override string Path { get; }
 
-        public override SourceText? GetText(CancellationToken cancellationToken = default) => _text;
+        /// <summary>
+        /// 由 <see cref="RunWith"/> 在拿到 code-behind 后填入：<c>@namespace</c> 是必填契约
+        /// （spec/02 §2.2），而夹具在测试体里构造时还看不到 code-behind。
+        /// </summary>
+        public string DeclaredNamespace { get; set; } = NamespaceDeclarationFixture.SyntheticNamespace;
+
+        public override SourceText? GetText(CancellationToken cancellationToken = default)
+            => SourceText.From(NamespaceDeclarationFixture.Declare(Path, _content, DeclaredNamespace));
     }
 
     private static GeneratorRunResult Run(params AdditionalText[] texts)
@@ -266,6 +273,12 @@ public class EustyleTests
 
     private static GeneratorRunResult RunWith(string codeBehind, params AdditionalText[] texts)
     {
+        // .ui 的声明与 code-behind 的命名空间必须成对规整，否则 partial 合并不上、
+        // {expr} 看不到 code-behind 成员（spec/02 §2.2）。
+        var fixture = NamespaceDeclarationFixture.Prepare("Probe.ui", codeBehind);
+        foreach (var text in texts.OfType<TestAdditionalText>())
+            text.DeclaredNamespace = NamespaceDeclarationFixture.Prepare(text.Path, codeBehind).NamespaceName;
+
         var references = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!)
             .Split(Path.PathSeparator)
             .Select(path => (MetadataReference)MetadataReference.CreateFromFile(path))
@@ -277,7 +290,7 @@ public class EustyleTests
             .ToList();
         var compilation = CSharpCompilation.Create(
             "StyleProbe",
-            new[] { CSharpSyntaxTree.ParseText(codeBehind) },
+            new[] { CSharpSyntaxTree.ParseText(fixture.CodeBehind) },
             references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 

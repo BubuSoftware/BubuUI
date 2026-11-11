@@ -137,6 +137,12 @@ $accent: theme(#ffffff, #000000);
     });
   }
 
+  // spec/02 §2.2：@namespace 必填声明——指令名与点分命名空间都要有 scope，
+  // 否则新语法在编辑器里是纯文本（grammar 写漏不会报错，只能靠断言发现）。
+  const namespaceLine = await tokenize('source.eclipseui', '@namespace Gallery.Samples');
+  expectAt(namespaceLine, 0, '@namespace', 1, 'keyword.control.namespace.eclipseui', '@namespace');
+  expectAt(namespaceLine, 0, 'Gallery.Samples', 2, 'entity.name.namespace.eclipseui', 'namespace value');
+
   // 指令与注释
   expectAt(doc, 0, '@using', 1, 'keyword.control.import.eclipseui', '@using');
   expectAt(doc, 0, 'EclipseUI.Elements', 2, 'entity.name.namespace.eclipseui', 'namespace');

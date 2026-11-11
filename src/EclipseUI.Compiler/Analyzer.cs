@@ -796,6 +796,18 @@ public static class TemplateAnalyzer
 
             if (eventDef is null && propDef is null && paramDef is null)
             {
+                // spec/01 §4.5：`@bind-P` 的目标必须是可绑属性。名字在类型上**存在**但不可绑
+                // （只读、无 public setter、没有 {P}Property、组件上不是 [UiParameter]……）
+                // 与「压根没有这个属性」是两种错：前者要换目标或补声明，后者是拼写问题。
+                // 目录把前者记进 NonBindableProperties，这里给出原因 → EUI040；拼错仍走 EUI002。
+                if (attr.IsBind && def.BindRejection(attr.Name) is { } rejection)
+                {
+                    diags.Add(UiDiagnostics.Error(UiDiagnostics.BindTargetInvalid,
+                        $"@bind-{attr.Name} is not allowed on '{element.Tag}': '{attr.Name}' {rejection}",
+                        attr.NameSpan));
+                    continue;
+                }
+
                 // C5：EUI019/EUI020 使用点（design/14 §14.5.4）。引用程序集控件无法定位声明，只能把
                 // 扫描侧元数据问题（def.Problems）在使用点暴露（消息带完整类型名）。源项目控件的
                 // 属性根本不进目录且用户撞的是 EUI002（声明处归 EUI026），所以不在这里触发。
@@ -810,6 +822,19 @@ public static class TemplateAnalyzer
                     continue;
                 }
 
+                // spec/01 §4.2：名字在类型上**存在**但不在模板表面时，说出原因（只读 / 没有
+                // {P}Property / 不是 [UiParameter]），而不是给一个 "did you mean"——那在暗示拼写错误。
+                // 代码仍是 EUI002（"不可用"与"不存在"对赋值而言是同一个结果，spec/01 §4.4 口径）。
+                if (def.BindRejection(attr.Name) is { } notExposed)
+                {
+                    diags.Add(UiDiagnostics.Error(UiDiagnostics.UnknownProperty,
+                        $"'{attr.Name}' of '{element.Tag}' is not a template " +
+                        $"{(isComponent ? "parameter" : "property")}: it {notExposed}",
+                        attr.NameSpan));
+                    continue;
+                }
+
+                // 放在 EUI019 之后：引用程序集的破损 `{P}Property` 有更精确的声明级说明。
                 var hint = attr.Name.StartsWith("On", StringComparison.Ordinal)
                     ? Suggest.Nearest(attr.Name, def.Events.Keys) ?? Suggest.Nearest(attr.Name, def.Properties.Keys)
                           ?? Suggest.Nearest(attr.Name, def.Parameters.Keys)

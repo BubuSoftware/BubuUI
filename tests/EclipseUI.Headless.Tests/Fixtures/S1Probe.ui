@@ -1,3 +1,4 @@
+@namespace EclipseUI.Headless.Tests
 @using EclipseUI.Elements
 
 <StackPanel Gap={gap}>

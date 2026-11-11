@@ -37,7 +37,7 @@ public class ExpressionSemanticTests
         public UiAdditionalText(string path, string content)
         {
             Path = path;
-            _text = SourceText.From(content);
+            _text = SourceText.From(NamespaceDeclarationFixture.Ensure(path, content));
         }
 
         public override string Path { get; }
@@ -53,15 +53,17 @@ public class ExpressionSemanticTests
             .ToList();
         references.Add(MetadataReference.CreateFromFile(typeof(global::EclipseUI.Component).Assembly.Location));
 
+        var fixture = NamespaceDeclarationFixture.Prepare(UiPath, CodeBehind);
+
         var compilation = CSharpCompilation.Create(
             "TemplateProbe",
-            new[] { CSharpSyntaxTree.ParseText(CodeBehind, path: "Probe.cs") },
+            new[] { CSharpSyntaxTree.ParseText(fixture.CodeBehind, path: "Probe.cs") },
             references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
         GeneratorDriver driver = CSharpGeneratorDriver.Create(
             new[] { new TemplateGenerator().AsSourceGenerator() },
-            new AdditionalText[] { new UiAdditionalText(UiPath, ui) });
+            new AdditionalText[] { new UiAdditionalText(UiPath, fixture.Ui(ui)) });
         return driver.RunGenerators(compilation).GetRunResult().Results.Single();
     }
 

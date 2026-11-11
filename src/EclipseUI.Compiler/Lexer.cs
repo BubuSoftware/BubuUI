@@ -460,10 +460,10 @@ public sealed class Lexer
     /// </summary>
     private Token ParseUsingDirective(int start)
     {
-        // 只跨行内空白：跳过 '\n' 会把下一行的元素吞进指令（见 UsingError 的整行推进）
+        // 只跨行内空白：跳过 '\n' 会把下一行的元素吞进指令（见 DirectiveError 的整行推进）
         while (_i < _s.Length && (_s[_i] == ' ' || _s[_i] == '\t')) _i++;
         if (_i < _s.Length && _s[_i] == '(')
-            return UsingError(start,
+            return DirectiveError(start,
                 "'@using (...)' is not supported; write '@using Namespace' or '@using Alias = Namespace.Type'");
 
         int nameBegin = _i;
@@ -472,7 +472,7 @@ public sealed class Lexer
         var head = _s.Substring(nameBegin, _i - nameBegin);
 
         if (head == "static")
-            return UsingError(start,
+            return DirectiveError(start,
                 "'@using static' is not supported; import the namespace or alias a single control type");
 
         // 别名形态：@using Alias = Namespace.Type
@@ -481,7 +481,7 @@ public sealed class Lexer
         if (eq < _s.Length && _s[eq] == '=')
         {
             if (!IsIdentifier(head))
-                return UsingError(start,
+                return DirectiveError(start,
                     "'@using' alias must be a single identifier: @using Btn = My.Controls.Button");
 
             _i = eq + 1;
@@ -491,10 +491,10 @@ public sealed class Lexer
                 _i++;
             var target = _s.Substring(targetBegin, _i - targetBegin);
             if (target.Length == 0 || !IsTypeName(target))
-                return UsingError(start,
+                return DirectiveError(start,
                     "'@using' alias requires a type name after '=': @using Btn = My.Controls.Button");
             if (_i < _s.Length && _s[_i] == '<')
-                return UsingError(start,
+                return DirectiveError(start,
                     "generic type aliases are not supported; alias a non-generic control type");
 
             return new Token
@@ -509,18 +509,18 @@ public sealed class Lexer
         }
 
         if (_i < _s.Length && _s[_i] == ';')
-            return UsingError(start,
+            return DirectiveError(start,
                 "'@using' takes no trailing ';': write '@using System.Collections.Generic'");
 
         // 同一行还有残留（如 '@using Foo Bar'）说明写法有误，就地报错而不是留给文本模式
         int rest = _i;
         while (rest < _s.Length && (_s[rest] == ' ' || _s[rest] == '\t')) rest++;
         if (rest < _s.Length && _s[rest] != '\r' && _s[rest] != '\n')
-            return UsingError(start,
+            return DirectiveError(start,
                 "'@using' accepts a namespace name or an alias: '@using My.Controls' / '@using Btn = My.Controls.Button'");
 
         if (!IsDottedName(head))
-            return UsingError(start,
+            return DirectiveError(start,
                 "'@using' requires a namespace name: @using System.Collections.Generic");
 
         return new Token
@@ -534,11 +534,51 @@ public sealed class Lexer
     }
 
     /// <summary>
-    /// @using 的错误出口：**先把词法位置推到本行行尾**再报错。否则残余字符
+    /// <c>@namespace Foo.Bar</c>：显式命名空间声明（spec/02 §2.2）。只接受一个点分名，
+    /// 写到行尾为止；不接受分号（与 <c>@using</c> 同口径），也不接受第二个名字。
+    /// </summary>
+    private Token ParseNamespaceDirective(int start)
+    {
+        while (_i < _s.Length && (_s[_i] == ' ' || _s[_i] == '\t')) _i++;
+        int nameBegin = _i;
+        while (_i < _s.Length && (char.IsLetterOrDigit(_s[_i]) || _s[_i] == '_' || _s[_i] == '.'))
+            _i++;
+        var name = _s.Substring(nameBegin, _i - nameBegin);
+
+        if (name.Length == 0)
+            return DirectiveError(start,
+                "'@namespace' requires a namespace name: @namespace My.App");
+
+        if (_i < _s.Length && _s[_i] == ';')
+            return DirectiveError(start,
+                "'@namespace' takes no trailing ';': write '@namespace My.App'");
+
+        int rest = _i;
+        while (rest < _s.Length && (_s[rest] == ' ' || _s[rest] == '\t')) rest++;
+        if (rest < _s.Length && _s[rest] != '\r' && _s[rest] != '\n')
+            return DirectiveError(start,
+                "'@namespace' accepts a single dotted namespace name: '@namespace My.App'");
+
+        if (!IsDottedName(name))
+            return DirectiveError(start,
+                "'@namespace' requires a dotted identifier name: @namespace My.App");
+
+        return new Token
+        {
+            Kind = TokenKind.Directive,
+            Text = "namespace",
+            Aux = name,
+            Span = new TextSpan(start, _i - start),
+            InnerSpan = new TextSpan(nameBegin, name.Length),
+        };
+    }
+
+    /// <summary>
+    /// 指令的错误出口：**先把词法位置推到本行行尾**再报错。否则残余字符
     /// （<c>static System.Math</c> 的右半、泛型别名的 <c>&lt;string&gt;</c>）会落进文本/标记模式，
     /// 叠加出 EUI006、「missing &lt;/string&gt;」这类与写法无关的级联错误。
     /// </summary>
-    private Token UsingError(int start, string message)
+    private Token DirectiveError(int start, string message)
     {
         while (_i < _s.Length && _s[_i] != '\n') _i++;
         return ErrorToken(start, message, System.Math.Max(_i, start + 1));
@@ -594,6 +634,11 @@ public sealed class Lexer
         // 都不带分号；不做 @using(...) / @using static / 泛型别名。
         if (name == "using")
             return ParseUsingDirective(start);
+
+        // @namespace {Dotted.Name}（spec/02 §2.2）：显式声明生成类的命名空间。必填，
+        // 且必须与同名 code-behind 的命名空间一致（生成器侧校验）。与 @using 同口径——不带分号。
+        if (name == "namespace")
+            return ParseNamespaceDirective(start);
 
         // @code { ... }（K21，D86）与 @style { ... }（E1，design/17 §4.8）：块体整块捕获
         //（C# 感知的括号匹配——注释/字符串安全，样式块的 /* */ 注释同样覆盖），原文透传。

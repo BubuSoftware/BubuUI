@@ -33,7 +33,7 @@ public class MetadataOutletTests
         public UiAdditionalText(string path, string content)
         {
             Path = path;
-            _text = SourceText.From(content);
+            _text = SourceText.From(NamespaceDeclarationFixture.Ensure(path, content));
         }
 
         public override string Path { get; }
@@ -61,13 +61,14 @@ public class MetadataOutletTests
     private static GeneratorRunResult Run(string codeBehind, string ui = "@using EclipseUI.Elements\n<StackPanel />",
         string? referencedLibrary = null, string[]? extraUiPaths = null)
     {
-        var files = new List<AdditionalText> { new UiAdditionalText(UiPath, ui) };
+        var fixture = NamespaceDeclarationFixture.Prepare(UiPath, codeBehind);
+        var files = new List<AdditionalText> { new UiAdditionalText(UiPath, fixture.Ui(ui)) };
         if (extraUiPaths is not null)
             foreach (var path in extraUiPaths)
                 files.Add(new UiAdditionalText(path, ui));
         var driver = CSharpGeneratorDriver.Create(
             new[] { new TemplateGenerator().AsSourceGenerator() }, files.ToArray());
-        return driver.RunGenerators(CreateCompilation(codeBehind, referencedLibrary))
+        return driver.RunGenerators(CreateCompilation(fixture.CodeBehind, referencedLibrary))
             .GetRunResult().Results.Single();
     }
 
