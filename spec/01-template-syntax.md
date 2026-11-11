@@ -61,11 +61,11 @@
 
 ### 1.1 一个文件 = 一个类 = 一个根元素
 
-- 一个 `.ui` 文件只包含一个文档：注释、空白、顶层 `@code`/`@using` 指令节点与**恰好一个根元素**（§1.5）。
+- 一个 `.ui` 文件只包含一个文档：注释、空白、顶层 `@namespace`/`@using`/`@code` 指令节点与**恰好一个根元素**（§1.5）。
 - 文件名（去扩展名）必须是合法 C# 标识符，并作为生成类名；否则 `EUI013`。
-- code-behind 必须是与文件同名的**顶层 `partial` 类**：
-  - 缺失 → `EUI005`；嵌套 → `EUI015`；非 `partial` → `EUI011`。
-  - **K23 ④（✅ S6 已实现（2026-11-08））**：`EUI005` 放宽为「`@code` 或同名 partial 至少其一」，见 §1.5 / D86。
+- code-behind **不是必需的**（spec/02 §2.7「第二组件来源」）：`.ui` 自己就是组件来源，
+  没有同名 `.cs`、也没有 `@code` 的纯展示组件合法。存在 code-behind 时必须是同名**顶层 `partial` 类**：
+  嵌套 → `EUI015`；非 `partial` → `EUI011`。`EUI005`（缺少 code-behind）已随之**停用**。
 - 生成部分提供 `partial class {Name} : global::EclipseUI.Component`、
   `protected override Element Build()`，以及（模板含动态内容时的）`protected override void Render()`；
   code-behind 可以省略基类，或**原样重复** `: Component`
@@ -76,7 +76,7 @@
 ### 1.2 code-behind 与状态
 
 - 状态载体 = 同名 `.cs` partial 类 **与** 模板内 `@code` 成员，二者合并进同一个 partial 类（K21/K23 ④）：
-  单文件模板可以只有 `@code`、没有 `.cs`（`EUI005` 放宽为「`@code` 或同名 partial 至少其一」）。
+  单文件模板可以只有 `@code`、没有 `.cs`；两者都没有也合法（纯展示组件，spec/02 §2.7）。
 - 模板作者写**普通类型**：`int`、`string`、`List<T>`、数组、字典、LINQ 结果、普通类/record/struct。
   不需要 `[UiState]`/`[UiObservable]`/`[UiComputed]`，不需要 `INotifyPropertyChanged`，
   集合不需要 `INotifyCollectionChanged`/`ObservableCollection<T>`（spec/03 §1.1）。
@@ -138,19 +138,21 @@
 
 | 语法 | 口径 | 决策 | 偏差（已关闭） |
 |---|---|---|---|
+| `@namespace Dotted.Name` | **必填**，只能一次、只能在顶层；生成文件的命名空间**只由它决定**，不再跟随 code-behind 或 `RootNamespace` 隐式推导。缺失 → `EUI055`；与同名 code-behind 的命名空间不一致 → `EUI056`（都是 Error，短路产物）。**没有保留值**：`global` 只是普通名字，处于全局命名空间的 code-behind 无法匹配任何声明，按 `EUI056` 报告并提示把它搬进命名空间。分号 / 缺值 / 非法名 / 重复 / 非顶层 → `EUI100` | 2026-11-11 拍板 | — |
 | `@using Ns` | 指令，多条、位置不限；生成文件保留普通 `using Ns;`；标签只在导入命名空间内解析，**内置控件（`EclipseUI.Elements`）无豁免**；未导入 → `EUI001` + 缺失 `@using` 建议 | K22 | D85 ✅ |
 | `@using Alias = Ns.Type` | 别名（K31）：生成 `using Alias = global::Ns.Type;` 供 `@code`/表达式使用；**同时**让 `<Alias/>` 在本模板内解析为该类型，且优先于目录 tag。目标须是目录里的已知元素/组件，否则 `EUI048`。别名**不进**命名空间可见性集合 | K31 | — |
-| `@code { ... }` | 顶层类成员（字段/属性/方法），可多个块、位置不限、书写顺序不影响可见性；与同名 `.cs` partial **并存**；`EUI005` 放宽为「`@code` 或同名 partial 至少其一」 | K21 + K23 ④ | D86 ✅ |
+| `@code { ... }` | 顶层类成员（字段/属性/方法），可多个块、位置不限、书写顺序不影响可见性；与同名 `.cs` partial **并存**，两者皆可省略（`EUI005` 已停用，spec/02 §2.7）；`@code` 里的 `[UiParameter]`/`[UiSlot]`/`[UiContent]` 只在本模板内可见 → `EUI057`（Warning） | K21 + K23 ④ | D86 ✅ |
 | `else` / `else if` | **不带 `@`**，紧接前一分支 `}`；生成侧为多分支 `ConditionalBlock` | K23 ③ | D87 ✅ |
 | `@switch (...) { case ...: break; default: ... break; }` | 每个 `case`/`default` 独立分支（无贯穿）；`break;` 必须单独成行；空 section 必须显式写 `break;`（K30）；生成侧 `SwitchBlock<T>` | K23 ③ + K29/K30 | D87 ✅ |
 | `@* ... *@` | 编译器丢弃的注释；未闭合报 `EUI100`；`<!-- -->` **永久保留为等价合法注释**（K26，双注释并存、不设弃用期），两种注释未闭合统一 `EUI100` | K23 / K26 | D88 ✅ |
 | `{expr}` | **保持不变**：单花括号 C# 表达式，文本与属性共用；`@` 不用于表达式（Q1 推荐口径 A 为本波工作基线） | K23 ⑥ | — |
 | 保持不动 | 目录驱动标签/属性、`@bind-P`、`Key`/`Ref`、具名插槽、K1–K18 保留元素树 + 失效重算模型、span 型 `#line`、逐文件增量、EUI 诊断体系 | K23 ① | — |
 
-**明确不做（K23 ②）**：`@page`/`@layout`/`@rendermode`/`@namespace`/`@model`/`@section`/`@inject`/
+**明确不做（K23 ②）**：`@page`/`@layout`/`@rendermode`/`@model`/`@section`/`@inject`/
 `@preservewhitespace`/`@typeparam`/`@inherits`/`@implements`/`@attribute`/`@attributes`、CSS `class`/`style`
 语义、HTML 标签兜底、`@("xxx")` 字面量、属性大小写不敏感、最小化属性、XML 实体 / CDATA、渲染树 diff、
 `RenderFragment`、`EventCallback`、DI、SSR/WASM。它们不是「待实现」，是**永久不提供**；
+（`@namespace` 已从本清单移出：2026-11-11 改判为必填契约，见上表与 spec/02 §2.2。）
 `@switch` 已从保留位转入目标语法，不属此列；泛型标签仍按 K19 暂缓、不排期。
 
 **实施细节已拍板（2026-11-08，K24–K30，见 spec/02 §14）**：K24 `@for`/`@while`/`@do` 本波不提供
@@ -170,7 +172,7 @@ K29 `@switch` 分支体为完整内容模板、case 标签须编译期常量（`
 - 扩展名 `.ui`，以 `AdditionalFiles` 进入编译；编码按 Roslyn 文本读取（UTF-8）。
 - 文件名（去扩展名）必须是合法 C# 标识符；否则 `EUI013`。
 - 换行支持 LF/CRLF；`#line` 使用 1 基行/列坐标（span 形态见 spec/02 §2.4）。
-- 一个文件只包含一个文档；文件级只有注释、空白、根层 `@using`/`@code` 指令和一个根元素（§3.1/§3.2）。
+- 一个文件只包含一个文档；文件级只有注释、空白、根层 `@namespace`/`@using`/`@code` 指令和一个根元素（§3.1/§3.2）。
 
 ### 2.2 两种扫描模式
 
@@ -387,7 +389,7 @@ string        ::= '"' raw-char* '"'
 | `Key` 只能出现在 `@foreach` item 模板的第一个元素根上 | `EUI010` | ✅ |
 | `@foreach` 必须写 `var 名字 in ...` | `EUI100` | ✅ |
 | `@bind-P` 的值不是 `{expr}` | `EUI037` | ✅ S3 |
-| `@bind-P` 目标非法（不可写/无属性字段/事件/保留/内容/组件缺 `PChanged`） | `EUI040` | ✅ S3+C4（控件 ✅ S3；组件 ✅ C4） |
+| `@bind-P` 目标非法（不可写/无属性字段/事件/保留/内容/组件缺 `PChanged`） | `EUI040` | ✅ S3+C4（控件 ✅ S3；组件 ✅ C4）；名字**存在**但不可绑时消息附原因（§4.5） |
 | `@bind-P` 源非法（非可写左值/类型不符） | `EUI037` | ✅ S3 |
 | `@bind-P` 与同名属性/`:bind`/`:value` 重复 | `EUI033` | ✅ S2（完全重复属性仍 `EUI025`，C3） |
 | `Key={}` 空表达式 | `EUI010` | ✅ S2 |
@@ -432,14 +434,20 @@ string        ::= '"' raw-char* '"'
 
 | Origin | 普通属性 | `@bind-P` |
 |---|---|---|
-| 控件（`Element` 派生） | 保留属性（`Key`/`Ref`/`Class`/`Style`）→ 事件（`On{Event}`）→ 属性表 → 附加属性（G4）→ 未知 | 目标必须是属性表内的 public 可写属性 + `{Name}Property`；事件/保留/只读 → `EUI040` |
-| 组件（`Component` 派生） | 保留属性 → 参数表（委托参数就是事件，不做 `On*` 推断）→ 未知 | 目标必须是 `[UiParameter]` 且 public setter 的参数，并且组件声明了 `{P}Changed`（`Action<T>`）参数；否则 `EUI040` |
+| 控件（`Element` 派生） | 保留属性（`Key`/`Ref`/`Class`/`Style`）→ 事件（`On{Event}`）→ 属性表 → 附加属性（G4）→ 未知 | 目标必须是属性表内的 public 可写属性 + `{Name}Property`；事件/保留/附加属性/只读/无 `{P}Property`/`[UiIgnore]` → `EUI040`（名字存在时带原因） |
+| 组件（`Component` 派生，或由同名 `.ui` 声明） | 保留属性 → 参数表（委托参数就是事件，不做 `On*` 推断）→ 未知 | 目标必须是 `[UiParameter]` 且 public setter 的参数，并且组件声明了 `{P}Changed`（`Action<T>`）参数；否则 `EUI040`（非参数的公开成员同样带原因） |
 
+- **组件的两种来源**（spec/02 §2.7）：code-behind 基类链命中 `Component`，或者存在**同名且同命名空间**
+  的 `.ui` 声明。后者允许 `.ui` 单独成组件、无需 code-behind；显式派生了其他类的类型仍按继承链判定。
+  只由 `.ui` 来源的组件参数表为空——参数写在 `@code` 里只对该模板内部可见，
+  别的模板使用该参数报 `EUI002`。
 - 标签必须解析到目录中的已知控件/组件；未知 → `EUI001`；冲突 → `EUI016`；
   不可用 → `EUI017`/`EUI018`/`EUI030`。
 - 属性名大小写敏感；未知 → `EUI002`，并给最近名建议（Levenshtein ≤ 3，最多 3 个候选）。
-  若名字命中一个**存在但没有 `{Name}Property` 的公开 CLR 属性**，提示改为
-  "该属性未注册 StyledProperty，不参与模板"，而不是只报拼写错误。
+  若名字命中一个**存在但未进入模板表面**的公开成员（只读、无 public setter、`init`/`required`、
+  没有 `{Name}Property`、`[UiIgnore]`、组件上不是 `[UiParameter]`），改为说明原因、不给拼写建议
+  （如 `'IsEnabled' of 'Button' is not a template property: it is not backed by a StyledProperty
+  (there is no 'IsEnabledProperty' field)`）；`@bind-` 版本见 §4.5（`EUI040`）。
 - 事件属性只对控件按 `On{EventName}` 解析；组件的 `OnClose` 若存在同名委托参数，按参数处理，
   不按事件字段处理。
 - `@bind-P` 的 `P` 按上表解析；解析失败先报 `EUI002`（未知属性），解析成功但不可绑报 `EUI040`。
@@ -447,6 +455,9 @@ string        ::= '"' raw-char* '"'
   `EUI043` 停用并保持停用（§4.6、§6.2）。
 - 事件/属性同名的元数据冲突由 design/14 §14.4.2 的 `EUI026` 拦截。
 - 保留属性优先于控件同名属性；控件不得声明 `Key`/`Ref`/`Class`/`Style` 同名属性。
+- **组件标签上的 `Class`/`Style`/附加属性**（`Ref` 除外）作用于组件的**根元素**而不是组件实例——
+  组件不是 `Element`（spec/03 §5.3），生成形态见 spec/02 §4.12.6。分析器侧解析规则与控件相同
+  （`Class` 查样式目录、`Style` 只收声明序列、附加属性查目录），差异只在发射目标。
 - 控件的内容模型目标若是普通可写属性（如 `Button.Label`），可作为 `@bind-P` 目标；
   但同一元素不得再有文本内容（`EUI033`）。组件的 `[UiContent]`/`[UiSlot]` 参数是 build-once，
   不可作为 `@bind-P` 目标（`EUI040`）。
@@ -494,6 +505,15 @@ string        ::= '"' raw-char* '"'
   - 控件：public 可写属性 + `{Name}Property`；不得是事件/保留属性；
   - 组件：`[UiParameter]` + public setter + 声明 `{P}Changed`（`Action<T>`）；
   - `[UiContent]`/`[UiSlot]` 参数、委托参数、保留属性、其它 → `EUI040`。
+- **`P` 必须落在「支持绑定」的成员上，两种失败要分开报**：
+  - 名字在类型上**不存在** → `EUI002`（拼写问题，附最近名建议）；
+  - 名字**存在但不可绑**（只读 / 无 public setter / `init`+`required` / 没有 `{P}Property`
+    / `[UiIgnore]` / 组件上不是 `[UiParameter]` …）→ `EUI040`，消息带**具体原因**
+    （如 `'IsEnabled' is not backed by a StyledProperty (there is no 'IsEnabledProperty' field)`）。
+  两条提示的动作完全不同（改拼写 vs 换目标或补声明），所以不能混成一条。
+  同一个「不可绑」表也用于普通赋值：`P=` 命中它时仍是 `EUI002`，但文案改为说明原因、不给拼写建议（§4.2）。
+- 补全只列「支持绑定」的成员（`@bind-` 之后）：控件是属性表内的可写属性，组件是带 `{P}Changed`
+  的非内容/非委托参数；不可绑的名字不进候选，由诊断负责解释。
 - 源 `expr` 必须是**可写左值**（spec/03 §8.1）：
   1. 字段、可写属性（含 `private`/`internal` setter，生成代码在同一 partial 类内）；
   2. 允许：`this.Count`、`Vm.Name`、`t.Done`（`t` 为引用类型 item）、`_state.Enabled`（`_state` 是字段）；
@@ -910,7 +930,7 @@ new cmp0
 | `EUI002` | 未知属性/事件/参数；若同名 CLR 属性存在但未注册 `StyledProperty`，提示补注册 | 属性名 | Error | ✅ |
 | `EUI003` | 字面量格式错/范围错/枚举成员不存在 | 属性值 | Error | ✅（§5.2 全表，C3） |
 | `EUI004` | 事件缺 `{expression}` / 事件用 `:bind` 或 `@bind-` | 属性 | Error | ✅ |
-| `EUI005` | 缺少与 `.ui` 同名的 code-behind（§1.5 实施后放宽为「无 `.cs` 且无 `@code`」，D86） | 文件 | Error | ✅ |
+| `EUI005` | **停用**：第二组件来源后，「缺少 code-behind」不再是错误（spec/02 §2.7）；编号不复用 | — | — | — |
 | `EUI006` | 内容模型不允许（文本/元素/控制流/根层文本或块） | 子内容/根 | Error | ✅ |
 | `EUI007` | `@foreach` 集合不是 `IEnumerable<T>`、`T` 无法推断、`IAsyncEnumerable`/`IEnumerator`/非泛型/`dynamic` | 集合表达式 | Error | ✅ S2 |
 | `EUI008` | `@switch` 保留（K23 ③ 转实现后**停用**，保持停用，D87） | 指令 | Error | ✅ |
@@ -954,14 +974,16 @@ new cmp0
 | `EUI046` | 旧绑定语法 `P:bind` / `P:value` 已移除（K27），提示改写为 `@bind-P` / `P=` | 属性名 | Error | ✅ S6（2026-11-08） |
 | `EUI047` | `@switch` 的 case 标签不是编译期常量（K29 ②）：语法层拒绝非常量形态，常量性由探针判定 | case 标签 | Error | ✅ S6（2026-11-08） |
 | `EUI048` | `@using` 别名不合法（K31）：目标不是目录里的已知元素/组件、同一模板重复声明、与已导入命名空间同名 | 指令 / 目标类型名 | Error | ✅ K31（2026-11-09） |
+| `EUI057` | `@code` 里声明 `[UiParameter]`/`[UiSlot]`/`[UiContent]`：目录建在输入编译上，这些成员到不了其他模板（spec/02 §2.7）；要对外暴露就写同名 `.cs` | `@code` 特性名 | Warning | ✅ 2026-11-11 |
 | `EUI100` | 纯语法错误（标签不匹配、属性缺值、未闭合注释、未闭合 `@code`、`@{}`、（`@switch`）空 section / 缺 `break;`、非法 `@bind-` 形态等） | 语法位置 | Error | ✅ |
 
 停用码的纪律：
 
-- 分析器/生成器不得再发出 `EUI014`/`EUI032`/`EUI034`–`EUI036`/`EUI038`–`EUI039`/`EUI041`–`EUI043`/`EUI044`；
+- 分析器/生成器不得再发出 `EUI005`/`EUI014`/`EUI032`/`EUI034`–`EUI036`/`EUI038`–`EUI039`/`EUI041`–`EUI043`/`EUI044`；
   测试必须断言零出现。
 - 停用码保持"停用"，不复用编号；不得用它们表达新语义。
-- 新增诊断从 `EUI046` 起（`EUI048` 为 K31 `@using` 别名）。
+- 新增诊断从 `EUI046` 起：`EUI048`（K31 `@using` 别名）、`EUI050`–`EUI054`（样式表，design/17 §5）、
+  `EUI055`/`EUI056`（`@namespace` 契约，spec/02 §2.2）、`EUI057`（`@code` 里的模板元数据特性，spec/02 §2.7）。
 
 ### 6.3 建议算法
 

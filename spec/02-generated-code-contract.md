@@ -143,7 +143,7 @@ UiCatalog（符号/手写目录）     ─┘
 
 ### 2.2 文件头、命名空间与 using
 
-生成文件必须以以下内容开始（顺序固定；`namespace` 行仅在 code-behind 有命名空间时生成）。
+生成文件必须以以下内容开始（顺序固定；`namespace` 行**总是**生成，取值即模板的 `@namespace` 声明）。
 **K22（✅ S6 已实现，spec/01 §1.5 / D85 已关闭）**：模板 `@using` 对应的普通 using 组插在
 `#nullable enable` 与 `namespace` 之间：
 
@@ -159,8 +159,15 @@ namespace {Namespace};
 - `{Alias} = global::{TargetType}`：K31 的 `@using {Alias} = {TargetType}`，同样按模板顺序、去重。
   目标**一律补 `global::`**——别名行是为了给 `@code`/表达式提供短名，若写成非全限定，
   它会被生成类所在命名空间的同名类型劫持，与 §2.2 上文的短名风险同源。
-- `{Namespace}`：code-behind 的命名空间；无命名空间时省略 `namespace` 行。
+- `{Namespace}`：模板 `@namespace {Dotted.Name}` 的声明值。**声明是必填契约**（2026-11-11）：
+  - 缺失 → `EUI055`（Error，短路产物，不给生成代码）；
+  - 与同名 code-behind 类的命名空间不一致 → `EUI056`（Error）；
+  - **没有保留值**（2026-11-11 拍板）：`global` 只是普通名字，不表示「无命名空间」。C# 写不出
+    global namespace 声明，所以处于全局命名空间的 code-behind **无法与任何声明相等**——按
+    `EUI056` 报告并提示把该类搬进命名空间。生成器因此永远只产出具名命名空间。
   生成器统一使用**文件作用域命名空间**，不生成块式 `namespace { }`。
+  声明与 code-behind 一致时，`partial` 合并成立；此前命名空间由「code-behind 有则跟随、无则
+  取项目 RootNamespace」隐式推导，同一份模板在不同工程里会落到不同空间。
 - **K22 / K31**：允许且只允许输出模板 `@using` 对应的两类 using 子句（普通命名空间导入、类型别名）；
   **不得**生成 `global using`、`using static` 或模板未声明的 using。
   生成代码仍一律 `global::` 全限定，这些 using **只为 `@code` 与模板表达式提供短名**，
@@ -216,7 +223,8 @@ namespace {Namespace};
   **`@code` 透传成员是唯一例外（K23 ④）**，其内容是用户原文，不由生成器构造。
 - 局部函数（`R{N}`）只允许出现在 `SetContent`/`SetTemplate` 的 lambda 内，
   签名固定 `void R{N}()`，不得返回值、`async`、泛型、参数。
-- 类名不是合法 C# 标识符 → `EUI013`；code-behind 缺失/嵌套/非 partial 按 spec/01 §6 报错，不生成。
+- 类名不是合法 C# 标识符 → `EUI013`；code-behind 嵌套/非 partial 按 spec/01 §6 报错，不生成
+  （code-behind 缺失不再是错误，见 §2.7）。
 
 ### 2.4 `#line` 映射
 
@@ -323,6 +331,43 @@ protected override global::EclipseUI.Element Build()
 - 组件 `Mount()` 失败时，组件实例由调用方作用域持有（登记在 `Mount()` 之前）；
   `BlockScope` 内的组件由条目作用域释放。生成代码不写补偿逻辑。
 - 块内容构造失败时，`BlockScope` 的已登记资源由块释放；生成代码不捕获。
+
+### 2.7 第二组件来源：`.ui` 独立成组件
+
+`.ui` 是组件的**一种来源**，不是 code-behind 的附属物。**code-behind 不是必需的**，三种形态
+产生等价的组件：
+
+| 形态 | 组件身份来自 | 可作 `<Tag />` | 对外参数 |
+|---|---|---|---|
+| `Counter.ui`（无 `.cs`） | `.ui` 文件本身 | 是 | 无 |
+| `Prefs.ui` + `Prefs.cs`（不声明基类） | `.ui` 文件本身 | 是 | `.cs` 里的 `[UiParameter]` |
+| `Card.ui` + `Card.cs : Component` | code-behind 的基类 | 是 | 同上 |
+
+- 省略 code-behind 时生成器仍产出 `partial class {Name} : Component`（R1），组件可实例化、
+  可被其他模板引用。**`EUI005` 已停用**：没有同名 `.cs`、也没有 `@code` 的纯展示组件合法
+  （此前 K23 ④ 的「`@code` 或同名 partial 至少其一」在本节放宽为两者皆可省略）。
+- **判定顺序**（目录侧，design/14 §14.10.2）：基类链命中 `Component` / `Element` → 按基类；
+  否则若存在**同名且同命名空间**的 `.ui` 声明 → 组件；否则不进目录。
+  只放宽「没写基类」这一条：显式派生了其他类的类型仍按继承链判定，避免同名无关类型被误认。
+- **参数与对外 API 必须写在 `.cs`**。目录在输入编译上构建（生成器读不到自己的产物），
+  所以 `@code` 里的 `[UiParameter]` / `[UiSlot]` / `[UiContent]` 只在该模板内部可见；
+  其他模板使用该参数时按 `EUI002`（unknown parameter）报出。这是「想要参数就建 `.cs`」的
+  唯一原因，不是风格要求。在 `@code` 里写这三个特性 → `EUI057`（Warning，不短路产物），
+  把这件事在声明处说清楚。
+- 声明清单的来源两侧**同源同一份实现**：`UiComponentScanner.FromFile` 读「标签 = 文件名，
+  命名空间 = `@namespace`」，生成器从 `AdditionalTextsProvider` 取、IDE 项目系统从
+  `AdditionalFiles` 取，都是「项目里的 `.ui` 文件」。因此编译器与 IDE 的目录不再分叉——
+  此前 IDE 的 Tier 2 目录建在生成后编译上（能看见 `.g.cs` 的基类），编译器看不见，
+  表现为「编辑器里 `<Prefs />` 正常、`dotnet build` 报 `EUI001`」。清单只有 `(Tag, @namespace)`
+  两项，改模板正文不会让目录值变化，增量缓存仍按值命中（design/14 §14.10.3）。
+- `@namespace` 缺失时（`EUI055` 已报 Error、短路产物），声明清单按标签名认领，不重复报。
+- 有 code-behind 时的 `EUI055` / `EUI056` 契约（§2.2）不变；本节不放松命名空间一致性。
+- **实现状态（2026-11-11）**：生成器 `TemplateComponents` 管道、目录侧 `UiComponentDeclaration` /
+  `UiComponentScanner` / `AppendTemplateOnlyComponents` / `OriginOf` 放宽、IDE 的
+  「输入编译 + 清单」目录全部落地。回归钉在 `SecondComponentSourceTests`（12 例，含「生成产物 +
+  code-behind 合成一个编译单元零错误」）、`ProjectSystemTests.Fixture9`（输入目录 ≡ 生成后目录，
+  真实仓库）、`TemplateOnlyComponentTests`（headless：`@code` 字段就是 `Ref` 目标、对外可达）。
+  Gallery 的 `Counter` / `Prefs` / `Showcase` / `TaskList` 四个组件都没有同名 `.cs`，是活样例。
 
 ## 3. 命名与编号
 
@@ -651,6 +696,8 @@ U0();
 
 1. 目标参数 `P` 必须声明 `[UiParameter] public Action<T>? PChanged { get; set; }`；
    回调名固定 `{P}Changed`，类型 `Action<T>`（可空注解忽略），否则 `EUI040`。
+   `P` 在组件上是公开成员却不是参数时同样 `EUI040`（消息说明「没有 `[UiParameter]`」），
+   而不是 `EUI002`——名字存在，错的是它不支持绑定（spec/01 §4.5）。
 2. 回调赋值是 build-once；位置在参数的源码位置，先赋回调，再调用推送 `U{N}()`。
 3. 回调内的源写入受 `EqualityComparer<T>.Default` 保护；写后调用本组件 `Invalidate()`。
 4. 推送 `U{N}` 与 §4.3.3 相同：相等保护 + 子组件 `Invalidate()`；`Render()` 再次调用。
@@ -999,21 +1046,24 @@ cmp0.Title = "Hi";                    // 静态参数，源码顺序
 U0();                                 // 动态参数推送（源码位置）
 cmp0.Body = content5;                 // 组件内容（若有）
 cmp0.Mount();
+cmp0.ApplyClasses(new global::System.String[] { "wide" });   // 元素级属性（§4.12.6）
+global::EclipseUI.Elements.Grid.SetRow(cmp0.Root, 1);
 parentN.Children.Add(cmp0.Root);
 ```
 
 规则：
 
 1. **顺序固定**：`new` → 作用域登记 → 参数（源码顺序，静态/动态/事件混合）→ 组件内容 →
-   `Mount()` → 挂到父级（根组件返回 `cmpN.Root`）。
+   `Mount()` → 元素级属性（Class/Style/附加属性，源码顺序，作用于 `cmpN.Root`，§4.12.6）→
+   挂到父级（根组件返回 `cmpN.Root`）。
 2. 作用域登记在参数之前：
    - 组件级：`Track(cmp{N})`；
    - 块模板内：`Adopt(cmp{N}); scope{N}.AddDisposable(cmp{N});`
    - 组件内容内：`receiver.TrackContent(cmp{N});`
 3. `Track(cmp)` 等价于 `Adopt` + 登记释放；块/内容内必须拆开，以便随条目/接收方释放。
 4. 参数/回调必须在 `Mount()` 前完成；子组件首次 `Build()` 读取参数。
-5. `cmp.Root` 在 `Mount()` 后才非空；生成器不得提前访问。
-6. 组件为文档根时：登记 → 参数 → 内容 → `Mount()` → `return cmp{N}.Root;`，不挂父级。
+5. `cmp.Root` 在 `Mount()` 后才非空；生成器不得提前访问——元素级属性因此排在 `Mount()` 之后。
+6. 组件为文档根时：登记 → 参数 → 内容 → `Mount()` → 元素级属性 → `return cmp{N}.Root;`，不挂父级。
 7. 组件参数没有 diff；父渲染只推送动态参数并失效子组件，不重建子组件。
 
 #### 4.12.2 参数与事件
@@ -1126,6 +1176,27 @@ foreach (var slot8 in Rows)
 9. 单根拼接对 null 属性**跳过**（无占位元素）；多根拼接对空列表**为零次循环**（不产生空容器）。
 10. 属性只接受字面量 `Name`；带内容、多余属性、同名重复放置 → `EUI022`
     （重复放置违反「一个元素只有一个父」：拼接会把同一实例加进两个容器）。
+
+#### 4.12.6 组件标签上的元素级属性（`Class` / `Style` / 附加属性）
+
+组件不是 `Element`（spec/03 §5.3：`Component` 只持有 `Element Root`），所以标签上的**元素级**
+属性只能落到 `cmpN.Root` 上；写在组件实例上会得到 CS1061/CS1503（分析器放行、生成代码编译不过）。
+发射点在 `Mount()` 之后、挂父级之前（§4.12.1 规则 1/5）。
+
+| 写法 | 生成 | 语义 |
+|---|---|---|
+| `Class="a b"` / `Class={expr}` | `cmpN.ApplyClasses(new [] { "a", "b" });` | 与组件自身在根上声明的类**合并**：自身类在前、外部类在后 |
+| `Style="P: v"` | `cmpN.Root.SetValue({P}Property, v);` | local 层写根元素（压过类层，与控件同口径） |
+| `P.Attached="v"` / `{expr}` | `global::Ns.Owner.SetXxx(cmpN.Root, v);` | 附加属性落在根元素上（`<Card Grid.Row="1"/>` = 卡片占据第 1 行） |
+| `Ref={ident}` | `{ident} = cmpN;` | 与上面三类不同：`Ref` 拿的是**组件实例**（§4.14） |
+
+- `ApplyClasses` 的合并口径：组件自身类**只在第一次调用时快照**，之后每次调用整体替换「外部类」
+  部分，因此根级 `Class={expr}` 每轮 `Render` 重算不会累积；传空集 = 撤销外部类、只留自身类。
+  外部类排在末尾与「`Class` 在控件上后写者胜」的应用序一致（同属性冲突时外部覆盖内部）。
+- 塌缩注入（E4）命中组件标签且自身没写 `Class` 时走同一个入口（`ApplyClasses`），派生类同样进根。
+- 附加属性只接受字面量与表达式；`@bind-` 附加属性仍是 `EUI040`。
+- 组件的**参数**仍走 §4.12.2（`[UiParameter]`）；`Class`/`Style`/附加属性不进参数表，与控件同名
+  属性的语义完全一致——区别只在目标节点是根元素。
 
 
 ### 4.13 `Key`
@@ -1294,7 +1365,9 @@ public partial class {Class} : global::EclipseUI.Component
 
 - 表达式 `Grid.Row={expr}`：动态形态不是赋值左值而是调用语句——根级提升为 `U{N}`、块内 `R{N}`，方法体即
   `global::Ns.Owner.SetXxx(elN, expr);`（`#line` 列映射对准 `{expr}`）。内容上下文仍是 build-once 快照（§4.12.3 规则 8）。
-- 组件标签同样可携带附加属性（组件实例是 `Element`）；发射点在参数赋值之前按源码顺序执行。
+- 组件标签上的附加属性作用于**根元素**（`global::Ns.Owner.SetXxx(cmpN.Root, …)`）——组件实例不是
+  `Element`（spec/03 §5.3），`Grid.Row` 的含义即「组件占据的那个格子」；发射点在 `Mount()` 之后
+  按源码顺序执行（§4.12.6）。
 - 值存储由 `AttachedProperty<T>` 的 `ConditionalWeakTable` 弱表承担：元素卸载随 GC 回收，Unmount 无需清理（K33 口径）；
   读取 `Owner.GetXxx(el)` 无本地值时回落声明时的默认值。
 - `@bind-` 附加属性不支持（`EUI040`，写入来自模板一次性赋值）；未知点号名报 `EUI002` 未知附加属性（带全目录最近名建议）。
@@ -1306,7 +1379,7 @@ public partial class {Class} : global::EclipseUI.Component
 | 构造 | 顺序 |
 |---|---|
 | 元素/控件 | `new` → 属性（源码顺序，含静态赋值/`U`/`R`/绑定/事件）→ 内容 → `parent.Children.Add` |
-| 组件 | `new` → 作用域登记 → 参数（源码顺序）→ 内容 → `Mount` → `parent.Children.Add(cmp.Root)` |
+| 组件 | `new` → 作用域登记 → 参数（源码顺序）→ 内容 → `Mount` → 元素级属性（Class/Style/附加属性，作用于 `cmp.Root`）→ `parent.Children.Add(cmp.Root)` |
 | `@if` | `new` → `parent.Children.Add` → `SetCondition` → `SetContent` → 作用域登记 → `Refresh()`（多分支见 §4.9.3） |
 | `@switch` | `new` → `parent.Children.Add` → `SetSelector` → `AddCase`*/`SetDefault` → 作用域登记 → `Refresh()` |
 | `@foreach` | `new` → `parent.Children.Add` → `SetItems` → `SetKeySelector` → `SetTemplate` → 作用域登记 → `Refresh()` |
@@ -1655,6 +1728,7 @@ D64/D68 ✅ C1。
 | D106 | ✅ G4：**嵌套塌缩 + `.ui` 注入（样式系统 E4 片，design/17 §4.5）**——① 解析器：`EustyleNested`（DirectChild/TypeName/ClassConstraint/SelectorSpan/Setters/Nested），`ParseBody` 加嵌套分支（`>` 直接子 / `.` 类约束 / PascalCase 类型名——属性名全小写的区分依据），嵌套体支持声明 + `&:state` 变体块 + 再嵌套；变体块内嵌套选择器报 EUI050（「状态 × 结构」无对应物）；② 塌缩器 `EustyleCollapse.Flatten`：派生名 `{父}__{kebab(类型)}{-约束}`（`TextBlock.title` → `text-block-title`），**同名段合并**（CSS 同选择器多块 = 声明合并——首版误判为冲突，实测画廊场景即两个 `> Button` 块，改为 setters 拼接 + 子嵌套递归聚合），派生名与**显式类名**撞车报 **EUI053**（`StyleDerivedNameConflict` 新常量；修正 design/17 初版误写 EUI051——已被 E1 占用）；注入规则（RootClass/Chain/DerivedName，ChainSeg 类型名塌缩时即 kebab 化）；③ 管道：`StyleSourceFact`（类名 + 注入规则）替代 `StyleClassFact`，`StyleClassCatalog` 扩展 `Injects`（值相等 `InjectRuleData`/`InjectSegData`，诊断 span 不进缓存数据）；`@style` 块派生名带前缀注册并进 localStyleClasses 映射（模板 `Class="panel__button"` 闭环校验），嵌套类约束按「先本文件」序解析；④ 注入匹配（ExecuteFile，Analyze 后）：根类按解析后注册名比较，直接子**穿透** @if/@foreach/@switch（块内模板编译期展开、运行时就是直接子），插槽填充不穿透；命中回写 `UiElement.InjectedClasses`（去重）；⑤ Emitter：字面量 Class 合并注入（派生类排解析类名后 → §2.2 派生类胜）、`Class=""` 仅注入时发注入数组、无 Class 属性注入发独立数组、表达式形态跳过（§4.5-3 明示边界）；`EustyleRule` 构造扩 4 参（Nested）。EustyleTests +13（嵌套解析/塌缩命名与合并/显式冲突 EUI053/嵌套 :state 双写法等价/变体块内嵌套拒绝/派生 Define/注入 direct+foreach/表达式跳过/派生类目录校验/@style 本地前缀注入）；画廊 app.eustyle 加 `.card` 塌缩链路（`> Button`、`TextBlock.hint`、同名 `> Button:hover` 合并进变体）+ Showcase.ui 分区卡演示（含 @foreach 行注入）；页脚 739→752；**752 例全绿（352/294/106）** 0 警告；selfcheck PASS；双主题出图 + PNG 探针核对 card 背景两主题渲染（light 卡片 y1081-1233 连续色块）；DLL 探针确认派生类注册 + 注入双引用 | design/17 §4.2/§4.5/§5/§7 | ✅ G4（2026-11-09） |
 | D107 | ✅ G4：**注册制伪类（样式系统 E5 收尾片，design/17 §3.2/§5/§7）**——① 运行时：`PseudoStatesRegistry.Register(name)` 启动期静态注册表（名称规范化去前导 `:`；**平台保留名 hover/pressed/active/focus/disabled 撞名抛 ArgumentException**——与 @states 编译期同名单；幂等同掩码——生成代码变体链内联 Register 与宿主各自调用互不干扰；位从 `Disabled<<1`=0x10 自增，int 掩码 27 个注册位、耗尽抛 InvalidOperationException 不够升 long（§8 既有风险条目）；`IsRegisteredMask` 内部校验 = 掩码即凭证）；`Element.SetRegisteredState(mask, bool)`（public——**拒绝平台位/None/未注册位**，掩码只接受 Register 分配位的非空子集），注册位 OR 进 `PseudoStates` 合成掩码——变体匹配与段键零特殊处理；`ClassStyleVariants.State(mask, build)` 注册位变体链（与平台位变体共用应用序，声明序后者胜）；② 解析器 `@states { name; name; }` 顶层声明块：**预扫两遍解析**（声明序无关——首版预扫推进 `_i` 后 Document 未重置，规则被静默跳到块尾后，测试暴露）；撞平台名报 EUI050、重复名去重；三处状态解析（选择器链/嵌套选择器/`&:state` 变体块）统一 `ResolveState`「平台位 → 本文件声明 → 全局目录」，未命中报 EUI050（消息提示 @states 声明途径）；`EustyleSetter` 加 `RegisteredState`（注册名归属，Variant 恒 None）；`Style=` 声明序列不开预扫（`scanStates: false`——元素属性无状态语境，@ 块走 '@' 分支报错而非被预扫吞掉）；③ 管道两级收集：`ExtractStyleStates` 预扫声明（`.eustyle` 全文 / `.ui` 逐 @style 块，经 `Eustyle.CollectStates` 公开入口）→ `StyleStatesCatalog` 值相等目录 → `ExtractStyleClasses`/`ExecuteFile`/`ExecuteStylesheet` 的 Parse 传全局并集兜底跨文件引用（注册名是全局掩码命名空间，**不做类名式组件前缀**）；`StyleClassCatalog` 扩 `States`；④ 生成：变体分组键 (Variant, RegisteredState)，注册位组发射 `.State(global::EclipseUI.PseudoStatesRegistry.Register("name"), s => …)`；`EmitStateRegisters` 在 Apply/`__RegisterStyles` 顶部发幂等注册行（未被变体引用的声明位也注册）；⑤ **EUI054 双通道冲突**（`StyleDualChannelConflict`，Warning 不短路）：新 `HandwrittenDefines` 管道扫宿主 C# 语法树（方法名 Define 且首实参字符串字面量的调用——注释/非字符串不算，误报容忍）与样式表类求交集，Warning 挂样式表类名 span，产物照常生成；⑥ painter 补齐：`PaintTextBlock` 有 class/local 背景即画底色（`ResolveBackground` 此前只被 Button 分支调用——TextBlock 挂 .spinner 背景有值无绘制的现状补齐；圆角读 class 覆盖回落按钮半径令牌）；画廊 app.eustyle `@states { spinning; }` + `.spinner`/`:spinning` 变体 + GalleryScene 双芯片演示（idle 灰 / `SetRegisteredState(mask, true)` 绿——掩码即凭证）；EustyleTests +10（选择器/变体块/嵌套注册名/声明序无关去重/未声明 EUI050/平台名冲突/跨文件 externalStates/@style 注册行/Style= @ 拒绝/EUI054 命中与不冲突）、PseudoStateTests +7（幂等递增/冒号规范化/平台名与非法名拒绝/翻位/SetRegisteredState 拒绝三态/State 变体端到端/声明序后者胜）；**769 例全绿（359/304/106）** 0 警告；selfcheck PASS；双主题 height 3000 出图 + PNG 探针核对 spinning 绿两主题命中（dark #22c55e / light #1aad52，y2078-2093）、idle 灰命中、hash 与改动前一致（默认视口芯片滚出不漂移） | design/17 §3.2/§5/§7/§8、design/03 §3.3.9 | ✅ G4（2026-11-10） |
 | D108 | ✅ **样式属性单一来源 + CLR 原名规范名（design/17 §4.3）**——① 删除 `EustyleParser.Properties` 手写 6 项字典、`SortedPropertyNames()` 手写数组、`EustyleGenerator.EmitLocalSetters` 手写 switch；新增 `StylePropertyCatalog`（Compiler 纯数据、值相等）与 `StylePropertyCatalogFactory`（Metadata 的 Roslyn 扫描），随 `UiCatalog` 走同一条 `CompilationProvider` 派生并挂在 `UiCatalog.StyleProperties`，Parser / EUI051 支持列表 / `Style=` 发射 / theme() 准入全读这一份；② 扫描 `StyleBuilder` 公开非泛型 setter 推出属性集与值形态（Color/ThemeColor→color、double→number），按约定找 `{Name}Property` / `{Name}ResourceProperty` 静态字段并校验 `T`，缺字段/歧义/形态不符进 `Problems` 以 `EUI026` 报出；③ 属性名一律用控件原始 CLR 名（`CornerRadius`/`FontSize`/`FocusRingWidth`），**大小写敏感、精确匹配**——`StylePropertyCatalog.Find` 按 Ordinal 比较，无别名、无大小写/`-`/`_` 归一化，旧 kebab 写法与大小写变体一律报 EUI051（消息提示 case-sensitive CLR name），大写开头属性名与嵌套类型选择器由前瞻 `{`/`;` 区分；④ `Style=` 发射统一为 `el.SetValue(<目录字段>, <值>)`（D105 的逐属性 `Visual.SetXxx` 形态由本项取代）；⑤ 一致性闸门 `StylePropertyCatalogTests`（反射对齐 StyleBuilder setter 集 / 目标字段真实存在 / theme 准入），`EustyleTests` 补规范名、旧写法拒绝（kebab/大小写变体 Theory + 内联 `Style=`）、嵌套歧义、PascalCase 未知属性、无资源字段拒 theme、生成器端到端，并把全部既有样式源码改用规范名；画廊 `app.eustyle` / `Showcase.ui` 改用规范名；**784 例（359/319/106）0 回归**（`PixelGoldens_MatchBaseline` 像素哈希本机差异为改动前既有） | design/17 §4.3/§4.4/§4.8 | ✅（2026-11-10） |
+| D109 | ✅ **组件标签上的元素级属性落到根元素（spec/02 §4.12.6）**——组件不是 `Element`（spec/03 §5.3），`Class`/`Style`/附加属性此前被直接发给组件实例，生成 `cmp0.Classes`（CS1061）与 `Grid.SetRow(cmp0, 1)`（CS1503），分析器放行而 `dotnet build` 红。修复：① 发射点移到 `Mount()` 之后、挂父级之前（`Root` 那时才存在）；② 附加属性目标改 `cmp.Root`（含动态形态的字段提升——此前 `Grid.Row={expr}` 在根级必然编译失败）；③ `Style=` 走 `cmp.Root.SetValue(...)`；④ `Class=` 走新增的 `Component.ApplyClasses(...)`：运行时持有根自身类的**一次性快照**，每轮只整体替换外部类部分（根级 `Class={expr}` 重算不累积），合并序「自身类在前、外部类在后」与控件同属性后写者胜一致；⑤ 塌缩注入（E4）命中组件标签时走同一入口。用例：`ComponentTagElementAttributesTests` 5 例（字面量/顺序/根级动态/块内/注入 + 生成产物零编译错误）、headless `ComponentTagElementAttributeTests` 4 例（真实工程夹具 `ComponentTagHost.ui` → `ComponentTagTarget.ui`：`Grid.GetRow` 命中、类集合并序、`Style=` local 层、动态重算不累积）；Compiler 366 / Headless 364 / Rendering 106 / Ide 132 全绿 | spec/02 §4.12.1/§4.12.6/§4.19/§5.1、design/14 §14.6.4/§14.6.7/§14.5.5、spec/01 §4.2 | ✅（2026-11-11） |
 
 - 每项收敛必须同时删除对应的 v3 路径；不得两套模型并存。
 - 新增偏差必须登记编号（从 D89 起）并注明目标阶段；不得只改代码不改台账。
@@ -1702,7 +1776,7 @@ D64/D68 ✅ C1。
 | K20 | **决策权威位置**：所有架构/语法/范围/排期决策以本表为权威登记点，并同步受影响的规范条目与偏差台账；AI 会话记忆、聊天记录只作留痕，决策未进项目文档视为未落地 | 用户要求（2026-11-08）：决策只存在于对话或 AI 记忆里会在后续会话丢失，且无法随代码一起评审；已同步 spec/README 权威关系第 6 条与 spec/01 §8 规则 7 |
 | K21 | **`@code` 位置与成员可见性对齐 Blazor**：模板内 `@code` 块可位于文档顶层任意位置（根元素之前、之后或前后各一），允许多个块，成员全部合并进同一个 partial 类；**书写顺序不影响模板表达式的可见性**（上方模板可引用下方 `@code` 成员）；`@code` 不进入元素内容，不引入 `@functions` 别名 | 用户要求（2026-11-08）：Blazor 允许 `@code` 在模板下方；Microsoft Learn 的 `Markup.razor` 即「上引用下」，Razor 语法参考明确「More than one `@code` block is permissible」。本条只冻结位置口径，**不提前放开 `spec/01` 对 `@code` 的拒绝**；整波方向已由 K23 登记（K22 为 `@using`），实施细节从 K24 起登记并同步规范正文。实现时须先全量收集 `@code` 成员再建探针 Compilation，否则前置表达式会误报 `EUI007`/`EUI024` |
 | K22 | **模板支持 `@using`；所有标签（含内置控件）必须先 `@using` 才能解析；生成代码保留模板声明的 using 指令**：`@using Ns` 收集后输出生成文件中的普通 `using Ns;`（按模板顺序、去重）；不生成 `global using`、`using static` 或模板未声明的 using（类型别名由 **K31** 另行放开）；标签解析由「全局短名字典」改为「按导入命名空间过滤目录」，未导入的标签报 `EUI001` 并给出缺失 `@using` 建议，同名歧义仍 `EUI016`；内置控件位于 `EclipseUI.Elements`，亦须显式 `@using EclipseUI.Elements` | 用户决策（2026-11-08）：EclipseUI 无 HTML 原生标签层、所有标签都是 CLR 类型，不应有隐式全局可见的特例；同时让 `@code` 原文（如 `List<string>`）在生成文件里有合法命名空间，消除附录 B 的 Q5 / global using 缺口。**状态：✅ S6 已实现（2026-11-08）**——`Lexer` 捕获 `@using`（`EUI009` 特化消息）、`Emitter` 按模板顺序输出 using 组、`UiCatalog.Resolve` 按导入命名空间过滤（global 命名空间类型始终可见），全部样例与约 94 例 golden 已一次性迁移并回归；整波方向已由 K23 登记，实施细节从 K24 起 |
-| K23 | **`.ui` 语法对齐 Blazor/Razor 整波方向与范围**（用户 2026-11-08 明确要求，本轮全部决定汇总）：① **方向**——语法表面向 Blazor/Razor 对齐，取其组织形态精华（流程控制、模板内代码块、单文件、Razor 注释），弃 HTML 宿主语言的糟粕；**不复用 Razor 编译器与 Blazor 运行时**，K1–K18 保留元素树 + 失效重算模型不动；既有「不复用 Razor 语法层」措辞按 C1 修订为「不复用 Razor 编译器 / HTML 语法债，书写形态可对齐」。② **不做 Web 指令**——`@page`/`@layout`/`@rendermode`/`@namespace`/`@model`/`@section`/`@inject`/`@preservewhitespace`/`@typeparam`/`@inherits`/`@implements`/`@attribute`/`@attributes` 与 CSS `class`/`style` 语义一律不提供；HTML 标签兜底、`@("xxx")` 字面量、属性大小写不敏感、最小化属性、XML 实体 / CDATA 同属不采纳。③ **流程控制对齐**——`else`/`else if`（不带 `@`）、`@switch`（`case`/`break`/`default`）纳入目标语法，`EUI008` 停用、`EUI009` 收窄、新诊断从 `EUI046` 起。④ **单文件**——`@code { }` 合法且与同名 `.cs` partial 并存，`EUI005` 放宽为「`@code` 或同名 partial 至少其一」；位置与成员可见性按 K21。⑤ **`@using`** 按 K22 全量落地。⑥ **表达式记号**——保留 `{expr}` 单花括号为本波工作基线（Q1 推荐口径 A），`@` 只用于指令 / 代码块 / 注释。⑦ **排期**——新增 **S6「语法对齐」** 切片，插在 G3 之后、G4 之前（按 Q8 推荐值登记），实施阶段 P0–P6 见 design/16 | 用户决策（2026-11-08）：「目前的语法我不满意，请列一个计划和 Blazor 对齐；取其精华去其 HTML 相关的糟粕」、「`@page`/`@rendermode` 之类的不需要有」、「流程控制上也要和 Blazor 对齐」、「也需要支持单个页面同时要写代码和模板」；Q1 用户在论证后按保留 `{expr}` 口径要求产出示例并连续追问生成形态，未提异议，故按该口径登记工作基线；Q8 按 design/16 推荐值登记排期，如需调整须修订本表。**状态：✅ S6 已实现（2026-11-08）**——`@code`/`@using`/`else`/`else if`/`@switch`/`@* *@` 全链路落地（词法→解析→分析→探针→发射→运行时块协调器），规范先行偏差 **D85–D88** 全部收敛标 ✅；Q3/Q4/Q6/Q7 与 case 细项已按 **K24–K30** 登记并实施；全部样例与约 94 例 golden 补 `@using` 迁移后 `dotnet test EclipseUI.slnx` 497 例全绿。已同步 spec/01 §1.5/§2.7/§2.9/§3.1/§6.2/§7.1、spec/02 §2/§4.14/§12、spec/03 §13、design/01/02/03/08/09/16、README 三份 |
+| K23 | **`.ui` 语法对齐 Blazor/Razor 整波方向与范围**（用户 2026-11-08 明确要求，本轮全部决定汇总）：① **方向**——语法表面向 Blazor/Razor 对齐，取其组织形态精华（流程控制、模板内代码块、单文件、Razor 注释），弃 HTML 宿主语言的糟粕；**不复用 Razor 编译器与 Blazor 运行时**，K1–K18 保留元素树 + 失效重算模型不动；既有「不复用 Razor 语法层」措辞按 C1 修订为「不复用 Razor 编译器 / HTML 语法债，书写形态可对齐」。② **不做 Web 指令**——`@page`/`@layout`/`@rendermode`/`@namespace`/`@model`/`@section`/`@inject`/`@preservewhitespace`/`@typeparam`/`@inherits`/`@implements`/`@attribute`/`@attributes` 与 CSS `class`/`style` 语义一律不提供；HTML 标签兜底、`@("xxx")` 字面量、属性大小写不敏感、最小化属性、XML 实体 / CDATA 同属不采纳。③ **流程控制对齐**——`else`/`else if`（不带 `@`）、`@switch`（`case`/`break`/`default`）纳入目标语法，`EUI008` 停用、`EUI009` 收窄、新诊断从 `EUI046` 起。④ **单文件**——`@code { }` 合法且与同名 `.cs` partial 并存，`EUI005` 放宽为「`@code` 或同名 partial 至少其一」；位置与成员可见性按 K21。⑤ **`@using`** 按 K22 全量落地。⑥ **表达式记号**——保留 `{expr}` 单花括号为本波工作基线（Q1 推荐口径 A），`@` 只用于指令 / 代码块 / 注释。⑦ **排期**——新增 **S6「语法对齐」** 切片，插在 G3 之后、G4 之前（按 Q8 推荐值登记），实施阶段 P0–P6 见 design/16 | 用户决策（2026-11-08）：「目前的语法我不满意，请列一个计划和 Blazor 对齐；取其精华去其 HTML 相关的糟粕」、「`@page`/`@rendermode` 之类的不需要有」、「流程控制上也要和 Blazor 对齐」、「也需要支持单个页面同时要写代码和模板」；Q1 用户在论证后按保留 `{expr}` 口径要求产出示例并连续追问生成形态，未提异议，故按该口径登记工作基线；Q8 按 design/16 推荐值登记排期，如需调整须修订本表。**状态：✅ S6 已实现（2026-11-08）**——`@code`/`@using`/`else`/`else if`/`@switch`/`@* *@` 全链路落地（词法→解析→分析→探针→发射→运行时块协调器），规范先行偏差 **D85–D88** 全部收敛标 ✅；Q3/Q4/Q6/Q7 与 case 细项已按 **K24–K30** 登记并实施；全部样例与约 94 例 golden 补 `@using` 迁移后 `dotnet test EclipseUI.slnx` 497 例全绿。已同步 spec/01 §1.5/§2.7/§2.9/§3.1/§6.2/§7.1、spec/02 §2/§4.14/§12、spec/03 §13、design/01/02/03/08/09/16、README 三份。**后续改判（2026-11-11）**：`@namespace` 从②的「不做」清单移出，改为必填命名空间声明（`EUI055`/`EUI056`），见 §2.2 与 spec/01 §1.5；本行其余决定不变 |
 | K24 | **`@for`/`@while`/`@do` 本波不提供（Q3 推荐口径 A）**：循环一律用 `@foreach`（索引循环用 `Enumerable.Range` 或 `@code` 方法返回集合）；`@for`/`@while`/`@do` 落 `EUI009`，消息给出改写建议（`use @foreach with Enumerable.Range or a code-behind method`）。不新增块类型、不定义循环次数变化的复用语义（design/16 R2 规避）；未来有真实需求须先按新 K 登记 | 用户决策（2026-11-08）：R2 风险（动态次数与 Keyed 复用冲突）收益不成比例；`@foreach` + `Enumerable.Range` 已覆盖索引循环；design/03 §3.7 逃生舱「模板表达不了的流程写 C# 方法」 |
 | K25 | **`@code` 内容边界（Q4 推荐组合）**：`@code` 块是**原文透传的类成员区域**——① 嵌套类型（class/struct/enum/interface/record）允许，透传零特判；② 块内 `using` 指令不允许，由 C# 类体语义报错（经 `#line` 指回 `.ui`），引导写模板顶层 `@using`；③ 空 `@code { }` 合法无操作；④ 块内顶层语句（非成员声明）不建专门诊断，由 C# 报错；⑤ `@code` ↔ 同名 `.cs` 的成员同名冲突由 C# partial 规则报，**`EUI045` 只扩展到「`@code` 成员撞生成保留名（`Build`/`Render`/`__el{N}`/`__cmp{N}`/`__blk{N}`/`__run{N}`/`__bind{N}`/`U{N}`/`R{N}`）」**，诊断位置在 `.ui` 的 `@code` 块内成员 span；词法层只做整块捕获 + span，不做成员粒度白名单 | 用户决策（2026-11-08）：透传 + 探针 Compilation + C# 兜底的哲学（§2.4 规则 8「不重复报告 C# 错误」）覆盖全部粒度校验，白名单方案纯成本无收益；与 Blazor `@code` 同口径 |
 | K26 | **`<!-- -->` 永久保留为与 `@* *@` 等价的合法注释（Q6 口径 C）**：两套注释并存，`<!-- -->` 不设弃用期、不发告警、不迁移存量（§8 规则 2 的弃用期要求不触发——语义未改义，`@* *@` 是新增语法）；两种注释**未闭合统一报 `EUI100`**（`Lexer.SkipComment` 静默吞 EOF 的行为废止，D12 关闭）；design/16 §3.1 与 D88 中「`<!-- -->` 给弃用期（形态待 Q6）」的表述按本条修订 | 用户决策（2026-11-08）：拍板 C（永久保留）；`@* *@` 与 `<!-- -->` 等价并存，文档/工具链双轨登记 |
@@ -1862,7 +1936,7 @@ public partial class TodoList : global::EclipseUI.Component
 3. 字段提升只发生在跨方法引用？其余全局部？`null!` 初始化？
 4. 编号源码顺序、不复用？`U`/`R` 共享 `fnCounter`？字段与局部分享 `idCounter`？
 5. `Build` 每个动态点首次求值一次？`Render` 只调用 `U`/`Refresh`？不构造？
-6. 组件顺序：登记 → 参数 → 内容 → `Mount` → 挂父/返回 Root？
+6. 组件顺序：登记 → 参数 → 内容 → `Mount` → 元素级属性（Class/Style/附加属性，作用于 `cmp.Root`）→ 挂父/返回 Root？
 7. 块顺序：`new` → 挂父 → setter → `Track` → 显式 `Refresh`？
 8. 块内资源 `scope.AddDisposable`？组件 `Adopt` + `AddDisposable`？内容 `TrackContent`？
 9. 绑定：控件 `UiBinding`；组件 `PChanged` + 推送？`invalidate: Invalidate`？

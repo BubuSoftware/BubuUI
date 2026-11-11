@@ -62,7 +62,7 @@
 
 | 类别 | 明确不做 |
 |---|---|
-| 路由 / 外壳 | `@page`、`@layout`、`@attribute [Route]`、`@namespace`、`@model`、`@section` |
+| 路由 / 外壳 | `@page`、`@layout`、`@attribute [Route]`、`@model`、`@section`（**`@namespace` 已于 2026-11-11 改判**：作为必填命名空间声明落地，语义与 Razor 的路由/外壳无关，见 [spec/01 §1.5](../spec/01-template-syntax.md)） |
 | 渲染位置 / 交互 | `@rendermode`（Static SSR / InteractiveServer / InteractiveWebAssembly / InteractiveAuto）、`@attribute [RenderMode*]` |
 | 组件类形状 | `@inherits`、`@implements`、`@attribute`、`@typeparam`（`@typeparam` 同时与 K19 泛型暂缓一致） |
 | 服务 / 编译开关 | `@inject`、`@preservewhitespace`、compound `@using (...)`、`@using static`、`@functions` 别名（**注**：类型别名 `@using Alias = Ns.Type` 已由 K31 放开，并额外具备标签别名效果） |

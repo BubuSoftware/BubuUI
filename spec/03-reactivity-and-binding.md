@@ -269,6 +269,8 @@ public void Adopt(Component child)
   必须显式 `Adopt`，再把组件加入 `BlockScope.Disposables`。
 - `Dispose()` 先释放 `Disposables`/`_tracked` 中的子组件，再清空队列待渲染标记；子组件失效不再入队。
 - 所有权只用于失效队列与生命周期，不改变元素树父子关系；组件不是 `Element`。
+  因此模板里写在组件标签上的 `Class`/`Style`/附加属性都落到 `Root` 上（`Class` 经
+  `Component.ApplyClasses` 与根自身的类合并），见 spec/02 §4.12.6。
 
 ### 2.8 `Dispose()`
 

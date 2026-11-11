@@ -343,6 +343,13 @@
 > （同时可当标签用，用于解决第三方控件与内置控件的 tag 重名，K31）、`@code` 单文件「代码 + 模板」（位置不限，K21）、
 > `else`/`else if`/`@switch` 流程控制、`@* *@` 注释；**不做** `@page`/`@rendermode`/`@inject` 等 Web 指令，
 > **不复用 Razor 编译器与 Blazor 运行时**，K1–K18 保留元素树 + 失效重算模型不变。
+> **`@namespace Dotted.Name` 必填**（2026-11-11）：生成文件的命名空间只由它决定，不再跟随
+> code-behind / `RootNamespace` 推导；缺失 `EUI055`、与 code-behind 不一致 `EUI056`。
+> **没有保留值**——`global` 只是普通名字，全局命名空间的 code-behind 必须搬进命名空间。
+> **`.ui` 独立成组件**（2026-11-11，spec/02 §2.7）：code-behind **不强制**，只有 `.ui` 也能
+> 被别的模板 `<Counter />` 引用；想要完整 C# IDE 能力或对外参数时再建同名 `.cs`
+> （参数写在 `@code` 里只对该模板内部可见）。见 [spec/01 §4.2](./spec/01-template-syntax.md)、
+> [spec/02 §2.2](./spec/02-generated-code-contract.md)、[§2.7](./spec/02-generated-code-contract.md)。
 > 目标语法见 [spec/01 §1.5](./spec/01-template-syntax.md)，权威决策见 [spec/02 §14](./spec/02-generated-code-contract.md)，
 > 偏差 D85–D88 已收敛（见 [spec/02 §12](./spec/02-generated-code-contract.md#12-实现偏差台账-d42d88)），
 > 计划见 [design/16](./design/16-blazor-alignment-plan.md)。全部样例与约 94 例 golden 已补 `@using` 迁移，
@@ -485,7 +492,10 @@ public partial class Counter
   `scope.AddDisposable`、item 模板条目作用域；从机制上杜绝 toggle/增删条目时的泄漏。
 - **双向绑定**：`@bind-Checked={showButton}` 生成 `UiBinding.TwoWay`；构造时源→目标，
   目标变化回写源并 `Invalidate`，相等短路防回环；源必须是可写左值，非法源/非法目标分别报
-  `EUI037`/`EUI040`（编译期，含值类型 item 成员与属性返回的 struct 中间段）；旧语法
+  `EUI037`/`EUI040`（编译期，含值类型 item 成员与属性返回的 struct 中间段）；目标必须是
+  「支持绑定」的成员——控件是 `{P}Property` 支撑的可写属性、组件是带 `{P}Changed` 的参数；
+  **名字存在但不可绑**（只读、没有 `{P}Property`、组件上不是 `[UiParameter]`）报 `EUI040` 并
+  带原因，拼错才报 `EUI002`；补全只列会通过的目标。旧语法
   `:bind`/`:value` 已移除（S6/K27，报 `EUI046`），迁移到 `@bind-P`/`P=`；组件级 `@bind-P` 已随 C4 落地
   （`{P}Changed` 回调 + 父推送 `U{N}`/`R{N}`）。
 - **输入与焦点**：`InputRouter` 统一 hit test、按下捕获、指针移动/释放与键盘路由；

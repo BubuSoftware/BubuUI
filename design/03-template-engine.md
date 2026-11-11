@@ -292,8 +292,8 @@ string        ::= '"' raw-char* '"'
 
 - 文件名 → 类名；生成代码是 `{accessibility} partial class {Name} : global::EclipseUI.Component`，
   重写 `protected override Element Build()`（[Emitter.cs:75](../src/EclipseUI.Compiler.Generator/Emitter.cs#L75)）。
-- code-behind 必须是与文件同名的**顶层** `partial` 类：
-  - 缺失 → `EUI005`；嵌套 → `EUI015`；非 partial → `EUI011`；文件名非法 → `EUI013`。
+- code-behind 不是必需的（spec/02 §2.7：`.ui` 自己就是组件来源）；存在时必须是同名**顶层** `partial` 类：
+  - 嵌套 → `EUI015`；非 partial → `EUI011`；文件名非法 → `EUI013`。`EUI005`（缺失 code-behind）已停用。
 - 生成部分提供 `Component` 基类；code-behind 不要声明不同的基类，也不要再写 `Build()`。
 - code-behind 可标 `[UiState]`（组件自身可观察）或对少量属性标 `[UiObservable]`；状态生成器另生成一个
   `partial` 部分实现 `IUiObservable`（15 §15.2.4）。两者不冲突：模板部分声明基类，状态部分只声明接口。
@@ -722,7 +722,7 @@ parent0.Children.Add(c0.Root);   // 最后挂到父级
 | `@foreach` | `EUI007` / `EUI014`（收窄为组件级状态）/ `EUI041`（集合原地变更） |
 | 指令 | `EUI008`（`@switch`）/ `EUI009`（未知） |
 | `Key` | `EUI010` / `EUI039`（可观察依赖） |
-| 根/类/code-behind | `EUI012` / `EUI013` / `EUI005` / `EUI011` / `EUI015` |
+| 根/类/code-behind | `EUI012` / `EUI013` / `EUI011` / `EUI015`（`EUI005` 已停用，spec/02 §2.7） |
 | 重复属性/重复目标 | `EUI025` / `EUI033` |
 | 状态声明 | `EUI034` / `EUI035` |
 | 反应式依赖 | `EUI036`（不可观察）/ `EUI038`（不可分析） |

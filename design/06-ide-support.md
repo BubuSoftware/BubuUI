@@ -5,7 +5,11 @@
 > 新增 L1（MSBuildLocator + `Microsoft.Build.Evaluation.Project` 求值）、L2（每项目一份真
 > `CSharpCompilation`，引用来自 `obj/project.assets.json`）、L3（`extern alias euiGen` 在 IDE
 > 内跑真 `TemplateGenerator`）、L4（`UiCatalogFactory.Build(outputCompilation)`）；L5 诊断双通道、
-> L6 符号查询式转定义、L7 watcher、L8 内嵌 C# 完整语言服务全部从这一份 Compilation 派生。
+> L6 符号查询式转定义、L7 watcher、L8 内嵌 C# 语言服务全部从这一份 Compilation 派生。
+> **L8 的覆盖不完整**：`{expr}`（含属性表达式）九项能力全通；`@code { }` 块只有跳转 /
+> 签名帮助 / 语义着色 / Tier 2 诊断 / 格式化，**补全 / 悬停 / 重命名从未接入**（三者都只判
+> `CursorKind.Expression`）。机制、成因与修法见 **§6.9.10**——不要按"内嵌 C# 完整语言服务"
+> 这个说法推定两块对称。
 > 五条验收夹具已在 `tests/EclipseUI.Ide.Tests/ProjectSystemTests.cs` 落成可执行回归，
 > `ide/build.ps1` 已重发布并对发布版做过 stdio LSP 端到端冒烟（框架属性 F12 实测落
 > `src/EclipseUI.Runtime/Panels.cs`）。**P9（重命名换 `SymbolFinder`）仍按原计划不做**。
@@ -156,12 +160,15 @@ VS Code 的错误列表和红波浪线自动就有。**第一版 IDE 体验的�
 |---|---|---|---|
 | 1 | `@using` 与 `@using` 别名 | `@using` 可见性过滤（K22）与别名解析（K31）已落地——[DocumentAnalysis.cs:300](../ide/EclipseUI.LanguageServer/Analysis/DocumentAnalysis.cs#L300) / [:309](../ide/EclipseUI.LanguageServer/Analysis/DocumentAnalysis.cs#L309) | **别名不进补全**：[CompletionProvider.cs:145](../ide/EclipseUI.LanguageServer/Analysis/CompletionProvider.cs#L145) `Tags()` 只发 `element.Tag`，整个文件不读 `Aliases`；`@using Alt = Ns.Type` 的右侧类型名也不补（[:354](../ide/EclipseUI.LanguageServer/Analysis/CompletionProvider.cs#L354) `Namespaces()` 只列命名空间） |
 | 2 | 输入标签列出全部合法控件 | 已实现：遍历 `catalog.Elements`，未导入的标 `needs @using` 并降序排序 | 合法性依赖目录完整性：自家项目控件**必须先 build**（§6.9.1 后果 1）；`.ui` 派生组件不进目录（需 L3） |
-| 3 | 输入属性列出当前控件全部可用属性 | 已实现：属性 / 事件 / 组件参数 / 附加属性 / 保留属性 / `@bind-` 只列可写目标（[CompletionProvider.cs:184](../ide/EclipseUI.LanguageServer/Analysis/CompletionProvider.cs#L184)） | 与第 2 条**同一个根因**：`analysis.AttributeOwner` 解析不出元素就返回空列表（[:195](../ide/EclipseUI.LanguageServer/Analysis/CompletionProvider.cs#L195)），控件不在目录里则一个属性都没有 |
+| 3 | 输入属性列出当前控件全部可用属性 | 已实现：属性 / 事件 / 组件参数 / 附加属性 / 保留属性 / `@bind-` 只列**支持绑定**的目标（与 EUI040 同一份判定，spec/01 §4.5）（[CompletionProvider.cs:184](../ide/EclipseUI.LanguageServer/Analysis/CompletionProvider.cs#L184)） | 与第 2 条**同一个根因**：`analysis.AttributeOwner` 解析不出元素就返回空列表（[:195](../ide/EclipseUI.LanguageServer/Analysis/CompletionProvider.cs#L195)），控件不在目录里则一个属性都没有 |
 | 4 | 属性与标签都能转定义（有源码跳源码，无源码反编译） | **标签**四路已落地，含 ILSpy 反编译兜底（[DefinitionProvider.cs:156](../ide/EclipseUI.LanguageServer/Analysis/DefinitionProvider.cs#L156)）；表达式 / `@code` 标识符走探针符号反查 | **属性完全没做**：[DefinitionProvider.cs:32](../ide/EclipseUI.LanguageServer/Analysis/DefinitionProvider.cs#L32) 的 switch 无 `AttributeName` 分支 → F12 返回 null；标签走正则扫文本、同名取第一个，会跳错命名空间 |
-| 5 | C# 语言支持（**已拍板 = 内嵌 C# 完整语言服务**） | 表达式 / `@code` 的补全、悬停、跳转、重命名已有（[LanguageServerHost.cs:51](../ide/EclipseUI.LanguageServer/Server/LanguageServerHost.cs#L51) 起至 `:66`） | 缺 signature help / 语义着色 / 代码操作 / 格式化（host 只注册 6 个 `textDocument/*` 方法）；缺表达式实时类型诊断（Tier 2，§6.9.4）；可见源码只有本文件 code-behind |
+| 5 | C# 语言支持（**已拍板 = 内嵌 C# 完整语言服务**） | **落地前**：`{expr}` 的补全 / 悬停 / 跳转 / 重命名已有（[LanguageServerHost.cs:51](../ide/EclipseUI.LanguageServer/Server/LanguageServerHost.cs#L51) 起至 `:66`）；`@code` **只有跳转**（[DefinitionProvider.cs:36](../ide/EclipseUI.LanguageServer/Analysis/DefinitionProvider.cs#L36) `CodeBlockDefinition`），补全 / 悬停 / 重命名**从未接入**——三个 provider 都只判 `CursorKind.Expression` | **落地前**还缺 signature help / 语义着色 / 代码操作 / 格式化（host 只注册 6 个 `textDocument/*` 方法）、Tier 2 诊断，且可见源码只有本文件 code-behind。**落地后（P8）**：前两类已闭合（host 现注册 11 个 `textDocument/*`），可见源码随 L2 扩到整个项目；**`@code` 的补全 / 悬停 / 重命名仍未做**，原文"`@code` 已有"是误判，机制与修法见 §6.9.10 |
 
 第 5 条的边界：在 `.ui` 内提供与 `.cs` 同档的 C# 语言服务，**不接管 `.cs` 文件的语言服务**
 （那由 C# Dev Kit / ReSharper 负责，§6.2 两个薄壳的口径不变）。
+
+「同档」目前只在 `{expr}` 一侧成立；`@code` 块**低于** `.cs` 同档——缺补全、悬停与重命名。
+两块的逐项对照见 §6.9.10，不要把这句话读成两块对称。
 
 **关键读法**：第 2、3 条不是功能缺口，是**类型可见性**缺口——同一个 L1/L2 项目编译同时闭合两条；
 第 1 条是纯功能缺口，不依赖架构；第 4 条是功能缺口但**必须搭 L2 的车**
@@ -188,6 +195,11 @@ VS Code 的错误列表和红波浪线自动就有。**第一版 IDE 体验的�
 不引入第二套类型环境。分项：Tier 2 实时类型诊断（§6.9.4）、signature help、语义着色
 （`textDocument/semanticTokens`）、代码操作、格式化。`{expr}` 与 `@code` 的偏移回映已有
 （`TryMapMemberSpanToUi` / 块体逐字透传），新增能力复用它，不另造映射。
+
+**注（2026-11-11 落地后补）**：这份分项清单是"补什么"，不是"已有什么"——补全 / 悬停 /
+重命名不在其中，因为它们被认为"已有"。但那只对 `{expr}` 成立；`@code` 一侧除了跳转之外
+一直为空，P8 完成后依然如此。§6.9.0 第 5 条原文"`@code` 的补全、悬停、跳转、重命名已有"
+是这处遗漏的源头，已订正；逐项对照与修法见 §6.9.10。
 
 ### 6.9.1 问题：四套互不一致的「可见源码」口径
 
@@ -384,6 +396,15 @@ signature help 与语义着色只需 `SemanticModel`，不引入新包。
 | Tier 1 | 每次按键 | `FrontEnd.Parse + Analyze` on buffer + 缓存目录 → EUI 模板诊断 | ~1ms（保留现有实现） |
 | Tier 2 | debounce 300–500ms / 保存 | 对该文档跑生成器 → 生成树进编译 → `GetDiagnostics` → CS 错误经 `#line` 映射回 `.ui` | 待实测 |
 
+**`@namespace` 契约只走 Tier 2**（2026-11-11）：EUI055（缺失）/ EUI056（与 code-behind 不一致）
+由生成器发出，经同一份映射回映到 `.ui`；Tier 1 刻意不报——解析层不应被必填约束绑架，否则
+编辑中间态会满屏红。回归在 `ProjectSystemTests.Fixture8`。
+
+**`@bind-P` 的目标可绑性两条通道都报，且判定只有一份**（spec/01 §4.5）：Tier 1 从目录的
+`NonBindableProperties`（不可绑成员 → 原因）直接报 EUI040，Tier 2 走同一份目录 + 生成器短路
+（Error 不产码）。所以 IDE 与 `dotnet build` 对同一处给出同一个码、同一条原因；
+补全（`@bind-` 之后）复用同一份判定，只列会通过的候选。
+
 两条通道正好对应 [§14.9.2 责任划分](./14-control-template-contract.md#L739)，且与 build 同源，
 **不需要 CS→EUI 翻译器**：[Emitter.cs:207](../src/EclipseUI.Compiler.Generator/Emitter.cs#L207)
 已发射 span 型 `#line (sl,sc)-(el,ec) "path"`，TemplateGenerator 类注释明写
@@ -442,7 +463,7 @@ P5 保鲜的是已有能力，本身不闭合任何一条要求。
 | **P5** | L7 watcher + 自动 reload | 2·3·4 保鲜 | 改 `.cs`/`.csproj`/assets.json 后不再需要手动 Reload |
 | **P6** | L3 生成器接线（extern alias + rootnamespace）+ `.eustyle` 接入 | 2·3 完整 | `.ui` 派生组件未 build 时也在目录里；`.eustyle` 有 LSP 诊断 |
 | **P7** | L5 Tier 2 实时类型诊断 | **5** 之一 | 表达式类型错误实时报，`(code, span)` 与 `dotnet build` 一致 |
-| **P8** | L8 余项：signature help / 语义着色 / 代码操作 / 格式化 | **5** 完整 | 每项与同内容 `.cs` 在 C# Dev Kit 下的结果对照 |
+| **P8** | L8 余项：signature help / 语义着色 / 代码操作 / 格式化 | **5** 大部分（`{expr}` 完整；`@code` 仍缺补全 / 悬停 / 重命名） | 每项与同内容 `.cs` 在 C# Dev Kit 下的结果对照；上述三处不在本项范围，见 §6.9.10 |
 | P9 | 重命名换 `SymbolFinder` | 非五条 | 不跨项目误改（正确性收益） |
 
 **P2 是 P3–P8 的技术前提**：MSBuild 求值在本机 SDK 上的可用性是全案最大技术风险，
@@ -516,3 +537,78 @@ C 只保留为「无 csproj / untitled / 内存态」的运行时 fallback，不
 另有一处口径修正：无文档上下文的 `DefaultCatalog` 原本取「遍历到的第一个项目」（可能是不含
 `.ui` 的测试工程），改为优先取收了 `.ui/.eustyle` 的项目；`FindSourceTypes` 用只解析源码树的
 轻量编译做跨项目符号查询，避免一次 F12 把整个解决方案的 Compilation 都算一遍。
+
+### 6.9.10 L8 的覆盖边界：`{expr}` 与 `@code` 不对称（2026-11-11 补记）
+
+**结论**：`@code { }` 块内**没有补全、没有悬停、不能重命名**。这不是 P0–P8 的回归，是从来没有
+实现过——补全/悬停/重命名三个 provider 的分派键只有 `CursorKind.Expression`，`@code` 的
+`CursorKind.CodeBlock` 落进各自的 `default`。
+
+#### 逐项对照
+
+| 能力 | `{expr}` / 属性表达式 | `@code { }` |
+|---|---|---|
+| 补全 | ✅ 成员 / 裸标识符 / `@foreach` 变量 | ❌ 落 `default` 返回空 |
+| 悬停 | ✅ 类型 / 可写性 / 方法组 / 目录成员文档 | ❌ 无 `CodeBlock` 分支 |
+| F12 跳转 | ✅ `.ui` 回映 / 兄弟 `.cs` / `eui-decompiled:` / 跨项目源码 | ✅ `CodeBlockDefinition` |
+| 重命名 | ✅ 含 `@foreach` 迭代变量 | ❌ `ResolveTarget` 硬判 `Expression` |
+| 签名帮助 | ✅ | ✅ 同一投影 |
+| 语义着色 | ✅ | ✅ 同一投影 |
+| Tier 2 诊断 | ✅ 经 `#line` 回映 | ✅ 同 |
+| 快速修复 | ✅ EUI002 / CS0103（属性表达式）、EUI001（标签名） | — 不适用（不在属性上下文） |
+| 格式化 | 随模板缩进 | ✅ Roslyn `Formatter` |
+
+分派位置：[CompletionProvider.cs:21](../ide/EclipseUI.LanguageServer/Analysis/CompletionProvider.cs#L21)
+的 `switch`（七个分支，无 `CodeBlock`）、[HoverProvider.cs:16](../ide/EclipseUI.LanguageServer/Analysis/HoverProvider.cs#L16)
+的 `switch`（同）、[RenameProvider.cs:122](../ide/EclipseUI.LanguageServer/Analysis/RenameProvider.cs#L122)
+的 `if (context.Kind != CursorKind.Expression …) return null`。`@code` 唯一接上的是
+[DefinitionProvider.cs:119](../ide/EclipseUI.LanguageServer/Analysis/DefinitionProvider.cs#L119)
+的 `CodeBlockDefinition`。
+
+#### 为什么不能"加个分支就完事"
+
+补全成立需要三个前提，`@code` 一个都不具备：
+
+1. **入口**：上面三个 `switch` 没有分支，先要有地方接。
+2. **词法上下文**：[CursorScanner.cs:236](../ide/EclipseUI.LanguageServer/Analysis/CursorScanner.cs#L236)
+   判定 `CodeBlock` 时只做了 `TokenStart = offset`，既没有表达式区间也没有"当前标识符前缀"。
+   补全无法判断光标前是 `Na` 还是 `task.Na`，也就定不出替换区间与是否走成员选择。
+   `{expr}` 侧有完整的 `ExpressionStart` / `ExpressionEnd` 交给补全器（[:376](../ide/EclipseUI.LanguageServer/Analysis/CursorScanner.cs#L376)）。
+3. **候选与上下文规则**：`{expr}` 的候选是三段拼起来的——`ExpressionEnvironment`（foreach 变量）+
+   code-behind 与 `@code` 成员 + `InferType(receiver).GetMembers()`。这套成立是因为表达式永远处在
+   "字段 / 成员选择"语义里。`@code` 块内是自由语句：光标可能在局部变量声明后、`if` 条件里、
+   lambda 体内，候选必须包含该位置**可见**的局部变量、参数、类型名与语句关键字，还要按上下文过滤
+   （`var x = ta|` 该出类型，`if (|` 该出布尔表达式，`await |` 只出可等待）。`Members()` 那套没有
+   "当前位置上下文"的概念。
+
+#### 为什么会漏掉（两处文档误判）
+
+§6.9.0 第 5 条原文写的是"表达式 / `@code` 的补全、悬停、跳转、重命名已有"，把两个区间当成
+同一套入口的并集；真实情况是只有**跳转**对 `@code` 单独接了分支。同一误判也写在
+[ide/README.md](../ide/README.md) 的能力表里（"`{expr}` 与 `@code` 走 Roslyn 投影" 那一行），
+两处均已于本次订正。P8 的分项清单（signature help / 语义着色 / 代码操作 / 格式化）因此不包含
+补全——既然"已有"，就不必再排。证据：
+`git log -S"CursorKind.CodeBlock" -- ide/EclipseUI.LanguageServer/Analysis/CompletionProvider.cs`
+为空，说明该分支在历史上从未出现过。
+
+#### 修法（未实施）
+
+| 路线 | 做法 | 覆盖度 | 成本 |
+|---|---|---|---|
+| **A** | `CursorScanner` 补 `CodeBlock` 的词法前缀与替换区间；候选用 `SemanticModel.LookupSymbols(treeOffset)` 取该位置可见符号，配关键字表与少量上下文规则 | 日常够用：成员 / 局部变量 / 字段 / 类型名 | 数百行，不引新包 |
+| **B** | 接 Roslyn `CompletionService`，需要 `AdhocWorkspace` + `Document` 投影（不能只 `AddSyntaxTrees`） | 与 `.cs` 同档：推荐成员、snippet、泛型方法组、`await` 过滤 | 引 Workspaces 服务层，命中 R7 的包体积 / 版本绑定 |
+
+排序建议：**悬停 → 补全 → 重命名**。补全最贵；悬停与重命名便宜得多——`EmbeddedCSharpService.At`
+已经为两种区间建好投影，`CodeBlockDefinition` 已经能取到光标处的符号，二者可直接复用。
+
+#### 若做，验收标准
+
+1. `@code` 内 `task.` 列出 `TaskItem` 实例成员（与 `.cs` 同内容对照）
+2. `var t = ta|` 列出类型名，`ta` → `TaskItem`
+3. `if (|` 给出布尔表达式候选，而不是成员列表
+4. 悬停能给出局部变量 / 字段的类型与目录成员文档
+5. 重命名能覆盖 `@code` 内的局部变量与 code-behind 字段引用，且不误改其他类型同名成员
+
+**待拍板**：是否按 A 路线补齐这三项（只做悬停 / 三项一起做），以及是否接受 B 路线引入
+Workspaces 服务层的依赖。在拍板前，`@code` 的补全 / 悬停 / 重命名按**已知缺口**对待，
+不计入第 5 条已闭合范围。

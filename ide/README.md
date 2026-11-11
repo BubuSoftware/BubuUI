@@ -27,7 +27,8 @@ design/06 §6.9 之后，目录不再是「扫 dll 元数据」，所有能力�
    ↓     引用 = obj/project.assets.json（package compile assets + 被引用工程的输出）
    ↓ L3  IDE 内跑真 TemplateGenerator（extern alias euiGen + build_property.rootnamespace），
    ↓     生成树加回编译 —— .ui 派生组件不必先 build 就存在
-   ↓ L4  UiCatalogFactory.Build(outputCompilation) —— 目录的唯一事实源
+   ↓ L4  UiCatalogFactory.Build(输入编译, .ui 声明清单) —— 目录的唯一事实源
+   ↓     与编译器的目录**同源同实现**（UiComponentScanner）：输入编译 + 清单，不是生成后编译
    ↓
 所有能力：标签/属性补全、悬停、诊断、跳转定义、重命名、signature help、
 语义着色、代码操作、格式化 —— 全部查这一份 Compilation 与这一份目录
@@ -45,23 +46,27 @@ design/06 §6.9 之后，目录不再是「扫 dll 元数据」，所有能力�
 | 诊断 Tier 1 | ✅ | 每次按键跑 `FrontEnd.Parse + Analyze`，与 `dotnet build` 同码同 span |
 | 诊断 Tier 2 | ✅ | 真生成器 + 项目 Compilation 的 CS/EUI 诊断经 `#line` 映回 `.ui`；400ms debounce，只在文档版本未变时发布 |
 | `.eustyle` 诊断 | ✅ | `.eustyle` 进 `documentSelector`，`ExecuteStylesheet` 的 EUI050–052 有 LSP 红波浪线 |
+| `@namespace` 契约 | ✅ | 必填；生成器报 EUI055（缺失）/ EUI056（与 code-behind 不一致），经 Tier 2 映回 `.ui`。补全提供 `@namespace` 指令与命名空间候选（自身命名空间排首位） |
+| 无 code-behind 的 `.ui` 组件 | ✅ | 目录把「同名同命名空间的 `.ui`」当组件证据（spec/02 §2.7），`<Tag />` 在编辑器与 `dotnet build` 里一致；参数写在 `@code` 里只对本文件可见（`EUI057` Warning 提示）。`Ref={…}` 指向 `@code` 字段时 F12 落在本文档的字段声明 |
 | 标签补全 | ✅ | 来自项目目录；未 build 的自家控件、`.ui` 派生组件都在；未导入的标 `needs @using` |
 | `@using` 别名补全 | ✅ | `@using Alt = Ns.Type` 的 `Alt` 作为标签候选，选中解析到目标类型 |
 | 属性 / 事件 / 组件参数 / 附加属性补全 | ✅ | 含 `Grid.Row` 形态；事件带委托签名 |
-| `@bind-` / 属性值 / `@` 指令 / `@using` 命名空间补全 | ✅ | 只列可写目标；枚举成员、`bool`、`Style=` 属性名 |
+| `@bind-` / 属性值 / `@` 指令 / `@using` 命名空间补全 | ✅ | `@bind-` 只列**支持绑定**的目标（控件可写属性；组件带 `{P}Changed` 的参数，不含内容/委托/只读）；不可绑的名字由 EUI040 解释。另有枚举成员、`bool`、`Style=` 属性名 |
 | 悬停 / 大纲 | ✅ | 标签 → CLR 类型与内容模型；属性 → 类型；事件 → 处理器签名 |
-| 表达式悬停 / 内嵌 C# 补全 | ✅ | `{expr}` 与 `@code` 走 Roslyn 投影；项目 Compilation 已含 code-behind 与生成树，不重复加树 |
+| 表达式补全 / 悬停 | ✅ | `{expr}` 与属性表达式走 Roslyn 投影；候选来自 `ExpressionEnvironment` + code-behind/`@code` 成员 + 接收者类型的实例成员 |
+| `@code` 块内补全 / 悬停 | ⛔ | 只有跳转（`CodeBlockDefinition`）。补全/悬停/重命名的分派键只判 `CursorKind.Expression`，`@code` 落 `default` 返回空——**从未实现**，不是回归。见 [design/06 §6.9.10](../design/06-ide-support.md) |
 | 跳转定义 | ✅ | 标签与**属性/事件/参数/附加属性**都走 Roslyn 符号查询，落在成员声明；有源码跳源码（含仓库里以源码编译的框架工程），无源码走成员级反编译（`eui-decompiled:`） |
-| 重命名 | ✅ | F2 改 `@foreach` 变量与 code-behind 类自身成员；改不全的编辑一律拒绝 |
+| 重命名 | ✅ | F2 改 `@foreach` 变量与 code-behind 类自身成员；改不全的编辑一律拒绝。**仅 `{expr}`**，`@code` 块内不支持 |
 | signature help | ✅ | `textDocument/signatureHelp`，重载与当前参数位从同一份 Compilation 取 |
 | 语义着色 | ✅ | `textDocument/semanticTokens/full`，只着色 `{expr}` 与 `@code` 区间（模板表面仍归 TextMate） |
-| 代码操作 | ✅ | `EUI001` 补 `@using`、`EUI002` 最近属性替换、`CS0103` 在 `@code` 生成缺失成员；映不回的编辑丢弃 |
+| 代码操作 | ✅ | `EUI001` 补 `@using`、`EUI002` 最近属性替换、`CS0103` 把缺失成员生成到 `@code` 块（触发点仍是属性表达式，`@code` 块内不产生快速修复）；映不回的编辑丢弃 |
 | 格式化 / 区间格式化 | ✅ | 模板缩进按 AST 做最小行编辑；`@code` 块体交 Roslyn `Formatter` |
 | watcher 自动失效 | ✅ | `.cs/.ui/.eustyle/.csproj/Directory.Build.props/obj/project.assets.json` 变更 → 重建快照 + 重发诊断，无需手动 Reload |
 | `#line` 调试映射 | ⛔ | 生成器侧已有 `#line`，调试器接线未做（design/06 P3） |
 
 第 5 条验收的边界：**只在 `.ui` 内提供与 `.cs` 同档的 C# 能力，不接管 `.cs` 文件**
-（那由 C# Dev Kit / ReSharper 负责）。
+（那由 C# Dev Kit / ReSharper 负责）。「同档」目前只在 `{expr}` 一侧成立：`@code` 块缺补全、
+悬停与重命名，逐项对照见 [design/06 §6.9.10](../design/06-ide-support.md)。
 
 ## 2. VS Code：跑起来
 
@@ -148,7 +153,7 @@ TextMate bundle（IntelliJ 平台原生支持导入 `.tmLanguage.json`）。
 ## 5. 测试
 
 ```powershell
-dotnet test tests/EclipseUI.Ide.Tests     # 119 例：五条验收夹具 / 项目系统 / 光标 / 补全 / 悬停 / 跳转 / 重命名 / 反编译 / 大纲 / 诊断 / 协议帧 / 探针投影 / 端到端会话
+dotnet test tests/EclipseUI.Ide.Tests     # 131 例：五条验收夹具 / 项目系统 / 光标 / 补全 / 悬停 / 跳转 / 重命名 / 反编译 / 大纲 / 诊断 / 协议帧 / 探针投影 / 端到端会话
 cd ide/vscode; node test/tokenize.test.js  # grammar：真实 oniguruma 引擎逐 token 断言 scope
 cd ide/vscode; node test/extension.test.js # 客户端壳：documentSelector / watcher / 参数
 ```
@@ -173,6 +178,9 @@ grammar 测试值得单说：TextMate 写错不会报错，只会「某个地方
 - **重命名**：只允许 `@foreach` 变量与 code-behind 类自身成员；工作区 `.cs` 超过 500 个文件时
   拒绝成员改名（宁可少改不错改）。P9 的 `SymbolFinder` 改造未做。
 - **代码操作 / 格式化**：编辑经偏移回映改写回 `.ui`；映不回的丢弃而不是猜。
+- **`@code` 块内的补全 / 悬停 / 重命名缺失**：三者都只接 `{expr}`（分派键为
+  `CursorKind.Expression`），`@code` 的 `CursorKind.CodeBlock` 落进 `default`。这是从未实现的
+  缺口而非回归，成因与两条修法见 [design/06 §6.9.10](../design/06-ide-support.md)。
 - **`#line` 调试映射**未做；语义着色只覆盖内嵌 C# 区间，模板表面仍由 TextMate 着色。
 - **URI 必须按编辑器格式解析**：VS Code 发 `file:///d%3A/repo/x.ui`（盘符冒号编码、盘符小写）。
   这种写法下 .NET 的 `Uri.LocalPath` 返回 `/d:/repo/x.ui`，再经 `GetFullPath` 就永远匹配不到

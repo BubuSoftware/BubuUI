@@ -423,13 +423,19 @@ public sealed class UiCatalog
 - 特性枚举值来自更新版本运行时而当前生成器不认识：降级为 `None` + 问题，不崩溃（前向兼容）。
 - 已进入目录但声明非法的三类（v2 补充）：事件字段声明在非元素类型/静态宿主类上、
   暴露属性名占用 `On{事件}` 或保留属性名、`[UiContent]` 目标成员不存在或类型不符。
+- **未进入目录的公开成员也留痕（2026-11-11，spec/01 §4.5）**：`UiElementDef.NonBindableProperties`
+  记录「名字存在、但不是模板可见属性/参数」的成员 → 原因短语（只读、无 public setter、`init`/`required`、
+  没有 `{P}Property`、`[UiIgnore]`、组件上不是 `[UiParameter]`）。它**只记原因、不报声明诊断**——
+  `Parent`/`IsHovered` 这类继承成员在每个控件上都有，逐条报会把目录变成错误墙。使用点按它分流：
+  `@bind-P` → `EUI040`（spec/01 §4.5）；`P=` → 仍是 `EUI002` 但文案改为说明原因、不给拼写建议（§4.2）。
+  组件侧另外把 `[UiSlot]` 属性与「没有 `[UiParameter]`」区分开。
 
 ### 14.5.5 附加属性与泛型标签（✅ 附加属性 G4 首批 2026-11-09；泛型标签暂缓 K19）
 
 - 附加属性声明：`public static readonly AttachedProperty<T> RowProperty` + `public static GetRow/SetRow`。
 - 模板语法：`Owner.Prop="..."`（如 `Grid.Row="1"`）。目录增加 `UiAttachedPropDef(OwnerTag, Name, ClrTypeDisplayName, SetterMethod)`；实现另带 `OwnerClrName`（生成代码用全限定宿主名）与 `TypeShape`（字面量转换分派）。✅ G4 布局切片（2026-11-09）起宿主 `Grid` 已扩展为 `Panel` 子类（行列布局见 §14.12 迁移表 G4-Grid 行），静态附加成员原样保留。
 - 生成：`global::Ns.Grid.SetRow(el, 1);`；表达式值走动态语句（根级 `U{N}` / 块内 `R{N}`，语句形态即调用本身，不再是赋值左值）。
-- ✅ **G4 首批落地记录（2026-11-09）**：载体 `EclipseUI.Elements.Grid` 静态类（`Row`/`Column`，int）；值存储为 `AttachedProperty<T>` 内的 `ConditionalWeakTable<Element, ValueBox<T>>` 弱表——元素卸载后随 GC 回收，Unmount 无需清理（K33 泄漏口径）；重复赋值复用值盒（A1 去装箱口径）。扫描规则：宿主必须**顶层、public 可见、无 `[UiIgnore]`**（嵌套宿主 v1 静默跳过）；候选 = `public static readonly AttachedProperty<T> XxxProperty` 字段，命名必须 `XxxProperty`，要求配对 `public static GetXxx(Element)` / `SetXxx(Element, T)` 且值类型与字段泛型实参一致（不一致报 EUI019 家族问题、不进目录）；同 `(OwnerTag, Name)` 冲突报 EUI026 家族问题、先声明者胜出；组件标签同样可携带附加属性（组件实例是 Element）。
+- ✅ **G4 首批落地记录（2026-11-09）**：载体 `EclipseUI.Elements.Grid` 静态类（`Row`/`Column`，int）；值存储为 `AttachedProperty<T>` 内的 `ConditionalWeakTable<Element, ValueBox<T>>` 弱表——元素卸载后随 GC 回收，Unmount 无需清理（K33 泄漏口径）；重复赋值复用值盒（A1 去装箱口径）。扫描规则：宿主必须**顶层、public 可见、无 `[UiIgnore]`**（嵌套宿主 v1 静默跳过）；候选 = `public static readonly AttachedProperty<T> XxxProperty` 字段，命名必须 `XxxProperty`，要求配对 `public static GetXxx(Element)` / `SetXxx(Element, T)` 且值类型与字段泛型实参一致（不一致报 EUI019 家族问题、不进目录）；同 `(OwnerTag, Name)` 冲突报 EUI026 家族问题、先声明者胜出；组件标签同样可携带附加属性，但目标是**根元素**（`cmp.Root`），因为组件实例不是 `Element`——发射点在 `Mount()` 之后（spec/02 §4.12.6）。
 - 泛型标签：`<DataGrid<Order>>`，要求类型 public、非抽象、有对应元数据；标签名带元数（`DataGrid\`1`），
   模板侧写实参。元数据模型预留 `Arity`；附加属性实现排 G4，泛型标签按 K19 暂缓、不排期（形状保留冻结）。
 
@@ -503,10 +509,13 @@ cmp0.Title = "Hi";           // 参数按源码顺序
 U0();                        // 动态参数推送 / @bind 的 PChanged 赋值
 cmp0.Body = content5;        // 默认内容（若有）
 cmp0.Mount();
+cmp0.ApplyClasses(new global::System.String[] { "wide" });   // Class= → 根元素（§14.6.7）
+global::EclipseUI.Elements.Grid.SetRow(cmp0.Root, 1);        // 附加属性 → 根元素
 parentN.Children.Add(cmp0.Root);
 ```
 
-- 顺序固定：`new` → 作用域登记 → 参数（源码顺序）→ 内容 → `Mount()` → 挂父级。
+- 顺序固定：`new` → 作用域登记 → 参数（源码顺序）→ 内容 → `Mount()` → 元素级属性
+  （Class/Style/附加属性）→ 挂父级。
   先登记后赋值：参数 setter/内容构建/`Mount()` 失败时，调用方仍可释放组件。
 - 组件实例由调用方作用域释放：根 → 父组件 `Dispose`；`@if` → 内容卸载；`@foreach` → 条目移除。
   组件内容内的子组件由接收方 `TrackContent` 登记；`Dispose` 幂等。
@@ -521,6 +530,29 @@ parentN.Children.Add(cmp0.Root);
 - 包作者在类库中放置 `.ui` + code-behind，引用与本项目同版本的生成器与运行时；生成代码编入类库。
 - 消费端只读类库符号（类型 + 特性 + 生成方法签名），不执行类库代码（R1）。
 - 类库 MUST NOT 依赖消费端的 code-behind；跨边界只通过普通参数、委托参数、元素内容（`Signal<T>` 仅作 legacy 类型）。
+
+### 14.6.7 组件标签上的元素级属性（`Class` / `Style` / 附加属性，✅ 2026-11-11）
+
+组件不派生 `Element`（§14.2：`Component` 只持有一个 `Element Root`），所以**元素级**属性没有可以
+直接写的目标。约定：全部落到 `cmp.Root`，发射点在 `Mount()` 之后。
+
+| 写法 | 生成 | 语义 |
+|---|---|---|
+| `Class=` | `cmpN.ApplyClasses(...)` | 与组件自身在根上声明的类合并，外部类在后（冲突时外部胜） |
+| `Style=` | `cmpN.Root.SetValue(...)` | local 层写根元素 |
+| `Grid.Row=` 等附加属性 | `Owner.SetXxx(cmpN.Root, ...)` | 组件占据的格子就是根元素的格子 |
+| `Ref=` | `{field} = cmpN` | 例外：拿组件实例（§14.6.4） |
+
+- 为什么不是「拒绝写法」：`<Card Grid.Row="1"/>` 是最自然的布局写法，逼用户包一层容器在这个
+  体系里没有对应概念（组件的根就是它的外观）。
+- 为什么不是「组件当作 Element」：`Component` 承担所有权/失效队列，不是渲染节点（spec/03 §5.3）；
+  把它变成 `Element` 会让 `Children` 里出现无 `Measure`/`Paint` 的节点。
+- **历史缺陷**（本切片修复）：2026-11-09 的 G4 首批与 E2 把这三类属性直接发给组件实例，
+  生成 `cmp0.Classes`（CS1061）与 `Grid.SetRow(cmp0, 1)`（CS1503）；分析器放行、`dotnet build` 红。
+  该缺陷同时说明「组件不是 Element」这条前提此前只写在文档口头、没有生成侧契约守护。
+- `ApplyClasses` 的合并状态由运行时持有（`Component._ownRootClasses` 快照 + 每轮替换外部类），
+  所以根级 `Class={expr}` 重算不累积；这是把「动态值不能叠加」的责任放在运行时而不是生成代码里的
+  唯一一处例外。
 
 ### 14.6.6 已知限制（必须写进用户文档）
 
@@ -671,7 +703,8 @@ parentN.Children.Add(cmp0.Root);
 现有代码保持不变；EUI016 起的码表分片实现（扫描侧元数据诊断 C1/C2；使用点 EUI023/EUI025/EUI031 C3；
 其余按 C4–C6），新增码从 EUI046 起（不重用停用编号）。表中列与控件契约相关的诊断；v4 的反应式诊断口径以
 [spec/03 §11.1](../spec/03-reactivity-and-binding.md) 与 [spec/01 §6.2](../spec/01-template-syntax.md) 为准。
-EUI005/007/008/009/011/012/013/015 分别是 code-behind、`@foreach` 类型推断与指令诊断，不受本文影响。
+EUI007/008/009/011/012/013/015 分别是 `@foreach` 类型推断与指令诊断，不受本文影响
+（EUI005「缺少 code-behind」已随 §14.10.2 的第二组件来源停用，spec/02 §2.7）。
 v3 的 EUI014/EUI032/EUI034–EUI036/EUI038–EUI039/EUI041–EUI042/EUI044 已停用，编号不复用。
 
 | 代码 | 条件 | 位置 | 级别 |
@@ -765,23 +798,39 @@ src/EclipseUI.Compiler.Metadata/   依赖 Microsoft.CodeAnalysis：符号扫描�
 ### 14.10.2 扫描算法
 
 ```
-Build(Compilation c):                       // 纯函数：同样的 Compilation → 同样可结构比较的目录值
-  exposed = []; hidden = []; problems = []
+Build(Compilation c, declarations):          // 纯函数：同样的输入 → 同样可结构比较的目录值
+  exposed = []; hidden = []; problems = []   // declarations = .ui 声明的组件（spec/02 §2.7）
   for asm in [c.Assembly] + c.SourceModule.ReferencedAssemblySymbols:
       if asm != c.Assembly && !ReferencesEclipseUiRuntime(asm): continue   // 跳过 System.* 等
       for type in WalkNamespace(asm.GlobalNamespace):
           if IsStaticEventHostAbuse(type):                 // public 静态类上有 RoutedEvent 字段
               problems.Add(EUI026(...)); continue          // 14.4.3 v2：事件必须声明在元素/组件上
-          if !DerivesFromElementOrComponent(type): continue
+          if !IsComponentOrControl(type): continue         // 基类链，或同名同命名空间的 .ui 声明
           if !IsPublic(type): continue                     // 不可见 → EUI001
           if !CanExpose(type, out reason):                 // 抽象/嵌套/无参构造/泛型
               hidden.Add(HiddenTag(type, reason)); continue
           if TagOf(type) in {"Slot", "ContentSlot"}:       // ✅ C6：句法保留名（解析器特判成槽节点）
               hidden.Add(HiddenTag(tag, EUI031)); problems.Add(EUI031(...)); continue
           exposed.Add(Describe(type))                      // 标签/属性/事件/内容/参数/插槽
+  for d in declarations where d.Tag not in exposed and not in hidden:
+      exposed.Add(Minimal(d))                              // 纯 .ui：无内容/参数/事件/属性
   groups = GroupByTag(exposed)                             // 同 Tag ≥2 → Ambiguous（EUI016）
   return UiCatalog(groups, hidden, problems)               // 记录类型 + 稳定排序 → 可结构比较
 ```
+
+**第二组件来源（2026-11-11）**：`declarations` 让「`.ui` 本身是组件」在输入编译里成立。
+生成器读不到自己的产物，所以 `OriginOf` 原来只认基类链；现在放宽为两条证据——基类链，
+或「存在同名且同命名空间的 `.ui`」，后者只在类型**没写基类**时生效（显式派生其他类的仍按
+继承链判定，避免同名无关类型被误认）。输入编译里连类型都没有的（纯 `.ui`）由 `Minimal`
+合成：`Content = None`、参数/事件/属性/插槽皆空，`ClrTypeDisplayName = @namespace + Tag`。
+
+清单为空时目录与加这个参数之前**完全一致**，所以现有调用点（`Build(compilation)`）与测试夹具
+不需要改动。✅ 2026-11-11 实施注记：清单由**同一份实现** `UiComponentScanner.FromFile` 产出
+（标签 = 文件名、命名空间 = `@namespace`），生成器从 `AdditionalTextsProvider` 取、IDE 项目系统
+从 `AdditionalFiles` 取。IDE 侧同时**改成建在输入编译上**——此前它建在生成后编译上（看得到
+`.g.cs` 的基类），两条路径本来就分歧，正是「编辑器绿、`dotnet build` 红」的根因；
+`ProjectSystemTests.Fixture9` 用真实仓库断言「输入编译 + 清单」与「生成后编译」给出同一份
+标签表（`Tag:Origin` 全序列相等）。
 
 不再有 `cache.TryGet(asm.Identity)`（v2 修订，D14）：增量生成器**不持有可变静态状态**，
 手工缓存与 14.8.2 的约束、R6 的确定性以及管道自带的值比较缓存互相冲突。缓存交给管道——
@@ -834,8 +883,11 @@ Build(Compilation c):                       // 纯函数：同样的 Compilation
   目标是重建后**下游生成输出不变**，即 `CSharpGeneratorDriver` 的 `GetRunResults()` 里
   每个文件的 `IncrementalStepRunReason` 为 `Cached`/`Unchanged`。14.11.2 的增量测试按这个口径断言。
 - 目录构建仍是**每批编译一次**，不是每个 `.ui` 一次（✅ G3 2026-11-08：管道根改为
-  `AdditionalTexts → UiFileInput` 与 `Compilation → UiCatalog` 两条；逐文件 `Combine` 后
-  `Select` 出 `(Input, Catalog, UiFileFacts)` 再逐文件 `RegisterSourceOutput`。
+  `AdditionalTexts → UiFileInput` 与 `(AdditionalTexts .ui → 组件声明清单) + Compilation → UiCatalog`
+  两条；逐文件 `Combine` 后 `Select` 出 `(Input, Catalog, UiFileFacts)` 再逐文件
+  `RegisterSourceOutput`。清单是值相等 record（`UiComponentDeclarations`，逐项比 + 排序），
+  所以改模板正文不会让目录值变化：`TemplateComponents` 步骤重跑但输出 `Unchanged`、
+  `TemplateCatalog` 命中缓存，由 `TemplateComponents_ChangingBodyOnly_KeepsCatalogValueStable` 钉住。
   `UiFileFacts`（code-behind 表面 + 探针事实）是值相等 record，与目录同口径每轮重建、
   下游按值命中缓存；单个 `.ui` 变化只重跑该文件的发射。
   验收：`Incremental_UnrelatedSourceChange_KeepsPerFileOutputsCached`（无关源码改动，

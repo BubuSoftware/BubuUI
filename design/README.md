@@ -30,7 +30,7 @@
 | 3 | [模板引擎（语言规范）](./03-template-engine.md) | 词法/句法/语义、字面量、诊断映射、编译管线与逃生舱；v3 历史，含实现偏差台账 D1–D41（§3.5.3）、v4 台账 D42–D88（§3.5.4）与附录 A |
 | 4 | [运行时与元素系统](./04-runtime-and-elements.md) | 组件实例模型、元素树、属性引擎、事件、组件注册表 |
 | 5 | [布局、渲染与输入](./05-layout-rendering-input.md) | measure/arrange、合成器、hit test / 焦点 / IME |
-| 6 | [IDE 支持](./06-ide-support.md) | VS Code + Rider 第一优先；LSP + Roslyn 投影；**§6.9 已落地 P0–P8**（项目系统驱动的单一 Compilation：MSBuild 求值 / 真生成器 / 目录唯一事实源 / 符号查询式转定义 / 诊断双通道 / watcher / 内嵌 C# 完整语言服务；五条验收已化为回归夹具） |
+| 6 | [IDE 支持](./06-ide-support.md) | VS Code + Rider 第一优先；LSP + Roslyn 投影；**§6.9 已落地 P0–P8**（项目系统驱动的单一 Compilation：MSBuild 求值 / 真生成器 / 目录唯一事实源 / 符号查询式转定义 / 诊断双通道 / watcher / 内嵌 C# 语言服务；五条验收已化为回归夹具。边界：`{expr}` 九项全通，`@code` 的补全 / 悬停 / 重命名未接，见 §6.9.10） |
 | 7 | [工具链](./07-toolchain.md) | 热重载、调试映射、无头测试、DevTools |
 | 8 | [实施里程碑与风险](./08-milestones-and-risks.md) | M1–M8 阶段表、风险预警、决策记录汇总 |
 | 9 | [开发计划](./09-development-plan.md) | 总体进度、G1–G8 路线图、里程碑出口标准、下一任务详细规划 |
