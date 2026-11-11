@@ -6,6 +6,8 @@
 
     <CheckBox @bind-Checked={showButton}>Button visible</CheckBox>
 
+    <Prefs/>
+    
     @if (showButton) {
         <Button OnClick={() => count++}>+1</Button>
     }
