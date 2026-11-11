@@ -503,7 +503,8 @@ string        ::= '"' raw-char* '"'
 - 语法见 §2.3/§3.1；值必须是 `{expression}`，字面量 → `EUI037`。
 - 目标 `P`：
   - 控件：public 可写属性 + `{Name}Property`；不得是事件/保留属性；
-  - 组件：`[UiParameter]` + public setter + 声明 `{P}Changed`（`Action<T>`）；
+  - 组件：`[UiParameter]` + public setter + 声明 `{P}Changed`（`Action<T>`：恰好一个参数，且与 `P` 同一类型，
+    可空标注忽略——形状在扫描期按符号判定，`Action`/`Action<其它类型>` 都算「没有回调」）；
   - `[UiContent]`/`[UiSlot]` 参数、委托参数、保留属性、其它 → `EUI040`。
 - **`P` 必须落在「支持绑定」的成员上，两种失败要分开报**：
   - 名字在类型上**不存在** → `EUI002`（拼写问题，附最近名建议）；
@@ -512,8 +513,8 @@ string        ::= '"' raw-char* '"'
     （如 `'IsEnabled' is not backed by a StyledProperty (there is no 'IsEnabledProperty' field)`）。
   两条提示的动作完全不同（改拼写 vs 换目标或补声明），所以不能混成一条。
   同一个「不可绑」表也用于普通赋值：`P=` 命中它时仍是 `EUI002`，但文案改为说明原因、不给拼写建议（§4.2）。
-- 补全只列「支持绑定」的成员（`@bind-` 之后）：控件是属性表内的可写属性，组件是带 `{P}Changed`
-  的非内容/非委托参数；不可绑的名字不进候选，由诊断负责解释。
+- 补全只列「支持绑定」的成员（`@bind-` 之后）：控件是属性表内的可写属性，组件是带**形状正确的**
+  `{P}Changed` 的非内容/非委托参数；不可绑的名字不进候选，由诊断负责解释。
 - 源 `expr` 必须是**可写左值**（spec/03 §8.1）：
   1. 字段、可写属性（含 `private`/`internal` setter，生成代码在同一 partial 类内）；
   2. 允许：`this.Count`、`Vm.Name`、`t.Done`（`t` 为引用类型 item）、`_state.Enabled`（`_state` 是字段）；
@@ -965,7 +966,7 @@ new cmp0
 | `EUI037` | `@bind` 源非法（非可写左值/静态/const/readonly/init/方法/索引器/`?.`/struct 属性中间段/值类型 item 成员/类型不符/自绑） | 表达式 | Error | ✅ S3（控件源；自绑静态不可判定，按 §4.5 不报） |
 | `EUI038` | **停用**：v3 "不可分析结构 → 一次性"；v4 任意表达式合法 | — | — | — |
 | `EUI039` | **停用**：v3 `Key` 不得依赖可观察状态；v4 Key 可引用任意可读表达式 | — | — | — |
-| `EUI040` | `@bind` 目标非法（控件不可写/无 `{Name}Property`；组件参数无 public setter/委托/内容/保留；组件缺少 `{P}Changed` 或类型不符；组件内容体内出现 `@bind`） | 属性名/内容 | Error | ✅ S3+C4（控件 ✅ S3；组件 ✅ C4；`{P}Changed` 类型匹配静态不可判，记 D73） |
+| `EUI040` | `@bind` 目标非法（控件不可写/无 `{Name}Property`；组件参数无 public setter/委托/内容/保留；组件缺少 `{P}Changed` 或形状不符；组件内容体内出现 `@bind`） | 属性名/内容 | Error | ✅ S3+C4（控件 ✅ S3；组件 ✅ C4；`{P}Changed` 的 arity/类型在扫描期按符号校验，D110 关闭 D73） |
 | `EUI041` | **停用**：v3 集合未实现 INCC；v4 每次刷新重新枚举 | — | — | — |
 | `EUI042` | **停用**：v3 item `@bind` 禁止组件级源；v4 允许 | — | — | — |
 | `EUI043` | **停用**：旧语法 `:bind`/`:value` 弃用告警；K27 起旧语法移除，改由 `EUI046` 报错 | — | — | — |

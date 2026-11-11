@@ -623,6 +623,7 @@ public sealed class UiBinding : IDisposable
 
 - 回调名固定 `{P}Changed`；类型必须是 `Action<T>`（`T` 与 `P` 类型一致，可空标注忽略）；
   缺失、类型不符、非 `[UiParameter]`、非 public setter → `EUI040`。
+  形状（`DelegateArity == 1` + 类型身份）在扫描期按符号判定（spec/02 §4.4.3 规则 1，D110）。
 - 父模板 `@bind-P={expr}` 生成：
   1. Build：`__cmp.PChanged = v => { if (!EqualityComparer<T>.Default.Equals(expr, v)) { expr = v; Invalidate(); } };`
   2. Build：调用推送方法 `U{N}()`（源 → 子参数，相等保护 + 子 `Invalidate()`）；
@@ -799,7 +800,7 @@ new cmp
 | `EUI010` | `Key` 位置错（非条目第一个元素根）、字面量、空表达式 | 属性 | Error | S2 |
 | `EUI033` | 同一目标重复赋值（文本+显式目标；`P=`+`@bind`；`P=`+`:bind`/`:value`；`@bind`+其它写入） | 属性值/文本 | Error | S2/S3 |
 | `EUI037` | `@bind` 源非法（非可写左值/静态/const/readonly/init/方法/索引器/`?.`/struct 属性中间段/值类型 item 成员/类型不符） | 表达式 | Error | ✅ S3（控件与 item 源；自绑静态不可判定不报） |
-| `EUI040` | `@bind` 目标非法（控件不可写/无 `{Name}Property`；组件参数无 public setter/委托/内容/保留；组件缺少 `{P}Changed` 或类型不符）；组件内容体内出现 `@bind` | 属性名/内容 | Error | ✅ S3（控件与组件侧；自绑静态不可判定不报） |
+| `EUI040` | `@bind` 目标非法（控件不可写/无 `{Name}Property`；组件参数无 public setter/委托/内容/保留；组件缺少 `{P}Changed` 或形状不符——arity/类型在扫描期按符号校验）；组件内容体内出现 `@bind` | 属性名/内容 | Error | ✅ S3（控件与组件侧；自绑静态不可判定不报） |
 | `EUI043` | **停用**：旧语法 `P:bind`/`P:value` 弃用告警；K27 起移除，改由 `EUI046` 报错 | — | — | — |
 | `EUI045` | code-behind 与生成成员冲突（`Build`/`Render`/`U{N}`/`__` 字段/基类/隐藏 `Invalidate` 等） | code-behind 声明 | Error | ✅ 2026-11-08（D57/D80；spec/02 §10） |
 | `EUI100` | 纯语法错误（标签不匹配、属性缺值、未闭合注释、非法 `@bind-` 形态） | 语法位置 | Error | ✅ |

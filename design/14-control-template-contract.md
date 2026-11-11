@@ -466,6 +466,12 @@ public sealed class UiCatalog
 - **`@bind-P` 目标**必须是 `[UiParameter]` + public setter，并且组件声明了同名回调参数
   `[UiParameter] public Action<T>? PChanged { get; set; }`；回调类型与 `P` 不一致、或目标为委托/内容/槽/保留参数 → `EUI040`。
   回调由父模板在 Build 赋一次，子组件在内部动作中修改参数后调用 `PChanged?.Invoke(next)`（spec/03 §8.3）。
+  - **形状在扫描期按符号判定**（D110）：恰好一个参数（`DelegateArity == 1`）、且该参数与 `P` 是**同一种类型**
+    （`SymbolEqualityComparer.Default`，可空标注忽略）。不满足时不回填 `ChangedCallbackName`，
+    原因记进 `UiParameterDef.ChangedShapeProblem`，使用点据此报 `EUI040` 并说出期望形状。
+  - 用类型**身份**而不是隐式转换判定：生成代码里 lambda 的形参由目标委托推断，随后直接进
+    `EqualityComparer<T>.Default.Equals(source, v)` 与 `source = v`。`Action<object>` 收 `int` 语义上合法，
+    但那两行编译不过——判「可转换」会把错漏回 C# 的 CS1503。
 - **EUI044 停用**：v3 的"非可观察参数不刷新"护栏不再存在；所有参数都走推送 + `Invalidate()`，没有可观察性判定。
 - 参数的赋值目标只来自 `Parameters`；组件上若有形如 `{Name}Property` 的字段不参与组件属性解析（组件不是 `Element`）。
 
@@ -1113,8 +1119,8 @@ Roslyn 4.9.2 的公开 API 没有这个成员（公开的是 `IModuleSymbol.Refe
 | 生成器校验 | `ValidateBindSource` 扩展到组件目标（`@bind-P` 源可写性按参数类型判定，spec/02 §4.4.3 规则 8 无 EUI042） |
 | 测试 | `C4ComponentTests`（Headless 18 例：参数解析/EUI002 参数建议/EUI004/EUI027/EUI040 三形态/EUI021 双场景/EUI010 内容/EUI033 重叠；合成 `ProbeCard`/`ProbeList` 目录）+ `CatalogScannerTests` 9 例（EUI028 形状/类型/内容参数/类级 `[UiContent]`/多内容参数/继承/约定链接）+ `GeneratorContractTests` 11 例（生命周期顺序/字段提升/U 推送形态/回调形态/块级 Adopt+R/TrackContent/字面量化/EUI027/EUI040/EUI021/EUI004 阻断生成/内容快照无 U/R） |
 
-**范围说明**：具名插槽（`[UiSlot]` 消费）✅ C6 已落地（§14.12.6）（✅ C5 已由 §14.12.5 落地 Ref 与使用点诊断）；`{P}Changed` 类型与参数严格匹配静态不可判，
-由 C# 编译错误兜底（spec/02 §12 D73）；组件参数推送不会重建子组件模板（无参数 diff，spec/03 §10.2）。
+**范围说明**：具名插槽（`[UiSlot]` 消费）✅ C6 已落地（§14.12.6）（✅ C5 已由 §14.12.5 落地 Ref 与使用点诊断）；`{P}Changed` 的形状（arity 恰为 1、类型与 `P` 同一）
+已在扫描期按符号校验（D110，原 D73 记的「静态不可判」已关闭）；组件参数推送不会重建子组件模板（无参数 diff，spec/03 §10.2）。
 
 ### 14.12.5 C5 落地记录（2026-11-05）
 
