@@ -344,15 +344,44 @@ public sealed class UiCatalog : IEquatable<UiCatalog>
         AttachedProperties.Select(p => $"{p.OwnerTag}.{p.Name}");
 
     /// <summary>
-    /// K22（D85）：按模板 <c>@using</c> 导入的命名空间过滤标签解析。内置控件（EclipseUI.Elements）
-    /// 无豁免；只有导入命名空间（或全局命名空间）中的候选可见。目录里有同名标签但全部未导入时
-    /// 返回 NotFound 并携带完整类型名列表（供「缺失 @using」建议）；导入后同名多类型仍是 Ambiguous。
+    /// K22（D85）+ K33（D111）：按「<c>@namespace</c> 链（隐式可见、内层独占）→ <c>@using</c>
+    /// 导入命名空间（或全局命名空间）」过滤标签解析，内置控件（EclipseUI.Elements）无豁免。
+    /// 链上与导入命名空间都不可见时返回 NotFound 并携带完整类型名列表（供「缺失 @using」建议）；
+    /// 导入后同名多类型仍是 Ambiguous。
     /// </summary>
-    public UiTagResolution Resolve(string tag, IReadOnlyList<string>? imports)
+    /// <param name="enclosingNamespaces">
+    /// K33（D111）：<c>@namespace</c> 的 C# 名称查找链，最内层在前（见
+    /// <see cref="TemplateAnalyzer.EnclosingNamespaces"/>）。这一链是**隐式可见**的，且按 C# 规则
+    /// **优先于 @using**——内层先命中就独占，不再与外层或导入命名空间的同名候选合并成 EUI016。
+    /// 空/null 表示没有命名空间声明，退回纯 <c>@using</c> 口径。
+    /// </param>
+    public UiTagResolution Resolve(string tag, IReadOnlyList<string>? imports,
+        IReadOnlyList<string>? enclosingNamespaces)
     {
         if (tag is null) return new UiTagResolution(UiTagResolutionKind.NotFound, null, null, null);
         if (_byTag.TryGetValue(tag, out var defs))
         {
+            // ① C# 简单名查找：当前命名空间 → 逐级外层。命中的那一层独占，因为 C# 里外层/using
+            //    的同名类型在内层已声明同名类型时根本不可见。
+            if (enclosingNamespaces is { Count: > 0 })
+            {
+                foreach (var ns in enclosingNamespaces)
+                {
+                    var inScope = defs
+                        .Where(d => string.Equals(TemplateAnalyzer.NamespaceOfClrType(d.ClrTypeDisplayName), ns,
+                            StringComparison.Ordinal))
+                        .ToArray();
+                    // 同一命名空间里出现同名两类型只能是跨程序集重复声明（EUI016 的既有语义）
+                    if (inScope.Length == 1) return new UiTagResolution(UiTagResolutionKind.Found, inScope[0], null, null);
+                    if (inScope.Length > 1)
+                        return new UiTagResolution(
+                            UiTagResolutionKind.Ambiguous,
+                            null,
+                            inScope.Select(d => d.ClrTypeDisplayName).ToList(),
+                            null);
+                }
+            }
+            // ② 退回 @using 口径
             // 可见性统一由 NamespaceVisible 决定：global 命名空间类型不写 @using 也可见，
             // 具名命名空间类型必须已导入（K22）。imports 为空时具名类型自然全部不可见。
             var visible = defs

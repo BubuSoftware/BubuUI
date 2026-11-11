@@ -365,7 +365,8 @@ public static class EmbeddedCSharpService
                       ?? catalog.Elements.FirstOrDefault(e =>
                           string.Equals(TypeNames.Bare(e.ClrTypeDisplayName), tag, StringComparison.Ordinal));
         var ns = element is null ? null : TypeNames.NamespaceOf(element.ClrTypeDisplayName);
-        if (ns is null || analysis.Imports.Contains(ns, StringComparer.Ordinal)) return;
+        // K33：@namespace 链内已隐式可见，不该再建议加 @using
+        if (ns is null || analysis.IsNamespaceVisible(ns)) return;
         actions.Add(new UiCodeAction(
             "Add `@using " + ns + "`", "quickfix", null,
             new[] { new UiTextEdit(new UiSpan(0, 0), "@using " + ns + Environment.NewLine) },

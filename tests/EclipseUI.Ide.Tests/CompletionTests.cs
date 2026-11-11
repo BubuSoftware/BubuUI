@@ -47,6 +47,43 @@ public class CompletionTests
     }
 
     [Fact]
+    public void Tags_DoNotHintForTheTemplatesOwnNamespace()
+    {
+        // K33（D111）：`@namespace App` 里的 Card 不需要 @using，补全不能反向引导。
+        // 直接喂一个只含 App.Card 的目录——内置目录里没有这个 tag。
+        var catalog = new UiCatalog(new[] { CardIn("App") }, Array.Empty<UiHiddenTag>(),
+            Array.Empty<UiMetadataProblem>());
+        var (analysis, offset) = TestHost.Analyze("@namespace App\n<|", catalog: catalog);
+
+        var item = Item(CompletionProvider.Complete(analysis, catalog, offset), "Card");
+        Assert.DoesNotContain("needs @using", item.Detail);
+    }
+
+    [Fact]
+    public void Tags_HintWhenOnlyAnOuterOrSiblingNamespaceHasIt()
+    {
+        // 链外的命名空间仍要 @using：App.Gallery 看不到 Other.Card
+        var catalog = new UiCatalog(new[] { CardIn("Other") }, Array.Empty<UiHiddenTag>(),
+            Array.Empty<UiMetadataProblem>());
+        var (analysis, offset) = TestHost.Analyze("@namespace App.Gallery\n<|", catalog: catalog);
+
+        var item = Item(CompletionProvider.Complete(analysis, catalog, offset), "Card");
+        Assert.Contains("needs @using Other", item.Detail);
+    }
+
+    private static UiElementDef CardIn(string ns) => new(
+        "Card",
+        "global::" + ns + ".Card",
+        UiElementOrigin.Control,
+        UiContentModel.Children,
+        null,
+        new Dictionary<string, UiPropDef>(StringComparer.Ordinal),
+        new Dictionary<string, UiEventDef>(StringComparer.Ordinal),
+        new Dictionary<string, UiParameterDef>(StringComparer.Ordinal),
+        new Dictionary<string, UiSlotDef>(StringComparer.Ordinal),
+        Array.Empty<UiMetadataProblem>());
+
+    [Fact]
     public void TagCompletion_ReplacesTheTypedPrefix()
     {
         var (service, uri, offset) = TestHost.Open(Using + "<But|");

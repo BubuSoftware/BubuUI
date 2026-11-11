@@ -29,8 +29,11 @@ public static class TemplateAnalyzer
 
         // K22（D85）/K31：标签在「@using 导入的命名空间 + @using 别名」内解析。作用域在 Visit 链中
         // 显式传参（目录保持不可变，§14.10.3 值相等不受影响）。
+        // K33（D111）：`@namespace` 声明的命名空间及其外层链是**隐式可见**的——C# 在命名空间内
+        // 用短名引用同命名空间（或外层命名空间）的类型不需要 using，模板没有理由更严。
         var imports = CollectImports(doc.Nodes);
-        var scope = new TagScope(imports, CollectAliases(doc.Nodes, imports, catalog, diags));
+        var scope = new TagScope(imports, CollectAliases(doc.Nodes, imports, catalog, diags),
+            EnclosingNamespaces(doc.Namespace));
 
         // 具名插槽宿主（spec/02 §4.12.5）：自身模板中的 <ContentSlot> 按 code-behind 类的
         // [UiSlot] 属性解析。生成器/探针调用带 ownSlots（code-behind 符号扫描，权威——code-behind
@@ -131,6 +134,28 @@ public static class TemplateAnalyzer
         target.StartsWith("global::", StringComparison.Ordinal) ? target : "global::" + target;
 
     /// <summary>
+    /// K33：<c>@namespace</c> 的 C# 名称查找链——自身在前，逐步去掉最后一段（<c>A.B.C</c> →
+    /// <c>A.B.C</c>／<c>A.B</c>／<c>A</c>）。全局命名空间不进链（它的类型本来就始终可见）。
+    /// 未声明 <c>@namespace</c>（<c>EUI055</c> 的场合）返回空链：解析退回纯 <c>@using</c> 口径，
+    /// 让「没有命名空间声明」只报一条 EUI055，不连带一堆「未知标签」。
+    /// </summary>
+    public static IReadOnlyList<string> EnclosingNamespaces(string? ns)
+    {
+        // 不用 string.IsNullOrEmpty：netstandard2.0 的参考程序集没有 NotNullWhen，
+        // 编译器无法据此收窄，会留下 CS8604。
+        if (ns is null || ns.Length == 0) return Array.Empty<string>();
+        var chain = new List<string>();
+        var current = ns;                       // 上面已收窄为非 null
+        while (true)
+        {
+            chain.Add(current);
+            int dot = current.LastIndexOf('.');
+            if (dot < 0) return chain;
+            current = current.Substring(0, dot);
+        }
+    }
+
+    /// <summary>
     /// K22/K31：单文件的标签解析作用域。别名优先于目录 tag（模板内声明是最具体的选择），
     /// 未命中别名时退回「只在 @using 导入的命名空间内解析」。
     /// </summary>
@@ -138,11 +163,14 @@ public static class TemplateAnalyzer
     {
         private readonly IReadOnlyList<string> _imports;
         private readonly IReadOnlyDictionary<string, string?> _aliases;
+        private readonly IReadOnlyList<string> _enclosing;
 
-        public TagScope(IReadOnlyList<string> imports, IReadOnlyDictionary<string, string?> aliases)
+        public TagScope(IReadOnlyList<string> imports, IReadOnlyDictionary<string, string?> aliases,
+            IReadOnlyList<string> enclosingNamespaces)
         {
             _imports = imports;
             _aliases = aliases;
+            _enclosing = enclosingNamespaces;
         }
 
         public UiTagResolution Resolve(UiCatalog catalog, string tag)
@@ -155,7 +183,7 @@ public static class TemplateAnalyzer
                     ? new UiTagResolution(UiTagResolutionKind.AliasUnresolved, null, null, null)
                     : new UiTagResolution(UiTagResolutionKind.Found, def, null, null);
             }
-            return catalog.Resolve(tag, _imports);
+            return catalog.Resolve(tag, _imports, _enclosing);
         }
     }
 

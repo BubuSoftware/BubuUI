@@ -163,7 +163,9 @@ public static class CompletionProvider
             if (!aliases.Add(element.Tag)) continue;
 
             var ns = TypeNames.NamespaceOf(element.ClrTypeDisplayName);
-            var imported = ns is null || analysis.Imports.Contains(ns, StringComparer.Ordinal);
+            // K33：@namespace 链内的命名空间不需要 @using，补全也就不能标「needs @using」——
+            // 与解析共用 IsNamespaceVisible，避免「补全说要加 using、加上又不用」。
+            var imported = analysis.IsNamespaceVisible(ns);
 
             var detail = element.Origin == UiElementOrigin.Component ? "component" : "control";
             detail += element.Content switch

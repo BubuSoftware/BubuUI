@@ -55,7 +55,7 @@
 | `@code { ... }` | ✅ **K21/K23 ④ 已定** | 类成员（字段/属性/方法）；**位置不限**、可多个块、书写顺序不影响可见性（K21）；与 code-behind 并存（K23 ④）；`@functions` 别名按 Q4 待定 |
 | `@{ ... }` | ⚠️ 待 Q1/Q3 | Razor 的代码块（局部变量/语句，与表达式共享作用域）；若采纳需明确与 `{expr}` 的共存规则 |
 | `@* ... *@` | ✅ **K23 已定** | 编译器丢弃的注释；未闭合报 `EUI100`（顺带关闭 D12，D88）；`<!-- -->` 弃用期形态待 Q6 |
-| `@using Ns` | ✅ **K22/K23 已定** | 导入命名空间；生成代码保留 `using Ns;`；标签只在导入命名空间内解析，内置控件亦须 `@using EclipseUI.Elements`（§5.3 / D85） |
+| `@using Ns` | ✅ **K22/K23 已定** | 导入命名空间；生成代码保留 `using Ns;`；标签只在导入命名空间内解析，内置控件亦须 `@using EclipseUI.Elements`（§5.3 / D85；**@namespace 链已由 K33/D111 修订为隐式可见**） |
 | `@try/catch/finally`、`@lock` | ❌ 本波不做 | 与 UI 结构生成无对应关系；需要时用 `@code` 方法 |
 
 ### 3.2 不采纳（Web/HTML 糟粕）
@@ -531,7 +531,7 @@ internal partial class TaskBoard : global::EclipseUI.Component
 |---|---|---|---|
 | 生成成员白名单 | 仅字段 / `Build` / `Render` / `U{N}` 四类 | 增加「`@code` 透传成员」一类，**原文不改** | C4 / P3 |
 | `global::` 与 using（**K22 已定**） | 生成代码不得有 using，具名类型一律 `global::` | **模板 `@using` 透传为生成文件的普通 `using Ns;`**；`@code` 原文不改写，由这些 using 提供命名空间；其余生成代码仍全限定 | K22 / §5.3 |
-| 标签解析作用域（**K22 已定**） | `UiCatalog.Resolve` 全局短名字典，与命名空间无关 | 按导入命名空间过滤；未导入报 `EUI001` + 缺 using 建议，歧义仍 `EUI016`；内置控件无豁免 | K22 / §5.3 |
+| 标签解析作用域（**K22 已定**） | `UiCatalog.Resolve` 全局短名字典，与命名空间无关 | 按导入命名空间过滤；未导入报 `EUI001` + 缺 using 建议，歧义仍 `EUI016`；内置控件无豁免（**@namespace 链已由 K33/D111 修订为隐式可见**） | K22 / §5.3 |
 | `#line` | 含用户表达式/字面量的语句做 span 映射 | `@code` 整段（或逐成员）映射回 `.ui`，`R{N}`/`U{N}` 不变 | R3 / D79 |
 | 语义探针 | 只看 code-behind 声明 | **合成一个只含 `@code` 成员的 partial 类语法树**加入 `ProbeTree` 的 Compilation；生成器不得读自己的输出（§2.1） | R1 / K21 / P3 |
 | 冲突守护 | `EUI045` 只守 code-behind | 扩到 `@code` 成员与生成保留名（`Build`/`Render`/`U*`/`__el*` 等），新诊断从 `EUI046` 起 | C6 / P5 |

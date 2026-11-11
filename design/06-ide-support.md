@@ -159,7 +159,7 @@ VS Code 的错误列表和红波浪线自动就有。**第一版 IDE 体验的�
 | # | 要求 | 现状 | 缺口 |
 |---|---|---|---|
 | 1 | `@using` 与 `@using` 别名 | `@using` 可见性过滤（K22）与别名解析（K31）已落地——[DocumentAnalysis.cs:300](../ide/EclipseUI.LanguageServer/Analysis/DocumentAnalysis.cs#L300) / [:309](../ide/EclipseUI.LanguageServer/Analysis/DocumentAnalysis.cs#L309) | **别名不进补全**：[CompletionProvider.cs:145](../ide/EclipseUI.LanguageServer/Analysis/CompletionProvider.cs#L145) `Tags()` 只发 `element.Tag`，整个文件不读 `Aliases`；`@using Alt = Ns.Type` 的右侧类型名也不补（[:354](../ide/EclipseUI.LanguageServer/Analysis/CompletionProvider.cs#L354) `Namespaces()` 只列命名空间） |
-| 2 | 输入标签列出全部合法控件 | 已实现：遍历 `catalog.Elements`，未导入的标 `needs @using` 并降序排序 | 合法性依赖目录完整性：自家项目控件**必须先 build**（§6.9.1 后果 1）；`.ui` 派生组件不进目录（需 L3） |
+| 2 | 输入标签列出全部合法控件 | 已实现：遍历 `catalog.Elements`，未导入的标 `needs @using` 并降序排序（`@namespace` 链内的命名空间算已可见，K33 / D111——`DocumentAnalysis.IsNamespaceVisible` 与解析共用一条判定） | 合法性依赖目录完整性：自家项目控件**必须先 build**（§6.9.1 后果 1）；`.ui` 派生组件不进目录（需 L3） |
 | 3 | 输入属性列出当前控件全部可用属性 | 已实现：属性 / 事件 / 组件参数 / 附加属性 / 保留属性 / `@bind-` 只列**支持绑定**的目标（与 EUI040 同一份判定，spec/01 §4.5）（[CompletionProvider.cs:184](../ide/EclipseUI.LanguageServer/Analysis/CompletionProvider.cs#L184)） | 与第 2 条**同一个根因**：`analysis.AttributeOwner` 解析不出元素就返回空列表（[:195](../ide/EclipseUI.LanguageServer/Analysis/CompletionProvider.cs#L195)），控件不在目录里则一个属性都没有 |
 | 4 | 属性与标签都能转定义（有源码跳源码，无源码反编译） | **标签**四路已落地，含 ILSpy 反编译兜底（[DefinitionProvider.cs:156](../ide/EclipseUI.LanguageServer/Analysis/DefinitionProvider.cs#L156)）；表达式 / `@code` 标识符走探针符号反查 | **属性完全没做**：[DefinitionProvider.cs:32](../ide/EclipseUI.LanguageServer/Analysis/DefinitionProvider.cs#L32) 的 switch 无 `AttributeName` 分支 → F12 返回 null；标签走正则扫文本、同名取第一个，会跳错命名空间 |
 | 5 | C# 语言支持（**已拍板 = 内嵌 C# 完整语言服务**） | **落地前**：`{expr}` 的补全 / 悬停 / 跳转 / 重命名已有（[LanguageServerHost.cs:51](../ide/EclipseUI.LanguageServer/Server/LanguageServerHost.cs#L51) 起至 `:66`）；`@code` **只有跳转**（[DefinitionProvider.cs:36](../ide/EclipseUI.LanguageServer/Analysis/DefinitionProvider.cs#L36) `CodeBlockDefinition`），补全 / 悬停 / 重命名**从未接入**——三个 provider 都只判 `CursorKind.Expression` | **落地前**还缺 signature help / 语义着色 / 代码操作 / 格式化（host 只注册 6 个 `textDocument/*` 方法）、Tier 2 诊断，且可见源码只有本文件 code-behind。**落地后（P8）**：前两类已闭合（host 现注册 11 个 `textDocument/*`），可见源码随 L2 扩到整个项目；**`@code` 的补全 / 悬停 / 重命名仍未做**，原文"`@code` 已有"是误判，机制与修法见 §6.9.10 |
@@ -422,7 +422,8 @@ Tier 2 是今天完全缺失的能力：表达式类型错误现在只有 build 
 - `RenameProvider.ListWorkspaceSourceFiles` + 全工作区 `ParseText`。
 
 **不动**：`UiCatalogFactory`、`FrontEnd`、`ExpressionProbe`、
-`UiCatalog.Resolve(tag, imports)` 的 K22 可见性规则（那是模板契约，不是 C# 规则）、反编译兜底。
+`UiCatalog.Resolve(tag, imports, enclosingNamespaces)` 的可见性规则（K22 + K33，那是模板契约，
+不是 C# 规则）、反编译兜底。
 
 ### 6.9.6 已验证的硬约束：模板表面不能交给 Roslyn
 
@@ -478,7 +479,7 @@ P5 保鲜的是已有能力，本身不闭合任何一条要求。
 | 要求 | 夹具 |
 |---|---|
 | 1 | 一份带 `@using Ns` 与 `@using Alt = Ns.Type` 的 `.ui`：两种写法都能解析、都能补全 |
-| 2 | 新写一个未 build 的控件 `.cs` → 标签补全含它；跨命名空间同名两类型 → **解析**只认已导入的（K22），补全里未导入项标 `needs @using` 并降序 |
+| 2 | 新写一个未 build 的控件 `.cs` → 标签补全含它；跨命名空间同名两类型 → **解析**只认已导入的（K22）或 `@namespace` 链内的（K33），补全里未导入项标 `needs @using` 并降序 |
 | 3 | 该控件上补全 == 目录该元素的属性/事件/参数全集；`ItemFactory` / `AvailableSize` **不得**出现（§6.9.6） |
 | 4 | 源码属性 F12 落 CLR 属性声明；框架属性 F12 落仓库源码；NuGet 控件属性 F12 落 `eui-decompiled:` |
 | 5 | 一份含类型错误的 `{expr}`：不 build 就报错，且码/span 与 build 一致 |

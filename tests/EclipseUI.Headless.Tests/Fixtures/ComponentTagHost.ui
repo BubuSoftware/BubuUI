@@ -1,9 +1,9 @@
 @namespace EclipseUI.Headless.Tests
 @using EclipseUI.Elements
-@using EclipseUI.Headless.Tests
 
 @* spec/02 §4.12.6：组件标签上的元素级属性——Class 表达式（动态）、Grid.Row 表达式（动态）、
-   Style 字面量。三者都作用于组件根元素，且都必须在 Mount() 之后发射。 *@
+   Style 字面量。三者都作用于组件根元素，且都必须在 Mount() 之后发射。
+   K33（D111）：ComponentTagTarget 与本文件同命名空间，因此不需要 `@using EclipseUI.Headless.Tests`。 *@
 
 <Grid RowDefinitions="Auto,60" ColumnDefinitions="*">
     <TextBlock Grid.Row="0" FontSize="12">header</TextBlock>

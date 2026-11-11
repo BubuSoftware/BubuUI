@@ -68,7 +68,6 @@ public class ComponentSurfaceMatrixTests
     /// <summary>每一种用法各出现一次；顺序无关，但都写进同一个模板才能真正验证「组合」。</summary>
     private const string Ui = """
         @using EclipseUI.Elements
-        @using Matrix
         @namespace Matrix
 
         @style {
@@ -116,6 +115,7 @@ public class ComponentSurfaceMatrixTests
 
         // 防空转：没生成源码时「零编译错误」毫无意义。
         var code = Assert.Single(result.GeneratedSources).SourceText.ToString();
+        // ProbeCard 就在 @namespace Matrix 里：K33 起不需要 `@using Matrix`（模板刻意不写）
         Assert.Contains("new global::Matrix.ProbeCard()", code);
         Assert.Contains(".HueChanged = v =>", code);          // @bind 的回调（build-once）
         Assert.Contains(".ApplyClasses(", code);              // 组件标签上的 Class → 根元素

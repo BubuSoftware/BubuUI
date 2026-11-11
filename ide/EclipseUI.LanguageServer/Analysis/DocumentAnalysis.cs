@@ -101,6 +101,7 @@ public sealed class DocumentAnalysis
         UiDocument? ast,
         IReadOnlyList<UiDiagnostic> diagnostics,
         IReadOnlyList<string> imports,
+        IReadOnlyList<string> enclosingNamespaces,
         IReadOnlyDictionary<string, string?> aliases,
         string? internalError,
         Compilation? baseCompilation,
@@ -114,6 +115,7 @@ public sealed class DocumentAnalysis
         Ast = ast;
         Diagnostics = diagnostics;
         Imports = imports;
+        EnclosingNamespaces = enclosingNamespaces;
         Aliases = aliases;
         InternalError = internalError;
         _baseCompilation = baseCompilation;
@@ -133,6 +135,21 @@ public sealed class DocumentAnalysis
 
     /// <summary>本文件 <c>@using</c> 导入的命名空间（标签可见性过滤，K22）。</summary>
     public IReadOnlyList<string> Imports { get; }
+
+    /// <summary>
+    /// <c>@namespace</c> 的 C# 名称查找链，最内层在前（K33 / D111）。这一链**不需要 @using**
+    /// 就可见，且按 C# 规则优先于 <see cref="Imports"/>；未声明 <c>@namespace</c> 时为空。
+    /// </summary>
+    public IReadOnlyList<string> EnclosingNamespaces { get; }
+
+    /// <summary>
+    /// 命名空间对标签是否可见（K22 + K33）：全局命名空间恒可见，<c>@namespace</c> 链内的命名空间
+    /// 隐式可见，其余必须已 <c>@using</c> 导入。补全的 <c>needs @using</c> 与解析共用这一条判定。
+    /// </summary>
+    public bool IsNamespaceVisible(string? ns) =>
+        ns is null
+        || Imports.Contains(ns, StringComparer.Ordinal)
+        || EnclosingNamespaces.Contains(ns, StringComparer.Ordinal);
 
     /// <summary><c>@using Alias = Ns.Type</c> 的别名表（K31）；非法别名值为 null。</summary>
     public IReadOnlyDictionary<string, string?> Aliases { get; }
@@ -174,7 +191,7 @@ public sealed class DocumentAnalysis
         catch (Exception ex)
         {
             return new DocumentAnalysis(text, positions, null,
-                diagnostics.ToArray(), Array.Empty<string>(),
+                diagnostics.ToArray(), Array.Empty<string>(), Array.Empty<string>(),
                 new Dictionary<string, string?>(), ex.Message, baseCompilation, codeBehindText, codeBehindPath, project, workspace);
         }
 
@@ -210,7 +227,8 @@ public sealed class DocumentAnalysis
             }
         }
 
-        return new DocumentAnalysis(text, positions, ast, diagnostics.ToArray(), imports, aliases,
+        return new DocumentAnalysis(text, positions, ast, diagnostics.ToArray(), imports,
+            TemplateAnalyzer.EnclosingNamespaces(ast.Namespace), aliases,
             internalError, baseCompilation, codeBehindText, codeBehindPath, project, workspace);
     }
 
@@ -401,13 +419,13 @@ public sealed class DocumentAnalysis
     private static string ToDisplayName(string aliasTarget) =>
         aliasTarget.StartsWith("global::", StringComparison.Ordinal) ? aliasTarget : "global::" + aliasTarget;
 
-    /// <summary>按可见性解析标签（别名 → 目录 tag，@using 过滤）。</summary>
+    /// <summary>按可见性解析标签（别名 → 目录 tag，<c>@namespace</c> 链 + @using 过滤）。</summary>
     public UiElementDef? ResolveVisible(UiCatalog catalog, string tag)
     {
         if (tag.Length == 0) return null;
         if (Aliases.TryGetValue(tag, out var target) && target is not null)
             return catalog.FindByTypeDisplayName(target);
-        return catalog.Resolve(tag, Imports).Element;
+        return catalog.Resolve(tag, Imports, EnclosingNamespaces).Element;
     }
 
     /// <summary>不看可见性（悬停用：名字写错了也要能解释它是什么，补全则按可见性给提示）。</summary>
