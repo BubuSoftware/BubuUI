@@ -711,6 +711,8 @@ parentN.Children.Add(cmp0.Root);
 [spec/03 §11.1](../spec/03-reactivity-and-binding.md) 与 [spec/01 §6.2](../spec/01-template-syntax.md) 为准。
 EUI007/008/009/011/012/013/015 分别是 `@foreach` 类型推断与指令诊断，不受本文影响
 （EUI005「缺少 code-behind」已随 §14.10.2 的第二组件来源停用，spec/02 §2.7）。
+K34（D112）起 `@code` 里的模板特性按有无同名 `.cs` 分流：无 → 目录语法级提取为对外表面；
+有 → `EUI057` 警告（符号扫描只看 `.cs` 半边）。
 v3 的 EUI014/EUI032/EUI034–EUI036/EUI038–EUI039/EUI041–EUI042/EUI044 已停用，编号不复用。
 
 | 代码 | 条件 | 位置 | 级别 |
@@ -819,7 +821,8 @@ Build(Compilation c, declarations):          // 纯函数：同样的输入 → 
               hidden.Add(HiddenTag(tag, EUI031)); problems.Add(EUI031(...)); continue
           exposed.Add(Describe(type))                      // 标签/属性/事件/内容/参数/插槽
   for d in declarations where d.Tag not in exposed and not in hidden:
-      exposed.Add(Minimal(d))                              // 纯 .ui：无内容/参数/事件/属性
+      exposed.Add(TemplateOnly(d))                         // 纯 .ui（K34）：@code 模板特性语法级提取；
+                                                           //   无 @code 时 = 无内容/参数/事件/属性
   groups = GroupByTag(exposed)                             // 同 Tag ≥2 → Ambiguous（EUI016）
   return UiCatalog(groups, hidden, problems)               // 记录类型 + 稳定排序 → 可结构比较
 ```
@@ -827,8 +830,10 @@ Build(Compilation c, declarations):          // 纯函数：同样的输入 → 
 **第二组件来源（2026-11-11）**：`declarations` 让「`.ui` 本身是组件」在输入编译里成立。
 生成器读不到自己的产物，所以 `OriginOf` 原来只认基类链；现在放宽为两条证据——基类链，
 或「存在同名且同命名空间的 `.ui`」，后者只在类型**没写基类**时生效（显式派生其他类的仍按
-继承链判定，避免同名无关类型被误认）。输入编译里连类型都没有的（纯 `.ui`）由 `Minimal`
-合成：`Content = None`、参数/事件/属性/插槽皆空，`ClrTypeDisplayName = @namespace + Tag`。
+继承链判定，避免同名无关类型被误认）。输入编译里连类型都没有的（纯 `.ui`）由 `TemplateOnly`
+合成：`Content = None`、属性/事件为空，**参数/插槽/内容来自 `@code` 模板特性的语法级提取
+（K34/D112，spec/02 §2.7）**，声明问题带 `UiSourceLocation` 指回 `.ui`；`ClrTypeDisplayName =
+@namespace + Tag`。
 
 清单为空时目录与加这个参数之前**完全一致**，所以现有调用点（`Build(compilation)`）与测试夹具
 不需要改动。✅ 2026-11-11 实施注记：清单由**同一份实现** `UiComponentScanner.FromFile` 产出

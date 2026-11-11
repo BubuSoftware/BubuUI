@@ -202,8 +202,10 @@ public sealed class TemplateGenerator : IIncrementalGenerator
 
         // K25：EUI045 扩展到 @code 成员——撞生成保留名（Build/Render/U{N}/R{N}/__el{N}/…）
         // 报在 .ui 的 @code 块内成员位置。@code ↔ 同名 .cs 的冲突由 C# partial 规则兜底，不在这里报。
+        // K34（D112）：EUI057 收窄——只有同名 .cs 存在时，@code 里的模板特性才到不了目录
+        // （目录符号扫描只看 .cs 半边）；纯 .ui 组件的 @code 特性由目录语法级提取，是对外表面。
         if (codeBlocks.Count > 0)
-            ProbeCodeMemberConflicts(codeBlocks, codeBehindDiags);
+            ProbeCodeMemberConflicts(codeBlocks, type is not null, codeBehindDiags);
 
         // 自身组件（spec/02 §4.12.5）：code-behind 符号直接派生插槽表——目录里没有
         // code-behind 类的 def（基类由生成注入，源码不派生 Component），这是唯一权威来源。
@@ -268,10 +270,13 @@ public sealed class TemplateGenerator : IIncrementalGenerator
     /// （字段/属性/方法/嵌套类型声明的标识符），撞保留名报在 .ui 的成员 span；
     /// 内容粒度的其余校验（语句合法性、与 .cs 的重复）由探针 Compilation 与 C# 兜底。
     ///
-    /// spec/02 §2.7：同一遍扫描还顺手报 EUI057——`@code` 里的 [UiParameter]/[UiSlot]/
-    /// [UiContent] 到不了别的模板（目录只看输入编译），这是最容易被误解的一处。
+    /// spec/02 §2.7 / K34（D112）：EUI057 只在**同名 .cs 存在**时报——那时目录符号扫描只看
+    /// .cs 半边，@code 里的 [UiParameter]/[UiSlot]/[UiContent] 到不了别的模板。纯 .ui 组件
+    /// 的 @code 特性由目录语法级提取（<c>UiCatalogFactory.CollectTemplateCodeMembers</c>），
+    /// 是正式的对外表面，不再警告。
     /// </summary>
-    private static void ProbeCodeMemberConflicts(IReadOnlyList<UiCodeBlock> blocks, List<UiDiagnostic> diags)
+    private static void ProbeCodeMemberConflicts(IReadOnlyList<UiCodeBlock> blocks, bool hasCodeBehind,
+        List<UiDiagnostic> diags)
     {
         // 合成前缀 "class __EuiProbe\n{\n" 的长度：成员/特性 span 减去它即块体内偏移。
         const int prefixLength = 20;
@@ -280,8 +285,9 @@ public sealed class TemplateGenerator : IIncrementalGenerator
             var container = CSharpSyntaxTree.ParseText("class __EuiProbe\n{\n" + block.Code + "\n}")
                 .GetCompilationUnitRoot().DescendantNodes().OfType<TypeDeclarationSyntax>().First();
 
-            foreach (var member in container.Members)
-                ProbeTemplateOnlyAttribute(member, block, prefixLength, diags);
+            if (hasCodeBehind)
+                foreach (var member in container.Members)
+                    ProbeTemplateOnlyAttribute(member, block, prefixLength, diags);
 
             foreach (var (name, nameOffset, nameLength) in ExtractMemberNames(block.Code))
             {

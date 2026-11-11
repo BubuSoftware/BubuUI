@@ -159,8 +159,54 @@ public sealed record UiHiddenTag(
 /// <paramref name="Namespace"/> 是模板 <c>@namespace</c> 的声明值（缺失时为 null，此时不按
 /// 命名空间过滤——缺声明本身由 EUI055 报，不在这里重复）。
 /// </para>
+/// <para>
+/// K34（D112）：<paramref name="CodeBlocks"/> 携带 <c>@code</c> 块体原文与其在 .ui 中的绝对
+/// span——纯 .ui 组件（无同名类型）的模板特性（[UiParameter]/[UiSlot]/[UiContent]）由目录
+/// 侧做**语法级**提取，使 <c>.ui</c> 不依赖 <c>.cs</c> 也能声明对外表面。值相等口径：只有
+/// <c>@code</c> 内容变化才使清单值变化，改模板标记正文不破坏增量缓存命中（design/14 §14.10.3）。
+/// </para>
 /// </summary>
-public sealed record UiComponentDeclaration(string Tag, string? Namespace);
+public sealed record UiComponentDeclaration(string Tag, string? Namespace)
+{
+    /// <summary>.ui 文件路径（目录侧声明问题的 <see cref="UiSourceLocation"/> 载体）。</summary>
+    public string Path { get; init; } = "";
+
+    /// <summary>根层 <c>@code</code> 块（文档顺序）；无 <c>@code</code> 时为空。</summary>
+    public IReadOnlyList<UiCodeBlockText> CodeBlocks { get; init; } = Array.Empty<UiCodeBlockText>();
+
+    public bool Equals(UiComponentDeclaration? other) =>
+        other is not null
+        && Tag == other.Tag
+        && Namespace == other.Namespace
+        && Path == other.Path
+        && CatalogValueEq.Sequence(CodeBlocks, other.CodeBlocks);
+
+    public override int GetHashCode()
+    {
+        var hash = CatalogValueEq.Add(CatalogValueEq.Start, Tag);
+        hash = CatalogValueEq.Add(hash, Namespace ?? "");
+        hash = CatalogValueEq.Add(hash, Path);
+        return CatalogValueEq.AddSequence(hash, CodeBlocks);
+    }
+}
+
+/// <summary>
+/// 一个 <c>@code</code> 块的清单快照（K34/D112）：块体原文 + 块体在 .ui 中的绝对 span +
+/// 块体起点的 0 基行列（目录侧把声明问题定位回 .ui 用——块内偏移 + 换行计数即可推出任意
+/// 绝对 span 的行列，不需要携带全文）。
+/// </summary>
+public sealed record UiCodeBlockText(
+    string Code, int SpanStart, int SpanLength, int StartLine, int StartCharacter)
+{
+    public bool Equals(UiCodeBlockText? other) =>
+        other is not null && Code == other.Code && SpanStart == other.SpanStart && SpanLength == other.SpanLength
+        && StartLine == other.StartLine && StartCharacter == other.StartCharacter;
+
+    public override int GetHashCode() =>
+        CatalogValueEq.Add(CatalogValueEq.Add(CatalogValueEq.Add(
+            CatalogValueEq.Add(CatalogValueEq.Add(CatalogValueEq.Start, Code), SpanStart), SpanLength),
+            StartLine), StartCharacter);
+}
 
 /// <summary>
 /// 一个模板标签的完整形状。手写 <see cref="Equals(UiElementDef?)"/>：
@@ -374,11 +420,8 @@ public sealed class UiCatalog : IEquatable<UiCatalog>
                     // 同一命名空间里出现同名两类型只能是跨程序集重复声明（EUI016 的既有语义）
                     if (inScope.Length == 1) return new UiTagResolution(UiTagResolutionKind.Found, inScope[0], null, null);
                     if (inScope.Length > 1)
-                        return new UiTagResolution(
-                            UiTagResolutionKind.Ambiguous,
-                            null,
-                            inScope.Select(d => d.ClrTypeDisplayName).ToList(),
-                            null);
+                        return new UiTagResolution(UiTagResolutionKind.Ambiguous, null,
+                            inScope.Select(d => d.ClrTypeDisplayName).ToList(), null);
                 }
             }
             // ② 退回 @using 口径

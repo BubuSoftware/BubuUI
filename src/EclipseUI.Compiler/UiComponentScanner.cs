@@ -11,9 +11,9 @@ namespace EclipseUI.Compiler;
 /// 实现——两侧喂给 <see cref="Metadata.UiCatalogFactory.Build"/> 的清单必须逐字节同源，
 /// 否则同一个标签会在编辑器里绿、在 <c>dotnet build</c> 里 EUI001。这正是这个类型存在的理由。
 ///
-/// 只读 <c>@namespace</c> 一条指令：清单里只有 (Tag, @namespace)，改模板正文不影响目录值，
-/// 下游仍按值命中增量缓存（design/14 §14.10.3）。诊断一律丢弃——解析错误由各自主管道报告，
-/// 这里只负责「这条声明叫什么、在哪个命名空间」。
+/// 读 <c>@namespace</c> 一条指令 + 根层 <c>@code</code> 块（K34/D112：目录侧语法级提取模板
+/// 特性用）。诊断一律丢弃——解析错误由各主管道报告，这里只负责「这条声明叫什么、在哪个
+/// 命名空间、<c>@code</code> 里写了什么」。
 /// </summary>
 public static class UiComponentScanner
 {
@@ -28,7 +28,19 @@ public static class UiComponentScanner
         // @namespace 缺失时返回 null：EUI055 已报 Error 并短路产物，目录按标签名认领即可，
         // 不在这里重复报（§2.7）。
         var doc = FrontEnd.Parse(text, path, new List<UiDiagnostic>());
-        return new UiComponentDeclaration(tag, doc.Namespace);
+        var blocks = new List<UiCodeBlockText>();
+        foreach (var node in doc.Nodes)
+        {
+            if (node is not UiCodeBlock block || block.Code.Length == 0) continue;
+            var (line, character) = PositionOf(text, block.CodeSpan.Start);
+            blocks.Add(new UiCodeBlockText(block.Code, block.CodeSpan.Start, block.CodeSpan.Length,
+                line, character));
+        }
+        return new UiComponentDeclaration(tag, doc.Namespace)
+        {
+            Path = path,
+            CodeBlocks = blocks,
+        };
     }
 
     /// <summary>项目文件清单 → 声明清单（不含 .ui 的项直接跳过）。</summary>
@@ -41,6 +53,16 @@ public static class UiComponentScanner
             if (FromFile(path, text) is { } declaration) result.Add(declaration);
         }
         return result;
+    }
+
+    /// <summary>0 基行列：绝对偏移 → (行, 列)。扫描器一次线性扫描即可，目录侧按块内偏移复用。</summary>
+    private static (int Line, int Character) PositionOf(string text, int offset)
+    {
+        var line = 0;
+        var lastNewline = -1;
+        for (var i = 0; i < offset && i < text.Length; i++)
+            if (text[i] == '\n') { line++; lastNewline = i; }
+        return (line, offset - lastNewline - 1);
     }
 
     /// <summary>

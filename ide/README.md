@@ -47,7 +47,7 @@ design/06 §6.9 之后，目录不再是「扫 dll 元数据」，所有能力�
 | 诊断 Tier 2 | ✅ | 真生成器 + 项目 Compilation 的 CS/EUI 诊断经 `#line` 映回 `.ui`；400ms debounce，只在文档版本未变时发布 |
 | `.eustyle` 诊断 | ✅ | `.eustyle` 进 `documentSelector`，`ExecuteStylesheet` 的 EUI050–052 有 LSP 红波浪线 |
 | `@namespace` 契约 | ✅ | 必填；生成器报 EUI055（缺失）/ EUI056（与 code-behind 不一致），经 Tier 2 映回 `.ui`。补全提供 `@namespace` 指令与命名空间候选（自身命名空间排首位） |
-| 无 code-behind 的 `.ui` 组件 | ✅ | 目录把「同名同命名空间的 `.ui`」当组件证据（spec/02 §2.7），`<Tag />` 在编辑器与 `dotnet build` 里一致；参数写在 `@code` 里只对本文件可见（`EUI057` Warning 提示）。`Ref={…}` 指向 `@code` 字段时 F12 落在本文档的字段声明 |
+| 无 code-behind 的 `.ui` 组件 | ✅ | 目录把「同名同命名空间的 `.ui`」当组件证据（spec/02 §2.7），`<Tag />` 在编辑器与 `dotnet build` 里一致。K34：`@code` 里的 `[UiParameter]`/`[UiSlot]`/`[UiContent]` 由目录语法级提取为对外表面——补全、`@bind-` 校验与 `dotnet build` 同口径；有同名 `.cs` 时这些特性只对本文件可见（`EUI057` Warning）。`Ref={…}` 指向 `@code` 字段时 F12 落在本文档的字段声明 |
 | 标签补全 | ✅ | 来自项目目录；未 build 的自家控件、`.ui` 派生组件都在；链外命名空间未导入的标 `needs @using`（`@namespace` 链内不需要，K33） |
 | `@using` 别名补全 | ✅ | `@using Alt = Ns.Type` 的 `Alt` 作为标签候选，选中解析到目标类型 |
 | 属性 / 事件 / 组件参数 / 附加属性补全 | ✅ | 含 `Grid.Row` 形态；事件带委托签名 |

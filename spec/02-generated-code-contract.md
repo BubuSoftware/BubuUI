@@ -342,7 +342,7 @@ protected override global::EclipseUI.Element Build()
 
 | 形态 | 组件身份来自 | 可作 `<Tag />` | 对外参数 |
 |---|---|---|---|
-| `Counter.ui`（无 `.cs`） | `.ui` 文件本身 | 是 | 无 |
+| `Counter.ui`（无 `.cs`） | `.ui` 文件本身 | 是 | **`@code` 里的 `[UiParameter]`/`[UiSlot]`/`[UiContent]`（K34 语法级提取）** |
 | `Prefs.ui` + `Prefs.cs`（不声明基类） | `.ui` 文件本身 | 是 | `.cs` 里的 `[UiParameter]` |
 | `Card.ui` + `Card.cs : Component` | code-behind 的基类 | 是 | 同上 |
 
@@ -352,11 +352,17 @@ protected override global::EclipseUI.Element Build()
 - **判定顺序**（目录侧，design/14 §14.10.2）：基类链命中 `Component` / `Element` → 按基类；
   否则若存在**同名且同命名空间**的 `.ui` 声明 → 组件；否则不进目录。
   只放宽「没写基类」这一条：显式派生了其他类的类型仍按继承链判定，避免同名无关类型被误认。
-- **参数与对外 API 必须写在 `.cs`**。目录在输入编译上构建（生成器读不到自己的产物），
-  所以 `@code` 里的 `[UiParameter]` / `[UiSlot]` / `[UiContent]` 只在该模板内部可见；
-  其他模板使用该参数时按 `EUI002`（unknown parameter）报出。这是「想要参数就建 `.cs`」的
-  唯一原因，不是风格要求。在 `@code` 里写这三个特性 → `EUI057`（Warning，不短路产物），
-  把这件事在声明处说清楚。
+- **对外参数有两个声明位置（K34，2026-11-11）**。目录在输入编译上构建（生成器读不到自己的产物），
+  所以模板特性必须随**输入**进目录：
+  - **无同名 `.cs`**（纯 `.ui` 组件）：目录侧对 `@code` 块做**语法级提取**——`[UiParameter]`/
+    `[UiSlot]`/`[UiContent]` 属性、可写性、`{P}Changed` 形状配对、`Required`、插槽名与内容
+    多/单根，全部按归一化**类型文本**判定。`.ui` 不依赖 `.cs` 也能开发完整组件。
+    语法级口径的三点收窄：委托参数只认 `Action`/`Action<T,…>`（`Func` 按符号路径同款 EUI028
+    报「必须返回 void」，自定义委托类型不猜形状）；类型身份是文本比较（`System.Int32` 与
+    `int` 不同名）；Span/指针/ref-struct 的 EUI028 不做（生成代码经 `EqualityComparer<T>` 由
+    C# 兜底）。声明问题经目录级出口（`UiSourceLocation`）报回 `.ui` 的 `@code` 内位置。
+  - **有同名 `.cs`**：以 `.cs` 半边的符号扫描为准（形状判定是符号级的，D110）；`@code` 里的
+    模板特性只在本模板内可见 → `EUI057`（Warning，不短路产物），在声明处把这件事说清楚。
 - 声明清单的来源两侧**同源同一份实现**：`UiComponentScanner.FromFile` 读「标签 = 文件名，
   命名空间 = `@namespace`」，生成器从 `AdditionalTextsProvider` 取、IDE 项目系统从
   `AdditionalFiles` 取，都是「项目里的 `.ui` 文件」。因此编译器与 IDE 的目录不再分叉——
@@ -367,9 +373,11 @@ protected override global::EclipseUI.Element Build()
 - 有 code-behind 时的 `EUI055` / `EUI056` 契约（§2.2）不变；本节不放松命名空间一致性。
 - **实现状态（2026-11-11）**：生成器 `TemplateComponents` 管道、目录侧 `UiComponentDeclaration` /
   `UiComponentScanner` / `AppendTemplateOnlyComponents` / `OriginOf` 放宽、IDE 的
-  「输入编译 + 清单」目录全部落地。回归钉在 `SecondComponentSourceTests`（12 例，含「生成产物 +
-  code-behind 合成一个编译单元零错误」）、`ProjectSystemTests.Fixture9`（输入目录 ≡ 生成后目录，
-  真实仓库）、`TemplateOnlyComponentTests`（headless：`@code` 字段就是 `Ref` 目标、对外可达）。
+  「输入编译 + 清单」目录全部落地。回归钉在 `SecondComponentSourceTests`（17 例，含「生成产物 +
+  code-behind 合成一个编译单元零错误」与 K34 的端到端 `@bind` 编译）、`ProjectSystemTests.Fixture9`
+  （输入目录 ≡ 生成后目录，真实仓库）、`TemplateOnlyComponentTests`（headless：`@code` 字段就是
+  `Ref` 目标、对外可达）。K34（D112）：清单携带 `@code` 块，`CollectTemplateCodeMembers` 语法级
+  提取模板特性，EUI057 收窄为「有同名 `.cs` 才报」。
   Gallery 的 `Counter` / `Prefs` / `Showcase` / `TaskList` 四个组件都没有同名 `.cs`，是活样例。
 
 ## 3. 命名与编号
@@ -1737,6 +1745,7 @@ D64/D68 ✅ C1。
 | D109 | ✅ **组件标签上的元素级属性落到根元素（spec/02 §4.12.6）**——组件不是 `Element`（spec/03 §5.3），`Class`/`Style`/附加属性此前被直接发给组件实例，生成 `cmp0.Classes`（CS1061）与 `Grid.SetRow(cmp0, 1)`（CS1503），分析器放行而 `dotnet build` 红。修复：① 发射点移到 `Mount()` 之后、挂父级之前（`Root` 那时才存在）；② 附加属性目标改 `cmp.Root`（含动态形态的字段提升——此前 `Grid.Row={expr}` 在根级必然编译失败）；③ `Style=` 走 `cmp.Root.SetValue(...)`；④ `Class=` 走新增的 `Component.ApplyClasses(...)`：运行时持有根自身类的**一次性快照**，每轮只整体替换外部类部分（根级 `Class={expr}` 重算不累积），合并序「自身类在前、外部类在后」与控件同属性后写者胜一致；⑤ 塌缩注入（E4）命中组件标签时走同一入口。用例：`ComponentTagElementAttributesTests` 5 例（字面量/顺序/根级动态/块内/注入 + 生成产物零编译错误）、headless `ComponentTagElementAttributeTests` 4 例（真实工程夹具 `ComponentTagHost.ui` → `ComponentTagTarget.ui`：`Grid.GetRow` 命中、类集合并序、`Style=` local 层、动态重算不累积）；Compiler 366 / Headless 364 / Rendering 106 / Ide 132 全绿 | spec/02 §4.12.1/§4.12.6/§4.19/§5.1、design/14 §14.6.4/§14.6.7/§14.5.5、spec/01 §4.2 | ✅（2026-11-11） |
 | D110 | ✅ **`{P}Changed` 的形状在扫描期判定（spec/02 §4.4.3 规则 1，关闭 D73）**——此前只校验「同名成员是委托」，`[UiParameter] Action? CountChanged` 或 `Action<string>` 配 `int Count` 都会通过 EUI040，直到生成 `cmp0.CountChanged = v => …` 才由 C# 报 CS1593/CS1503（分析器放行、`dotnet build` 红）。现在 `CollectComponentMembers` 在配对时按符号判两件事：① `DelegateArity == 1`；② 回调形参类型与 `P` **同一类型**（`SymbolEqualityComparer.Default`，可空标注忽略）。不满足则 `ChangedCallbackName = null`、原因写入新增的 `UiParameterDef.ChangedShapeProblem`，使用点由 EUI040 报出期望形状（含 `Action<T>` 字面写法）；补全因为只看 `ChangedCallbackName` 自动不再列出该目标。用**身份**而非隐式转换判定：生成的 lambda 形参由目标委托推断，随后直接进 `EqualityComparer<T>.Default.Equals(source, v)` 与 `source = v`，`Action<object>` 收 `int` 语义合法但这两行编译不过。顺带：`ValidateBindSource` 对组件目标要求 `ChangedCallbackName != null`，目标不可绑时不再叠加一条 EUI037（与控件侧「目标不在表面就早退」同口径）。用例：`BindTargetTests` 3 例（零参回调 / 载荷类型不符 / 目录侧形状拒绝 + 形状正确者不受影响）；另加 `ComponentSurfaceMatrixTests`——一个模板里把参数/绑定/事件/默认内容/具名插槽/块模板/元素级属性各用一次，断言「生成产物 + code-behind」合成一个编译单元零错误（这类缺陷只在真编译时才现形）；Compiler 370 / Headless 364 / Rendering 106 / Ide 132 全绿 | spec/02 §4.4.3 规则 1、spec/01 §4.5/§6、spec/03 §8.3、design/14 §14.6.1 | ✅（2026-11-11） |
 | D111 | ✅ **`@namespace` 链隐式可见（K33，修订 K22 的「所有标签必须先 `@using`」）**——`UiCatalog.Resolve(tag, imports, enclosingNamespaces)` 先按 C# 简单名查找走一遍 `@namespace` 链（最内层在前，见 `TemplateAnalyzer.EnclosingNamespaces`：`A.B.C` → `A.B.C`／`A.B`／`A`），**命中的那一层独占**（单候选 → Found，同层多候选 → `EUI016`），再退回原来的 `@using` 过滤；未声明 `@namespace`（`EUI055` 的场合）链为空，口径完全不变，避免「没写声明」连带改掉标签解析。作用域由 `TagScope` 显式传参，目录仍不可变（§14.10.3 值相等不受影响）。IDE 侧 `DocumentAnalysis.EnclosingNamespaces` + `IsNamespaceVisible` 与解析共用同一条判定，`needs @using` 标注与「Add `@using`」代码动作不再对同命名空间目标误报。用例：`NamespaceScopeTests` 7 例（同命名空间/外层链免 using、同命名空间胜于已导入、最内层胜于外层同名、别名仍胜于隐式可见、链外仍报 EUI001 + 缺 using 建议、无声明回退纯 `@using`、链构造顺序）；`SecondComponentSourceTests` 的 `Showcase.ui`、`ComponentSurfaceMatrixTests` 的 `Matrix` 模板、`Fixtures/ComponentTagHost.ui` 均删掉多余 `@using`——三者都是「生成产物真编译」级别的回归钉 | spec/02 §2.2、spec/01 §2.3/§1.5、design/06 §6.9.0、ide/README | ✅（2026-11-11） |
+| D112 | ✅ **`@code` 模板特性语法级提取——`.ui` 无 `.cs` 也能开发完整组件（K34）**：`UiComponentDeclaration` 增 `Path` + `CodeBlocks`（块体原文 + 绝对 span + 起点 0 基行列；值相等口径——只有 `@code` 内容变化才使清单值变化，改模板标记正文不破坏增量缓存命中），`UiComponentScanner.FromFile` 负责提取，生成器与 IDE 仍同一份清单。`UiCatalogFactory.AppendTemplateOnlyComponents` 对「输入编译里没有同名类型」的声明新增 `CollectTemplateCodeMembers`：`[UiParameter]`/`[UiSlot]`/`[UiContent]` 属性、可写性（显式 public + 访问器继承语义 + 非 `init`/`required`）、`Required`、插槽名/唯一性、内容多/单根、`{P}Changed` 形状配对（D110 规则的**文本级**版本，归一化 `CanonicalTypeKey`），`UiTypeShape` 按文本推导（primitive 关键字/Action-Func 委托/`Signal<T>`/同 `@code` 枚举成员，其余 Other）。声明问题（EUI028/EUI021）带 `UiSourceLocation` 指回 `.ui` 的 `@code` 内位置，走既有目录级出口 `ReportCatalogProblems`。**EUI057 收窄**：只在同名 `.cs` 存在时报（`ProbeCodeMemberConflicts` 增加 `hasCodeBehind` 门控）——那时符号扫描只看 `.cs` 半边，警告理由仍成立。语法级口径的三点收窄见 §2.7（委托只认 `Action`/`Action<T,…>`、类型身份按文本、Span/指针 EUI028 不做）。用例：`SecondComponentSourceTests` +5（表面即参数/配对与拒因/只读与静态与字段/插槽内容形状/有 `.cs` 仍警告/**端到端 `<Card Title="hello" @bind-Count={n}/>` 全项目真编译零错误**），987 例全绿（375/372/134/106） | spec/02 §2.7、spec/01 §1.5/§6、design/14 §14.6.1/§14.10.2、ide/README | ✅（2026-11-11） |
 
 - 每项收敛必须同时删除对应的 v3 路径；不得两套模型并存。
 - 新增偏差必须登记编号（从 D89 起）并注明目标阶段；不得只改代码不改台账。
@@ -1795,6 +1804,7 @@ D64/D68 ✅ C1。
 | K31 | **`@using Alias = Ns.Type` 一体两用**：① 生成 `using Alias = global::Ns.Type;`（服务 `@code` 与模板表达式，Blazor 口径）；② **同一条别名也是模板标签别名**——`<Alias/>` 解析为该类型，**优先于目录 tag**，且**绕过命名空间可见性**（目标命名空间不必 `@using`）。这是本框架相对 Razor 的扩展：Razor 的别名只影响 C# 名称绑定，重名只能靠完整限定标签。约束：目标必须是目录里的已知元素/组件（否则 `EUI048`）；同一模板内别名唯一、不得与已导入命名空间同名（`EUI048`）；别名不进 `CollectImports`；探针树同步写入别名行。词法层把 `@using static`/`@using (...)`/尾分号/泛型别名/`A.B =` 从误导性的 `EUI006` 改为 `EUI100` 专属消息并吞掉整行 | 用户决策（2026-11-09）：按「A+B 合并」落地——别名既当 C# 别名也当标签；生成形态见 spec/02 §4.18，语法见 spec/01 §4.17 |
 | K32 | **`[UiTag]` 退役**：`EclipseUI.UiTagAttribute` 从 `EclipseUI.Runtime` 删除，目录标签**恒等于类型短名**（`UiCatalogFactory` 的 `TagOf`/`IsValidTag` 一并删除）。理由：改名只能作用于自家库、改不了第三方库，与 K31 别名职责重叠；且它让「类型名 = 标签名」这条可预测性失效，并为目录引入第二事实源。随之改口径：① EUI016 消息改为 `tag 'X' is ambiguous between … ; pick one with a template alias, e.g. '@using XAlt = Ns.X' then use <XAlt/>`；② EUI031 保留标签名冲突消息去掉「or its [UiTag]」；③ 重名只能来自「不同命名空间/不同程序集的同名类型」，测试改用同名类型构造歧义 | 用户决策（2026-11-09）：`[UiTag]` 相关设定全部删除，消歧统一走 K31 别名 |
 | K33 | **`@namespace` 链隐式可见（K22 的收窄）**：模板标签解析在「`@namespace` 声明的命名空间 + 其外层链」内**不需要 `@using`**，且按 C# 简单名查找顺序**优先于** `@using`（内层命中即独占，不再与外层/导入命名空间的同名候选合并成 `EUI016`）；链外命名空间仍须 `@using`，未导入照旧 `EUI001` + 缺失 using 建议；内置控件无豁免（`EclipseUI.Elements` 仍要 `@using`）。K22 的「所有标签必须先 `@using`」按本条修订为「除当前命名空间链外，标签必须先 `@using`」。理由：模板生成的就是同命名空间里的 C# 类型，C# 用短名引用同命名空间类型从不需要 using，模板更严只会制造摩擦；而「同名时内层独占」是 C# 的硬规则，不跟随会让「在外层加一个同名控件」静默弄坏内层模板 | 用户决策（2026-11-11）：「同命名空间不需要 using」——实现见 D111 |
+| K34 | **`.ui` 的功能与 `.cs` 对齐——无 code-behind 也能开发完整组件**：纯 `.ui` 组件的 `@code` 里的 `[UiParameter]`/`[UiSlot]`/`[UiContent]` 由目录侧**语法级提取**为对外表面（清单携带 `@code` 块文本 + span + 起点行列，值相等口径随 K34 扩展）；`EUI057` 从「`@code` 里写模板特性即警告」收窄为「**有同名 `.cs` 时**才警告」。语法级与符号级的三点刻意收窄：① 委托参数只认 `Action`/`Action<T,…>`（`Func` 报 EUI028「必须返回 void」，自定义委托不猜形状——语法层拿不到 `Invoke` 符号）；② 类型身份按归一化文本比较（`System.Int32` ≠ `int`）；③ Span/指针/ref-struct 的 EUI028 不做，交生成代码 C# 兜底。有同名 `.cs` 的组件仍以符号扫描为准（`.cs` 半边才进目录），`@code` 特性维持 EUI057 警告 | 用户决策（2026-11-11）：「ui 的功能要跟 cs 对齐，能做到无需 cs 也可以开发」——实现见 D112 |
 
 ## 附录 A · 规范示例（TodoList）
 

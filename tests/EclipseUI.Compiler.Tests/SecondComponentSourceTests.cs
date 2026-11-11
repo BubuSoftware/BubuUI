@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
+using EclipseUI.Compiler;
 using EclipseUI.Compiler.Generator;
 using EclipseUI.Compiler.Metadata;
 using Microsoft.CodeAnalysis;
@@ -35,6 +36,14 @@ public class SecondComponentSourceTests
 
     private static UiElementDef? Find(UiCatalog catalog, string tag) =>
         catalog.Elements.FirstOrDefault(e => e.Tag == tag);
+
+    /// <summary>用共享扫描路径构造单文件目录（K34：走的就是生产代码的 FromFile 提取）。</summary>
+    private static UiCatalog CatalogOf(string path, string ui)
+    {
+        var declaration = UiComponentScanner.FromFile(path, ui);
+        Assert.NotNull(declaration);
+        return UiCatalogFactory.Build(Compile(), new[] { declaration });
+    }
 
     [Fact]
     public void WithoutDeclarations_NothingChanges()
@@ -184,10 +193,10 @@ public class SecondComponentSourceTests
 
     private const string ShowcaseCodeBehind = "namespace Gallery;\npublic partial class Showcase { }";
 
-    // 标签可见性按 @using 判定（与 code-behind 组件同口径）：同命名空间也要显式 @using。
+    // 标签可见性：K33 起「@namespace 链隐式可见」——Showcase 与 Counter 同在 Gallery，
+    // 所以 Showcase 不需要 `@using Gallery`（C# 里也没这条规矩）。
     private const string ShowcaseUi = """
         @using EclipseUI.Elements
-        @using Gallery
         <StackPanel>
             <Counter />
         </StackPanel>
@@ -229,10 +238,10 @@ public class SecondComponentSourceTests
     }
 
     [Fact]
-    public void CodeBlockParameterAttribute_WarnsItStaysInsideTheTemplate()
+    public void CodeBlockParameterAttribute_IsTheComponentSurface()
     {
-        // spec/02 §2.7：参数必须写在 .cs——@code 里的 [UiParameter] 进不了目录，
-        // 别的模板用它只会得到 EUI002。给一条 Warning 把这件事说清楚（不短路产物）。
+        // K34（D112）：纯 .ui 组件的 @code [UiParameter] 由目录语法级提取——这是对外表面，
+        // 不再警告（EUI057 收窄为「有同名 .cs 才报」，那时符号扫描真的看不到它）。
         const string ui = """
             @using EclipseUI
             @using EclipseUI.Elements
@@ -245,10 +254,190 @@ public class SecondComponentSourceTests
 
         var (result, _) = RunProject("// no code-behind", ("Card.ui", ui));
 
+        Assert.DoesNotContain(result.Diagnostics, d => d.Id == "EUI057");
+        Assert.Single(result.GeneratedSources);
+
+        var def = Assert.IsType<UiElementDef>(Find(CatalogOf("C:\\templates\\Card.ui", ui), "Card"));
+        var title = Assert.IsType<UiParameterDef>(def.Parameters.GetValueOrDefault("Title"));
+        Assert.Equal("global::Gallery.Card", def.ClrTypeDisplayName);
+        Assert.True(title.CanWrite);
+        Assert.False(title.IsDelegate);
+    }
+
+    [Fact]
+    public void CodeBlockParameterAttribute_WithCodeBehind_StillWarns()
+    {
+        // 有同名 .cs 时目录符号扫描只看 .cs 半边，@code 的模板特性确实到不了别的模板——
+        // EUI057 的原始理由仍然成立。
+        const string ui = """
+            @using EclipseUI
+            @using EclipseUI.Elements
+            <StackPanel />
+            @namespace Gallery
+            @code {
+                [UiParameter] public string? Title { get; set; }
+            }
+            """;
+
+        var (result, _) = RunProject("namespace Gallery;\npublic partial class Card { }", ("Card.ui", ui));
+
         var warning = Assert.Single(result.Diagnostics, d => d.Id == "EUI057");
         Assert.Equal(Microsoft.CodeAnalysis.DiagnosticSeverity.Warning, warning.Severity);
         Assert.Contains("UiParameter", warning.GetMessage(), StringComparison.Ordinal);
         Assert.Single(result.GeneratedSources);               // 警告不短路
+    }
+
+    // ---------- K34（D112）：@code 模板特性的目录级提取 ----------
+
+    private const string CodeMemberUi = """
+        @using EclipseUI
+        @using EclipseUI.Elements
+        <StackPanel />
+        @namespace Gallery
+        @code {
+            public int unused;                     // 字段不进表面（Ref 目标走探针）
+
+            public string? NotAParameter { get; set; }   // 公开属性 → NonBindable 原因
+
+            [UiParameter] public string? Title { get; set; }
+            [UiParameter] public int Count { get; set; }
+            [UiParameter] public Action<int>? CountChanged { get; set; }
+            [UiParameter] public string? Bad2 { get; set; }
+            [UiParameter] public Action<int>? Bad2Changed { get; set; }   // 形状不配：int vs string?
+            [UiParameter] public int Bad0 { get; set; }
+            [UiParameter] public Action Bad0Changed { get; set; }          // 无参回调：配对失败
+            [UiParameter(Required = true)] public string? Name { get; set; }
+            [UiContent] public Element? Body { get; set; }
+            [UiSlot("Header")] public Element? HeaderSlot { get; set; }
+            string? PrivateProp { get; set; }      // 非 public：不进表面也不进原因表
+        }
+        """;
+
+    [Fact]
+    public void CodeBlockMembers_ParametersSlotsContentAndRejections()
+    {
+        var def = Assert.IsType<UiElementDef>(Find(CatalogOf("C:\\templates\\Card.ui", CodeMemberUi), "Card"));
+
+        var title = def.Parameters["Title"];
+        Assert.Equal("string?", title.ClrTypeDisplayName);
+        Assert.True(title.CanWrite);
+        Assert.False(title.Required);
+
+        Assert.True(def.Parameters["Name"].Required);
+
+        // 绑定通道：形状正确的配对回填，形状不对的记原因（D110 规则的文本级版本）
+        Assert.Equal("CountChanged", def.Parameters["Count"].ChangedCallbackName);
+        Assert.Null(def.Parameters["Bad2"].ChangedCallbackName);
+        Assert.Contains("takes int but 'Bad2' is string?", def.Parameters["Bad2"].ChangedShapeProblem, StringComparison.Ordinal);
+        Assert.Null(def.Parameters["Bad0"].ChangedCallbackName);
+        Assert.Contains("0 argument(s)", def.Parameters["Bad0"].ChangedShapeProblem, StringComparison.Ordinal);
+        Assert.True(def.Parameters["Bad0Changed"].IsDelegate);
+
+        // 内容与插槽
+        Assert.True(def.Parameters["Body"].IsContent);
+        Assert.False(def.Parameters["Body"].ContentIsMultiple);
+        Assert.Equal("HeaderSlot", Assert.Single(def.Slots.Values).PropertyName);
+
+        // 公开非参数属性给出「为什么不可用」，私有属性不进表面
+        Assert.Equal("carries no [UiParameter] attribute", def.BindRejection("NotAParameter"));
+        Assert.Null(def.BindRejection("PrivateProp"));
+    }
+
+    [Fact]
+    public void CodeBlockMembers_ReadOnlyOrStaticAreReported()
+    {
+        const string ui = """
+            @using EclipseUI
+            <StackPanel />
+            @namespace Gallery
+            @code {
+                [UiParameter] public string? ro { get; }
+                [UiParameter] public static string? stat { get; set; }
+                [UiParameter] public int NotProperty;
+            }
+            """;
+
+        var def = Assert.IsType<UiElementDef>(Find(CatalogOf("C:\\templates\\Card.ui", ui), "Card"));
+
+        // 只读参数照进目录（CanWrite=false，使用点由 EUI040 解释）——与符号路径一致；
+        // static 与字段不进参数表，声明问题记 EUI028。
+        var ro = Assert.IsType<UiParameterDef>(def.Parameters.GetValueOrDefault("ro"));
+        Assert.False(ro.CanWrite);
+        Assert.DoesNotContain("stat", def.Parameters);
+        Assert.Contains(def.Problems, p => p.MemberName == "ro" && p.Code == "EUI028");
+        Assert.Contains(def.Problems, p => p.MemberName == "stat");
+        Assert.Contains(def.Problems, p => p.Message.Contains("must be on a property", StringComparison.Ordinal));
+        // 问题定位在 .ui 文件里（纯数据 Source，构建期由目录级出口报告）
+        Assert.All(def.Problems, p => Assert.Equal("C:\\templates\\Card.ui", p.Source!.Path));
+    }
+
+    [Fact]
+    public void CodeBlockMembers_BadSlotAndContentTypeAreReported()
+    {
+        const string ui = """
+            @using EclipseUI
+            <StackPanel />
+            @namespace Gallery
+            @code {
+                [UiSlot] public Element? noName { get; set; }
+                [UiSlot("A")] public string? wrongType { get; set; }
+                [UiContent] public string? wrongContent { get; set; }
+            }
+            """;
+
+        var def = Assert.IsType<UiElementDef>(Find(CatalogOf("C:\\templates\\Card.ui", ui), "Card"));
+
+        Assert.Empty(def.Slots);
+        Assert.Empty(def.Parameters);
+        Assert.Contains(def.Problems, p => p.Message.Contains("[UiSlot] must name the slot", StringComparison.Ordinal));
+        Assert.Contains(def.Problems, p => p.Message.Contains("[UiSlot] properties must be", StringComparison.Ordinal));
+        Assert.Contains(def.Problems, p => p.Message.Contains("[UiContent] parameters must be", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void TemplateOnlyParameters_AreBindableFromAnotherTemplate_AndTheWholeProjectCompiles()
+    {
+        // K34 验收口径：.ui 的 @code 参数就是对外表面——别的模板写 Title=/@bind-Count= 生成
+        // 正确赋值与回调，且「全部生成产物 + code-behind」合成一个真编译单元后零错误。
+        const string cardUi = """
+            @using System
+            @using EclipseUI
+            @using EclipseUI.Elements
+            <StackPanel>
+                <TextBlock>{Title}</TextBlock>
+            </StackPanel>
+            @namespace Gallery
+            @code {
+                [UiParameter] public string? Title { get; set; }
+                [UiParameter] public int Count { get; set; }
+                [UiParameter] public Action<int>? CountChanged { get; set; }
+            }
+            """;
+        const string showcaseUi = """
+            @using EclipseUI.Elements
+            <StackPanel>
+                <Card Title="hello" @bind-Count={n} />
+            </StackPanel>
+            @namespace Gallery
+            @code {
+                public int n;
+            }
+            """;
+
+        var (result, output) = RunProject("// code-behind optional now",
+            ("Card.ui", cardUi), ("Showcase.ui", showcaseUi));
+
+        Assert.Empty(result.Diagnostics.Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error));
+
+        var showcase = GeneratedSource(result, "Showcase");
+        Assert.Contains(".Title = \"hello\"", showcase);
+        Assert.Contains(".CountChanged = v =>", showcase);
+
+        var errors = output.GetDiagnostics()
+            .Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
+            .Select(d => $"{d.Id} :: {d.GetMessage()}")
+            .ToList();
+        Assert.True(errors.Count == 0, "generated project does not compile: " + string.Join(" | ", errors));
     }
 
     [Fact]

@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace EclipseUI.Compiler.Metadata;
 
@@ -209,6 +211,17 @@ public static class UiCatalogFactory
                 var clrName = string.IsNullOrEmpty(declaration.Namespace)
                     ? "global::" + tag
                     : "global::" + declaration.Namespace + "." + tag;
+
+                // K34（D112）：纯 .ui 组件的模板特性从 @code 块**语法级**提取——目录在输入编译上
+                // 构建、生成器读不到自己的产物，但 @code 文本随清单进得来。这是「.ui 不依赖 .cs
+                // 也能开发完整组件」的落点；口径差异（Action-only 委托、文本级类型判定）见
+                // CollectTemplateCodeMembers 的注释。
+                var (parameters, slots, rejections, problems) = CollectTemplateCodeMembers(declaration, clrName);
+                if (parameters.Values.Count(static p => p.IsContent) > 1)
+                    problems.Add(TemplateProblem(UiDiagnostics.MetadataDeclarationInvalid, clrName, null,
+                        "a component declares more than one default content parameter ([UiContent] on a parameter); keep exactly one",
+                        FirstContentSource(declaration)));
+
                 exposed.Add(new UiElementDef(
                     tag,
                     clrName,
@@ -217,11 +230,470 @@ public static class UiCatalogFactory
                     ContentTarget: null,
                     NoProperties,
                     NoEvents,
-                    NoParameters,
-                    NoSlots,
-                    Array.Empty<UiMetadataProblem>(),
-                    IsFromReferencedAssembly: false));
+                    Sorted(parameters),
+                    Sorted(slots),
+                    problems,
+                    IsFromReferencedAssembly: false)
+                {
+                    NonBindableProperties = new Dictionary<string, string>(rejections, StringComparer.Ordinal),
+                });
             }
+        }
+
+        // ---- K34（D112）：@code 模板特性的语法级提取 ----
+
+        /// <summary>与 <c>TemplateGenerator.ProbeCodeMemberConflicts</c> 相同的合成壳前缀，span 反推用。</summary>
+        private const int CodeProbePrefixLength = 20;
+
+        /// <summary>
+        /// 纯 .ui 组件的对外表面：把 <c>@code</code> 块里的 <c>[UiParameter]</c>/<c>[UiSlot]</c>/
+        /// <c>[UiContent]</c> 属性提进目录（K34/D112）。符号路径（<see cref="CollectComponentMembers"/>）
+        /// 看得到 .cs 的成员却看不到生成产物，这里反过来——只看得到 @code 文本，所以判定只能是
+        /// **语法级**的，与符号路径有三点刻意收窄的口径差：
+        /// <list type="bullet">
+        /// <item>委托参数只认 <c>Action</c>/<c>Action&lt;T,…&gt;</c>（<c>Func</c> 按符号路径同款
+        /// EUI028 报「必须返回 void」；自定义委托类型不猜形状，按普通类型进目录）。</item>
+        /// <item>类型身份按归一化**文本**比较（<see cref="CanonicalTypeKey"/>），不是符号身份——
+        /// <c>System.Int32</c> 与 <c>int</c> 在这个口径下不同名。</item>
+        /// <item>Span/指针/ref-struct 参数的 EUI028 不做（无法语法判定），生成代码经
+        /// <c>EqualityComparer&lt;T&gt;</c> 由 C# 兜底。</item>
+        /// </list>
+        /// 声明问题用 <see cref="UiSourceLocation"/> 指回 .ui 的 @code 块内位置——目录级出口
+        /// （<c>ReportCatalogProblems</c>）按纯数据定位，与符号问题的出口同一条。
+        /// </summary>
+        private static (Dictionary<string, UiParameterDef> Parameters,
+            Dictionary<string, UiSlotDef> Slots,
+            Dictionary<string, string> Rejections,
+            List<UiMetadataProblem> Problems) CollectTemplateCodeMembers(
+                UiComponentDeclaration declaration, string clrName)
+        {
+            var parameters = new Dictionary<string, UiParameterDef>(StringComparer.Ordinal);
+            var slots = new Dictionary<string, UiSlotDef>(StringComparer.Ordinal);
+            var rejections = new Dictionary<string, string>(StringComparer.Ordinal);
+            var problems = new List<UiMetadataProblem>();
+            if (declaration.CodeBlocks.Count == 0) return (parameters, slots, rejections, problems);
+
+            var localEnums = new Dictionary<string, string[]>(StringComparer.Ordinal);
+            foreach (var block in declaration.CodeBlocks)
+            {
+                var container = CSharpSyntaxTree.ParseText(
+                    "class __EuiProbe\n{\n" + block.Code + "\n}")
+                    .GetCompilationUnitRoot().DescendantNodes().OfType<TypeDeclarationSyntax>().First();
+                foreach (var nested in container.Members.OfType<EnumDeclarationSyntax>())
+                {
+                    var members = nested.Members.OfType<EnumMemberDeclarationSyntax>()
+                        .Select(static m => m.Identifier.ValueText)
+                        .OrderBy(n => n, StringComparer.Ordinal).ToArray();
+                    localEnums[nested.Identifier.ValueText] = members;
+                }
+            }
+
+            var seenMembers = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var block in declaration.CodeBlocks)
+            {
+                var container = CSharpSyntaxTree.ParseText(
+                    "class __EuiProbe\n{\n" + block.Code + "\n}")
+                    .GetCompilationUnitRoot().DescendantNodes().OfType<TypeDeclarationSyntax>().First();
+
+                foreach (var member in container.Members)
+                {
+                    var (attrNames, attrLocate) = TemplateAttributes(member, block, declaration);
+                    var isParameter = attrNames.Contains("UiParameter");
+                    var isSlot = attrNames.Contains("UiSlot");
+                    var isContent = attrNames.Contains("UiContent");
+                    var hasTemplateAttr = isParameter || isSlot || isContent;
+                    var hasIgnore = attrNames.Contains("UiIgnore");
+
+                    if (member is not PropertyDeclarationSyntax property)
+                    {
+                        if (hasTemplateAttr)
+                            problems.Add(TemplateProblem(UiDiagnostics.ParameterDeclarationInvalid, clrName, null,
+                                "[UiParameter]/[UiSlot]/[UiContent] must be on a property", attrLocate()));
+                        continue;
+                    }
+                    var name = property.Identifier.ValueText;
+                    if (property.Modifiers.Any(static m => m.IsKind(SyntaxKind.StaticKeyword)))
+                    {
+                        if (hasTemplateAttr)
+                            problems.Add(TemplateProblem(UiDiagnostics.ParameterDeclarationInvalid, clrName, name,
+                                $"'{name}' is static; template parameters must be instance properties", attrLocate()));
+                        continue;
+                    }
+                    if (hasIgnore)
+                    {
+                        if (hasTemplateAttr)
+                            problems.Add(TemplateProblem(UiDiagnostics.ParameterDeclarationInvalid, clrName, name,
+                                $"'{name}' is both [UiIgnore] and a template parameter/slot/content; [UiIgnore] wins and the member leaves the surface",
+                                attrLocate()));
+                        continue;
+                    }
+                    if (!hasTemplateAttr)
+                    {
+                        if (IsPublic(property.Modifiers))
+                            rejections[name] = "carries no [UiParameter] attribute";
+                        continue;
+                    }
+                    // 同名声明（跨块或与 .cs）最终都会被 partial 合并规则/C# 编译抓住；
+                    // 目录里让第一条赢，避免字典静默覆盖。
+                    if (!seenMembers.Add(name)) continue;
+
+                    var typeText = property.Type.NormalizeWhitespace().ToString().Trim();
+                    var required = AttributeNamedBool(member, "UiParameter", "Required");
+
+                    if (isParameter)
+                    {
+                        // 可写性只对参数发问题（符号路径同口径）；槽/内容参数按各自规则记。
+                        var writable = PropertyIsWritable(property, out var writableProblem);
+                        if (writableProblem is not null)
+                            problems.Add(TemplateProblem(UiDiagnostics.ParameterDeclarationInvalid, clrName, name,
+                                writableProblem, attrLocate()));
+                        var isDelegate = TryParseAction(typeText, out var arity, out var voidProblem);
+                        if (isDelegate && voidProblem is not null)
+                            problems.Add(TemplateProblem(UiDiagnostics.ParameterDeclarationInvalid, clrName, name,
+                                $"delegate parameter '{name}' {voidProblem}", attrLocate()));
+                        parameters[name] = new UiParameterDef(
+                            name, typeText, ShapeFromText(typeText, localEnums),
+                            CanWrite: writable, Required: required,
+                            IsDelegate: isDelegate, DelegateArity: isDelegate ? arity : 0,
+                            IsContent: false, ContentIsMultiple: false, ChangedCallbackName: null);
+                    }
+
+                    if (isSlot && !isParameter)
+                    {
+                        var slotName = AttributeCtorString(member, "UiSlot");
+                        if (string.IsNullOrEmpty(slotName))
+                            problems.Add(TemplateProblem(UiDiagnostics.ParameterDeclarationInvalid, clrName, name,
+                                "[UiSlot] must name the slot", attrLocate()));
+                        else if (slots.ContainsKey(slotName!))
+                            problems.Add(TemplateProblem(UiDiagnostics.ParameterDeclarationInvalid, clrName, name,
+                                $"a slot named '{slotName}' is already declared on this component; slot names must be unique",
+                                attrLocate()));
+                        else if (IsElementListText(typeText))
+                            slots[slotName!] = new UiSlotDef(slotName!, name, typeText, UiSlotCardinality.Multiple);
+                        else if (IsElementTypeText(typeText))
+                            slots[slotName!] = new UiSlotDef(slotName!, name, typeText, UiSlotCardinality.Single);
+                        else
+                            problems.Add(TemplateProblem(UiDiagnostics.ContentTargetInvalid, clrName, name,
+                                $"slot '{name}' has type {typeText}; [UiSlot] properties must be Element? (single root) " +
+                                "or IReadOnlyList<Element> (multiple roots)", attrLocate()));
+                    }
+                    else if (isContent && !isParameter)
+                    {
+                        var contentWritable = PropertyIsWritable(property, out _);
+                        if (IsElementListText(typeText))
+                            parameters[name] = new UiParameterDef(name, typeText,
+                                ShapeFromText(typeText, localEnums), CanWrite: contentWritable, Required: false,
+                                IsDelegate: false, DelegateArity: 0,
+                                IsContent: true, ContentIsMultiple: true, ChangedCallbackName: null);
+                        else if (IsElementTypeText(typeText))
+                            parameters[name] = new UiParameterDef(name, typeText,
+                                ShapeFromText(typeText, localEnums), CanWrite: contentWritable, Required: false,
+                                IsDelegate: false, DelegateArity: 0,
+                                IsContent: true, ContentIsMultiple: false, ChangedCallbackName: null);
+                        else
+                            problems.Add(TemplateProblem(UiDiagnostics.ContentTargetInvalid, clrName, name,
+                                $"content parameter '{name}' has type {typeText}; [UiContent] parameters must be " +
+                                "Element? (single root) or IReadOnlyList<Element> (multiple roots)", attrLocate()));
+                    }
+                    else if (isSlot)
+                    {
+                        // [UiParameter] + [UiSlot]：参数胜出（design/14 §14.6.1），槽退表面并记问题。
+                        problems.Add(TemplateProblem(UiDiagnostics.ParameterDeclarationInvalid, clrName, name,
+                            $"'{name}' is both [UiParameter] and [UiSlot]; the parameter wins and " +
+                            "the slot leaves the template surface", attrLocate()));
+                    }
+                }
+            }
+
+            // {P}Changed 配对：与符号路径（D110）同一套规则，类型身份降级为归一化文本比较。
+            foreach (var name in parameters.Keys.ToList())
+            {
+                var changedName = name + "Changed";
+                if (!parameters.TryGetValue(changedName, out var changed) || !changed.IsDelegate) continue;
+                var target = parameters[name];
+                if (target.IsDelegate || target.IsContent) continue;
+
+                string? problem = null;
+                var friendly = target.ClrTypeDisplayName;
+                if (changed.DelegateArity != 1)
+                {
+                    problem = $"'{changedName}' must be 'Action<{friendly}>' (void, exactly one parameter) to receive " +
+                              $"the value written back; it takes {changed.DelegateArity} argument(s)";
+                }
+                else
+                {
+                    var argText = TryParseAction(changed.ClrTypeDisplayName, out _, out _) && changed.ClrTypeDisplayName.Contains('<')
+                        ? FirstGenericArg(changed.ClrTypeDisplayName)
+                        : null;
+                    if (argText is null || CanonicalTypeKey(argText) != CanonicalTypeKey(friendly))
+                        problem = $"'{changedName}' takes {argText ?? "<unresolvable>"} but '{name}' is " +
+                                  $"{friendly}; the generated callback assigns and compares values of " +
+                                  "that type, so both must be the same type";
+                }
+
+                parameters[name] = target with
+                {
+                    ChangedCallbackName = problem is null ? changedName : null,
+                    ChangedShapeProblem = problem,
+                };
+            }
+
+            return (parameters, slots, rejections, problems);
+        }
+
+        /// <summary>成员上的模板特性短名集合 + 各特性名的定位委托（报 Source 用，惰性求值）。</summary>
+        private static (HashSet<string> Names, Func<UiSourceLocation?> Locate) TemplateAttributes(
+            MemberDeclarationSyntax member, UiCodeBlockText block, UiComponentDeclaration declaration)
+        {
+            var attributes = member.AttributeLists.SelectMany(static l => l.Attributes).ToList();
+            var names = new HashSet<string>(
+                attributes.Select(static a => ShortAttributeName(a))
+                    .Where(static n => n is not null)
+                    .Select(static n => n!),
+                StringComparer.Ordinal);
+            UiSourceLocation? Locate()
+            {
+                var attribute = attributes.FirstOrDefault(static a =>
+                {
+                    var n = ShortAttributeName(a);
+                    return n is "UiParameter" or "UiSlot" or "UiContent" or "UiIgnore";
+                });
+                if (attribute is null) return null;
+                return LocateInTemplate(declaration, block, attribute.Name.Span);
+            }
+            return (names, Locate);
+        }
+
+        private static string? ShortAttributeName(AttributeSyntax attribute)
+        {
+            var name = attribute.Name.ToString();
+            return name.Length == 0 ? null : name.Substring(name.LastIndexOf('.') + 1);
+        }
+
+        private static UiSourceLocation? LocateInTemplate(
+            UiComponentDeclaration declaration, UiCodeBlockText block, Microsoft.CodeAnalysis.Text.TextSpan span)
+        {
+            var offset = span.Start - CodeProbePrefixLength;
+            if (offset < 0 || offset + span.Length > block.Code.Length) return null;
+            var start = BlockPosition(block, offset);
+            var end = BlockPosition(block, offset + span.Length);
+            return new UiSourceLocation(declaration.Path, block.SpanStart + offset, span.Length,
+                start.Line, start.Character, end.Line, end.Character);
+        }
+
+        /// <summary>块内偏移 → .ui 绝对行列（0 基）：块起点行列 + 前缀内的换行计数。</summary>
+        private static (int Line, int Character) BlockPosition(UiCodeBlockText block, int offset)
+        {
+            var line = block.StartLine;
+            var lastNewline = -1;
+            for (var i = 0; i < offset && i < block.Code.Length; i++)
+                if (block.Code[i] == '\n') { line++; lastNewline = i; }
+            return (line, lastNewline < 0 ? block.StartCharacter + offset : offset - lastNewline - 1);
+        }
+
+        private static UiMetadataProblem TemplateProblem(
+            string code, string declaringType, string? memberName, string message, UiSourceLocation? source) =>
+            new(code, message, declaringType, memberName, source);
+
+        /// <summary>>1 个 [UiContent] 时的定位兜底：找第一个内容参数的特性位置。</summary>
+        private static UiSourceLocation? FirstContentSource(UiComponentDeclaration declaration)
+        {
+            foreach (var block in declaration.CodeBlocks)
+            {
+                var container = CSharpSyntaxTree.ParseText("class __EuiProbe\n{\n" + block.Code + "\n}")
+                    .GetCompilationUnitRoot().DescendantNodes().OfType<TypeDeclarationSyntax>().First();
+                foreach (var member in container.Members.OfType<PropertyDeclarationSyntax>())
+                    foreach (var attribute in member.AttributeLists.SelectMany(static l => l.Attributes))
+                        if (ShortAttributeName(attribute) == "UiContent")
+                            return LocateInTemplate(declaration, block, attribute.Name.Span);
+            }
+            return null;
+        }
+
+        private static bool IsPublic(SyntaxTokenList modifiers) =>
+            modifiers.Any(static m => m.IsKind(SyntaxKind.PublicKeyword));
+
+        /// <summary>
+        /// 访问器的有效可见性：C# 里访问器不写修饰符时继承属性的访问级别——只有显式写了
+        /// private/protected/internal/friends 之类才算收窄。
+        /// </summary>
+        private static bool AccessorIsPublic(SyntaxTokenList modifiers)
+        {
+            var explicitModifier = false;
+            var isPublic = false;
+            foreach (var modifier in modifiers)
+            {
+                switch (modifier.Kind())
+                {
+                    case SyntaxKind.PublicKeyword: isPublic = true; explicitModifier = true; break;
+                    case SyntaxKind.PrivateKeyword:
+                    case SyntaxKind.ProtectedKeyword:
+                    case SyntaxKind.InternalKeyword: explicitModifier = true; break;
+                }
+            }
+            return !explicitModifier || isPublic;
+        }
+
+        /// <summary>
+        /// 语法级可写判定，对齐符号路径：显式 public、get/set 都 public、set 非 <c>init</c>、
+        /// 无 C# <c>required</c>。不满足时返回 false 并给出与符号路径同文案的问题。
+        /// </summary>
+        private static bool PropertyIsWritable(PropertyDeclarationSyntax property, out string? problem)
+        {
+            problem = null;
+            if (!IsPublic(property.Modifiers)
+                || property.Modifiers.Any(static m => m.IsKind(SyntaxKind.RequiredKeyword)))
+            {
+                problem = "parameter '" + property.Identifier.ValueText + "' must be a public property with a " +
+                          "public setter; use [UiParameter(Required = true)] instead of the C# required modifier";
+                return false;
+            }
+            var accessors = property.AccessorList;
+            var get = accessors?.Accessors.FirstOrDefault(static a => a.IsKind(SyntaxKind.GetAccessorDeclaration));
+            var set = accessors?.Accessors.FirstOrDefault(static a => a.IsKind(SyntaxKind.SetAccessorDeclaration));
+            var isInit = set?.Keyword.IsKind(SyntaxKind.InitKeyword) == true;
+            if (get is null || !AccessorIsPublic(get.Modifiers) || set is null
+                || !AccessorIsPublic(set.Modifiers) || isInit)
+            {
+                problem = "parameter '" + property.Identifier.ValueText + "' must be a public property with a " +
+                          "public setter; use [UiParameter(Required = true)] instead of the C# required modifier";
+                return false;
+            }
+            return true;
+        }
+
+        /// <summary>特性命名实参（bool），如 <c>[UiParameter(Required = true)]</c>。</summary>
+        private static bool AttributeNamedBool(MemberDeclarationSyntax member, string shortName, string argument)
+        {
+            foreach (var list in member.AttributeLists)
+                foreach (var attribute in list.Attributes)
+                {
+                    if (ShortAttributeName(attribute) != shortName || attribute.ArgumentList is null) continue;
+                    foreach (var arg in attribute.ArgumentList.Arguments)
+                        if (arg.NameEquals is not null && arg.NameEquals.Name.ToString() == argument
+                            && arg.Expression is LiteralExpressionSyntax literal
+                            && literal.IsKind(SyntaxKind.TrueLiteralExpression))
+                            return true;
+                }
+            return false;
+        }
+
+        /// <summary>特性构造首实参（string），如 <c>[UiSlot("Header")]</c>。</summary>
+        private static string? AttributeCtorString(MemberDeclarationSyntax member, string shortName)
+        {
+            foreach (var list in member.AttributeLists)
+                foreach (var attribute in list.Attributes)
+                {
+                    if (ShortAttributeName(attribute) != shortName) continue;
+                    var arg = attribute.ArgumentList?.Arguments.FirstOrDefault();
+                    if (arg?.Expression is LiteralExpressionSyntax literal
+                        && literal.IsKind(SyntaxKind.StringLiteralExpression))
+                        return (string?)literal.Token.Value;
+                }
+            return null;
+        }
+
+        /// <summary>
+        /// 委托参数识别：只认 <c>Action</c>/<c>Action&lt;T,…&gt;</c>（K34 口径）。
+        /// <paramref name="voidProblem"/> 非 null 表示认出委托但形状不合法（Func 返回值）。
+        /// </summary>
+        private static bool TryParseAction(string typeText, out int arity, out string? voidProblem)
+        {
+            arity = 0;
+            voidProblem = null;
+            var bare = StripTypePrefixes(typeText);
+            if (bare == "Action") return true;
+            if (bare.StartsWith("Action<", StringComparison.Ordinal))
+            {
+                var args = SplitGenericArgs(bare.Substring("Action<".Length).TrimEnd('>'));
+                arity = args.Length;
+                return true;
+            }
+            if (bare == "Func" || bare.StartsWith("Func<", StringComparison.Ordinal))
+            {
+                voidProblem = "must return void, not '" + typeText + "'; use Action/Action<T> for template callbacks";
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>去掉 <c>global::</c> 与 <c>System.</c> 前缀（委托与形状匹配用）。</summary>
+        private static string StripTypePrefixes(string text)
+        {
+            var t = text.Trim();
+            if (t.StartsWith("global::", StringComparison.Ordinal)) t = t.Substring("global::".Length);
+            if (t.StartsWith("System.", StringComparison.Ordinal)) t = t.Substring("System.".Length);
+            return t.Trim();
+        }
+
+        /// <summary>
+        /// 归一化类型键（K34 的「文本身份」）：去 <c>global::</c>、去常用命名空间限定、去尾部
+        /// <c>?</c>。只用于 {P}Changed 配对与 Element 类型判定，不进 <see cref="UiTypeShape"/>。
+        /// </summary>
+        private static string CanonicalTypeKey(string text) =>
+            StripTypePrefixes(text)
+                .Replace("System.Collections.Generic.", "")
+                .TrimEnd('?')
+                .Trim();
+
+        private static bool IsElementTypeText(string typeText) =>
+            CanonicalTypeKey(typeText) == "Element";
+
+        private static bool IsElementListText(string typeText) =>
+            CanonicalTypeKey(typeText) == "IReadOnlyList<Element>";
+
+        /// <summary>顶层逗号切分泛型实参（嵌套 <c>&lt;&gt;</c> 感知）。</summary>
+        private static string[] SplitGenericArgs(string text)
+        {
+            var parts = new List<string>();
+            var depth = 0;
+            var start = 0;
+            for (var i = 0; i < text.Length; i++)
+            {
+                switch (text[i])
+                {
+                    case '<': depth++; break;
+                    case '>': depth--; break;
+                    case ',' when depth == 0:
+                        parts.Add(text.Substring(start, i - start).Trim());
+                        start = i + 1;
+                        break;
+                }
+            }
+            if (start < text.Length) parts.Add(text.Substring(start).Trim());
+            return parts.Where(static p => p.Length > 0).ToArray();
+        }
+
+        private static string? FirstGenericArg(string typeText)
+        {
+            var open = typeText.IndexOf('<');
+            if (open < 0 || !typeText.EndsWith(">?", StringComparison.Ordinal) && !typeText.EndsWith(">", StringComparison.Ordinal))
+                return null;
+            var close = typeText.LastIndexOf('>');
+            if (close < open) return null;
+            var args = SplitGenericArgs(typeText.Substring(open + 1, close - open - 1));
+            return args.Length > 0 ? args[0] : null;
+        }
+
+        /// <summary>
+        /// 语法级 <see cref="UiTypeShape"/>：键与符号路径同一套（primitive 用 C# 关键字名，
+        /// 其余去 <c>global::</c>/可空标注的限定名）；枚举成员只认识同 @code 里声明的枚举，
+        /// 引用别处枚举时形状退化为 Other（使用点字面量校验随之收窄，K34 登记的口径差）。
+        /// </summary>
+        private static UiTypeShape ShapeFromText(string typeText, Dictionary<string, string[]> localEnums)
+        {
+            var bare = StripTypePrefixes(typeText);
+            var key = bare.TrimEnd('?');
+            if (bare == "Action" || bare.StartsWith("Action<", StringComparison.Ordinal)
+                || bare == "Func" || bare.StartsWith("Func<", StringComparison.Ordinal))
+                return new UiTypeShape(UiTypeShapeKind.Delegate, key, Array.Empty<string>());
+            if (key.StartsWith("Signal<", StringComparison.Ordinal))
+                return new UiTypeShape(UiTypeShapeKind.Signal, key, Array.Empty<string>());
+            if (localEnums.TryGetValue(key, out var members))
+                return new UiTypeShape(UiTypeShapeKind.Enum, key, members);
+            if (IsPrimitiveKey(key))
+                return new UiTypeShape(UiTypeShapeKind.Primitive, key, Array.Empty<string>());
+            return new UiTypeShape(UiTypeShapeKind.Other, key, Array.Empty<string>());
         }
 
         // ---- 扫描范围 ----
