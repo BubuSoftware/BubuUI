@@ -156,6 +156,10 @@ public sealed class WindowHost : IDisposable, IWindowHost
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
+        // design/15 §15.14.2：帧循环在 UI 线程装单线程同步上下文，退出时还原。
+        // async void 事件处理器的 await 续体从此 Post 回来，而不是落线程池跨线程写状态。
+        using var uiScope = UiSynchronizationContext.Install(_root);
+
         _window.Show();
         SyncPresenterSize();
         _painter.ResetDamage();
@@ -172,6 +176,13 @@ public sealed class WindowHost : IDisposable, IWindowHost
         while (_window.PumpMessages())
         {
             if (_window.IsClosed || IsExiting) break;
+
+            // tick 顺序：PumpMessages → Drain →（自动失效）→ ProcessInvalidations → 布局 → present。
+            // drain 按快照批执行，回调里新 Post 的续体下一 tick 再跑；只要跑过回调就按批
+            // 整体失效挂载子树一次（Component.Invalidate 不级联，根级 Render 是空实现）。
+            // 放在最小化分支之前：最小化时也不能把后台续体饿死。
+            if (uiScope.Context.Drain() > 0)
+                _rootComponent?.InvalidateSubtree();
 
             var size = _window.LogicalClientSize;
             if (size.IsEmpty)

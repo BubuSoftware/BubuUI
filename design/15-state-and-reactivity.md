@@ -286,7 +286,7 @@ case nameof(Total):
 - **生命周期**：状态对象不被组件 `Dispose` 拥有；组件只释放自己创建的订阅（§15.3.7）。状态对象可以比组件活得久，
   也可以被多个组件共享；共享时所有观察者都会收到通知（UI 线程）。
 - **线程**：所有读写、订阅、释放都在 UI 线程；不提供锁。跨线程写入是未定义行为（S5 增加 Debug 断言）。
-  目标形态（单线程同步上下文 + 帧循环排空 + 自动失效）见 §15.14，文档已落地、代码未实现。
+  目标形态（单线程同步上下文 + 帧循环排空 + 自动失效）见 §15.14，**✅ D114 已实现（2026-11-12）**；契约正本 spec/03 §9.3。
 - **可空性**：`Signal<T>` 允许 `null`；生成字段用 `default!` 初始化。模板文本对 null 的 `ToString()` 结果为空串
   （C# 插值语义）；需要非空约束时在构造函数/属性 setter 中自行校验。
 - **相等性**：`Signal<T>` 用 `EqualityComparer<T>.Default` 短路；写入相等值不通知。引用类型按引用相等，
@@ -567,7 +567,8 @@ public sealed class Signal<T> : ISignal
 - 重入：updater 内写状态是允许的；用户必须避免无限递归。`UiBinding` 的 `_syncing` 只阻断双向回环。
 - 异常：getter/setter/updater 抛异常直接传播；订阅对象保持已建立状态（除非 `UiBinding` 构造失败，按 §15.3.4 释放）。
 - 跨线程：未定义；S5 在 Debug 下用 `Environment.CurrentManagedThreadId` 断言（不引入 Dispatcher）。
-  「不引入 Dispatcher」是现行口径；目标设计引入 `UiSynchronizationContext`，见 §15.14（未实现）。
+  「不引入 Dispatcher」是历史口径；**D114 起引入 `UiSynchronizationContext`（单队列，不是 Dispatcher）**，
+  见 §15.14（✅ 已实现）。
 
 ### 15.3.8 新增公开 API 汇总（冻结）
 
@@ -1325,7 +1326,7 @@ public partial class UserCard : Component
 6. **`[UiComputed]` getter body 分析**：当前信任 `dependsOn`；S5 评估 Roslyn 数据流校验。
 7. **接口集合类型**：`IList<T>`/`IReadOnlyList<T>` 可能运行时是 `ObservableCollection<T>`；当前不警告，靠运行时 INCC；
    S4 用测试确认策略。
-8. **线程/Dispatcher**：跨线程写入暂无调度 API；S5 Debug 断言，G4 设计与帧循环结合。目标设计见 §15.14（文档已落地，代码未实现）。
+8. **线程/Dispatcher**：跨线程写入暂无调度 API；S5 Debug 断言，G4 设计与帧循环结合。目标设计见 §15.14（✅ D114 已实现，2026-11-12）。
 9. **`[UiState]` record/struct/泛型**：v1 不支持；若需求强烈，另开契约，不复用当前生成形态。
 10. **`IUiObservable` 属性枚举**：DevTools/序列化可能需要属性列表；当前不提供，避免第二事实源。
 11. **序列化/AOT**：partial 属性 + 生成字段对 JSON/裁剪的影响需 S5 样例验证。
@@ -1600,14 +1601,16 @@ public readonly Signal<bool> showCount = new(false);
 - 若暂时不迁移，`Signal<T>` 版本在 S2–S4 仍可运行；`:bind`/`:value` 在 S3 起报 EUI043 Warning。
 - `P={signal}` 的行为从一次性变为反应式；发布说明必须提示。
 
-## 15.14 线程调度设计（文档已落地，代码未实现，目标 S5）
+## 15.14 线程调度（✅ 已实现，D114，2026-11-12）
 
-**状态**：目标设计已讨论落地；代码一行未动。拍板后登记编号收敛（S5/G4）；拍板前 §15.2.5/§15.3.7
-现行契约（单线程约定、跨线程 UB）继续有效，本节只描述目标形态。
+**状态**：按用户「按照计划实现同步上下文相关工作」拍板，本节四件事全部落地，编号 **D114**。
+§15.2.5/§15.3.7 的「现行契约」是 v3 历史措辞，反应式契约正本已同步到
+[spec/03 §9.3](../spec/03-reactivity-and-binding.md#93-异步与后台线程)；落地细节与偏差见 §15.14.9。
 
 ### 15.14.1 背景与问题
 
-src 无 `SynchronizationContext`/Dispatcher（2026-11-12 扫描零匹配），§15.2.5 的单线程是约定不是机制。
+落地前 src 无 `SynchronizationContext`/Dispatcher（2026-11-12 扫描零匹配），§15.2.5 的单线程是约定不是机制
+（D114 起引入 `UiSynchronizationContext`）。
 `async void` 处理器的断链：生成包装 `h(); Invalidate();` 在第一个 await 处提前返回，Invalidate 先消费旧状态；
 续体捕获不到上下文落线程池，跨线程写状态且不带 Invalidate → 永不渲染。
 与 D113（retained 段缓存复用旧文字）独立叠加，构成画廊 async 问题的完整症状。
@@ -1682,7 +1685,7 @@ public async void Load()
 }                                      // drain 后自动失效 → 渲染
 ```
 
-### 15.14.5 契约变更清单（拍板后生效）
+### 15.14.5 契约变更清单（✅ D114 拍板生效，2026-11-12）
 
 | 位置 | 现行 | 目标 |
 |---|---|---|
@@ -1691,16 +1694,17 @@ public async void Load()
 | design/14 §14.4.5 | 构造/赋值/订阅 UI 线程同步 | 不变；async 续体视为 UI 线程回调 |
 | Emitter 事件包装 | `h(); Invalidate();` | **不变**。async Task 处理器支持（Func<Task> 包装+异常观察）是独立扩展，非本设计目标 |
 
-### 15.14.6 实现清单
+### 15.14.6 实现清单（✅ 全部落地，详见 §15.14.9）
 
-| 文件 | 变更 |
-|---|---|
-| `src/EclipseUI.Runtime/UiSynchronizationContext.cs` | 新增：队列 + Post/Send/Drain + UiThreadId |
-| `src/EclipseUI.Runtime/Component.cs` | 新增 `InvalidateSubtree`（所有权树遍历入队） |
-| `src/EclipseUI.Runtime/Component.cs`（HeadlessRoot） | 安装/drain 显式入口 |
-| `src/EclipseUI.Platform.Windows/WindowHost.cs` | Run 安装/还原；L188 前插 drain |
-| `src/EclipseUI.Runtime/Element.cs` | S5 Debug 线程断言（SetValue） |
-| `tests/EclipseUI.Headless.Tests` | 15.14.7 回归 |
+| 文件 | 变更 | 状态 |
+|---|---|---|
+| `src/EclipseUI.Runtime/UiSynchronizationContext.cs` | 新增：队列 + Post/Send/Drain + UiThreadId | ✅ |
+| `src/EclipseUI.Runtime/Component.cs` | 新增 `InvalidateSubtree`（所有权树遍历入队） | ✅ |
+| `src/EclipseUI.Runtime/Component.cs`（HeadlessRoot） | 安装/drain 显式入口 | ✅ |
+| `src/EclipseUI.Platform.Windows/WindowHost.cs` | Run 安装/还原；ProcessInvalidations 前插 drain | ✅ |
+| `src/EclipseUI.Runtime/Element.cs` | S5 Debug 线程断言（SetValue） | ✅ |
+| `tests/EclipseUI.Headless.Tests` | 15.14.7 回归（15 例，含真生成模板夹具） | ✅ |
+| `tests/EclipseUI.Rendering.Tests` | 段级记录型绘制器回归（1 例） | ✅ |
 
 ### 15.14.7 测试计划
 
@@ -1713,8 +1717,46 @@ public async void Load()
 - 同步处理器：现有全量用例不变（包装未改）。
 - 失效成本：带续体 tick 的 Render 次数 = 挂载组件数（S5 预算门槛）。
 
+以上七条均已有对应用例，见 `UiSynchronizationContextTests`（15 例）与
+`UiSynchronizationContextPaintTests`（1 例）；另加 `Fixtures/AsyncProbe.ui` 验证生成器
+发射的 `h(); Invalidate();` 包装在上下文下的真实行为。
+
 ### 15.14.8 代价与取舍
 
 无组件树 diff（§15.11 决策 9）→ 每个带续体的 tick 全量 Render 挂载子树一次，O(组件数)；
 Render 体廉价且 ShouldRender 可短路。Blazor 靠 diff 省这笔，我们选择付。
 同步路径、字段写入契约、生成器均不变。
+
+### 15.14.9 落地记录（D114，2026-11-12）
+
+| 文件 | 实际落地 |
+|---|---|
+| `src/EclipseUI.Runtime/UiSynchronizationContext.cs` | 新增：`UiSynchronizationContext`（单队列 + `Post`/`Send`/`Drain`/`UiThreadId`/`Install` scope、`CreateCopy` 返回自身）、`UiThreadGuard`、`UiThreadViolationException` |
+| `src/EclipseUI.Runtime/Component.cs` | 新增 `InvalidateSubtree()`（所有权树遍历）、`Adopt` 维护 `_children` 子表、`Dispose` 摘除；`HeadlessRoot` 增 `InstallSynchronizationContext()` / `DrainPostedWork()` / `UiScope`；`Render` 前 Debug 线程断言 |
+| `src/EclipseUI.Runtime/Element.cs` | 宿主根绑定上下文 + 沿父链查找；`SetValue` 的 Debug 线程断言 |
+| `src/EclipseUI.Platform.Windows/WindowHost.cs` | `Run` 安装/还原上下文；tick 顺序改为 PumpMessages → Drain → 自动失效 → ProcessInvalidations → 布局 → present |
+| `tests/EclipseUI.Headless.Tests/UiSynchronizationContextTests.cs` | 新增 15 例（§15.14.7 全部条目；含 `Fixtures/AsyncProbe.ui` 真生成模板端到端） |
+| `tests/EclipseUI.Rendering.Tests/UiSynchronizationContextPaintTests.cs` | 新增 1 例：记录型文本绘制器断言 retained 段确实以新文字重建（D113 盲区） |
+
+**与 §15.14.2 设计文本的三点实测偏差（有意，不回退）**：
+
+1. **自动失效走所有权树，不是 `_tracked` 过滤**。`BlockScope` 不实现 `IDisposable`，块内子组件是
+   `Adopt` + `scope.AddDisposable`，压根不在父组件 `_tracked` 里；照原文写会漏掉 `@if`/`@foreach`
+   内的全部组件。实现改为 `Adopt` 时维护 `_children` 子表，`InvalidateSubtree` 沿它递归（含自身、
+   跳过 disposed/未挂载/异根，队列按组件去重）。
+2. **Debug 断言以可捕获异常实现**（`UiThreadViolationException`），并只在「元素所属宿主装了上下文」
+   时判定：`Element` 根绑定 + 沿父链查找。原因 —— `Debug.Assert` 在 .NET 测试宿主里会终止进程，
+   写不了回归；`ConfigureAwait(false)` 的线程池续体没有 ambient `SynchronizationContext.Current`，
+   只查 ambient 会漏判；全局静态上下文又会误伤并行跑的其他测试。`[Conditional("DEBUG")]` 让
+   Release 热路径零成本，`Invalidate` 仍保持线程安全入队。
+3. **无头宿主不自动 drain**。`UpdateLayout()` 不会偷偷排空，驱动者显式调 `DrainPostedWork()`，
+   测试才能把 §15.14.4 的 N / N+1 两帧钉死；真实窗口由 `WindowHost.Run` 每 tick 自动 drain。
+
+其余口径：`Drain` 按快照批执行（自投递下一批）、每回调 try/catch 后以 `AggregateException`
+在 UI 线程 fail-fast、`Send` 跨线程 Post + 阻塞、`CreateCopy` 共享单队列、生成器事件包装
+`h(); Invalidate();` 未改、同步处理器路径零变化。
+
+**验收**：`dotnet build EclipseUI.slnx` 0 警告；`dotnet test EclipseUI.slnx` **1066 例中 1064 绿**，
+2 条红来自工作区里**本片之前就存在**的手工验证改动（`samples/Gallery/Counter.ui` 把
+`OnClick` 换成 `Test()` 且 `count+=5`，`CounterEndToEndTests` 仍断言 +1 / +2，实测 5 / 10），
+与本片无关；**新增 16 例全绿**（Headless 15 / Rendering 1）。

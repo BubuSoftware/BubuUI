@@ -23,7 +23,7 @@
 | 保留元素树、动态表达式求值时机、块刷新 | 控件如何声明属性/事件/内容模型（design/14） |
 | `@if`/`@foreach` 的分支重建与 Keyed 复用 | 布局、绘制、hit test（design/05） |
 | `@bind-P` 的单向刷新、回写、组件 `PChanged` | `UiBinding`/`BlockScope` 的逐语句生成形态（spec/02 §4） |
-| 事件自动失效、异步/后台线程的显式失效 | 样式/主题（G4） |
+| 事件自动失效；`UiSynchronizationContext` 下 await 续体回 UI 线程与按批自动失效（D114，§9.3）；后台线程的显式失效 | 样式/主题（G4） |
 | 诊断码 EUI007/EUI010/EUI033/EUI037/EUI040 的反应式口径 | 控件元数据诊断 EUI001–EUI033（design/14 §14.9） |
 
 ### 0.2 权威关系
@@ -133,7 +133,9 @@ v4 **不采用** Blazor 的虚拟 DOM diff：元素实例保留，静态结构�
 7. **Keyed 复用条件是 Key 相等且 item 身份相等**：引用类型按引用，值类型按值；同 Key 不同 item 重建条目。
 8. **事件处理器 build-once**：控件事件与组件委托参数在 Build 时注册，不在每次渲染重新生成；
    处理器完成后自动 `Invalidate()` 所属组件（组件委托参数失效父组件）。
-9. **非 UI 事件的变化必须显式 `Invalidate()`**：后台线程、定时器、`await` 续体、直接修改集合/对象，均不自动刷新。
+9. **非 UI 事件的变化必须显式 `Invalidate()`**：后台线程、定时器、直接修改集合/对象，均不自动刷新。
+   **例外（D114）**：宿主安装了 `UiSynchronizationContext` 时，`await` 续体回到 UI 线程，
+   帧循环按批排空后自动失效整棵挂载子树一次（§9.3）；未安装上下文的宿主沿用显式失效口径。
 10. **大小写敏感，不做别名**；表达式就是 C# 表达式；不兼容 XAML。
 11. **移除旧状态契约**：`[UiState]`/`[UiObservable]`/`[UiComputed]`、`IUiObservable`、`UiWatch`、依赖分析、
     `EUI014`/`EUI034`–`EUI036`/`EUI038`/`EUI039`/`EUI041`/`EUI042`/`EUI044` 不再是模板契约的一部分。
@@ -150,6 +152,9 @@ v4 **不采用** Blazor 的虚拟 DOM diff：元素实例保留，静态结构�
 - 不自动监听 `INotifyPropertyChanged`/`INotifyCollectionChanged`（类型可以实现，但框架不订阅）；
 - 不保证表达式只求值一次；表达式必须无副作用（§4.5）；
 - 不做跨线程状态同步；只保证 `Invalidate()` 可从任意线程调用。
+  **D114 例外**：`await` 续体经 `UiSynchronizationContext` 回到 UI 线程属于线程调度，
+  不算跨线程状态同步；`ConfigureAwait(false)` 与裸线程池写入仍是 UB（Debug 下报
+  `UiThreadViolationException`）。
 
 ## 2. 组件生命周期
 
@@ -715,21 +720,35 @@ __cmp.OnSelect = a0 => { h1(a0); Invalidate(); };
 
 ### 9.3 异步与后台线程
 
-- 控件事件包装在处理器**同步返回后**失效；`async void` 处理器在第一个 `await` 前返回，
-  后续状态变化必须显式 `Invalidate()`：
+**D114（2026-11-12）生效**：宿主在 UI 线程安装 `UiSynchronizationContext`（单队列，
+不是 Dispatcher），帧循环每 tick 按 `PumpMessages → Drain → 自动失效 → ProcessInvalidations →
+布局 → present` 推进。真实窗口由 `WindowHost.Run` 自动安装；无头宿主由
+`HeadlessRoot.InstallSynchronizationContext()` 显式安装并显式 `DrainPostedWork()`。
+
+- 控件事件包装**不变**：`h(); Invalidate();`。`async void` 处理器在第一个 `await` 处返回，
+  这次失效会渲染一次旧状态（无害）；续体被 `Post` 回 UI 上下文，下一批 drain 在 UI 线程执行，
+  宿主随后调用 `Component.InvalidateSubtree()` 按批整体失效挂载子树一次。
+- 因此「后台干活、回 UI 更新」是合法默认（无需手写 `Invalidate()`）：
 
 ```csharp
 private async void Load()
 {
-    Tasks = await _api.GetTasksAsync();
-    Invalidate();          // 必须：await 之后不会自动失效
-}
+    Tasks = await _api.GetTasksAsync(); // 续体回 UI 线程
+}                                       // drain 后自动失效 → Render
 ```
 
-- 后台线程修改状态后调用 `Invalidate()`；它是线程安全的。状态字段本身的跨线程可见性由用户负责
-  （`volatile`/锁/不可变替换）。
-- 定时器/动画回调同样：修改状态 + `Invalidate()`；或直接修改元素属性（属性引擎自行标脏）。
-- 不提供 `InvokeAsync` 包装；宿主负责 UI 线程调度。`Invalidate()` 只入队，不执行用户代码。
+- **未安装上下文的宿主**（如纯离屏/自定义驱动）沿用旧口径：`await` 之后必须显式 `Invalidate()`。
+  后台线程修改状态后调用 `Invalidate()`（线程安全）；状态字段本身的跨线程可见性由用户负责
+  （`volatile`/锁/不可变替换）。定时器/动画回调同理：修改状态 + `Invalidate()`，
+  或直接修改元素属性（属性引擎自行标脏）。
+- `ConfigureAwait(false)` 是显式逃生舱：续体落线程池，直接写 UI 状态仍是 UB；
+  Debug 下 `Element.SetValue`/`Component.Render` 抛 `UiThreadViolationException`，
+  `async void` 的异常会经上下文回到 UI 线程，由 drain 以 `AggregateException` fail-fast。
+- 每个回调单独 try/catch、批量结束才 fail-fast；`Drain` 只跑当批快照，回调内新 Post 的
+  续体下一 tick 再跑（不会饿死帧循环）；与 `ProcessInvalidations` 的 100 轮上限构成两层保护。
+- 回调内禁止嵌套消息泵；跨线程 `Send` 有 WPF 式死锁面（v0 接受）。
+- 不提供 `InvokeAsync` 包装；`Invalidate()` 只入队、不执行用户代码，仍可从任意线程调用。
+  实现与偏差见 [design/15 §15.14.9](../design/15-state-and-reactivity.md#15149-落地记录d1142026-11-12)。
 
 ### 9.4 事件与参数推送的顺序
 
@@ -859,6 +878,7 @@ O(根级动态绑定数 + 根级块数 + Σ 块刷新成本)
 - **粗粒度保护**：`ShouldRender()` 返回 false 跳过整棵动态作用域；只在确定输出不变时使用。
 - **批量修改后一次失效**：连续修改多个字段只在末尾 `Invalidate()`；同帧多次失效会合并。
 - **后台线程**：只做状态替换 + `Invalidate()`；渲染始终在 UI 线程。
+  `async void` 处理器的后台 I/O 应让续体回到 UI 上下文（§9.3），不要在线程池里写状态。
 
 ### 12.3 与 v3 的取舍
 
@@ -868,7 +888,7 @@ O(根级动态绑定数 + 根级块数 + Σ 块刷新成本)
 | 单次更新 | O(受影响绑定) | O(组件动态作用域) |
 | 集合 | 需 INCC 才观察内容 | 每次重新枚举，无需 INCC |
 | 表达式 | 需可静态分析 | 任意 C# 表达式 |
-| 显式失效 | 不需要（写即通知） | 非 UI 事件变化需要 `Invalidate()` |
+| 显式失效 | 不需要（写即通知） | 非 UI 事件变化需要 `Invalidate()`；装了 `UiSynchronizationContext` 的宿主里 `await` 续体由帧循环自动失效（D114，§9.3） |
 | 元素保留 | 是 | 是（无 diff） |
 | 组件粒度 | 细 | 组件级（可用子组件切分） |
 
@@ -884,8 +904,8 @@ O(根级动态绑定数 + 根级块数 + Σ 块刷新成本)
 | **S1** ✅ | `Component.Invalidate/ProcessInvalidations/Render/ShouldRender`；失效队列与合并；生成字段与 `U{N}`；根级 `P=`/文本重算；控件事件自动失效 | 根级动态属性/文本在失效后更新；同帧多次失效只渲染一次；Dispose 后 no-op |
 | **S2** ✅ | `ConditionalBlock`/`ForEachBlock` v4；`BlockScope.RenderActions`；`@if` 分支切换；`@foreach` 重新枚举、null=空、Keyed 复用；嵌套块；`EUI033`（文本 + 显式目标） | 分支切换释放旧作用域；同 Key 同 item 复用、不同 item 重建；列表类型不受限 |
 | **S3** ✅ | `UiBinding` v4；控件 `@bind`；item 绑定；`EUI033`（`P=` 与绑定冲突）/`EUI037`/`EUI040` —— 控件侧 ✅（2026-11-02）；组件 `PChanged` 与组件 `@bind` 随 C4 ✅（2026-11-05，spec/02 D54/D56 关闭）；旧语法 `EUI043` 已随 K27 停用、改报 `EUI046` | 双向绑定源值胜出；目标变化回写+失效；无回环；组件参数向上同步 |
-| **S4** | 组件所有权/深度排序；参数推送与相等保护；异步/后台失效；`ShouldRender` 与异步失效的组合语义 | 父先于子渲染；后台失效合并；异步续体显式失效；无泄漏 |
-| **S5** | 基准/预算；AOT/裁剪；死循环上限；诊断清理与最终审计（旧语法清理已随 S6 提前完成，K27）——**✅ 2026-11-09 收敛（D94/D95/D96）** | 性能预算达标（✅ D94 分配门槛）；零停用诊断；样例迁移完成（✅ S6）；正式性能吞吐基准表随 G8 |
+| **S4** | 组件所有权/深度排序；参数推送与相等保护；异步/后台失效；`ShouldRender` 与异步失效的组合语义 | 父先于子渲染；后台失效合并；未安装上下文时异步续体显式失效（安装后由 D114 自动失效）；无泄漏 |
+| **S5** | 基准/预算；AOT/裁剪；死循环上限；诊断清理与最终审计（旧语法清理已随 S6 提前完成，K27）——**✅ 2026-11-09 收敛（D94/D95/D96）**；线程断言与 UI 线程调度随 **D114（2026-11-12）** 落地（§9.3） | 性能预算达标（✅ D94 分配门槛）；零停用诊断；样例迁移完成（✅ S6）；✅ D114 线程亲和断言；正式性能吞吐基准表随 G8 |
 
 ### 13.2 与 C/G 阶段的关系
 
@@ -927,6 +947,7 @@ O(根级动态绑定数 + 根级块数 + Σ 块刷新成本)
 | T14 | `#line` | 故意类型错误 | 诊断落在 `.ui` 行；每个表达式只报一次 |
 | T15 | 样例 | CounterApp/TaskList/GalleryApp | 编译 0 error；运行冒烟（增删/勾选/条件） |
 | T16 | 诊断 | 每个 EUI 触发用例 | 代码/span/级别稳定；停用码零出现 |
+| T17 | UI 同步上下文（D114） | `async void` + `Task.Yield`/`Task.Run`/`Task.Delay`、自投递续体、`ConfigureAwait(false)`、异常回调 | 续体线程 id == `UiThreadId`；tick N 旧值 / tick N+1 新值且段重建；按批 drain 不饿死；一次 drain 的 Render 次数 = 挂载组件数；跨线程写与异常收回 UI 线程 |
 | T17 | 性能（S5） | 1k/10k 列表、频繁失效 | 预算内；无反射；分配可接受 —— ✅ 分配口径（D94 预算门槛 + 10 万行虚拟化窗口实例化测试）；正式吞吐基准表随 G8 |
 | T18 | AOT/裁剪（S5） | 发布裁剪样例 | 无反射警告/运行时失败 —— ✅ D95（full trimming 0 警告 + 产物实跑；AOT 编译通过、运行待上游修复 NativeLibraryLoader） |
 
@@ -1000,7 +1021,8 @@ D54/D56 关闭。S3 至此整体 ✅；该切片收敛时 **409 个测试全绿�
 1. 把 `[UiState]`/`[UiObservable]`/`[UiComputed]` partial 属性改成普通属性/字段；
 2. 把 `Signal<T>` 字段改成普通字段/属性；模板中的裸信号名改成 `.Value` 或普通属性；
 3. 把集合类型改成最自然的 `IEnumerable<T>`（`List<T>`/数组/字典/LINQ）；
-4. 在所有非 UI 事件的状态变化后调用 `Invalidate()`（后台线程、`await` 续体、定时器、直接集合修改）；
+4. 在所有非 UI 事件的状态变化后调用 `Invalidate()`（后台线程、定时器、直接集合修改）；
+   装了 `UiSynchronizationContext` 的宿主里 `await` 续体由帧循环自动失效（D114，§9.3）；
 5. 把组件可观察参数改成普通参数 + `{P}Changed` 回调，子组件在内部修改参数时调用回调；
 6. 删除依赖分析相关的诊断抑制/规避写法；
 7. 用 `ShouldRender()`/子组件切分处理性能热点。

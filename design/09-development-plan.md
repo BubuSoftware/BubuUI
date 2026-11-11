@@ -22,7 +22,7 @@
   标签使用点分流 EUI016/017/018/030，引用程序集仍只在使用点暴露。
   EUI024（委托签名匹配）已落地（✅ 2026-11-08/D82，`EventHandlerSignatureTests` 16 例），G3 七个小切片至此全部收敛；口径见台账 D82。
 - Roslyn 增量源生成器：code-behind 发现、模板解析与动态点生成、`@foreach` item 类型推断、代码发射、`#line` 映射。
-- 运行时：`Signal<T>`（遗留原语，不参与模板反应式）、`StyledProperty<T>`、元素树、measure/arrange、路由事件、`@if`/`@foreach` 协调器、`Component`、无头宿主。
+- 运行时：`Signal<T>`（遗留原语，不参与模板反应式）、`StyledProperty<T>`、元素树、measure/arrange、路由事件、`@if`/`@foreach` 协调器、`Component`、无头宿主；**D114（2026-11-12）**：单线程 `UiSynchronizationContext` + `Component.InvalidateSubtree` + `WindowHost.Run` 帧循环排空，让 `async void` 续体回 UI 线程并自动失效（[design/15 §15.14](./15-state-and-reactivity.md)）。
 - 输入/焦点：HitTest、指针冒泡、按下捕获、Tab 遍历、空格/回车激活；`InputRouter` 无头/窗口共用。
 - 文本：HarfBuzz shaping（真实字体测试），`HarfBuzzTextPainter` 让布局与绘制共用 shaping 缓存。
 - 渲染：`DisplayList` 契约、Vello CPU/GPU 后端、`ElementPainter` 场景图遍历、Win32 宿主 + wgpu 上屏、

@@ -111,6 +111,9 @@ public abstract class Element
     private bool _isFocused;
     private bool _isEnabled = true;
     private Dictionary<RoutedEvent, List<Action<RoutedEventArgs>>>? _handlers;
+    // 宿主安装 UiSynchronizationContext 时只绑定到根元素；Debug 线程亲和断言沿父链查找，
+    // 因此块内动态创建的元素无需再登记（design/15 §15.14.3）。
+    private UiSynchronizationContext? _uiContext;
 
     public Element? Parent => _parent;
     public Size DesiredSize => _desired;
@@ -122,6 +125,25 @@ public abstract class Element
     /// 版本不变也可能因布局移动进入脏区。
     /// </summary>
     public long RenderVersion => _renderVersion;
+
+    /// <summary>由 <see cref="UiSynchronizationContext.AttachTo"/> 在宿主根元素上设置。</summary>
+    internal void BindUiContext(UiSynchronizationContext context) => _uiContext = context;
+
+    /// <summary>宿主退出帧循环时解除绑定（只清自己装的，避免覆盖后续宿主）。</summary>
+    internal void ClearUiContext(UiSynchronizationContext context)
+    {
+        if (ReferenceEquals(_uiContext, context))
+            _uiContext = null;
+    }
+
+    /// <summary>沿父链查找最近的宿主上下文；未挂到宿主树上的元素返回 null（不判定）。</summary>
+    internal UiSynchronizationContext? FindUiContext()
+    {
+        for (var node = this; node is not null; node = node._parent)
+            if (node._uiContext is { } context)
+                return context;
+        return null;
+    }
 
     /// <summary>属性变更通知（值短路：相等不触发）。</summary>
     public event Action<Element, StyledProperty>? PropertyChanged;
@@ -165,6 +187,7 @@ public abstract class Element
 
     public void SetValue<T>(StyledProperty<T> property, T value)
     {
+        UiThreadGuard.AssertUiThread(this, nameof(SetValue));
         if (_localValues is not null &&
             _localValues.TryGetValue(property, out var existing) &&
             existing is ValueBox<T> typedBox)

@@ -13,6 +13,9 @@ public abstract class Component : IDisposable
     private const int MaxRenderIterations = 100;
 
     private readonly List<IDisposable> _tracked = new();
+    // 所有权树的子表：只由 Adopt 维护。块内子组件登记在 BlockScope（不实现 IDisposable、
+    // 也不进 _tracked），但它们一定先 Adopt——所以从所有权树走才不会漏 @if/@foreach 里的组件。
+    private readonly List<Component> _children = new();
     private readonly object _invalidationLock = new();
     private readonly Queue<PendingRender> _pendingRenders = new();
     private readonly HashSet<Component> _pendingSet = new();
@@ -102,6 +105,36 @@ public abstract class Component : IDisposable
         RootComponent.EnqueueInvalidation(this);
     }
 
+    /// <summary>
+    /// 把本组件及其整棵所有权子树一次性入队（design/15 §15.14.2 第 3 条）。
+    ///
+    /// 为什么需要它：<see cref="Invalidate"/> 只入队自身，根组件 Invalidate 不级联；
+    /// 帧循环排空同步上下文后，续体可能改了任意组件的字段，而生成器包装里的
+    /// Invalidate 早在第一个 await 处就消费过旧状态了。所以宿主按「一批回调一次」
+    /// 调用本方法，再走 <see cref="ProcessInvalidations"/>（队列内按组件去重）。
+    ///
+    /// 遍历口径：从本组件出发沿 <c>Adopt</c> 建立的所有权子表递归（块内组件也在此列）。
+    /// 已释放 / 未挂载 / 不属于本根的组件跳过；<c>Invalidate</c> 内部按组件去重入队。
+    /// </summary>
+    public void InvalidateSubtree()
+    {
+        var root = RootComponent;
+        var visited = new HashSet<Component>();
+        var pending = new Stack<Component>();
+        pending.Push(this);
+
+        while (pending.Count > 0)
+        {
+            var component = pending.Pop();
+            if (!visited.Add(component)) continue;
+            if (component._disposed || !component._isMounted) continue;
+            if (!ReferenceEquals(component.RootComponent, root)) continue;
+            component.Invalidate();
+            foreach (var child in component._children)
+                pending.Push(child);
+        }
+    }
+
     /// <summary>重算本组件的根级动态表达式；只由 <see cref="ProcessInvalidations"/> 调用。</summary>
     protected virtual void Render()
     {
@@ -152,6 +185,9 @@ public abstract class Component : IDisposable
                 if (++iterations > MaxRenderIterations)
                     throw new InvalidOperationException(
                         $"Render loop exceeded {MaxRenderIterations} iterations at component '{component.GetType().FullName}'.");
+                // S5 Debug 线程亲和：Render 是写 UI 状态的路径，必须落在宿主 UI 线程上。
+                // Invalidate 仍保持线程安全入队（§15.14.3）。
+                UiThreadGuard.AssertUiThread(component.Root, "Component.Render");
                 component.Render();
                 rendered = true;
             }
@@ -179,6 +215,7 @@ public abstract class Component : IDisposable
                 throw new InvalidOperationException("Component ownership cycle detected.");
 
         child._owner = this;
+        _children.Add(child);
         MigratePending(child);
     }
 
@@ -234,6 +271,10 @@ public abstract class Component : IDisposable
         foreach (var disposable in _tracked)
             disposable.Dispose();
         _tracked.Clear();
+        // 从所有者的子表摘除：已释放组件不该再被 InvalidateSubtree 遍历到。
+        // 子组件的 Dispose 会各自摘除自己，遍历的是 _tracked（另一张表），不冲突。
+        _owner?._children.Remove(this);
+        _children.Clear();
         _owner = null;
     }
 
@@ -276,6 +317,7 @@ public sealed class HeadlessRoot
 {
     private readonly Element _content;
     private readonly Component? _rootComponent;
+    private UiSynchronizationContext? _uiContext;
 
     public HeadlessRoot(Element content)
     {
@@ -303,6 +345,62 @@ public sealed class HeadlessRoot
     public InputRouter Input { get; }
 
     public FocusManager Focus => Input.Focus;
+
+    /// <summary>当前安装的 UI 同步上下文（未安装时为 null）。</summary>
+    public UiSynchronizationContext? SynchronizationContext => _uiContext;
+
+    /// <summary>
+    /// 在当前线程安装单线程 UI 同步上下文，并绑定到宿主根元素（design/15 §15.14.2 装配点）。
+    /// 无头宿主不开帧循环，排空由驱动者显式调用 <see cref="DrainPostedWork"/>；
+    /// <see cref="UpdateLayout"/> 不会自动 drain，测试据此把 tick 边界钉成 §15.14.4 的 N / N+1。
+    /// </summary>
+    public UiScope InstallSynchronizationContext()
+    {
+        var scope = UiSynchronizationContext.Install(_content);
+        _uiContext = scope.Context;
+        return new UiScope(this, scope);
+    }
+
+    /// <summary>
+    /// 显式帧循环 drain：在 UI 线程执行当批 Post 的续体；只要执行过回调，就按批
+    /// 整体失效挂载子树一次（不是每回调一次）。返回执行的工作项数。
+    /// </summary>
+    public int DrainPostedWork()
+    {
+        if (_uiContext is null)
+            return 0;
+        var ran = _uiContext.Drain();
+        if (ran > 0)
+            _rootComponent?.InvalidateSubtree();
+        return ran;
+    }
+
+    /// <summary>安装范围：退出时还原上下文并清掉宿主引用，避免污染后续测试。</summary>
+    public sealed class UiScope : IDisposable
+    {
+        private readonly HeadlessRoot _host;
+        private readonly UiSynchronizationContext.UiThreadScope _scope;
+        private bool _disposed;
+
+        internal UiScope(HeadlessRoot host, UiSynchronizationContext.UiThreadScope scope)
+        {
+            _host = host;
+            _scope = scope;
+        }
+
+        public UiSynchronizationContext Context => _scope.Context;
+
+        /// <summary>等价于宿主帧循环里的 drain 步骤。</summary>
+        public int Drain() => _host.DrainPostedWork();
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            _host._uiContext = null;
+            _scope.Dispose();
+        }
+    }
 
     public void UpdateLayout()
     {

@@ -1,0 +1,21 @@
+@namespace EclipseUI.Headless.Tests
+@using EclipseUI.Elements
+
+<StackPanel>
+    <TextBlock>{count}</TextBlock>
+    <Button OnClick={() => LoadAsync()}>load</Button>
+</StackPanel>
+
+@code {
+    public int count;
+    public int ContinuationThreadId;
+
+    // 生成器包装形态就是 h(); Invalidate(); —— async void 在第一个 await 处提前返回。
+    // 用同步上下文后，续体 Post 回 UI 线程，由帧循环 drain + 自动失效兜底。
+    public async void LoadAsync()
+    {
+        await global::System.Threading.Tasks.Task.Yield();
+        ContinuationThreadId = global::System.Environment.CurrentManagedThreadId;
+        count += 5;
+    }
+}

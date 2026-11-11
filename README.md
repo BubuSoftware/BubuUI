@@ -354,6 +354,23 @@
 > 偏差 D85–D88 已收敛（见 [spec/02 §12](./spec/02-generated-code-contract.md#12-实现偏差台账-d42d88)），
 > 计划见 [design/16](./design/16-blazor-alignment-plan.md)。全部样例与约 94 例 golden 已补 `@using` 迁移，
 > `dotnet test EclipseUI.slnx` 用例 548 → 567（K31 别名新增 19 例：前端 15 / 生成器契约 4）。
+>
+> **UI 线程调度切片已通过（2026-11-12，D114）**：按 [design/15 §15.14](./design/15-state-and-reactivity.md)
+> 落地单线程 `UiSynchronizationContext`（队列 + `Post`/`Send`/`Drain` 快照批 + `UiThreadId`、
+> `CreateCopy` 共享单队列），`Component.InvalidateSubtree()` 沿 `Adopt` 所有权树按批整体失效
+> （块内组件不在 `_tracked` 里，只走所有权树才不会漏）；`WindowHost.Run` 安装/还原上下文并把
+> tick 顺序改为 PumpMessages → Drain → 自动失效 → ProcessInvalidations → 布局 → present，
+> `HeadlessRoot` 提供显式安装/排空入口。生成器事件包装 `h(); Invalidate();` **不变**——
+> `async void` 处理器第一次 await 后，续体回 UI 线程，下一批 drain 写入状态并自动重渲染，
+> 「后台干活、回 UI 更新」成为合法默认；`ConfigureAwait(false)` / 裸线程池写入仍是 UB，
+> Debug 下 `Element.SetValue`/`Component.Render` 抛 `UiThreadViolationException`，`async void`
+> 异常经上下文收回 UI 线程、以 `AggregateException` fail-fast。契约正本同步到
+> [spec/03 §9.3](./spec/03-reactivity-and-binding.md#93-异步与后台线程)。新增 16 例
+> （`UiSynchronizationContextTests` 15，含 `Fixtures/AsyncProbe.ui` 真生成模板端到端；
+> + `UiSynchronizationContextPaintTests` 1，后者用记录型绘制器断言 retained 段以新文字重建，
+> 锁住 D113 盲区）；`dotnet build` 0 警告，全量 1066 例中 1064 绿——2 条红来自工作区里
+> 本片之前就存在的 `Counter.ui` 手工验证改动
+> （`OnClick={Test}` 且 `count+=5`，端到端用例仍断言 +1），与本片无关。
 
 ## 核心理念
 

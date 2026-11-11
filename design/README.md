@@ -39,7 +39,7 @@
 | 12 | [G2 第二切片：场景图 + 输入路由](./12-g2-interactive-slice.md) | 元素树→display list、无头/窗口共用输入路由、文本 shaping 接入、Gallery 自检 |
 | 13 | [G2 第三切片：damage v0](./13-g2-damage-v0.md) | RenderVersion 失效模型、脏矩形快照 diff、空闲跳帧、覆盖率与跟踪开销 |
 | 14 | [控件与模板契约（详细设计）](./14-control-template-contract.md) | 标签/属性/事件/内容模型声明规则、符号派生目录、字面量转换、组件参数与插槽、生成代码与诊断契约；v4 换轨（14.18）：参数为普通 CLR 属性 + `{P}Changed`，反应式/生成形态由 spec/02、spec/03 取代；**C1–C6 已落地（2026-11-05）**，表面实测、差集评审与各切片落地记录见 §14.12.1–§14.12.6 |
-| 15 | [状态与反应式契约（详细设计）](./15-state-and-reactivity.md) | **已停止（v3 历史）**：`[UiState]`/`UiObservable`/`UiComputed`、依赖分析、`UiWatch`/`Signal<T>` 订阅、EUI034–EUI044；v4 反应式见 [spec/03](../spec/03-reactivity-and-binding.md) |
+| 15 | [状态与反应式契约（详细设计）](./15-state-and-reactivity.md) | **已停止（v3 历史）**：`[UiState]`/`UiObservable`/`UiComputed`、依赖分析、`UiWatch`/`Signal<T>` 订阅、EUI034–EUI044；v4 反应式见 [spec/03](../spec/03-reactivity-and-binding.md)。**§15.14 线程调度 ✅ D114 已实现（2026-11-12）**：单线程 `UiSynchronizationContext` + 帧循环排空 + 子树自动失效 |
 | 16 | [`.ui` 语法对齐 Blazor 计划](./16-blazor-alignment-plan.md) | **✅ S6 已实现（K23 + K24–K30，2026-11-08）**：对齐矩阵、P0–P6、Q1–Q8（已全部拍板）、风险 R1–R8、单文件示例（附录 A）与生成契约草案（附录 B）；目标语法正本在 spec/01 §1.5；后续增量 K31（`@using` 别名）见 spec/02 §14/§4.18 |
 | 17 | [样式系统完整设计](./17-style-system.md) | **✅ 五片落地（2026-11-10）**：有效值四层级联、`.eustyle` 样式表、伪类位掩码、主题双色、编译期校验；D98–D107 / E1–E5 |
 | 18 | [Razor C# 智能提示借鉴](./18-razor-csharp-intellisense.md) | **调研 + 方案建议（2026-11-11，未实施）**：Razor 的生成文档 / `SourceGeneratedDocument` / `SourceMapping` / VS Code 虚拟 HTML 链路；EclipseUI 的 Document 层与统一映射差距；P0–P3 借鉴项、落地顺序、验收与待拍板 |
