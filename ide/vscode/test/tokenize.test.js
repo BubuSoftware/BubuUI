@@ -263,6 +263,37 @@ $accent: theme(#ffffff, #000000);
     tokens.some((token) => token.text.includes('<TextBlock') && token.scopes.includes('meta.directive.foreach.eclipseui')));
   if (leaked) failures.push('multi-line @foreach leaked its scope onto the following tag');
 
+  // 回归：@switch 体的 case/default/break 是模板级关键字（生成器无逐字映射，语义着色丢弃），
+  // 必须由 TextMate 上色。曾经的 bug：switch-directive 只管头部，体内这几个词落回文本模式
+  // 没有任何 scope。同时钉住正文里的同名词不被误伤（靠冒号/分号界定）。
+  const switchTemplate = `@using EclipseUI.Elements
+<StackPanel>
+    @switch (mode) {
+        case 0:
+            <TextBlock>zero</TextBlock>
+            break;
+        default:
+            <TextBlock>other case break default</TextBlock>
+            break;
+    }
+</StackPanel>
+`;
+  const switchDoc = await tokenize('source.eclipseui', switchTemplate);
+  if (dump) {
+    switchDoc.lines.forEach((tokens, index) => {
+      console.log(`--- switch line ${index + 1}`);
+      for (const token of tokens) console.log(`  ${JSON.stringify(token.text)}  ${token.scopes.slice(1).join(' ')}`);
+    });
+  }
+
+  expectAt(switchDoc, 2, '@switch', 1, 'keyword.control.switch.eclipseui', '@switch');
+  expectAt(switchDoc, 3, 'case', 0, 'keyword.control.switch.eclipseui', 'case label');
+  expectAt(switchDoc, 5, 'break', 0, 'keyword.control.switch.eclipseui', 'break statement');
+  expectAt(switchDoc, 6, 'default', 0, 'keyword.control.switch.eclipseui', 'default label');
+  expectNotAt(switchDoc, 7, 'case', 0, 'keyword.control.switch.eclipseui', 'plain-text case');
+  expectNotAt(switchDoc, 7, 'break', 0, 'keyword.control.switch.eclipseui', 'plain-text break');
+  expectNotAt(switchDoc, 7, 'default', 0, 'keyword.control.switch.eclipseui', 'plain-text default');
+
   if (failures.length > 0) {
     console.error(`\n${failures.length} grammar assertion(s) failed:`);
     for (const failure of failures) console.error('  - ' + failure);

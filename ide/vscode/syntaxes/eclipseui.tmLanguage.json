@@ -10,6 +10,7 @@
     { "include": "#end-tag" },
     { "include": "#element" },
     { "include": "#block-brace" },
+    { "include": "#switch-keyword" },
     { "include": "#expression" }
   ],
   "repository": {
@@ -112,6 +113,15 @@
         "3": { "name": "punctuation.section.block.begin.eclipseui" }
       },
       "patterns": [{ "include": "#csharp-in-parens" }]
+    },
+
+    "switch-keyword": {
+      "comment": "@switch 体的 case/default/break 是模板级控制流关键字：生成器把它们转成脚手架、无逐字映射，语义着色按「映不回就丢」丢弃，故归 TextMate 上色（design/18 §8 模板表面）。用冒号/分号界定，避免误伤正文里的同名词。",
+      "patterns": [
+        { "match": "\\bcase\\b(?=\\s+[^:\\n]*:)", "name": "keyword.control.switch.eclipseui" },
+        { "match": "\\bdefault\\b(?=\\s*:)", "name": "keyword.control.switch.eclipseui" },
+        { "match": "\\bbreak\\b(?=\\s*;)", "name": "keyword.control.switch.eclipseui" }
+      ]
     },
 
     "code-block": {
