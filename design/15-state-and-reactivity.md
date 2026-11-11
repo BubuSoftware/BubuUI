@@ -286,6 +286,7 @@ case nameof(Total):
 - **生命周期**：状态对象不被组件 `Dispose` 拥有；组件只释放自己创建的订阅（§15.3.7）。状态对象可以比组件活得久，
   也可以被多个组件共享；共享时所有观察者都会收到通知（UI 线程）。
 - **线程**：所有读写、订阅、释放都在 UI 线程；不提供锁。跨线程写入是未定义行为（S5 增加 Debug 断言）。
+  目标形态（单线程同步上下文 + 帧循环排空 + 自动失效）见 §15.14，文档已落地、代码未实现。
 - **可空性**：`Signal<T>` 允许 `null`；生成字段用 `default!` 初始化。模板文本对 null 的 `ToString()` 结果为空串
   （C# 插值语义）；需要非空约束时在构造函数/属性 setter 中自行校验。
 - **相等性**：`Signal<T>` 用 `EqualityComparer<T>.Default` 短路；写入相等值不通知。引用类型按引用相等，
@@ -566,6 +567,7 @@ public sealed class Signal<T> : ISignal
 - 重入：updater 内写状态是允许的；用户必须避免无限递归。`UiBinding` 的 `_syncing` 只阻断双向回环。
 - 异常：getter/setter/updater 抛异常直接传播；订阅对象保持已建立状态（除非 `UiBinding` 构造失败，按 §15.3.4 释放）。
 - 跨线程：未定义；S5 在 Debug 下用 `Environment.CurrentManagedThreadId` 断言（不引入 Dispatcher）。
+  「不引入 Dispatcher」是现行口径；目标设计引入 `UiSynchronizationContext`，见 §15.14（未实现）。
 
 ### 15.3.8 新增公开 API 汇总（冻结）
 
@@ -1323,7 +1325,7 @@ public partial class UserCard : Component
 6. **`[UiComputed]` getter body 分析**：当前信任 `dependsOn`；S5 评估 Roslyn 数据流校验。
 7. **接口集合类型**：`IList<T>`/`IReadOnlyList<T>` 可能运行时是 `ObservableCollection<T>`；当前不警告，靠运行时 INCC；
    S4 用测试确认策略。
-8. **线程/Dispatcher**：跨线程写入暂无调度 API；S5 Debug 断言，G4 设计与帧循环结合。
+8. **线程/Dispatcher**：跨线程写入暂无调度 API；S5 Debug 断言，G4 设计与帧循环结合。目标设计见 §15.14（文档已落地，代码未实现）。
 9. **`[UiState]` record/struct/泛型**：v1 不支持；若需求强烈，另开契约，不复用当前生成形态。
 10. **`IUiObservable` 属性枚举**：DevTools/序列化可能需要属性列表；当前不提供，避免第二事实源。
 11. **序列化/AOT**：partial 属性 + 生成字段对 JSON/裁剪的影响需 S5 样例验证。
@@ -1597,3 +1599,122 @@ public readonly Signal<bool> showCount = new(false);
 
 - 若暂时不迁移，`Signal<T>` 版本在 S2–S4 仍可运行；`:bind`/`:value` 在 S3 起报 EUI043 Warning。
 - `P={signal}` 的行为从一次性变为反应式；发布说明必须提示。
+
+## 15.14 线程调度设计（文档已落地，代码未实现，目标 S5）
+
+**状态**：目标设计已讨论落地；代码一行未动。拍板后登记编号收敛（S5/G4）；拍板前 §15.2.5/§15.3.7
+现行契约（单线程约定、跨线程 UB）继续有效，本节只描述目标形态。
+
+### 15.14.1 背景与问题
+
+src 无 `SynchronizationContext`/Dispatcher（2026-11-12 扫描零匹配），§15.2.5 的单线程是约定不是机制。
+`async void` 处理器的断链：生成包装 `h(); Invalidate();` 在第一个 await 处提前返回，Invalidate 先消费旧状态；
+续体捕获不到上下文落线程池，跨线程写状态且不带 Invalidate → 永不渲染。
+与 D113（retained 段缓存复用旧文字）独立叠加，构成画廊 async 问题的完整症状。
+
+现状时序（`async void Test() { await Task.Yield(); count += 5; }`）：
+
+| tick | 发生 | 屏幕 |
+|---|---|---|
+| N | 点击 → h() 跑到 await 返回 → 包装 Invalidate → 渲染 count=0 | "0" |
+| N+1… | 续体在**线程池**写 count=5，无 Invalidate、无上下文 | 永远 "0"（直到无关失效碰巧重画） |
+
+### 15.14.2 目标机制
+
+Blazor/WPF 形态，按本仓库无 diff 契约适配。四件事：
+
+1. **装上下文**：装配方在 UI 线程装单线程 `UiSynchronizationContext`，退出还原。
+   `Post` = 线程安全入队（唯一允许的跨线程操作）；`Send` = 同线程内联、跨线程 Post+阻塞等排空。
+2. **帧循环排空**：tick 顺序 PumpMessages → **Drain** → ProcessInvalidations → 布局 → BuildFrame → present。
+   drain 按快照长度只跑当批；回调内新 Post 的下一 tick 再跑，自投递续体饿不死帧循环。
+   放在 ProcessInvalidations **前**：续体写入与失效同一 tick 消费，延迟确定一帧。
+3. **drain 后自动失效挂载子树一次**（按批合并，不是每回调一次）。生成器包装**不改**：
+   async 处理器提前返回的那次 Invalidate 渲染旧状态一次（无害），续体写入由自动失效兜底。
+4. **异常收回 UI 线程**：每回调 try/catch 收集，drain 结束 fail-fast（AggregateException）。
+   async void 现状是线程池直接崩进程；改后栈确定、可诊断。应用级 unhandled 钩子 v0 不做。
+
+API 形态（平台无关，放 EclipseUI.Runtime，HeadlessRoot 共用）：
+
+```csharp
+public sealed class UiSynchronizationContext : SynchronizationContext
+{
+    public override void Post(SendOrPostCallback d, object? state); // 线程安全入队
+    public override void Send(SendOrPostCallback d, object? state); // 同线程内联；跨线程阻塞
+    public int Drain();   // 快照长度批执行，返回执行数；新 Post 留下一批
+    public int UiThreadId { get; }  // 安装时记录，S5 断言用
+}
+```
+
+装配点：
+
+- `WindowHost.Run`：循环前 `SetSynchronizationContext` 安装、退出还原；drain 插在
+  `ProcessInvalidations` 前（现 WindowHost.cs:188，`ClearFocusIfDetached` 之后）。
+- `HeadlessRoot`：提供显式安装/drain 入口供测试驱动（无头不开帧循环，UpdateLayout 前手动 drain）。
+
+**关键事实（最容易做错）**：`Component.Invalidate()` 只入队自身，根组件 Invalidate **不级联**
+（Component.cs:99；ProcessInvalidations 只渲染队列内组件；GalleryRoot.Render 是空基实现）——
+"自动失效根"等于没失效。需新增根级 `InvalidateSubtree()`：沿所有权/Track 树递归，
+`_tracked` 里过滤 `Component`、跳过 disposed/未挂载，逐个入队（含自身）。
+
+### 15.14.3 重入与边界规则
+
+- drain 只跑快照批 + ProcessInvalidations 100 轮上限（Component.cs:13）= 两层循环保护。
+- 回调内禁止嵌套消息泵（不得调 PumpMessages/Run）。
+- `Send` 跨线程阻塞有 WPF 式死锁面（UI 线程 Send 等待依赖 UI 的目标）；v0 接受，文档约定。
+- `ConfigureAwait(false)` = 显式逃生舱：续体落线程池，写入仍 UB。
+- S5 Debug 断言：安装时记 `Environment.CurrentManagedThreadId`（§15.3.7 已计划），
+  `Element.SetValue`/`Component.Render` Debug 下断言线程亲和；`Invalidate` 保持线程安全入队不变。
+
+### 15.14.4 目标时序与用户收益
+
+| tick | 发生 | 屏幕 |
+|---|---|---|
+| N | 点击 → h() 到 await → 续体 Post 入队 → 包装 Invalidate → 渲染 0 | "0" |
+| N+1 | drain → 续体在 **UI 线程**写 5 → InvalidateSubtree → Render → run.Text="5" → D113 段重建 → present | "5" |
+
+确定一帧延迟，无竞态、无跨线程写。用户-facing 收益——"后台干活、回 UI 更新"成为合法默认：
+
+```csharp
+public async void Load()
+{
+    var data = await Task.Run(Fetch);  // IO 在后台线程
+    items = data;                      // 续体回 UI 线程，写入合法
+}                                      // drain 后自动失效 → 渲染
+```
+
+### 15.14.5 契约变更清单（拍板后生效）
+
+| 位置 | 现行 | 目标 |
+|---|---|---|
+| §15.2.5 线程 | 所有读写在 UI 线程；跨线程 UB | await 续体经上下文回 UI 线程、写入合法；直接跨线程写仍 UB+断言 |
+| §15.3.7 | 不引入 Dispatcher | 引入 `UiSynchronizationContext`（本节） |
+| design/14 §14.4.5 | 构造/赋值/订阅 UI 线程同步 | 不变；async 续体视为 UI 线程回调 |
+| Emitter 事件包装 | `h(); Invalidate();` | **不变**。async Task 处理器支持（Func<Task> 包装+异常观察）是独立扩展，非本设计目标 |
+
+### 15.14.6 实现清单
+
+| 文件 | 变更 |
+|---|---|
+| `src/EclipseUI.Runtime/UiSynchronizationContext.cs` | 新增：队列 + Post/Send/Drain + UiThreadId |
+| `src/EclipseUI.Runtime/Component.cs` | 新增 `InvalidateSubtree`（所有权树遍历入队） |
+| `src/EclipseUI.Runtime/Component.cs`（HeadlessRoot） | 安装/drain 显式入口 |
+| `src/EclipseUI.Platform.Windows/WindowHost.cs` | Run 安装/还原；L188 前插 drain |
+| `src/EclipseUI.Runtime/Element.cs` | S5 Debug 线程断言（SetValue） |
+| `tests/EclipseUI.Headless.Tests` | 15.14.7 回归 |
+
+### 15.14.7 测试计划
+
+- async void + Task.Yield：点击 → tick1 旧值 → tick2（drain）新值。**断言到段/像素级**
+  （D113 教训：模型断言会一起绿；用记录型绘制器或 RenderVersion+段内容）。
+- 多次 await / Task.Delay：续体线程 id == UiThreadId。
+- 自投递续体（循环 await Yield）：tick 逐帧推进不饿死（tick 计数断言）。
+- ConfigureAwait(false)：Debug 断言命中（UB 可见化）。
+- 异常回调：UI 线程 fail-fast，栈含处理器帧。
+- 同步处理器：现有全量用例不变（包装未改）。
+- 失效成本：带续体 tick 的 Render 次数 = 挂载组件数（S5 预算门槛）。
+
+### 15.14.8 代价与取舍
+
+无组件树 diff（§15.11 决策 9）→ 每个带续体的 tick 全量 Render 挂载子树一次，O(组件数)；
+Render 体廉价且 ShouldRender 可短路。Blazor 靠 diff 省这笔，我们选择付。
+同步路径、字段写入契约、生成器均不变。

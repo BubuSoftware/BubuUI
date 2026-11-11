@@ -229,6 +229,7 @@ public sealed class TextBlock : Panel, ITextContentHost
 
 - 模板创建的实例一律 `new T()`：**MUST** 有 public 无参构造（EUI018）。
 - 所有构造、属性赋值、事件订阅都在 UI 线程同步完成；模板 Build 不异步、不等待。
+  async 处理器的续体线程调度目标设计见 [design/15 §15.14](./15-state-and-reactivity.md#1514-线程调度设计文档已落地代码未实现目标-s5)（未实现）。
 - 控件 MUST NOT 在构造函数里假设已有父元素、假设已完成布局、或调用 `Measure/Arrange`。
 - 控件的构造与属性 setter MUST 无副作用地可重复执行（`@if`/`@foreach` 会重建子树）。
 - 控件释放资源用 `OnUnmount` 钩子（G4/K33）：`Element.Unmount()` 子树级触发
