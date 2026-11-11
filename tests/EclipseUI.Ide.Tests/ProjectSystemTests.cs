@@ -359,6 +359,32 @@ public class ProjectSystemTests
                 snapshot.Catalog.Elements.Single(e => e.Tag == tag).Origin);
     }
 
+    /// <summary>
+    /// 闭标签 <c>&lt;/Tag&gt;</c> 的 F12 与开标签 <c>&lt;Tag&gt;</c> 落点一致（2026-11-11 用户实测：
+    /// 开标签能跳、闭标签 <c>definition: no result</c>）。根因：定义分派缺 <c>EndTagName</c> 分支，
+    /// 且扫描器没给闭标签填完整 <c>TagName</c>。两者都按完整标签名查目录，落点必须相同。
+    /// </summary>
+    [Fact]
+    public void Fixture10_ClosingTagJumpsLikeOpeningTag()
+    {
+        var fixture = Shared.Value;
+        var path = fixture.Gallery("Counter.ui");
+        var uri = DocumentStore.PathToUri(path);
+        var text = File.ReadAllText(path);
+        fixture.Service.Documents.Open(uri, text, 1);
+
+        foreach (var tag in new[] { "StackPanel", "TextBlock", "Button" })
+        {
+            var opening = fixture.Service.Definition(uri, text.IndexOf("<" + tag, StringComparison.Ordinal) + 2);
+            var closing = fixture.Service.Definition(uri, text.IndexOf("</" + tag + ">", StringComparison.Ordinal) + 2);
+            Assert.NotNull(opening);
+            Assert.NotNull(closing);
+            Assert.Equal(opening!.Uri, closing!.Uri);
+            Assert.Equal(opening.Span, closing.Span);
+            AssertSourceFile(closing, path);
+        }
+    }
+
     /// <summary>与 VS Code <c>Uri.toString()</c> 同形：小写盘符 + <c>%3A</c>。</summary>
     private static string EditorUri(string path)
     {

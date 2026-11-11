@@ -53,8 +53,9 @@ public static class DefinitionProvider
                 AttributeDefinition(analysis, catalog, context, compilation),
 
             // Prefix 只是已敲的前缀（补全场景），跳转必须用完整标签名。
-            CursorKind.TagName when context.TagName.Length > 0 && catalog is not null => TagDefinition(
-                analysis, catalog, context.TagName, workspaceRoot, compilation),
+            // 开标签与闭标签（</Tag>）落点一致：都按完整标签名查目录里的 CLR 类型。
+            CursorKind.TagName or CursorKind.EndTagName when context.TagName.Length > 0 && catalog is not null =>
+                TagDefinition(analysis, catalog, context.TagName, workspaceRoot, compilation),
             _ => null,
         };
     }

@@ -355,6 +355,7 @@ public static class CursorScanner
                         return new CursorContext
                         {
                             Kind = CursorKind.EndTagName,
+                            TagName = text.Substring(nameStart, j - nameStart), // 完整名：跳转定义按它查目录（与开标签一致）
                             Prefix = text.Substring(nameStart, Math.Max(0, Math.Min(offset, j) - nameStart)),
                             TokenStart = nameStart,
                             OpenTags = open,
