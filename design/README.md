@@ -43,6 +43,7 @@
 | 16 | [`.ui` 语法对齐 Blazor 计划](./16-blazor-alignment-plan.md) | **✅ S6 已实现（K23 + K24–K30，2026-11-08）**：对齐矩阵、P0–P6、Q1–Q8（已全部拍板）、风险 R1–R8、单文件示例（附录 A）与生成契约草案（附录 B）；目标语法正本在 spec/01 §1.5；后续增量 K31（`@using` 别名）见 spec/02 §14/§4.18 |
 | 17 | [样式系统完整设计](./17-style-system.md) | **✅ 五片落地（2026-11-10）**：有效值四层级联、`.eustyle` 样式表、伪类位掩码、主题双色、编译期校验；D98–D107 / E1–E5 |
 | 18 | [Razor C# 智能提示借鉴](./18-razor-csharp-intellisense.md) | **调研 + 方案建议（2026-11-11，未实施）**：Razor 的生成文档 / `SourceGeneratedDocument` / `SourceMapping` / VS Code 虚拟 HTML 链路；EclipseUI 的 Document 层与统一映射差距；P0–P3 借鉴项、落地顺序、验收与待拍板 |
+| 19 | [样式属性自定义化设计](./19-custom-style-properties.md) | **提案（2026-11-12，未实施）**：`[UiStyleProperty]` 字段标注 + 全局符号扫描进样式目录、值语法扩展（枚举 keyword/字符串/复用 `[UiLiteralParser]`）、`s.Set(field,…)` 发射通道、目录并集冲突规则（EUI058/059）、P1–P3 落地切分与规范影响清单 |
 
 ## 报告
 
