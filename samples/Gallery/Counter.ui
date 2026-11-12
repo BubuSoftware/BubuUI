@@ -20,9 +20,9 @@
     
     public bool showButton2 {get; set;}
 
-    public async void Test()
+    public void Test()
     {
         // await Task.Yield();
-        count+=5;
+        count+=1;
     }
 }
