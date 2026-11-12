@@ -75,10 +75,10 @@
 | 源生成器 | 🟢 可用 MVP | 组件作者面样例；EUI024 签名匹配 ✅ 2026-11-08/D82（按文件增量 ✅ 2026-11-08、`#line` 列映射 ✅ 2026-11-08/D79、`EUI045` ✅ 2026-11-08/D57、诊断出口 ✅ 2026-11-08/D74 ② 均已落地） |
 | 运行时/属性 | 🟢 可用基础 | ~~属性存储去装箱~~ ✅ D83、~~生命周期 Unmount~~ ✅ K33/D89、~~失效死循环上限~~ ✅ D96（100 次 Render fail-fast）；剩样式优先级、正式性能基准表 |
 | 布局 | 🟡 部分 | WrapPanel ✅ / Grid ✅ / ScrollViewer ✅ / 列表虚拟化 v1 ✅（2026-11-09）；约束待做（块布局透明化 ✅ 2026-11-05，D77） |
-| 文本 | 🟡 单行 shaping 已接入 | 断行、bidi、fallback、emoji、glyph 缓存、display list 集成 |
+| 文本 | 🟡 单行 shaping + **TextBlock 换行（Wrap 贪心断行，✅ 2026-11-13，D116）**已接入 | bidi、fallback、emoji、glyph 缓存、display list 集成（断行随 HarfBuzz 管线重修——naive 词界/字符切分是 v1 口径） |
 | 输入/焦点 | 🟡 元素路由已通 | 字符输入/IME、滚轮/触摸、Shift+Tab、无障碍 |
 | 渲染/合成器 | 🟡 scene graph + 上屏 + damage v0 + retained 构建层（✅ D93） | 脏区光栅化（上游 scissor API）、合成器、帧预算门槛 |
-| 样式/主题 | 🟡 令牌 + Class 样式 + 主题资源 + 伪类变体 + `:disabled` + **样式表编译器（E1：.eustyle/@style → 生成 Define 调用）**已落（2026-11-09，D98–D104） | 模板 `Class` 语法与编译期类名校验（E2）、嵌套塌缩（E4）、注册位（E5）——design/17 执行计划；资源字典/`Style=` 模板语法（S-C 后续）、后代/子代选择器组合、控件模板（S-D） |
+| 样式/主题 | 🟡 令牌 + Class 样式 + 主题资源 + 伪类变体 + `:disabled` + **样式表编译器（E1：.eustyle/@style → 生成 Define 调用）**已落（2026-11-09，D98–D104），E2/E4/E5 补齐（D105–D107，2026-11-09/10），**样式属性自定义化（E6：`[UiStyleProperty]` 并集目录 + enum/string 值 + EUI058/059）**已落（2026-11-12，D115） | 资源字典完整形态（S-C 后续）、后代/子代选择器组合、控件模板（S-D）、P2 复用 `[UiLiteralParser]` 的复杂类型样式值、P3 多值语法与 Owner 适用性诊断（design/19） |
 | 控件库 | 🟡 极简 | TextBlock/Button/CheckBox/StackPanel/ListBoxItem 之外的基础控件 |
 | IDE | 🔴 未开始 | TextMate、LSP server、VS Code/Rider 壳 |
 | 工具链 | 🔴 基本未开始 | 热重载、断点映射、DevTools、无头测试 SDK |

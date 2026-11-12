@@ -1,10 +1,19 @@
 # EclipseUI 内置模板表面（design/14 §14.11.1）。
 # 由 CatalogScannerTests.Surface_MatchesGoldenSnapshotFile 生成/比对；控件 API 变化时必须连同变更记录一起更新。
-# 标签 9 / 属性项 38 / 事件项 74 / 附加属性项 2
+# 标签 9 / 属性项 122 / 事件项 74 / 附加属性项 2
 
 [Button] global::EclipseUI.Elements.Button origin=Control content=Text:Label
+    prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
+    prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
     prop   Label string declared=global::EclipseUI.Elements.Button field=LabelProperty writable=True
+    prop   Margin double declared=global::EclipseUI.Element field=MarginProperty writable=True
+    prop   MaxHeight double declared=global::EclipseUI.Element field=MaxHeightProperty writable=True
+    prop   MaxWidth double declared=global::EclipseUI.Element field=MaxWidthProperty writable=True
+    prop   MinHeight double declared=global::EclipseUI.Element field=MinHeightProperty writable=True
+    prop   MinWidth double declared=global::EclipseUI.Element field=MinWidthProperty writable=True
+    prop   VerticalAlignment EclipseUI.VerticalAlignment declared=global::EclipseUI.Element field=VerticalAlignmentProperty writable=True
+    prop   Width double declared=global::EclipseUI.Element field=WidthProperty writable=True
     event  OnClick Click declared=global::EclipseUI.Elements.Button field=ClickEvent
     event  OnGotFocus GotFocus declared=global::EclipseUI.Element field=GotFocusEvent
     event  OnKeyDown KeyDown declared=global::EclipseUI.Element field=KeyDownEvent
@@ -17,8 +26,17 @@
 
 [CheckBox] global::EclipseUI.Elements.CheckBox origin=Control content=Text:Label
     prop   Checked bool declared=global::EclipseUI.Elements.CheckBox field=CheckedProperty writable=True
+    prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
+    prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
     prop   Label string declared=global::EclipseUI.Elements.CheckBox field=LabelProperty writable=True
+    prop   Margin double declared=global::EclipseUI.Element field=MarginProperty writable=True
+    prop   MaxHeight double declared=global::EclipseUI.Element field=MaxHeightProperty writable=True
+    prop   MaxWidth double declared=global::EclipseUI.Element field=MaxWidthProperty writable=True
+    prop   MinHeight double declared=global::EclipseUI.Element field=MinHeightProperty writable=True
+    prop   MinWidth double declared=global::EclipseUI.Element field=MinWidthProperty writable=True
+    prop   VerticalAlignment EclipseUI.VerticalAlignment declared=global::EclipseUI.Element field=VerticalAlignmentProperty writable=True
+    prop   Width double declared=global::EclipseUI.Element field=WidthProperty writable=True
     event  OnCheckedChanged CheckedChanged declared=global::EclipseUI.Elements.CheckBox field=CheckedChangedEvent
     event  OnGotFocus GotFocus declared=global::EclipseUI.Element field=GotFocusEvent
     event  OnKeyDown KeyDown declared=global::EclipseUI.Element field=KeyDownEvent
@@ -33,9 +51,18 @@
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
     prop   ColumnDefinitions string declared=global::EclipseUI.Elements.Grid field=ColumnDefinitionsProperty writable=True
     prop   Gap double declared=global::EclipseUI.Elements.Grid field=GapProperty writable=True
+    prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
+    prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
+    prop   Margin double declared=global::EclipseUI.Element field=MarginProperty writable=True
+    prop   MaxHeight double declared=global::EclipseUI.Element field=MaxHeightProperty writable=True
+    prop   MaxWidth double declared=global::EclipseUI.Element field=MaxWidthProperty writable=True
+    prop   MinHeight double declared=global::EclipseUI.Element field=MinHeightProperty writable=True
+    prop   MinWidth double declared=global::EclipseUI.Element field=MinWidthProperty writable=True
     prop   Padding double declared=global::EclipseUI.Elements.Panel field=PaddingProperty writable=True
     prop   RowDefinitions string declared=global::EclipseUI.Elements.Grid field=RowDefinitionsProperty writable=True
+    prop   VerticalAlignment EclipseUI.VerticalAlignment declared=global::EclipseUI.Element field=VerticalAlignmentProperty writable=True
+    prop   Width double declared=global::EclipseUI.Element field=WidthProperty writable=True
     event  OnGotFocus GotFocus declared=global::EclipseUI.Element field=GotFocusEvent
     event  OnKeyDown KeyDown declared=global::EclipseUI.Element field=KeyDownEvent
     event  OnKeyUp KeyUp declared=global::EclipseUI.Element field=KeyUpEvent
@@ -48,8 +75,17 @@
 [ListBoxItem] global::EclipseUI.Elements.ListBoxItem origin=Control content=Children:Children
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
     prop   Gap double declared=global::EclipseUI.Elements.StackPanelBase field=GapProperty writable=True
+    prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
+    prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
+    prop   Margin double declared=global::EclipseUI.Element field=MarginProperty writable=True
+    prop   MaxHeight double declared=global::EclipseUI.Element field=MaxHeightProperty writable=True
+    prop   MaxWidth double declared=global::EclipseUI.Element field=MaxWidthProperty writable=True
+    prop   MinHeight double declared=global::EclipseUI.Element field=MinHeightProperty writable=True
+    prop   MinWidth double declared=global::EclipseUI.Element field=MinWidthProperty writable=True
     prop   Padding double declared=global::EclipseUI.Elements.Panel field=PaddingProperty writable=True
+    prop   VerticalAlignment EclipseUI.VerticalAlignment declared=global::EclipseUI.Element field=VerticalAlignmentProperty writable=True
+    prop   Width double declared=global::EclipseUI.Element field=WidthProperty writable=True
     event  OnGotFocus GotFocus declared=global::EclipseUI.Element field=GotFocusEvent
     event  OnKeyDown KeyDown declared=global::EclipseUI.Element field=KeyDownEvent
     event  OnKeyUp KeyUp declared=global::EclipseUI.Element field=KeyUpEvent
@@ -61,10 +97,21 @@
 
 [ScrollViewer] global::EclipseUI.Elements.ScrollViewer origin=Control content=Children:Children
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
+    prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
+    prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   HorizontalOffset double declared=global::EclipseUI.Elements.ScrollViewer field=HorizontalOffsetProperty writable=True
+    prop   HorizontalScrollBarVisibility EclipseUI.Elements.ScrollBarVisibility declared=global::EclipseUI.Elements.ScrollViewer field=HorizontalScrollBarVisibilityProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
+    prop   Margin double declared=global::EclipseUI.Element field=MarginProperty writable=True
+    prop   MaxHeight double declared=global::EclipseUI.Element field=MaxHeightProperty writable=True
+    prop   MaxWidth double declared=global::EclipseUI.Element field=MaxWidthProperty writable=True
+    prop   MinHeight double declared=global::EclipseUI.Element field=MinHeightProperty writable=True
+    prop   MinWidth double declared=global::EclipseUI.Element field=MinWidthProperty writable=True
     prop   Padding double declared=global::EclipseUI.Elements.Panel field=PaddingProperty writable=True
+    prop   VerticalAlignment EclipseUI.VerticalAlignment declared=global::EclipseUI.Element field=VerticalAlignmentProperty writable=True
     prop   VerticalOffset double declared=global::EclipseUI.Elements.ScrollViewer field=VerticalOffsetProperty writable=True
+    prop   VerticalScrollBarVisibility EclipseUI.Elements.ScrollBarVisibility declared=global::EclipseUI.Elements.ScrollViewer field=VerticalScrollBarVisibilityProperty writable=True
+    prop   Width double declared=global::EclipseUI.Element field=WidthProperty writable=True
     event  OnGotFocus GotFocus declared=global::EclipseUI.Element field=GotFocusEvent
     event  OnKeyDown KeyDown declared=global::EclipseUI.Element field=KeyDownEvent
     event  OnKeyUp KeyUp declared=global::EclipseUI.Element field=KeyUpEvent
@@ -77,8 +124,17 @@
 [StackPanel] global::EclipseUI.Elements.StackPanel origin=Control content=Children:Children
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
     prop   Gap double declared=global::EclipseUI.Elements.StackPanelBase field=GapProperty writable=True
+    prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
+    prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
+    prop   Margin double declared=global::EclipseUI.Element field=MarginProperty writable=True
+    prop   MaxHeight double declared=global::EclipseUI.Element field=MaxHeightProperty writable=True
+    prop   MaxWidth double declared=global::EclipseUI.Element field=MaxWidthProperty writable=True
+    prop   MinHeight double declared=global::EclipseUI.Element field=MinHeightProperty writable=True
+    prop   MinWidth double declared=global::EclipseUI.Element field=MinWidthProperty writable=True
     prop   Padding double declared=global::EclipseUI.Elements.Panel field=PaddingProperty writable=True
+    prop   VerticalAlignment EclipseUI.VerticalAlignment declared=global::EclipseUI.Element field=VerticalAlignmentProperty writable=True
+    prop   Width double declared=global::EclipseUI.Element field=WidthProperty writable=True
     event  OnGotFocus GotFocus declared=global::EclipseUI.Element field=GotFocusEvent
     event  OnKeyDown KeyDown declared=global::EclipseUI.Element field=KeyDownEvent
     event  OnKeyUp KeyUp declared=global::EclipseUI.Element field=KeyUpEvent
@@ -91,8 +147,18 @@
 [TextBlock] global::EclipseUI.Elements.TextBlock origin=Control content=TextRuns
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
     prop   FontSize double declared=global::EclipseUI.Elements.TextBlock field=FontSizeProperty writable=True
+    prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
+    prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
+    prop   Margin double declared=global::EclipseUI.Element field=MarginProperty writable=True
+    prop   MaxHeight double declared=global::EclipseUI.Element field=MaxHeightProperty writable=True
+    prop   MaxWidth double declared=global::EclipseUI.Element field=MaxWidthProperty writable=True
+    prop   MinHeight double declared=global::EclipseUI.Element field=MinHeightProperty writable=True
+    prop   MinWidth double declared=global::EclipseUI.Element field=MinWidthProperty writable=True
     prop   Padding double declared=global::EclipseUI.Elements.Panel field=PaddingProperty writable=True
+    prop   TextWrapping EclipseUI.Elements.TextWrapping declared=global::EclipseUI.Elements.TextBlock field=TextWrappingProperty writable=True
+    prop   VerticalAlignment EclipseUI.VerticalAlignment declared=global::EclipseUI.Element field=VerticalAlignmentProperty writable=True
+    prop   Width double declared=global::EclipseUI.Element field=WidthProperty writable=True
     event  OnGotFocus GotFocus declared=global::EclipseUI.Element field=GotFocusEvent
     event  OnKeyDown KeyDown declared=global::EclipseUI.Element field=KeyDownEvent
     event  OnKeyUp KeyUp declared=global::EclipseUI.Element field=KeyUpEvent
@@ -105,9 +171,18 @@
 [VirtualizingStackPanel] global::EclipseUI.Elements.VirtualizingStackPanel origin=Control content=Children:Children
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
     prop   Gap double declared=global::EclipseUI.Elements.VirtualizingStackPanel field=GapProperty writable=True
+    prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
+    prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
     prop   ItemCount int declared=global::EclipseUI.Elements.VirtualizingStackPanel field=ItemCountProperty writable=True
+    prop   Margin double declared=global::EclipseUI.Element field=MarginProperty writable=True
+    prop   MaxHeight double declared=global::EclipseUI.Element field=MaxHeightProperty writable=True
+    prop   MaxWidth double declared=global::EclipseUI.Element field=MaxWidthProperty writable=True
+    prop   MinHeight double declared=global::EclipseUI.Element field=MinHeightProperty writable=True
+    prop   MinWidth double declared=global::EclipseUI.Element field=MinWidthProperty writable=True
     prop   Padding double declared=global::EclipseUI.Elements.Panel field=PaddingProperty writable=True
+    prop   VerticalAlignment EclipseUI.VerticalAlignment declared=global::EclipseUI.Element field=VerticalAlignmentProperty writable=True
+    prop   Width double declared=global::EclipseUI.Element field=WidthProperty writable=True
     event  OnGotFocus GotFocus declared=global::EclipseUI.Element field=GotFocusEvent
     event  OnKeyDown KeyDown declared=global::EclipseUI.Element field=KeyDownEvent
     event  OnKeyUp KeyUp declared=global::EclipseUI.Element field=KeyUpEvent
@@ -120,9 +195,18 @@
 [WrapPanel] global::EclipseUI.Elements.WrapPanel origin=Control content=Children:Children
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
     prop   Gap double declared=global::EclipseUI.Elements.WrapPanel field=GapProperty writable=True
+    prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
+    prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
+    prop   Margin double declared=global::EclipseUI.Element field=MarginProperty writable=True
+    prop   MaxHeight double declared=global::EclipseUI.Element field=MaxHeightProperty writable=True
+    prop   MaxWidth double declared=global::EclipseUI.Element field=MaxWidthProperty writable=True
+    prop   MinHeight double declared=global::EclipseUI.Element field=MinHeightProperty writable=True
+    prop   MinWidth double declared=global::EclipseUI.Element field=MinWidthProperty writable=True
     prop   Orientation EclipseUI.Elements.Orientation declared=global::EclipseUI.Elements.WrapPanel field=OrientationProperty writable=True
     prop   Padding double declared=global::EclipseUI.Elements.Panel field=PaddingProperty writable=True
+    prop   VerticalAlignment EclipseUI.VerticalAlignment declared=global::EclipseUI.Element field=VerticalAlignmentProperty writable=True
+    prop   Width double declared=global::EclipseUI.Element field=WidthProperty writable=True
     event  OnGotFocus GotFocus declared=global::EclipseUI.Element field=GotFocusEvent
     event  OnKeyDown KeyDown declared=global::EclipseUI.Element field=KeyDownEvent
     event  OnKeyUp KeyUp declared=global::EclipseUI.Element field=KeyUpEvent

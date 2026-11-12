@@ -152,6 +152,81 @@ public class ScrollViewerTests
         Assert.Equal(0, sv.VerticalOffset, 5);
     }
 
+    // ---- 方向开关（design/05 §布局契约）：Horizontal 默认 Disabled（Avalonia 对齐）----
+
+    [Fact]
+    public void Horizontal_Disabled_ByDefault_ClampsContentAndForbidsScrolling()
+    {
+        var sv = new ScrollViewer();
+        var content = new FixedBox(800, 40);   // 刚性宽内容
+        sv.Children.Add(content);
+        var root = new HeadlessRoot(sv) { AvailableSize = new Size(400, 300) };
+        root.UpdateLayout();
+
+        // 期望宽如实报告（800 > 视口 400），但 Disabled 不可滚：Scrollable 报 0、偏移钳 0、
+        // 内容按视口宽排列——溢出由 PushClip 裁剪（Avalonia-Disabled 裁剪语义）。
+        Assert.Equal(800, sv.ExtentWidth, 5);
+        Assert.Equal(0, sv.ScrollableWidth, 5);
+        sv.ScrollToHorizontalOffset(100);
+        Assert.Equal(0, sv.HorizontalOffset, 5);
+        Assert.Equal(400, content.FinalRect.Width, 5);
+        Assert.Equal(0, content.FinalRect.X, 5);
+    }
+
+    [Fact]
+    public void Horizontal_Auto_ScrollsRigidOverflow()
+    {
+        var sv = new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Auto };
+        var content = new FixedBox(800, 40);
+        sv.Children.Add(content);
+        var root = new HeadlessRoot(sv) { AvailableSize = new Size(400, 300) };
+        root.UpdateLayout();
+
+        Assert.Equal(800, sv.ExtentWidth, 5);
+        Assert.Equal(400, sv.ScrollableWidth, 5);
+        sv.ScrollToHorizontalOffset(100);
+        root.UpdateLayout();
+        Assert.Equal(100, sv.HorizontalOffset, 5);
+        Assert.Equal(-100, content.FinalRect.X, 5);
+        Assert.Equal(800, content.FinalRect.Width, 5);   // 可滚方向保留完整内容宽
+    }
+
+    [Fact]
+    public void Horizontal_Auto_ShrinkableContent_StaysWithinViewport()
+    {
+        var sv = new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Auto };
+        var content = new StackPanel();
+        for (int i = 0; i < 5; i++) content.Children.Add(new FixedBox(100, 30));
+        sv.Children.Add(content);
+        // Grid 固定轨道给 sv 400 宽的排列槽（根级直接挂会按 DesiredSize=min(视口,内容) 排列）。
+        var grid = new Grid { ColumnDefinitions = "400", RowDefinitions = "300" };
+        grid.Children.Add(sv);
+        var root = new HeadlessRoot(grid) { AvailableSize = new Size(400, 300) };
+        root.UpdateLayout();
+
+        // 可收缩内容跟随视口（测量约束仍是视口宽——design/05 登记的与 Avalonia 差异点）：
+        // 不产生横向滚动条；宽度拉伸填满视口（纵向可滚，高度铺 max(视口, 内容)）。
+        Assert.Equal(0, sv.ScrollableWidth, 5);
+        Assert.Equal(new Rect(0, 0, 400, 300), content.FinalRect);
+    }
+
+    [Fact]
+    public void Horizontal_Hidden_ScrollsWithoutBar()
+    {
+        var sv = new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden };
+        var content = new FixedBox(800, 40);
+        sv.Children.Add(content);
+        var root = new HeadlessRoot(sv) { AvailableSize = new Size(400, 300) };
+        root.UpdateLayout();
+
+        // Hidden 可滚（几何与 Auto 相同），只是 painter 不画拇指——这里钉几何半边。
+        Assert.Equal(400, sv.ScrollableWidth, 5);
+        sv.ScrollToHorizontalOffset(50);
+        root.UpdateLayout();
+        Assert.Equal(-50, content.FinalRect.X, 5);
+        Assert.Equal(800, content.FinalRect.Width, 5);
+    }
+
     private static (ScrollViewer Viewer, StackPanel Content, HeadlessRoot Root) BuildViewer(
         int itemCount, double viewportHeight)
     {

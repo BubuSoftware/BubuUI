@@ -183,6 +183,15 @@
 > `Showcase.ui` 已改用规范名。全量 784 例（359/319/106），除本机
 > `PixelGoldens_MatchBaseline` 的像素哈希差异（改动前既有的环境差异）外 0 回归。
 >
+> **布局契约已通过（2026-11-13，D116）**：`Element` 级统一布局面（Avalonia `Layoutable` 对齐）——
+> `Margin` / `Width` / `Height` / `Min*/Max*`（宽高 NaN 缺省）+ `HorizontalAlignment/VerticalAlignment`
+> （默认 **Stretch**，既有布局零回归）+ `TextBlock.TextWrapping`（Wrap 贪心断行：空格换行、
+> 行首行尾空白折叠、超宽长词字符硬切）+ `ScrollViewer` 方向开关（Horizontal 默认 **Disabled**
+> 溢出裁剪不出条、Vertical Auto；Auto 按需出条——测量约束保持视口宽，可收缩内容继续自适应，
+> 与 Avalonia 的差异登记在 design/05）。契约 10 属性进模板表面（快照 122 项）；画廊窄窗口下
+> 文案随视口换行、不再横向溢出（宽窗渲染 hash 与改动前一致）。新用例 15 例；全量
+> **1110 例全绿（392/409/201/108）** 0 警告。
+>
 > **G5 IDE 第一片已通过（2026-11-10）**：`ide/` 落地 design/06 的「一份共享资产、两个薄壳」——
 > **LSP server**（`EclipseUI.LanguageServer`，net10.0 stdio，手写 JSON-RPC 帧）诊断直接跑编译器前端
 > （EUI 码与 `dotnet build` 同码同 span），补全覆盖标签/属性/事件/组件参数/附加属性/`@bind-`/

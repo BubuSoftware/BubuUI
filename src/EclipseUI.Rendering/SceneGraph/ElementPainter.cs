@@ -219,10 +219,12 @@ public sealed class ElementPainter
             PaintFocusRing(element, rect);
     }
 
-    /// <summary>叠加式滚动条：可滚动方向在视口内缘画拇指（v1 只显示，不做命中拖拽）。</summary>
+    /// <summary>叠加式滚动条：可滚动方向在视口内缘画拇指（v1 只显示，不做命中拖拽）。
+    /// 出条判据走方向开关（design/05 §布局契约）：Auto 按需、Visible 恒显、
+    /// Hidden/Disabled 不出条。</summary>
     private void PaintScrollBar(ScrollViewer viewer, Rect rect)
     {
-        if (viewer.ScrollableHeight > 0)
+        if (ShowScrollBar(viewer.VerticalScrollBarVisibility, viewer.ScrollableHeight))
         {
             var trackHeight = rect.Height - ScrollBarInset * 2;
             if (trackHeight > ScrollBarThickness * 2)
@@ -240,7 +242,7 @@ public sealed class ElementPainter
             }
         }
 
-        if (viewer.ScrollableWidth > 0)
+        if (ShowScrollBar(viewer.HorizontalScrollBarVisibility, viewer.ScrollableWidth))
         {
             var trackWidth = rect.Width - ScrollBarInset * 2;
             if (trackWidth > ScrollBarThickness * 2)
@@ -261,6 +263,15 @@ public sealed class ElementPainter
 
     private const double ScrollBarInset = 4;
     private const double ScrollBarThickness = 6;
+
+    /// <summary>方向开关 → 是否画滚动条：Auto 按需（可滚才画）、Visible 恒画
+    ///（不可滚时拇指满槽）、Hidden/Disabled 不画。</summary>
+    private static bool ShowScrollBar(ScrollBarVisibility visibility, double scrollable) => visibility switch
+    {
+        ScrollBarVisibility.Auto => scrollable > 0,
+        ScrollBarVisibility.Visible => true,
+        _ => false,
+    };
 
     // ---- S-C 有效色解析：主题资源 > 静态覆盖 > 主题令牌（解析发生在段构建期，
     // 换主题 ReplaceTheme 丢段重建即随新表刷新）----
@@ -294,6 +305,27 @@ public sealed class ElementPainter
 
         // S-B：显式前景覆盖优先于字号次色规则；S-C：主题资源最先解析。
         var explicitForeground = PeekForeground(block);
+
+        // Wrap 多行（design/05 §布局契约）：段是 run 文本的切片，按行布局定位——
+        // 跨行 run 的 FinalRect 只落在首段，这里必须走段序列而不是 run.FinalRect。
+        if (block.TextLines.Count > 0)
+        {
+            foreach (var line in block.TextLines)
+            {
+                foreach (var segment in line.Segments)
+                {
+                    if (string.IsNullOrEmpty(segment.Text)) continue;
+                    var color = explicitForeground
+                                ?? (segment.FontSize < _theme.MutedFontSizeBelow
+                                    ? _theme.MutedForeground
+                                    : _theme.Foreground);
+                    var origin = new Point(rect.X + segment.X, rect.Y + line.Y);
+                    _text?.Paint(_paintList, segment.Text, segment.FontSize, origin, color);
+                }
+            }
+            return;
+        }
+
         foreach (var run in block.Runs)
         {
             var text = run.Text;

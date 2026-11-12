@@ -581,7 +581,8 @@ public class CatalogScannerTests
     // ---- 快照 ----
 
     /// <summary>
-    /// design/14 §14.11.1 内置表面快照（C2 口径）：6 标签 / 22 属性项 / 44 事件项（9 个不同的事件名）。
+    /// design/14 §14.11.1 内置表面快照（C2 口径）：9 标签 / 122 属性项 / 74 事件项（10 个不同的事件名）。
+    /// 布局契约 9 属性（design/05 §布局契约）随 Element 基类继承到每个标签。
     /// `Element` 的 7 个输入/焦点事件按 §14.4.3 声明在元素基类上，继承到每个标签；
     /// `Button.OnClick` 与 `CheckBox.CheckedChanged` 声明在具体控件上。
     /// 与文本 golden 的分工：这里钉住键的排序与数量，golden 文件钉住每一项的完整形状。
@@ -591,26 +592,34 @@ public class CatalogScannerTests
     {
         string[] inherited =
             ["OnGotFocus", "OnKeyDown", "OnKeyUp", "OnLostFocus", "OnPointerMoved", "OnPointerPressed", "OnPointerReleased", "OnPointerWheelChanged"];
+        // 布局契约属性（design/05 §布局契约）：Margin/Width/Height/Min*/Max*/对齐声明在
+        // Element 基类，继承到每个标签——模板与样式可统一声明（宽高 NaN 缺省、对齐 Stretch 缺省）。
+        // 目录按键的 Ordinal 序输出，标签自有属性与契约属性合并后统一排序。
+        string[] layout =
+            ["Height", "HorizontalAlignment", "Margin", "MaxHeight", "MaxWidth", "MinHeight", "MinWidth", "VerticalAlignment", "Width"];
+        string[] Props(params string[] own) =>
+            own.Concat(layout).OrderBy(n => n, StringComparer.Ordinal).ToArray();
         var expected = new Dictionary<string, (UiContentModel Content, string? Target, string[] Props, string[] Events)>
         {
             ["TextBlock"] = (UiContentModel.TextRuns, null,
-                ["ClipToBounds", "FontSize", "IsHitTestVisible", "Padding"], inherited),
+                Props("ClipToBounds", "FontSize", "IsHitTestVisible", "Padding", "TextWrapping"), inherited),
             ["StackPanel"] = (UiContentModel.Children, "Children",
-                ["ClipToBounds", "Gap", "IsHitTestVisible", "Padding"], inherited),
+                Props("ClipToBounds", "Gap", "IsHitTestVisible", "Padding"), inherited),
             ["WrapPanel"] = (UiContentModel.Children, "Children",
-                ["ClipToBounds", "Gap", "IsHitTestVisible", "Orientation", "Padding"], inherited),
+                Props("ClipToBounds", "Gap", "IsHitTestVisible", "Orientation", "Padding"), inherited),
             ["ScrollViewer"] = (UiContentModel.Children, "Children",
-                ["ClipToBounds", "HorizontalOffset", "IsHitTestVisible", "Padding", "VerticalOffset"], inherited),
+                Props("ClipToBounds", "HorizontalOffset", "HorizontalScrollBarVisibility",
+                    "IsHitTestVisible", "Padding", "VerticalOffset", "VerticalScrollBarVisibility"), inherited),
             ["VirtualizingStackPanel"] = (UiContentModel.Children, "Children",
-                ["ClipToBounds", "Gap", "IsHitTestVisible", "ItemCount", "Padding"], inherited),
+                Props("ClipToBounds", "Gap", "IsHitTestVisible", "ItemCount", "Padding"), inherited),
             ["Grid"] = (UiContentModel.Children, "Children",
-                ["ClipToBounds", "ColumnDefinitions", "Gap", "IsHitTestVisible", "Padding", "RowDefinitions"], inherited),
+                Props("ClipToBounds", "ColumnDefinitions", "Gap", "IsHitTestVisible", "Padding", "RowDefinitions"), inherited),
             ["ListBoxItem"] = (UiContentModel.Children, "Children",
-                ["ClipToBounds", "Gap", "IsHitTestVisible", "Padding"], inherited),
+                Props("ClipToBounds", "Gap", "IsHitTestVisible", "Padding"), inherited),
             ["Button"] = (UiContentModel.Text, "Label",
-                ["IsHitTestVisible", "Label"], ["OnClick", .. inherited]),
+                Props("IsHitTestVisible", "Label"), ["OnClick", .. inherited]),
             ["CheckBox"] = (UiContentModel.Text, "Label",
-                ["Checked", "IsHitTestVisible", "Label"], ["OnCheckedChanged", .. inherited]),
+                Props("Checked", "IsHitTestVisible", "Label"), ["OnCheckedChanged", .. inherited]),
         };
 
         var catalog = BuiltIn();
@@ -626,7 +635,7 @@ public class CatalogScannerTests
             Assert.Equal(want.Events, element.Events.Keys.ToArray());
         }
 
-        Assert.Equal(38, catalog.Elements.Sum(e => e.Properties.Count));
+        Assert.Equal(122, catalog.Elements.Sum(e => e.Properties.Count));
         Assert.Equal(74, catalog.Elements.Sum(e => e.Events.Count));
         // 10 个不同的事件名：Element 继承 8 个（含滚轮）+ Button.OnClick + CheckBox.CheckedChanged
         Assert.Equal(10, catalog.Elements.SelectMany(e => e.Events.Keys).Distinct().Count());

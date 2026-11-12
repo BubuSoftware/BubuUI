@@ -3,6 +3,31 @@
 ## 布局
 
 - measure/arrange 双遍（constraint-based），脏标记只重排子树。
+- **布局契约（✅ 2026-11-13，D116）**：`Element` 级统一布局面（Avalonia `Layoutable` 对齐）——
+  两遍布局与约束语义同构（available 是「报价」不是「强制」，期望尺寸允许超出约束，
+  这是滚动存在的前提），契约把「宽度跟不跟父走」从各面板的硬编码约定升格为可声明规范：
+
+  - **对齐**：`HorizontalAlignment`/`VerticalAlignment`（默认 **Stretch**——填满排列槽，
+    与既有面板行为零回归）。非 Stretch 档按钳制后的期望占位，可溢出槽由祖先裁剪
+    （Avalonia 同语义）；排列槽先扣 Margin 再对齐。
+  - **显式尺寸**：`Width`/`Height`（NaN 缺省 = 未设置）+ `MinWidth/MaxWidth/MinHeight/MaxHeight`
+    钳制（Min > Max 时 Min 胜，不抛异常）。Measure 期钳制期望；Arrange 期显式值优先于拉伸。
+  - **Margin**（均匀标量，与 Padding 同款口径）：计入 `DesiredSize`、排列期从槽内扣除——
+    面板按 DesiredSize 堆叠即自动留位，无需各自感知。
+  - **TextBlock 换行**：`TextWrapping`（NoWrap 缺省 / **Wrap** 贪心断行）——空格是换行机会、
+    行首与行尾空白折叠、超行宽长词（含 CJK 无空格串）字符级硬切。Wrap 布局段
+    （`TextBlock.TextLines`）是绘制正本：跨行 run 的 FinalRect 只落首段，绘制走段序列。
+  - **ScrollViewer 方向开关**：`Horizontal/VerticalScrollBarVisibility` 四档
+    （Auto 按需 / Visible 恒显 / Hidden 可滚不显 / Disabled 禁滚）——Horizontal 默认
+    **Disabled**（Avalonia 对齐：溢出裁剪不出条，单列文档式布局不被偶发溢出拖出滚动条），
+    Vertical 默认 Auto；Disabled 档 `Scrollable*` 报 0、偏移钳 0、内容按视口排列。
+  - **与 Avalonia 的登记差异**：Auto 档的测量约束仍是**视口宽**而非无穷宽——可收缩内容
+    （WrapPanel/Grid 星号轨道）继续随视口自适应，滚动条只在真刚性溢出（不换行文本、
+    固定宽）时出现；Avalonia-Auto 的无穷宽测量会让 WrapPanel 退化为单行、星号轨道失去参照。
+  - 契约 10 属性进模板表面（`CatalogScannerTests` 快照 122 属性项）；
+    垂直 StackPanel 子项槽宽 = max(面板宽, 子项期望)（Avalonia 同款——裁剪语义下刚性子项
+    保留完整宽度而非被压缩）。
+
 - **文本先 HarfBuzz shaping 再测量**，保证布局所见即绘制所得——文本是自绘框架
   最容易低估的部分，参与布局而非事后再排。
 - 虚拟化一等公民：`VirtualizingPanel` 在元素层实现容器复用，item 模板编译为独立

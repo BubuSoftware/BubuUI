@@ -100,6 +100,10 @@ public abstract class Element
     private Size _desired;
     private Rect _final;
     private Size _lastMeasureConstraint;
+    // 布局契约（design/05 §布局契约）：_coreDesired = 尺寸约束钳制后、不含 Margin 的自身期望，
+    // 排列期对齐用；FinalRect 存核心矩形（Margin/对齐已折算），排列槽另存缓存键。
+    private Size _coreDesired;
+    private Rect _lastArrangeSlot;
     internal bool _needsMeasure = true;
     internal bool _needsArrange = true;
     private long _renderVersion;
@@ -466,25 +470,183 @@ public abstract class Element
     /// <summary>标记视觉内容已变（不涉及布局）；脏区跟踪据此判断重绘范围。</summary>
     public void InvalidateRender() => _renderVersion++;
 
+    /// <summary>
+    /// 测量（design/05 §布局契约）：约束先扣 <see cref="Margin"/> 再进 <see cref="MeasureCore"/>，
+    /// 期望值经 Width/Height/Min*/Max* 钳制后加回 Margin——<see cref="DesiredSize"/> 含外边距，
+    /// 面板按 DesiredSize 堆叠即自动为 Margin 留位，无需各自感知。
+    /// </summary>
     public void Measure(Size available)
     {
         if (!_needsMeasure && available == _lastMeasureConstraint) return;
         _lastMeasureConstraint = available;
-        _desired = MeasureCore(available);
+        var margin = Margin;
+        var inner = margin == 0
+            ? available
+            : new Size(Math.Max(0, available.Width - margin * 2), Math.Max(0, available.Height - margin * 2));
+        _coreDesired = ApplySizeConstraints(MeasureCore(inner));
+        _desired = margin == 0
+            ? _coreDesired
+            : new Size(_coreDesired.Width + margin * 2, _coreDesired.Height + margin * 2);
         _needsMeasure = false;
         _needsArrange = true;
     }
 
-    public void Arrange(Rect final)
+    /// <summary>
+    /// 排列（design/05 §布局契约）：<paramref name="slot"/> 是父给的本元素槽（含 Margin 区），
+    /// 先扣 Margin 得内槽，再按对齐档与显式尺寸落核心矩形——<see cref="FinalRect"/> 即核心矩形
+    /// （绘制、命中测试、脏区都读它）。默认 Stretch 填满内槽，与既有布局行为零回归。
+    /// </summary>
+    public void Arrange(Rect slot)
     {
-        if (!_needsArrange && final == _final) return;
-        _final = final;
-        ArrangeCore(final);
+        if (!_needsArrange && slot == _lastArrangeSlot) return;
+        _lastArrangeSlot = slot;
+
+        var margin = Margin;
+        var inner = margin == 0
+            ? slot
+            : new Rect(slot.X + margin, slot.Y + margin,
+                Math.Max(0, slot.Width - margin * 2), Math.Max(0, slot.Height - margin * 2));
+
+        // 排列尺寸：显式 Width/Height 优先；Stretch 填满内槽；对齐档取钳制后的期望宽
+        //（可溢出内槽，由祖先裁剪——Avalonia 同语义）。
+        double w = !double.IsNaN(Width) ? Width
+            : HorizontalAlignment == HorizontalAlignment.Stretch ? inner.Width
+            : _coreDesired.Width;
+        double h = !double.IsNaN(Height) ? Height
+            : VerticalAlignment == VerticalAlignment.Stretch ? inner.Height
+            : _coreDesired.Height;
+
+        var x = HorizontalAlignment switch
+        {
+            HorizontalAlignment.Left => inner.X,
+            HorizontalAlignment.Center => inner.X + (inner.Width - w) / 2,
+            HorizontalAlignment.Right => inner.Right - w,
+            _ => inner.X,
+        };
+        var y = VerticalAlignment switch
+        {
+            VerticalAlignment.Top => inner.Y,
+            VerticalAlignment.Center => inner.Y + (inner.Height - h) / 2,
+            VerticalAlignment.Bottom => inner.Bottom - h,
+            _ => inner.Y,
+        };
+
+        _final = new Rect(x, y, w, h);
+        ArrangeCore(_final);
         _needsArrange = false;
     }
 
     protected internal abstract Size MeasureCore(Size available);
     protected internal abstract void ArrangeCore(Rect final);
+
+    // ---- 布局契约（design/05 §布局契约，Layoutable 级统一面）----
+
+    /// <summary>均匀外边距（四边同值，与 Padding 同款标量口径）。计入 DesiredSize，
+    /// 排列期从槽内扣除。父面板无需感知——DesiredSize 已含。</summary>
+    public static readonly StyledProperty<double> MarginProperty =
+        StyledProperty<double>.Register<Element>("Margin", 0d,
+            new PropertyOptions { Invalidate = InvalidateKind.Measure });
+
+    /// <summary>显式宽度（NaN = 未设置，取测量期望/拉伸）。</summary>
+    public static readonly StyledProperty<double> WidthProperty =
+        StyledProperty<double>.Register<Element>("Width", double.NaN,
+            new PropertyOptions { Invalidate = InvalidateKind.Measure });
+
+    /// <summary>显式高度（NaN = 未设置）。</summary>
+    public static readonly StyledProperty<double> HeightProperty =
+        StyledProperty<double>.Register<Element>("Height", double.NaN,
+            new PropertyOptions { Invalidate = InvalidateKind.Measure });
+
+    public static readonly StyledProperty<double> MinWidthProperty =
+        StyledProperty<double>.Register<Element>("MinWidth", 0d,
+            new PropertyOptions { Invalidate = InvalidateKind.Measure });
+
+    public static readonly StyledProperty<double> MaxWidthProperty =
+        StyledProperty<double>.Register<Element>("MaxWidth", double.PositiveInfinity,
+            new PropertyOptions { Invalidate = InvalidateKind.Measure });
+
+    public static readonly StyledProperty<double> MinHeightProperty =
+        StyledProperty<double>.Register<Element>("MinHeight", 0d,
+            new PropertyOptions { Invalidate = InvalidateKind.Measure });
+
+    public static readonly StyledProperty<double> MaxHeightProperty =
+        StyledProperty<double>.Register<Element>("MaxHeight", double.PositiveInfinity,
+            new PropertyOptions { Invalidate = InvalidateKind.Measure });
+
+    /// <summary>水平对齐（默认 Stretch = 填满排列槽，与既有面板行为零回归）。</summary>
+    public static readonly StyledProperty<HorizontalAlignment> HorizontalAlignmentProperty =
+        StyledProperty<HorizontalAlignment>.Register<Element>("HorizontalAlignment", HorizontalAlignment.Stretch,
+            new PropertyOptions { Invalidate = InvalidateKind.Arrange });
+
+    /// <summary>垂直对齐（默认 Stretch）。</summary>
+    public static readonly StyledProperty<VerticalAlignment> VerticalAlignmentProperty =
+        StyledProperty<VerticalAlignment>.Register<Element>("VerticalAlignment", VerticalAlignment.Stretch,
+            new PropertyOptions { Invalidate = InvalidateKind.Arrange });
+
+    public double Margin
+    {
+        get => GetValue(MarginProperty);
+        set => SetValue(MarginProperty, value);
+    }
+
+    public double Width
+    {
+        get => GetValue(WidthProperty);
+        set => SetValue(WidthProperty, value);
+    }
+
+    public double Height
+    {
+        get => GetValue(HeightProperty);
+        set => SetValue(HeightProperty, value);
+    }
+
+    public double MinWidth
+    {
+        get => GetValue(MinWidthProperty);
+        set => SetValue(MinWidthProperty, value);
+    }
+
+    public double MaxWidth
+    {
+        get => GetValue(MaxWidthProperty);
+        set => SetValue(MaxWidthProperty, value);
+    }
+
+    public double MinHeight
+    {
+        get => GetValue(MinHeightProperty);
+        set => SetValue(MinHeightProperty, value);
+    }
+
+    public double MaxHeight
+    {
+        get => GetValue(MaxHeightProperty);
+        set => SetValue(MaxHeightProperty, value);
+    }
+
+    public HorizontalAlignment HorizontalAlignment
+    {
+        get => GetValue(HorizontalAlignmentProperty);
+        set => SetValue(HorizontalAlignmentProperty, value);
+    }
+
+    public VerticalAlignment VerticalAlignment
+    {
+        get => GetValue(VerticalAlignmentProperty);
+        set => SetValue(VerticalAlignmentProperty, value);
+    }
+
+    /// <summary>尺寸约束钳制（Measure 期）：显式 Width/Height 覆盖测量期望，Min/Max 兜底
+    ///（Min &gt; Max 时 Min 胜——Avalonia 同口径，不抛异常）。</summary>
+    private Size ApplySizeConstraints(Size core)
+    {
+        double w = double.IsNaN(Width) ? core.Width : Width;
+        double h = double.IsNaN(Height) ? core.Height : Height;
+        w = Math.Clamp(w, MinWidth, Math.Max(MinWidth, MaxWidth));
+        h = Math.Clamp(h, MinHeight, Math.Max(MinHeight, MaxHeight));
+        return new Size(w, h);
+    }
 
     // ---- 路由事件 ----
 

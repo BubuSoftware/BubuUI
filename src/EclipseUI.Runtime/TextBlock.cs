@@ -67,6 +67,22 @@ public sealed class TextRun : Element
     protected internal override void ArrangeCore(Rect final) { }
 }
 
+/// <summary>文本换行（design/05 §布局契约；Avalonia 同名枚举对齐）：
+/// <see cref="NoWrap"/> 单行（现状）；<see cref="Wrap"/> 贪心断行——空格为换行机会，
+/// 超行宽的长词（含 CJK 无空格串）字符级硬切。WrapWithOverflow 暂缓。</summary>
+public enum TextWrapping
+{
+    NoWrap,
+    Wrap,
+}
+
+/// <summary>Wrap 布局的绘制段：来源 <see cref="TextRun"/>、绘制文本（可为 run 文本的切片——
+/// 跨行的 run 按行拆成多段）、字号、行内 X 与段宽。</summary>
+public sealed record TextLineSegment(TextRun Run, string Text, double FontSize, double X, double Width);
+
+/// <summary>Wrap 布局的一行：块内纵向偏移 Y、行高与段序列（行尾空白折叠不进段）。</summary>
+public sealed record TextLayoutLine(double Y, double Height, IReadOnlyList<TextLineSegment> Segments);
+
 [UiContent(UiContentKind.TextRuns)]
 public sealed class TextBlock : Panel, ITextContentHost
 {
@@ -74,15 +90,33 @@ public sealed class TextBlock : Panel, ITextContentHost
         StyledProperty<double>.Register<TextBlock>("FontSize", 14d,
             new PropertyOptions { Inherits = true, Invalidate = InvalidateKind.Measure });
 
+    /// <summary>换行模式（默认 NoWrap = 现状单行；Wrap 见 <see cref="TextWrapping"/>）。</summary>
+    public static readonly StyledProperty<TextWrapping> TextWrappingProperty =
+        StyledProperty<TextWrapping>.Register<TextBlock>("TextWrapping", TextWrapping.NoWrap,
+            new PropertyOptions { Invalidate = InvalidateKind.Measure });
+
     public double FontSize
     {
         get => GetValue(FontSizeProperty);
         set => SetValue(FontSizeProperty, value);
     }
 
+    public TextWrapping TextWrapping
+    {
+        get => GetValue(TextWrappingProperty);
+        set => SetValue(TextWrappingProperty, value);
+    }
+
     private readonly List<TextRun> _runs = new();
+    private readonly List<TextLayoutLine> _textLines = new();
 
     public IReadOnlyList<TextRun> Runs => _runs;
+
+    /// <summary>
+    /// Wrap 布局产物（NoWrap 时为空）——绘制侧按段定位（run 跨行时 FinalRect 只落在首段，
+    /// 完整行布局以这里为准）。仅测量期重算。
+    /// </summary>
+    public IReadOnlyList<TextLayoutLine> TextLines => _textLines;
 
     public void AddRun(TextRun run)
     {
@@ -102,6 +136,11 @@ public sealed class TextBlock : Panel, ITextContentHost
 
     protected internal override Size MeasureCore(Size available)
     {
+        // 无穷宽约束下换行无意义（ Wrap 退化为单行自然宽）——走 NoWrap 通道。
+        if (TextWrapping == TextWrapping.Wrap && !double.IsPositiveInfinity(available.Width))
+            return MeasureWrapped(available.Width);
+
+        _textLines.Clear();
         double width = 0, height = 0;
         foreach (var run in _runs)
         {
@@ -114,11 +153,163 @@ public sealed class TextBlock : Panel, ITextContentHost
 
     protected internal override void ArrangeCore(Rect final)
     {
+        if (_textLines.Count > 0)
+        {
+            // Wrap：run 排到首段矩形（跨行 run 的完整矩形无意义——绘制走 TextLines 段）。
+            foreach (var run in _runs)
+            {
+                var placed = false;
+                foreach (var line in _textLines)
+                {
+                    foreach (var segment in line.Segments)
+                    {
+                        if (!ReferenceEquals(segment.Run, run)) continue;
+                        run.Arrange(new Rect(segment.X, line.Y, segment.Width, line.Height));
+                        placed = true;
+                        break;
+                    }
+                    if (placed) break;
+                }
+                if (!placed) run.Arrange(new Rect(0, 0, 0, 0));
+            }
+            return;
+        }
+
         double x = 0;
         foreach (var run in _runs)
         {
             run.Arrange(new Rect(x, 0, run.DesiredSize.Width, run.DesiredSize.Height));
             x += run.DesiredSize.Width;
         }
+    }
+
+    // ---- Wrap 贪心断行（design/05 §布局契约）----
+
+    /// <summary>
+    /// 贪心断行：空格是换行机会（行首空白折叠、行尾空白不进段）；词放不下换行，
+    /// 单词自身超行宽（含 CJK 无空格长串）字符级硬切。段宽度按子串测量——naive 测量器
+    /// 按字符累加、与整串严格一致；HarfBuzz 接入后 kerning 差异在容差内（M1 断行管线接管）。
+    /// </summary>
+    private Size MeasureWrapped(double width)
+    {
+        _textLines.Clear();
+
+        var line = new List<TextLineSegment>();
+        var pendingSpaces = new List<TextLineSegment>();
+        double lineWidth = 0, lineHeight = 0, totalHeight = 0, maxLineWidth = 0;
+
+        void FlushLine()
+        {
+            // 行尾悬挂空格不进段（绘制不可见，且避免空行占位）。
+            if (line.Count > 0)
+            {
+                _textLines.Add(new TextLayoutLine(totalHeight, lineHeight, line.ToArray()));
+                totalHeight += lineHeight;
+                maxLineWidth = Math.Max(maxLineWidth, lineWidth);
+            }
+            line.Clear();
+            pendingSpaces.Clear();
+            lineWidth = 0;
+            lineHeight = 0;
+        }
+
+        foreach (var run in _runs)
+        {
+            run.Measure(new Size(width, double.PositiveInfinity));
+            var text = run.Text;
+            if (text.Length == 0) continue;
+            var fontSize = run.GetValue(FontSizeProperty);
+            var runHeight = TextMeasurer.Current.Measure(text, fontSize).Height;
+
+            var index = 0;
+            while (index < text.Length)
+            {
+                if (char.IsWhiteSpace(text[index]))
+                {
+                    var start = index;
+                    while (index < text.Length && char.IsWhiteSpace(text[index])) index++;
+                    pendingSpaces.Add(new TextLineSegment(
+                        run, text[start..index], fontSize, lineWidth,
+                        TextMeasurer.Current.Measure(text[start..index], fontSize).Width));
+                    continue;
+                }
+
+                var wordStart = index;
+                while (index < text.Length && !char.IsWhiteSpace(text[index])) index++;
+                var word = text[wordStart..index];
+                PlaceWord(run, word, fontSize, runHeight, width,
+                    line, pendingSpaces, ref lineWidth, ref lineHeight, FlushLine);
+            }
+        }
+
+        FlushLine();
+        return new Size(Math.Min(width, maxLineWidth), totalHeight);
+    }
+
+    private void PlaceWord(
+        TextRun run, string word, double fontSize, double runHeight, double width,
+        List<TextLineSegment> line, List<TextLineSegment> pendingSpaces,
+        ref double lineWidth, ref double lineHeight, Action flushLine)
+    {
+        // 换行判据含悬挂空格宽：词随其前导空格一起量（aa___bb 中 bb 放不下则空格与 bb 同换）。
+        double pendingWidth = 0;
+        foreach (var space in pendingSpaces) pendingWidth += space.Width;
+        var wordWidth = TextMeasurer.Current.Measure(word, fontSize).Width;
+        if (lineWidth > 0 && lineWidth + pendingWidth + wordWidth > width)
+            flushLine();
+
+        if (lineWidth == 0 && wordWidth > width)
+        {
+            // 空行也放不下：字符级硬切，直到余量进得去。
+            while (word.Length > 0 && wordWidth > width)
+            {
+                var take = MaxCharsFitting(word, fontSize, width);
+                var chunk = word[..take];
+                PlaceChunk(run, chunk, fontSize, runHeight, line, pendingSpaces, ref lineWidth, ref lineHeight);
+                flushLine();
+                word = word[take..];
+                wordWidth = TextMeasurer.Current.Measure(word, fontSize).Width;
+            }
+            if (word.Length > 0)
+                PlaceChunk(run, word, fontSize, runHeight, line, pendingSpaces, ref lineWidth, ref lineHeight);
+            return;
+        }
+
+        PlaceChunk(run, word, fontSize, runHeight, line, pendingSpaces, ref lineWidth, ref lineHeight);
+    }
+
+    private void PlaceChunk(
+        TextRun run, string chunk, double fontSize, double runHeight,
+        List<TextLineSegment> line, List<TextLineSegment> pendingSpaces,
+        ref double lineWidth, ref double lineHeight)
+    {
+        // 词落位前先把行中悬挂空格并入（行首/行尾的由折叠与 Flush 丢弃）。
+        foreach (var space in pendingSpaces)
+        {
+            line.Add(new TextLineSegment(space.Run, space.Text, space.FontSize, lineWidth, space.Width));
+            lineWidth += space.Width;
+        }
+        pendingSpaces.Clear();
+
+        var chunkWidth = TextMeasurer.Current.Measure(chunk, fontSize).Width;
+        line.Add(new TextLineSegment(run, chunk, fontSize, lineWidth, chunkWidth));
+        lineWidth += chunkWidth;
+        lineHeight = Math.Max(lineHeight, runHeight);
+    }
+
+    /// <summary>字符级硬切的容量：从头累加单字符宽度直到超宽（naive 测量器按字符加和，
+    /// 单字符测量即精确分量；至少切 1 字符防死循环）。</summary>
+    private static int MaxCharsFitting(string word, double fontSize, double width)
+    {
+        double acc = 0;
+        var count = 0;
+        for (var i = 0; i < word.Length; i++)
+        {
+            var charWidth = TextMeasurer.Current.Measure(word[i].ToString(), fontSize).Width;
+            if (acc + charWidth > width) break;
+            acc += charWidth;
+            count++;
+        }
+        return Math.Max(1, count);
     }
 }
