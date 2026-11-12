@@ -97,19 +97,38 @@ VS Code 的错误列表和红波浪线自动就有。**第一版 IDE 体验的�
 - 激活时以 stdio 拉起 `dotnet tool` 版 server；检测不到 .NET SDK 时给明确引导。
 - 受益于 C# Dev Kit 生态：解决方案加载、热重载按钮、调试宿主现成。
 
-## 6.5 Rider 插件（第二优先，lsp4ij 生态）
+## 6.5 Rider 插件（第二优先，lsp4ij 生态）—— ✅ 首选路径已落地（2026-11-12）
 
 已核实的事实基础：lsp4ij（Red Hat，EPL-2.0）支持所有 IntelliJ 系 IDE 含 Rider，
 要求 2024.2+，经 `com.redhat.devtools.lsp4ij.server` / `languageMapping` 扩展点把
 `.ui` 关联到 stdio LSP server。
 
-- **首选路径**：发布极小插件，只做两件事——注册 TextMate bundle（IntelliJ 平台原生
-  支持导入 `.tmLanguage.json`，grammar 共享）+ lsp4ij 扩展点声明 server。
-- **过渡路径**：正式插件发布前，允许用户手动配置 lsp4ij 的 server 定义。
-- **备选路径**：JetBrains 内置 LSP API（`com.intellij.platform.lsp`）在 Rider 稳定后
-  平滑迁移，server 侧零改动。
-- **平台注意点**：`.ui` 需先关联到插件注册的 Language 才能挂高亮与 LSP——这是
-  Rider 壳里唯一需要写几行平台代码的地方。
+**落地形态**（`ide/rider/`，详见 [ide/README.md §4](../ide/README.md)）：JDK 17 +
+Gradle 9 的 IntelliJ 平台插件，目标 `RD/2024.2`（build 242），依赖
+`com.redhat.devtools.lsp4ij` 0.21.0 与 `org.jetbrains.plugins.textmate`；
+Language + FileType 两对、TextMate bundle provider 与显式高亮绑定、
+`LanguageServerFactory` 拉起同一份 stdio server，共 10 个 Java 类 + 1 个 plugin.xml。
+grammar 仍由 `ide/vscode/syntaxes` 单一来源经 Gradle 的 `syncTextMateBundle` 组装。
+
+实现时发现并补掉两处协议假设：① lsp4ij 只认 `client/registerCapability` 动态注册
+watcher（其 `WatchedFilesTest` 为证），而 v1 只靠 VS Code 客户端的静态 watcher——
+故 server 在 `initialized` 后动态注册六项 glob，两个 IDE 共用标准 LSP；
+② IntelliJ 的 `file:/D:/…` / `file://D:/…` URI 形态补进 `UriToPath` 的回归夹具。
+静态契约（`ide/rider/test/plugin.test.js`）交叉比对扩展点名、类名、grammar
+scopeName、watcher glob 与启动参数，无需 JVM；IDE 侧 199 例全绿。
+真实 `compileJava` / `buildPlugin` 已在 Temurin 17 + Gradle 9.0.0 wrapper 下通过
+（产物 `ide/rider/build/distributions/eclipseui-rider-0.1.0.zip`，内含共享 grammar 与
+两条 languageMapping）；**仍未做** Rider 内人工冒烟，以及 `eui-decompiled:` 虚拟文档
+在 Rider 的 content provider（VS Code 独有）。
+
+- **首选路径（✅ 已实现）**：极小插件，只做两件事——注册 TextMate bundle
+  （grammar 共享）+ lsp4ij 扩展点声明 server。
+- **过渡路径（保留）**：不构建插件时，仍允许手动配置 lsp4ij 的 User-defined server。
+- **备选路径（未启用）**：JetBrains 内置 LSP API（`com.intellij.platform.lsp`）在 Rider
+  稳定后平滑迁移，server 侧零改动。
+- **平台注意点（已实现）**：`.ui`/`.eustyle` 先关联到插件注册的 Language + FileType
+  才能挂高亮与 LSP；自定义 FileType 会压掉 TextMate 着色，需显式绑定
+  `TextMateEditorHighlighterProvider` / `TextMateSyntaxHighlighterFactory`。
 
 ## 6.6 两家差异矩阵
 

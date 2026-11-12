@@ -14,7 +14,7 @@ $serverProject = Join-Path $here 'EclipseUI.LanguageServer'
 $extensionRoot = Join-Path $here 'vscode'
 $serverOutput = Join-Path $extensionRoot 'server'
 
-Write-Host "[1/3] dotnet publish ($Configuration) -> $serverOutput" -ForegroundColor Cyan
+Write-Host "[1/4] dotnet publish ($Configuration) -> $serverOutput" -ForegroundColor Cyan
 dotnet publish $serverProject -c $Configuration -o $serverOutput --nologo
 if ($LASTEXITCODE -ne 0) {
     throw "dotnet publish failed ($LASTEXITCODE). If VS Code is running the extension, its language server locks server/*.dll (MSB3026/3027). Use Developer: Reload Window or close the window, then retry."
@@ -45,7 +45,7 @@ if (-not $renderingOk) {
 }
 
 if (-not $SkipNpm) {
-    Write-Host '[2/3] npm install (VS Code shell dependencies)' -ForegroundColor Cyan
+    Write-Host '[2/4] npm install (VS Code shell dependencies)' -ForegroundColor Cyan
     Push-Location $extensionRoot
     try {
         npm install --no-audit --no-fund
@@ -54,7 +54,7 @@ if (-not $SkipNpm) {
     finally { Pop-Location }
 }
 
-Write-Host '[3/3] shell tests (grammar + extension glue)' -ForegroundColor Cyan
+Write-Host '[3/4] shell tests (grammar + extension glue)' -ForegroundColor Cyan
 Push-Location $extensionRoot
 try {
     node test/tokenize.test.js
@@ -64,9 +64,23 @@ try {
 }
 finally { Pop-Location }
 
+# The Rider module is a Java/Gradle IntelliJ plugin. A real compile needs a JDK 17
+# plus a Rider SDK download (Gradle 9 comes from the repo wrapper), but every
+# wiring mistake is visible in text, so the static contract is checked here with
+# plain node (no JVM required).
+Write-Host '[4/4] Rider shell contract (static)' -ForegroundColor Cyan
+$riderRoot = Join-Path $here 'rider'
+Push-Location $riderRoot
+try {
+    node test/plugin.test.js
+    if ($LASTEXITCODE -ne 0) { throw "Rider shell assertions failed ($LASTEXITCODE)" }
+}
+finally { Pop-Location }
+
 Write-Host ''
-Write-Host 'Done. Two ways to use it:' -ForegroundColor Green
+Write-Host 'Done. Two ways to use the VS Code shell:' -ForegroundColor Green
 Write-Host '  1) Open ide/vscode in VS Code and press F5 (Run Extension).'
 Write-Host '  2) code --extensionDevelopmentPath="<repo>\ide\vscode"'
 Write-Host ''
-Write-Host 'Rider: see ide/README.md (lsp4ij config, same server, no code changes).'
+Write-Host 'Rider: ide/rider is the lsp4ij plugin; see ide/README.md section 4.'
+Write-Host '  Build it with JDK 17: cd ide/rider; .\gradlew.bat buildPlugin'

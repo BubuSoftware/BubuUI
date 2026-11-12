@@ -9,7 +9,8 @@ ide/
     Analysis/                 诊断 / 补全 / 悬停 / 大纲 / 跳转 / 重命名 / 内嵌 C# 语言服务
     Server/                   JSON-RPC 协议层（声明能力、翻译 LSP 模型）
   vscode/                     VS Code 壳：TextMate grammar + 语言配置 + 片段 + 极薄的 LSP 客户端
-  build.ps1                   发布 server 到扩展目录 + 装依赖 + 跑 grammar/壳断言
+  rider/                      Rider 壳：lsp4ij 插件（Language/FileType + TextMate bundle + server 启动命令）
+  build.ps1                   发布 server 到扩展目录 + 装依赖 + 跑 grammar/两个壳的断言
 ```
 
 Rider 走 lsp4ij 接**同一个** server（见 §4），所以补全/诊断的行为在两个 IDE 里天然一致，
@@ -134,10 +135,64 @@ powershell -ExecutionPolicy Bypass -File ide/build.ps1
    重发布前要先把窗口重载（或结束掉 `dotnet …LanguageServer.dll`），否则 `dotnet publish`
    会报 MSB3027。
 
-## 4. Rider（零 server 改动）
+## 4. Rider（正式插件 `ide/rider`）
 
-lsp4ij（Red Hat，EPL-2.0，2024.2+）：Settings → Languages & Frameworks →
-Language Servers → `+` 新建 User-defined server：
+design/06 §6.5 的**首选路径已落地**：`ide/rider` 是 IntelliJ 平台插件（lsp4ij 0.21.0 /
+Rider 2024.2+），server 仍是同一个 `EclipseUI.LanguageServer`，不加第二个语言服务实现。
+插件只做三件事：
+
+1. 把 `.ui`/`.eustyle` 注册为 `Language` + `FileType`，并用
+   `com.redhat.devtools.lsp4ij.languageMapping` 把它们映射到 `eclipseui` server
+   （`languageId` 分别发 `eclipseui` / `eustyle`，与 VS Code 的 documentSelector 一致）；
+2. 用 `textmate.bundleProvider` 把**共享 grammar** 交给平台，并显式绑定
+   `TextMateEditorHighlighterProvider` / `TextMateSyntaxHighlighterFactory`——自定义
+   FileType 会压掉 TextMate 着色，这个绑定是 lsp4ij 自己也在用的 workaround；
+3. `EclipseUiLanguageServerFactory` 用 `ProcessStreamConnectionProvider` 拉起
+   `dotnet <...>/EclipseUI.LanguageServer.dll --stdio --workspace <project> --log … --log-stderr`。
+
+**grammar 仍然是单份**：`build.gradle.kts` 的 `syncTextMateBundle` 从 `../vscode/syntaxes`
+与两个 `language-configuration.json` 组装一个 VS Code 形状的 bundle（连同
+`src/main/textmate/package.json`）放进构建产物，`EclipseUiTextMateBundleProvider`
+在运行时把 jar 里的 `/textmate/**` 释放到插件目录（按插件版本分目录，升级会刷新）。
+仓库里没有第二份 grammar 拷贝。
+
+### 跑起来
+
+```powershell
+powershell -ExecutionPolicy Bypass -File ide/build.ps1   # 发布共享 server + 两个壳的断言
+cd ide/rider
+.\gradlew.bat buildPlugin     # 产物 build/distributions/*.zip
+.\gradlew.bat runIde          # 带插件的 Rider 沙箱
+.\gradlew.bat compileJava     # 只编译（CI / 换机后快速自检）
+```
+
+只需本机装 JDK 17 并让 `JAVA_HOME` 指向它；Gradle 9.0.0 由仓库内的 wrapper 自举，
+不必全局安装。`gradle/wrapper/gradle-wrapper.properties` 固定了版本和发行包
+SHA-256：默认 URL 走华为云镜像（国内可达且与官方包校验和一致），要换回官方源就把它
+改成 `https\://services.gradle.org/distributions/gradle-9.0.0-bin.zip`，校验和不用动。
+本机若靠 HTTP 代理上网，需给 Gradle 传 `-Dhttps.proxyHost=… -Dhttps.proxyPort=…`
+（Java 不读 `HTTPS_PROXY` 环境变量），否则平台依赖会连不上。
+
+安装 zip（Settings → Plugins → Install Plugin from Disk）或直接用 `runIde`。
+server DLL 的查找顺序：Settings → Languages & Frameworks → EclipseUI 的 `Server DLL`
+→ `ECLIPSEUI_SERVER_DLL` → 插件目录下的 `server/` → 从项目根向上找仓库根，依次找
+`ide/vscode/server`（`build.ps1` 的产物）、`ide/EclipseUI.LanguageServer/bin/{Release,Debug}/net10.0`。
+也就是说开发机上打开本仓库即可用；找不到会弹通知并在 lsp4ij 的 LSP console 留下原因。
+设置页的四个字段与 VS Code 的 `eclipseui.server.*` 一一对应。
+
+**watcher 不需要在 lsp4ij 里手配**：server 在 `initialized` 之后发
+`client/registerCapability` 动态注册 `workspace/didChangeWatchedFiles`，glob 与
+VS Code 客户端的 `WATCH_PATTERNS` 完全一致（六项，静态契约测试会交叉比对三处）。
+lsp4ij 只认动态注册，所以这条是 Rider 上 L7 自动刷新的前提；VS Code 的静态 watcher
+保留，两边都发时 server 的 `Invalidate` 幂等。
+
+**URI 兼容**：IntelliJ 的 `file:///D:/…`、`file:/D:/…`、`file://D:/…` 与 VS Code 的
+`file:///d%3A/…` 都走 `DocumentStore.UriToPath` 还原成同一个 Windows 路径，
+`ProjectSystemTests.UriConversion_*` 有夹具钉住。
+
+### 不想构建插件时的过渡路径
+
+lsp4ij → Settings → Languages & Frameworks → Language Servers → `+` User-defined server：
 
 | 字段 | 值 |
 |---|---|
@@ -146,16 +201,33 @@ Language Servers → `+` 新建 User-defined server：
 | Arguments | `<repo>/ide/EclipseUI.LanguageServer/bin/Release/net10.0/EclipseUI.LanguageServer.dll --stdio --workspace <repo>` |
 | Mappings | `*.ui` → `eclipseui`；`*.eustyle` → `eustyle` |
 
-watcher 由 lsp4ij 配同一组 glob（`**/*.cs`、`**/*.ui`、`**/*.eustyle`、`**/*.csproj`、
-`**/Directory.Build.props`、`**/obj/project.assets.json`）。语法高亮靠 VS Code 那份
-TextMate bundle（IntelliJ 平台原生支持导入 `.tmLanguage.json`）。
+这条路径没有自定义 Language/FileType（高亮靠手动导入 TextMate bundle），但同样能拿到
+补全、诊断与跳转。
+
+### 边界
+
+- 插件是 Java/Gradle 工程：**已在 Temurin JDK 17 + Gradle 9.0.0 wrapper 下真实编译
+  并打包**（`compileJava` 产出 11 个 class；`buildPlugin` 产出
+  `build/distributions/eclipseui-rider-0.1.0.zip`，包内含共享 grammar、`since-build=242`
+  与两条 languageMapping）。接线类错误另有 `node test/plugin.test.js` 的 12 项静态契约
+  交叉比对（扩展点/类名/grammar scopeName/watcher/启动参数/wrapper）。
+  **仍未做** Rider 内人工冒烟（`runIde` 打开 `.ui` 看高亮与补全）：构建期的
+  `buildSearchableOptions` 确实启动过 Rider 沙箱并成功释放 bundle，但那不是交互验证。
+- 插件 zip **不内嵌 server dll**（锁步发版要求两壳指向同一份产物）。发布时把
+  `ide/vscode/server/` 放进插件目录，或在设置页指定 DLL 路径。
+- 跳转到只有 dll/元数据、没有源码的控件时 server 返回 `eui-decompiled:` 虚拟文档；
+  VS Code 壳注册了 `TextDocumentContentProvider`，Rider 侧尚未接，故这类跳转在 Rider
+  上打不开内容（有源码的跳转正常）。这是 P2 的后续片。
+- `@code` 块内的补全/悬停/重命名、`#line` 调试映射仍是 server 侧既有缺口，与 IDE 无关。
 
 ## 5. 测试
 
 ```powershell
-dotnet test tests/EclipseUI.Ide.Tests     # 131 例：五条验收夹具 / 项目系统 / 光标 / 补全 / 悬停 / 跳转 / 重命名 / 反编译 / 大纲 / 诊断 / 协议帧 / 探针投影 / 端到端会话
+dotnet test tests/EclipseUI.Ide.Tests     # 199 例：五条验收夹具 / 项目系统 / 光标 / 补全 / 悬停 / 跳转 / 重命名 / 反编译 / 大纲 / 诊断 / 协议帧（含 watcher 动态注册）/ 探针投影 / 端到端会话
 cd ide/vscode; node test/tokenize.test.js  # grammar：真实 oniguruma 引擎逐 token 断言 scope
 cd ide/vscode; node test/extension.test.js # 客户端壳：documentSelector / watcher / 参数
+cd ide/rider;  node test/plugin.test.js    # Rider 壳静态契约（无需 JDK）：EP / 类名 / grammar / watcher / 启动参数 / wrapper
+cd ide/rider;  .\gradlew.bat verifyShell   # 同一组断言的 Gradle 入口（也组装 TextMate bundle）
 ```
 
 `ProjectSystemTests.cs` 用真实仓库跑 L1–L4，把 design/06 §6.9.7 的五条验收做成可执行夹具：

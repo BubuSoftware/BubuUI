@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<idea-plugin>
+    <id>com.eclipseui.rider</id>
+    <name>EclipseUI</name>
+    <vendor>EclipseUI</vendor>
+    <version>0.1.0</version>
+
+    <description><![CDATA[
+    EclipseUI <code>.ui</code> templates and <code>.eustyle</code> stylesheets in Rider:
+    syntax highlighting, diagnostics, completion, hover, go-to-definition, rename and
+    more. All language intelligence comes from the shared <b>EclipseUI.LanguageServer</b>
+    over stdio via LSP4IJ -- the same server the VS Code extension uses.
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.redhat.devtools.lsp4ij</depends>
+    <depends>org.jetbrains.plugins.textmate</depends>
+
+    <!-- LSP4IJ 0.21.0 requires 2024.2+. Keep in sync with gradle.properties. -->
+    <idea-version since-build="242.*"/>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- The two languages are the only platform-level code in this shell:
+             a Language + FileType pair lets LSP4IJ map documents to the server
+             and lets the TextMate highlighter bind to a concrete file type. -->
+        <fileType name="EclipseUI"
+                  language="EclipseUI"
+                  extensions="ui"
+                  implementationClass="com.eclipseui.rider.EclipseUiFileType"/>
+        <fileType name="Eustyle"
+                  language="Eustyle"
+                  extensions="eustyle"
+                  implementationClass="com.eclipseui.rider.EustyleFileType"/>
+
+        <!-- JetBrains TextMate bundles are read from disk, not from the classpath.
+             The provider extracts /textmate (assembled by Gradle from ide/vscode)
+             into the plugin directory and hands the path to the platform. -->
+        <textmate.bundleProvider
+                implementation="com.eclipseui.rider.EclipseUiTextMateBundleProvider"/>
+
+        <!-- A custom FileType would otherwise suppress TextMate colouring. This
+             explicit binding is the workaround LSP4IJ itself uses (see its
+             plugin-textmate.xml); without it the grammars register but nothing
+             is coloured. -->
+        <editorHighlighterProvider
+                filetype="EclipseUI"
+                implementationClass="org.jetbrains.plugins.textmate.language.syntax.highlighting.TextMateEditorHighlighterProvider"/>
+        <lang.syntaxHighlighterFactory
+                language="EclipseUI"
+                implementationClass="org.jetbrains.plugins.textmate.language.syntax.highlighting.TextMateSyntaxHighlighterFactory"/>
+        <editorHighlighterProvider
+                filetype="Eustyle"
+                implementationClass="org.jetbrains.plugins.textmate.language.syntax.highlighting.TextMateEditorHighlighterProvider"/>
+        <lang.syntaxHighlighterFactory
+                language="Eustyle"
+                implementationClass="org.jetbrains.plugins.textmate.language.syntax.highlighting.TextMateSyntaxHighlighterFactory"/>
+
+        <applicationService serviceImplementation="com.eclipseui.rider.EclipseUiSettings"/>
+        <applicationConfigurable
+                parentId="language"
+                instance="com.eclipseui.rider.EclipseUiSettingsConfigurable"
+                id="eclipseui.settings"
+                displayName="EclipseUI"/>
+        <notificationGroup id="EclipseUI" displayType="BALLOON"/>
+    </extensions>
+
+    <extensions defaultExtensionNs="com.redhat.devtools.lsp4ij">
+        <server id="eclipseui"
+                name="EclipseUI Language Server"
+                factoryClass="com.eclipseui.rider.EclipseUiLanguageServerFactory">
+            <description><![CDATA[
+            The shared EclipseUI stdio language server (dotnet EclipseUI.LanguageServer.dll).
+            Diagnostics, completion, hover, navigation, rename, semantic tokens,
+            code actions and formatting for .ui and .eustyle.
+            ]]></description>
+        </server>
+
+        <!-- languageId mirrors the VS Code documentSelector. The server keys off
+             the file extension, but keeping the LSP field correct costs nothing. -->
+        <languageMapping language="EclipseUI" serverId="eclipseui" languageId="eclipseui"/>
+        <languageMapping language="Eustyle" serverId="eclipseui" languageId="eustyle"/>
+
+        <!-- Fallback for installations where the custom FileType is overridden
+             (e.g. a user has assigned *.ui to "Files supported via TextMate
+             bundles"). LSP4IJ recommends pattern mappings to keep TextMate
+             colouring; do NOT enable both mappings at once for normal setups. -->
+        <!-- <fileNamePatternMapping patterns="*.ui;*.eustyle" serverId="eclipseui"/> -->
+    </extensions>
+</idea-plugin>

@@ -371,6 +371,18 @@
 > 锁住 D113 盲区）；`dotnet build` 0 警告，全量 1066 例中 1064 绿——2 条红来自工作区里
 > 本片之前就存在的 `Counter.ui` 手工验证改动
 > （`OnClick={Test}` 且 `count+=5`，端到端用例仍断言 +1），与本片无关。
+>
+> **G5 Rider 壳已落地（2026-11-12）**：`ide/rider` 按 [design/06 §6.5](./design/06-ide-support.md)
+> 走 lsp4ij 0.21.0（Rider 2024.2+）——Language/FileType 两对 + TextMate bundle provider
+> （grammar 仍由 `ide/vscode/syntaxes` 单一来源经 Gradle 组装）+ `LanguageServerFactory`
+> 拉起同一份 stdio server，`languageId` 与 VS Code 一致。为让 lsp4ij 的 watcher 生效，
+> server 在 `initialized` 后发 `client/registerCapability` 动态注册六项 glob（VS Code
+> 静态 watcher 保留，通知幂等）；IntelliJ 的 `file:/D:/…` / `file://D:/…` URI 形态补进回归夹具。
+> `node ide/rider/test/plugin.test.js` 12 项静态比对扩展点/类名/grammar/watcher/
+> 启动参数/wrapper，IDE 侧 199 例全绿；Temurin 17 + Gradle 9.0.0 wrapper 下
+> `compileJava` 与 `buildPlugin` 真实通过（产物 `ide/rider/build/distributions/*.zip`），
+> **仅剩** Rider 内人工冒烟未做；`eui-decompiled:` 虚拟文档的 content provider 留后续片。
+> 见 [ide/README.md §4](./ide/README.md)。
 
 ## 核心理念
 
@@ -437,6 +449,7 @@ ide/                              IDE 支持（design/06）：一份共享 LSP s
   EclipseUI.LanguageServer/       stdio LSP：诊断/标签·属性·枚举·指令补全/悬停/大纲，
                                   目录由 UiCatalogFactory 符号派生（与编译器同源）
   vscode/                         TextMate grammar（.ui / .eustyle）+ 语言配置 + 片段 + 薄客户端
+  rider/                          Rider 壳：lsp4ij 插件（Language/FileType + TextMate bundle + server 启动命令）
 sandbox/RenderSpike/             G1 像素管线 spike：PNG 输出 + 性能 bench（不入解决方案）
 sandbox/WindowSpike/             G2 上屏 spike：动画场景 + 帧时间分段 + resize 自检（不入解决方案）
 sandbox/GalleryCheck/            画廊验证壳：--selfcheck 六步自动化、damage 覆盖率、帧成本测量、
@@ -616,5 +629,5 @@ IDE/DevTools 随后。
    `@foreach` 变量入环境）、~~跳转定义 + 重命名（L3）~~ ✅ 2026-11-10（探针符号反查 `Locate`：
    foreach 变量落回本文档、code-behind 成员跳到兄弟 `.cs` 声明名字；重命名 `prepareRename` +
    WorkspaceEdit，foreach 变量完备改名、code-behind 成员扫 `.ui`+`@code`+兄弟+工作区 `.cs`）——
-   **Rider 用 lsp4ij 接同一个 server，server 侧零改动**；
+   **Rider 壳 `ide/rider` 已落地（lsp4ij 插件，接同一个 server，server 侧零分叉）**；
    余语义着色，以及 P3 `#line` 调试映射。

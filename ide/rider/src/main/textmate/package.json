@@ -1,0 +1,39 @@
+{
+  "name": "eclipseui-textmate",
+  "displayName": "EclipseUI TextMate bundle",
+  "description": "Shared TextMate grammars for EclipseUI .ui templates and .eustyle stylesheets (assembled from ide/vscode at build time).",
+  "version": "0.1.0",
+  "contributes": {
+    "languages": [
+      {
+        "id": "eclipseui",
+        "aliases": ["EclipseUI", "eclipseui"],
+        "extensions": [".ui"],
+        "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "eustyle",
+        "aliases": ["Eustyle", "eustyle"],
+        "extensions": [".eustyle"],
+        "configuration": "./eustyle-language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "eclipseui",
+        "scopeName": "source.eclipseui",
+        "path": "./syntaxes/eclipseui.tmLanguage.json",
+        "embeddedLanguages": {
+          "meta.embedded.line.csharp.eclipseui": "csharp",
+          "meta.embedded.block.csharp.eclipseui": "csharp",
+          "meta.embedded.block.eustyle.eclipseui": "eustyle"
+        }
+      },
+      {
+        "language": "eustyle",
+        "scopeName": "source.eustyle",
+        "path": "./syntaxes/eustyle.tmLanguage.json"
+      }
+    ]
+  }
+}

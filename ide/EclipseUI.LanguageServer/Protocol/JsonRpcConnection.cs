@@ -32,6 +32,10 @@ public sealed class JsonRpcConnection
     private readonly LspMessageWriter _writer;
     private readonly Action<string>? _log;
 
+    // server→client 请求的 id 从 0 起，避开 LSP 客户端惯用的 1/2/3…；
+    // 派发是单线程的，不需要原子计数。
+    private int _nextRequestId;
+
     public JsonRpcConnection(Stream input, Stream output, Action<string>? log = null)
     {
         _reader = new LspMessageReader(input);
@@ -84,7 +88,8 @@ public sealed class JsonRpcConnection
 
         if (method is null)
         {
-            // 响应（我们暂时不发 server→client 请求，收到就忽略，避免噪声日志）。
+            // 客户端对我们发出的请求（目前只有 client/registerCapability）的响应。
+            // 注册失败只是让 watcher 降级，不影响会话，忽略响应/错误即可。
             return;
         }
 
@@ -141,6 +146,20 @@ public sealed class JsonRpcConnection
         => SendAsync(new JsonObject
         {
             ["jsonrpc"] = "2.0",
+            ["method"] = method,
+            ["params"] = parameters,
+        }, cancellationToken);
+
+    /// <summary>
+    /// 发一个 server→client 请求并且**不等响应**（用于 <c>client/registerCapability</c>）。
+    /// 手写 JSON-RPC 层没有挂起的请求表：动态注册是「尽力而为」，客户端不支持时
+    /// watcher 降级到只靠编辑器缓冲区刷新，绝不能因为一个未答的请求把派发循环卡住。
+    /// </summary>
+    public Task RequestAsync(string method, JsonNode? parameters, CancellationToken cancellationToken = default)
+        => SendAsync(new JsonObject
+        {
+            ["jsonrpc"] = "2.0",
+            ["id"] = _nextRequestId++,
             ["method"] = method,
             ["params"] = parameters,
         }, cancellationToken);

@@ -538,6 +538,38 @@ public class ProtocolTests
         Assert.All(full, e => Assert.NotNull(e!["newText"]));
     }
 
+    /// <summary>
+    /// Rider/lsp4ij 没有 VS Code 那种客户端静态 watcher，只认动态注册
+    /// （lsp4ij 的 WatchedFilesTest）。不注册的话改 .cs/.csproj 后项目快照不重建。
+    /// </summary>
+    [Fact]
+    public async Task Session_RegistersWatchersDynamicallyForRider()
+    {
+        var transcript = await RunSession(
+            Request(1, "initialize"),
+            Notification("initialized", new JsonObject()));
+
+        var registration = Assert.Single(transcript,
+            m => m["method"]?.GetValue<string>() == "client/registerCapability");
+        Assert.Equal(0, registration["id"]!.GetValue<int>()); // 不与客户端请求的 1/2/3… 冲突
+
+        var entry = Assert.Single(registration["params"]!["registrations"]!.AsArray());
+        Assert.Equal("eclipseui-watched-files", entry!["id"]!.GetValue<string>());
+        Assert.Equal("workspace/didChangeWatchedFiles", entry["method"]!.GetValue<string>());
+
+        var globs = entry["registerOptions"]!["watchers"]!.AsArray()
+            .Select(w => w!["globPattern"]!.GetValue<string>()).ToArray();
+        Assert.Equal(new[]
+        {
+            "**/*.cs",
+            "**/*.ui",
+            "**/*.eustyle",
+            "**/*.csproj",
+            "**/Directory.Build.props",
+            "**/obj/project.assets.json",
+        }, globs);
+    }
+
     /// <summary>P5 watcher：文件变更通知后重发已打开文档的诊断，无需手动 Reload。</summary>
     [Fact]
     public async Task Session_WatchedFilesRepublishDiagnostics()

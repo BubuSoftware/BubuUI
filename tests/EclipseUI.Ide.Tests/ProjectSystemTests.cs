@@ -248,6 +248,10 @@ public class ProjectSystemTests
     [Theory]
     [InlineData("file:///d%3A/workspace/repo/Sample.ui", @"d:\workspace\repo\Sample.ui")]
     [InlineData("file:///D:/workspace/repo/Sample.ui", @"D:\workspace\repo\Sample.ui")]
+    // Rider/lsp4ij 用 Java Path.toUri()/IntelliJ VirtualFile URL 形态：Host 为空、
+    // AbsolutePath 可能不带前导斜杠。两种都得还原成同一个 Windows 路径。
+    [InlineData("file:/D:/workspace/repo/Sample.ui", @"D:\workspace\repo\Sample.ui")]
+    [InlineData("file://D:/workspace/repo/Sample.ui", @"D:\workspace\repo\Sample.ui")]
     [InlineData("file:///d%3A/workspace/my%20repo/Sample.ui", @"d:\workspace\my repo\Sample.ui")]
     [InlineData("file:///d%3A/%E4%B8%AD%E6%96%87/Sample.ui", @"d:\中文\Sample.ui")]
     [InlineData("file://server/share/Sample.ui", @"\\server\share\Sample.ui")]

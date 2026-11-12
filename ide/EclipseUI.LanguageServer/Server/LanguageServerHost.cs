@@ -108,6 +108,12 @@ public sealed class LanguageServerHost
         {
             case "initialized":
             {
+                // L7 watcher 动态注册：VS Code 客户端自己带一组静态 watcher，
+                // 但 Rider/lsp4ij 没有——它只认 client/registerCapability（实测
+                // lsp4ij WatchedFilesTest）。不注册的话 Rider 上改 .cs/.csproj
+                // 不会重建项目快照，补全一直用旧目录。这样注册两边都走标准 LSP。
+                await RegisterWatchersAsync().ConfigureAwait(false);
+
                 // 先强制完成目录构建，再读 Notes。后台预热与 initialized 可能并发：
                 // 若先读 Notes 会得到空列表，"目录没找到"的警告被静默吞掉，编辑器表现为
                 // "高亮正常、补全空、零诊断"，用户无从判断是配置问题还是代码没问题。
@@ -198,6 +204,41 @@ public sealed class LanguageServerHost
                 _log?.Invoke($"ignored notification '{method}'");
                 break;
         }
+    }
+
+    /// <summary>
+    /// L7 依赖的文件模式：项目 Compilation 的输入与结构文件。必须与
+    /// <c>ide/vscode/client/extension.js</c> 的 <c>WATCH_PATTERNS</c> 一致
+    /// （<c>ide/rider/test/plugin.test.js</c> 会把三处对死）。
+    /// </summary>
+    private static readonly string[] WatcherGlobs =
+    {
+        "**/*.cs",
+        "**/*.ui",
+        "**/*.eustyle",
+        "**/*.csproj",
+        "**/Directory.Build.props",
+        "**/obj/project.assets.json",
+    };
+
+    private Task RegisterWatchersAsync()
+    {
+        var watchers = new JsonArray();
+        foreach (var glob in WatcherGlobs)
+            watchers.Add(new JsonObject { ["globPattern"] = glob });
+
+        return _connection.RequestAsync("client/registerCapability", new JsonObject
+        {
+            ["registrations"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["id"] = "eclipseui-watched-files",
+                    ["method"] = "workspace/didChangeWatchedFiles",
+                    ["registerOptions"] = new JsonObject { ["watchers"] = watchers },
+                },
+            },
+        });
     }
 
     // ---- 请求实现 ----
