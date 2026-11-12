@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using System.Text.RegularExpressions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -31,6 +32,7 @@ public static class UiCatalogFactory
     private const string UiIgnoreAttributeName = "EclipseUI.UiIgnoreAttribute";
     private const string UiParameterAttributeName = "EclipseUI.UiParameterAttribute";
     private const string UiSlotAttributeName = "EclipseUI.UiSlotAttribute";
+    private const string UiLiteralParserAttributeName = "EclipseUI.UiLiteralParserAttribute";
 
     /// <summary>运行时只有 <c>RoutedEventArgs</c> 一种事件实参形状；typed args 属 G4（design/14 §14.4.3）。</summary>
     internal const string DefaultEventArgsType = "global::EclipseUI.RoutedEventArgs";
@@ -125,6 +127,8 @@ public static class UiCatalogFactory
             var problems = new List<UiMetadataProblem>();
             var attached = new List<UiAttachedPropDef>();
             var attachedSeen = new Dictionary<(string Owner, string Name), string>();
+            // 声明式字面量解析器（design/14 §14.7.3）：与标签表面同一次类型遍历产出。
+            var literalParsers = new List<UiLiteralParserDef>();
             // 扫描到的全部类型名（不分命名空间、不管是否进目录）：合成纯 .ui 组件前用它判断
             // 「输入编译里到底有没有这个名字」，避免给一个命名空间写错的 .ui 造出同名假标签。
             var knownTypeNames = new HashSet<string>(StringComparer.Ordinal);
@@ -134,7 +138,8 @@ public static class UiCatalogFactory
 
             // 没有运行时锚点的编译（例如纯 C# 测试项目）得到空标签目录，而不是异常
             if (_element is null && _component is null)
-                return new UiCatalog(exposed, hidden, problems, styleProperties: styleProperties);
+                return new UiCatalog(exposed, hidden, problems, styleProperties: styleProperties,
+                    literalParsers: literalParsers);
 
             foreach (var assembly in CandidateAssemblies(_compilation))
             {
@@ -145,6 +150,8 @@ public static class UiCatalogFactory
                 foreach (var type in WalkTypes(assembly.GlobalNamespace))
                 {
                     knownTypeNames.Add(type.Name);
+                    // 解析器类型不要求 Element/Component 派生：任何类型都能声明，先于各 continue 收集。
+                    CollectLiteralParser(type, literalParsers, problems);
                     if (IsStaticEventHost(type))
                     {
                         problems.Add(Problem(UiDiagnostics.MetadataDeclarationInvalid, type, null,
@@ -189,7 +196,7 @@ public static class UiCatalogFactory
             // 形状取最小——无内容、无参数、无事件。要参数就写 .cs。
             AppendTemplateOnlyComponents(exposed, hidden, knownTypeNames);
 
-            return new UiCatalog(exposed, hidden, problems, attached, styleProperties);
+            return new UiCatalog(exposed, hidden, problems, attached, styleProperties, literalParsers);
         }
 
         private void AppendTemplateOnlyComponents(List<UiElementDef> exposed, List<UiHiddenTag> hidden,
@@ -1513,6 +1520,83 @@ public static class UiCatalogFactory
 
         private static bool ImplementsInterface(INamedTypeSymbol type, INamedTypeSymbol interfaceType)
             => type.AllInterfaces.Any(i => SymbolEqualityComparer.Default.Equals(i, interfaceType));
+
+        /// <summary>
+        /// 声明式字面量解析器（design/14 §14.7.3）：带 <c>[UiLiteralParser]</c> 的类型经只读符号
+        /// 校验一个 <c>public static T Parse(string)</c>（T 为被标注类型）后进入目录表。
+        /// 不执行任何用户代码（R1）；Pattern 由 BCL Regex 在编译期校验字面量（框架代码 +
+        /// 100ms 超时）。声明不合规进 EUI026（与其它元数据问题同码），使用点因此回落 EUI023。
+        /// </summary>
+        private void CollectLiteralParser(INamedTypeSymbol type,
+            List<UiLiteralParserDef> parsers, List<UiMetadataProblem> problems)
+        {
+            var attr = FindAttribute(type, UiLiteralParserAttributeName);
+            if (attr is null) return;
+
+            void Invalid(string message) =>
+                problems.Add(Problem(UiDiagnostics.MetadataDeclarationInvalid, type, null, message));
+
+            if (type.TypeKind is TypeKind.Error or TypeKind.Interface
+                || type.IsGenericType || type.DeclaredAccessibility != Accessibility.Public)
+            {
+                Invalid($"'{Display(type)}': [UiLiteralParser] requires a public, non-generic class or struct");
+                return;
+            }
+
+            var parseMethod = NamedString(attr, "ParseMethod") ?? "Parse";
+            var pattern = NamedString(attr, "Pattern");
+            var hint = NamedString(attr, "Hint");
+            var candidatesArgument = attr.NamedArguments
+                .FirstOrDefault(static kv => kv.Key == "Candidates").Value;
+            var candidates = candidatesArgument.Kind == TypedConstantKind.Array
+                && !candidatesArgument.Values.IsDefault
+                ? candidatesArgument.Values
+                    .Select(static tc => tc.Value as string).OfType<string>().ToArray()
+                : Array.Empty<string>();
+
+            var method = type.GetMembers(parseMethod).OfType<IMethodSymbol>().FirstOrDefault(
+                m => IsParserSignature(m, type));
+            if (method is null)
+            {
+                Invalid($"'{Display(type)}': [UiLiteralParser] requires public static {type.Name} {parseMethod}(string)");
+                return;
+            }
+
+            if (pattern is not null && !IsValidRegex(pattern))
+            {
+                Invalid($"'{Display(type)}': [UiLiteralParser] Pattern '{pattern}' is not a valid regex");
+                return;
+            }
+
+            parsers.Add(new UiLiteralParserDef(
+                CanonicalKey(type), $"{Display(type)}.{parseMethod}", pattern, hint, candidates));
+        }
+
+        private static bool IsParserSignature(IMethodSymbol m, INamedTypeSymbol declaringType) =>
+            m.IsStatic
+            && m.DeclaredAccessibility == Accessibility.Public
+            && !m.IsGenericMethod
+            && m.Parameters.Length == 1
+            && m.Parameters[0].RefKind == RefKind.None
+            && m.Parameters[0].Type.SpecialType == SpecialType.System_String
+            && SymbolEqualityComparer.Default.Equals(m.ReturnType, declaringType);
+
+        private static string? NamedString(AttributeData attr, string name) =>
+            attr.NamedArguments.FirstOrDefault(kv => kv.Key == name).Value.Value as string;
+
+        /// <summary>用户提供的 Pattern 在编译期由框架执行：限长 + 超时，避免恶意正则拖慢编译。</summary>
+        private static bool IsValidRegex(string pattern)
+        {
+            if (pattern.Length > 512) return false;
+            try
+            {
+                _ = Regex.IsMatch(string.Empty, pattern, RegexOptions.CultureInvariant,
+                    TimeSpan.FromMilliseconds(100));
+                return true;
+            }
+            catch (ArgumentException) { return false; }
+            catch (RegexMatchTimeoutException) { return false; }
+        }
 
         private static AttributeData? FindAttribute(ISymbol symbol, string attributeMetadataName)
             => symbol.GetAttributes().FirstOrDefault(a => a.AttributeClass?.MetadataName != null

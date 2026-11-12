@@ -98,6 +98,43 @@ public sealed record UiAttachedPropDef(
     string ClrTypeDisplayName,
     UiTypeShape TypeShape);
 
+/// <summary>
+/// 声明式字面量解析器（design/14 §14.7.3）：带 <c>[UiLiteralParser]</c> 的类型经只读符号
+/// 扫描进入本表，<see cref="UiLiterals"/> 的 parser 感知重载按 <see cref="CanonicalKey"/>
+/// 查它。手写结构相等：record 默认对 <see cref="Candidates"/> 按引用比较，会让 §14.10.3
+/// 的增量缓存永远判定"已变化"（与 <see cref="UiTypeShape"/> 同因）。
+/// </summary>
+/// <param name="CanonicalKey">目标类型键，与 <see cref="UiTypeShape.CanonicalKey"/> 同一来源。</param>
+/// <param name="ParseCall">生成代码用的调用前缀（<c>global::Ns.Type.Parse</c>，已含方法名）。</param>
+/// <param name="Pattern">编译期校验字面量的 BCL Regex；null 表示运行时才校验。</param>
+/// <param name="Hint">EUI003 的期望格式说明；null 时诊断回显 Pattern。</param>
+/// <param name="Candidates">LSP 引号内值候选（Ordinal）；可为空表。</param>
+public sealed record UiLiteralParserDef(
+    string CanonicalKey,
+    string ParseCall,
+    string? Pattern,
+    string? Hint,
+    IReadOnlyList<string> Candidates)
+{
+    public bool Equals(UiLiteralParserDef? other) =>
+        other is not null
+        && CanonicalKey == other.CanonicalKey
+        && ParseCall == other.ParseCall
+        && Pattern == other.Pattern
+        && Hint == other.Hint
+        && CatalogValueEq.Sequence(Candidates, other.Candidates);
+
+    public override int GetHashCode()
+    {
+        var hash = CatalogValueEq.Start;
+        hash = CatalogValueEq.Add(hash, CanonicalKey);
+        hash = CatalogValueEq.Add(hash, ParseCall);
+        hash = CatalogValueEq.Add(hash, Pattern);
+        hash = CatalogValueEq.Add(hash, Hint);
+        return CatalogValueEq.AddSequence(hash, Candidates);
+    }
+}
+
 /// <param name="Required">来自 <c>[UiParameter(Required = true)]</c>，不是 C# <c>required</c> 修饰符。</param>
 /// <param name="IsContent">来自 <c>[UiContent]</c> 标在参数属性上（design/14 §14.6.3）：默认内容参数。
 /// 类型只接受 <c>IReadOnlyList&lt;Element&gt;</c>（多根）或 <c>Element?</c>（单根），其余在扫描期进
@@ -292,13 +329,15 @@ public sealed class UiCatalog : IEquatable<UiCatalog>
     private readonly Dictionary<string, UiElementDef> _byType;
     private readonly Dictionary<string, UiHiddenTag> _hidden;
     private readonly Dictionary<(string Owner, string Name), UiAttachedPropDef> _attached;
+    private readonly Dictionary<string, UiLiteralParserDef> _literalParsers;
 
     public UiCatalog(
         IEnumerable<UiElementDef> elements,
         IEnumerable<UiHiddenTag> hiddenTags,
         IEnumerable<UiMetadataProblem> problems,
         IEnumerable<UiAttachedPropDef>? attachedProperties = null,
-        StylePropertyCatalog? styleProperties = null)
+        StylePropertyCatalog? styleProperties = null,
+        IEnumerable<UiLiteralParserDef>? literalParsers = null)
     {
         _byTag = elements
             .GroupBy(e => e.Tag, StringComparer.Ordinal)
@@ -337,6 +376,19 @@ public sealed class UiCatalog : IEquatable<UiCatalog>
             .OrderBy(p => p.OwnerTag, StringComparer.Ordinal)
             .ThenBy(p => p.Name, StringComparer.Ordinal)
             .ToList();
+        // 声明式字面量解析器（design/14 §14.7.3）：Ordinal 按 CanonicalKey 排序；
+        // 同 CanonicalKey 冲突由扫描器报问题，此处第一个（排序后）胜出，保证目录结构确定
+        //（与 _attached 同一口径）。
+        _literalParsers = new Dictionary<string, UiLiteralParserDef>(StringComparer.Ordinal);
+        foreach (var parser in (literalParsers ?? Array.Empty<UiLiteralParserDef>())
+            .OrderBy(p => p.CanonicalKey, StringComparer.Ordinal))
+        {
+            if (!_literalParsers.ContainsKey(parser.CanonicalKey))
+                _literalParsers[parser.CanonicalKey] = parser;
+        }
+        LiteralParsers = _literalParsers.Values
+            .OrderBy(p => p.CanonicalKey, StringComparer.Ordinal)
+            .ToList();
         // 编译期派生的可样式属性表面（design/17 §4.3）：与标签表面同一次符号扫描产出，
         // 随 UiCatalog 一起走增量缓存；缺省空目录仅供无符号语境的静态前端。
         StyleProperties = styleProperties ?? StylePropertyCatalog.Empty;
@@ -353,6 +405,9 @@ public sealed class UiCatalog : IEquatable<UiCatalog>
 
     /// <summary>附加属性表面（design/14 §14.5.5）：Ordinal 按 OwnerTag/Name 排序。</summary>
     public IReadOnlyList<UiAttachedPropDef> AttachedProperties { get; }
+
+    /// <summary>声明式字面量解析器表面（design/14 §14.7.3）：Ordinal 按 CanonicalKey 排序。</summary>
+    public IReadOnlyList<UiLiteralParserDef> LiteralParsers { get; }
 
     public IEnumerable<string> ElementTags => _byTag.Keys.OrderBy(t => t, StringComparer.Ordinal);
 
@@ -384,6 +439,10 @@ public sealed class UiCatalog : IEquatable<UiCatalog>
     /// <summary>按 <c>Owner.Prop</c> 两段查附加属性（design/14 §14.5.5）；名中含更多点号时调用方先行拒绝。</summary>
     public UiAttachedPropDef? FindAttached(string owner, string name) =>
         _attached.TryGetValue((owner, name), out var def) ? def : null;
+
+    /// <summary>按目标类型键查声明式字面量解析器（design/14 §14.7.3）；未注册返回 null。</summary>
+    public UiLiteralParserDef? FindLiteralParser(string canonicalKey) =>
+        _literalParsers.TryGetValue(canonicalKey, out var parser) ? parser : null;
 
     /// <summary>全部 <c>Owner.Prop</c> 键（Ordinal 排序），供未知附加属性的建议算法使用。</summary>
     public IEnumerable<string> AttachedKeys =>
@@ -463,6 +522,7 @@ public sealed class UiCatalog : IEquatable<UiCatalog>
         && CatalogValueEq.Sequence(HiddenTags, other.HiddenTags)
         && CatalogValueEq.Sequence(Problems, other.Problems)
         && CatalogValueEq.Sequence(AttachedProperties, other.AttachedProperties)
+        && CatalogValueEq.Sequence(LiteralParsers, other.LiteralParsers)
         && StyleProperties.Equals(other.StyleProperties);
 
     public override bool Equals(object? obj) => Equals(obj as UiCatalog);
@@ -474,6 +534,7 @@ public sealed class UiCatalog : IEquatable<UiCatalog>
         hash = CatalogValueEq.AddSequence(hash, HiddenTags);
         hash = CatalogValueEq.AddSequence(hash, Problems);
         hash = CatalogValueEq.AddSequence(hash, AttachedProperties);
+        hash = CatalogValueEq.AddSequence(hash, LiteralParsers);
         return CatalogValueEq.Add(hash, StyleProperties);
     }
 }

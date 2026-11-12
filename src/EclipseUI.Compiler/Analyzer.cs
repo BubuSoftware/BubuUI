@@ -751,13 +751,15 @@ public static class TemplateAnalyzer
                 }
                 else if (attr.Kind == AttrValueKind.Literal)
                 {
-                    if (!UiLiterals.HasConverter(attached.TypeShape))
+                    var parser = catalog.FindLiteralParser(attached.TypeShape.CanonicalKey);
+                    if (!UiLiterals.HasConverter(attached.TypeShape, parser))
                     {
                         diags.Add(UiDiagnostics.Error(UiDiagnostics.NoLiteralConverter,
                             $"attached property '{attr.Name}' of '{element.Tag}' has no literal converter for " +
                             $"'{attached.TypeShape.CanonicalKey}'; write an {{expression}} instead", attr.ValueSpan));
                     }
-                    else if (UiLiterals.TryConvert(attached.TypeShape, attr.Value, out var attachedConverted, out var attachedError))
+                    else if (UiLiterals.TryConvert(attached.TypeShape, attr.Value, parser,
+                                 out var attachedConverted, out var attachedError))
                     {
                         attr.ConvertedLiteral = attachedConverted;
                     }
@@ -967,13 +969,14 @@ public static class TemplateAnalyzer
             {
                 var shape = propDef?.TypeShape ?? paramDef!.TypeShape;
                 var source = propDef is not null ? "property" : "parameter";
-                if (!UiLiterals.HasConverter(shape))
+                var parser = catalog.FindLiteralParser(shape.CanonicalKey);
+                if (!UiLiterals.HasConverter(shape, parser))
                 {
                     diags.Add(UiDiagnostics.Error(UiDiagnostics.NoLiteralConverter,
                         $"{source} '{attr.Name}' of '{element.Tag}' has no literal converter for '{shape.CanonicalKey}'; " +
                         "write an {expression} instead", attr.ValueSpan));
                 }
-                else if (UiLiterals.TryConvert(shape, attr.Value, out var converted, out var error))
+                else if (UiLiterals.TryConvert(shape, attr.Value, parser, out var converted, out var error))
                 {
                     attr.ConvertedLiteral = converted;
                 }

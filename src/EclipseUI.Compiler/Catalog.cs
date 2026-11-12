@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace EclipseUI.Compiler;
 
@@ -86,6 +87,47 @@ public static class UiLiterals
                 error = $"unsupported literal type '{shape.CanonicalKey}'";
                 return false;
             }
+    }
+
+    private static readonly TimeSpan ParserRegexTimeout = TimeSpan.FromMilliseconds(100);
+
+    /// <summary>
+    /// parser 感知版 HasConverter（design/14 §14.7.3，2026-11-12）：内建 12 类优先，其后
+    /// 接受目录里该类型的声明式解析器（<c>[UiLiteralParser]</c>）。
+    /// </summary>
+    public static bool HasConverter(UiTypeShape shape, UiLiteralParserDef? parser) =>
+        HasConverter(shape) || parser is not null;
+
+    /// <summary>
+    /// parser 感知版 TryConvert：内建命中时与单参重载完全一致；否则若目录注册了该类型的
+    /// 解析器，用 BCL Regex（InvariantCulture、100ms 超时）在编译期校验格式（不执行用户
+    /// 代码，R1 保留），通过即生成 <c>{ParseCall}("literal")</c> 调用。生成语句在元素构造
+    /// 阶段执行一次，不逐帧解析（R2 放宽口径，spec/02 §1）。
+    /// </summary>
+    public static bool TryConvert(UiTypeShape shape, string literal, UiLiteralParserDef? parser,
+        out string? csharpExpr, out string? error)
+    {
+        if (HasConverter(shape))
+            return TryConvert(shape, literal, out csharpExpr, out error);
+
+        if (parser is null)
+        {
+            csharpExpr = null;
+            error = $"has no literal converter for '{shape.CanonicalKey}'; write an {{expression}} instead";
+            return false;
+        }
+
+        if (parser.Pattern is { } pattern
+            && !Regex.IsMatch(literal.Trim(), pattern, RegexOptions.CultureInvariant, ParserRegexTimeout))
+        {
+            csharpExpr = null;
+            error = $"expects {parser.Hint ?? pattern}, got '{literal}'";
+            return false;
+        }
+
+        csharpExpr = $"{parser.ParseCall}({EscapeString(literal)})";
+        error = null;
+        return true;
     }
 
     private static bool ConvertDouble(string literal, string suffix, out string? csharpExpr, out string? error)

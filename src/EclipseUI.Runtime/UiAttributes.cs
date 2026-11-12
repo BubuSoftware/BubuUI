@@ -56,3 +56,30 @@ public sealed class UiSlotAttribute : Attribute
 
     public string Name { get; }
 }
+
+/// <summary>
+/// 声明式字面量解析器（design/14 §14.7.3，2026-11-12）：让第三方类型也能在模板里写
+/// <c>P="literal"</c>。编译期只读符号校验一个 <c>public static T Parse(string)</c>
+/// 方法（T 为被标注类型），字面量格式用 <see cref="Pattern"/> 由 BCL Regex 校验
+/// （框架代码，不执行用户程序集，R1 保留），生成 <c>global::Ns.T.Parse("literal")</c>
+/// 调用——元素构造时执行一次，不逐帧解析（R2 放宽口径见 spec/02）。
+/// </summary>
+[AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct,
+    AllowMultiple = false, Inherited = false)]
+public sealed class UiLiteralParserAttribute : Attribute
+{
+    /// <summary>静态方法名；必须是 <c>public static T {ParseMethod}(string)</c>，T 为被标注的类型。</summary>
+    public string ParseMethod { get; set; } = "Parse";
+
+    /// <summary>
+    /// 可选。编译期由编译器用 BCL Regex（CultureInvariant，100ms 超时）校验字面量，
+    /// 使 EUI003 仍即时报出；不填则格式错误只能由运行时 Parse 抛异常发现。
+    /// </summary>
+    public string? Pattern { get; set; }
+
+    /// <summary>EUI003 消息里的期望格式说明；缺省时回显 Pattern。</summary>
+    public string? Hint { get; set; }
+
+    /// <summary>可选值候选，供 LSP 在引号内补全（与 EnumMembers 同一档位）。</summary>
+    public string[]? Candidates { get; set; }
+}
