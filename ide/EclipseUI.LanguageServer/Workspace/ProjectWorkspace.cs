@@ -54,7 +54,7 @@ public sealed class ProjectWorkspace
     {
         // 必须早于 Discover()/ProjectEvaluator.Evaluate() 被 JIT：这两个方法体内含
         // Microsoft.Build 类型，而 runtime 资产被排除，只能靠 Locator 的解析回调。
-        MsBuildEnvironment.Ensure();
+        MsBuildEnvironment.Ensure(log);
         _options = options;
         _log = log;
         _evaluations = new Lazy<IReadOnlyList<ProjectEvaluation>>(Discover, LazyThreadSafetyMode.ExecutionAndPublication);
@@ -269,7 +269,7 @@ public sealed class ProjectWorkspace
 
     private IReadOnlyList<ProjectEvaluation> Discover()
     {
-        MsBuildEnvironment.Ensure();
+        MsBuildEnvironment.Ensure(_log);
         var root = _options.ProbeRoot;
         var result = new List<ProjectEvaluation>();
         if (string.IsNullOrEmpty(root) || !Directory.Exists(root)) return result;
