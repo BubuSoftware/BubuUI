@@ -615,7 +615,16 @@ parentN.Children.Add(cmp0.Root);
 - 转换器查找键固定为 `UiTypeShape.CanonicalKey`（内置类型 = C# 关键字名，其余 = 命名空间限定全名），
   **不得**用 `ClrTypeDisplayName`（自带 `global::`）当键（v2，与 14.5.1 对齐）。
 - 无转换器的类型：字面量报 EUI023，提示用 `{expr}`。
-- **第三方自定义转换器 v1 不支持**：编译期执行用户转换器代码违反 R1。自定义类型请用表达式构造。
+- ~~第三方自定义转换器 v1 不支持：编译期执行用户转换器代码违反 R1~~ →
+  **✅ 2026-11-12 改为声明式扩展**：类型标注 `[UiLiteralParser]`（`UiAttributes.cs`）并提供
+  `public static T Parse(string)`，`UiCatalogFactory` 只读符号校验签名（R1 保留：不执行用户
+  程序集）后进 `UiCatalog.LiteralParsers`（按 `CanonicalKey` 索引，手写结构相等）；不合规声明进
+  EUI026。`UiLiterals.HasConverter/TryConvert` 的 parser 重载内建优先，命中后用特性 `Pattern`
+  （BCL Regex、CultureInvariant、100ms 超时）在编译期校验格式（EUI003 保留），生成
+  `{ParseCall}("literal")`——元素构造时执行一次，不逐帧（R2 放宽，spec/02 §1，2026-11-12）。
+  `Hint` 进 EUI003；`Candidates` 供 LSP 引号内补全（`CompletionProvider.Values`，kind
+  `LiteralValue`→LSP Value）与 hover。**Emitter 无改动**：`ConvertedLiteral` 本就承载任意
+  C# 表达式。测试：`C3LiteralAndDiagnosticsTests`（6 例）+ `CatalogScannerTests`（3 例）。
 
 ### 14.7.4 表达式作用域与求值
 

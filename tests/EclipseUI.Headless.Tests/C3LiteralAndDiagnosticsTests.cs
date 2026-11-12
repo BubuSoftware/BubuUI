@@ -26,7 +26,7 @@ public class C3LiteralAndDiagnosticsTests
     /// 探针标签：目录从真实运行时扫描而来（§14.11.1），这里在其之上追加一个合成标签，
     /// 专门用来测 C3 转换器与 EUI023——不是第二份生产目录，只服务诊断测试。
     /// </summary>
-    private static UiCatalog CatalogWithProbe()
+    private static UiCatalog CatalogWithProbe(IReadOnlyList<UiLiteralParserDef>? literalParsers = null)
     {
         var built = UiTestCatalogs.BuiltIn();
         UiPropDef P(string name, UiTypeShape shape) => new(
@@ -45,12 +45,13 @@ public class C3LiteralAndDiagnosticsTests
                 ["Delay"] = P("Delay", new UiTypeShape(UiTypeShapeKind.Other, "System.TimeSpan", [])),
                 ["Mode"] = P("Mode", new UiTypeShape(UiTypeShapeKind.Enum, "Probe.Weather", ["Cloudy", "Sunny"])),
                 ["Widget"] = P("Widget", new UiTypeShape(UiTypeShapeKind.Other, "Probe.Widget", [])),
+                ["Badge"] = P("Badge", new UiTypeShape(UiTypeShapeKind.Other, "Probe.BadgeTone", [])),
             },
             new Dictionary<string, UiEventDef>(StringComparer.Ordinal),
             new Dictionary<string, UiParameterDef>(StringComparer.Ordinal),
             new Dictionary<string, UiSlotDef>(StringComparer.Ordinal), []);
         return new UiCatalog(built.Elements.Append(probe), built.HiddenTags, built.Problems,
-            built.AttachedProperties);
+            built.AttachedProperties, literalParsers: literalParsers);
     }
 
     [Fact]
@@ -301,5 +302,84 @@ public class C3LiteralAndDiagnosticsTests
         var shape = new UiTypeShape(kind, key, kind == UiTypeShapeKind.Enum ? ["Cloudy", "Sunny"] : []);
         var ok = UiLiterals.TryConvert(shape, literal, out _, out error);
         return ok;
+    }
+
+    // ---- 声明式字面量解析器（design/14 §14.7.3，2026-11-12）----
+
+    private static readonly UiLiteralParserDef BadgeParser = new(
+        "Probe.BadgeTone", "global::Probe.BadgeTone.Parse",
+        @"^(Neutral|Success|Warning|Danger)$", "one of: Neutral, Success, Warning, Danger",
+        ["Neutral", "Success", "Warning", "Danger"]);
+
+    [Fact]
+    public void ParserLiteral_ConvertsToParseCall()
+    {
+        var catalog = CatalogWithProbe([BadgeParser]);
+        var (doc, diags) = ParseAnalyze(catalog, "@using Probe\n" + """<Probe Badge="Warning" />""");
+        Assert.Empty(diags);
+        Assert.Equal("global::Probe.BadgeTone.Parse(\"Warning\")",
+            doc.Nodes.OfType<UiElement>().Single().Attributes[0].ConvertedLiteral);
+    }
+
+    [Fact]
+    public void ParserLiteral_PatternMismatch_IsFormatErrorWithHint()
+    {
+        var catalog = CatalogWithProbe([BadgeParser]);
+        var (_, diags) = ParseAnalyze(catalog, "@using Probe\n" + """<Probe Badge="warn" />""");
+        var diag = Assert.Single(diags);
+        Assert.Equal(UiDiagnostics.LiteralFormat, diag.Code);
+        Assert.Contains("Neutral", diag.Message);          // Hint 进 EUI003
+    }
+
+    [Fact]
+    public void ParserLiteral_WithoutRegisteredParser_IsNoLiteralConverter()
+    {
+        var catalog = CatalogWithProbe();                  // 不带解析器表
+        var (_, diags) = ParseAnalyze(catalog, "@using Probe\n" + """<Probe Badge="Warning" />""");
+        var diag = Assert.Single(diags);
+        Assert.Equal(UiDiagnostics.NoLiteralConverter, diag.Code);
+        Assert.Contains("write an {expression} instead", diag.Message);
+    }
+
+    [Fact]
+    public void ParserLiteral_WithoutPattern_AcceptsAnyLiteral()
+    {
+        var loose = new UiLiteralParserDef("Probe.BadgeTone", "global::Probe.BadgeTone.Parse",
+            null, null, []);
+        var catalog = CatalogWithProbe([loose]);
+        var (doc, diags) = ParseAnalyze(catalog, "@using Probe\n" + """<Probe Badge="anything goes" />""");
+        Assert.Empty(diags);
+        Assert.Equal("global::Probe.BadgeTone.Parse(\"anything goes\")",
+            doc.Nodes.OfType<UiElement>().Single().Attributes[0].ConvertedLiteral);
+    }
+
+    [Fact]
+    public void ParserLiteral_BuiltinConverterTakesPrecedence()
+    {
+        // 即使目录错误地给内建类型注册了解析器，内建 int 转换仍然优先（TryConvert 顺序保证）。
+        var impostor = new UiLiteralParserDef("int", "global::Probe.Never", null, null, []);
+        var catalog = CatalogWithProbe([impostor]);
+        var (doc, diags) = ParseAnalyze(catalog, "@using Probe\n" + """<Probe Age="42" />""");
+        Assert.Empty(diags);
+        Assert.Equal("(short)42", doc.Nodes.OfType<UiElement>().Single().Attributes[0].ConvertedLiteral);
+    }
+
+    [Fact]
+    public void LiteralParserDef_HasValueEqualityForIncrementalCache()
+    {
+        // 数组按引用比较会让 §14.10.3 的增量缓存永远判定"已变化"，所以手写结构相等。
+        var a = new UiCatalog(Array.Empty<UiElementDef>(), Array.Empty<UiHiddenTag>(),
+            Array.Empty<UiMetadataProblem>(), literalParsers: [BadgeParser]);
+        var b = new UiCatalog(Array.Empty<UiElementDef>(), Array.Empty<UiHiddenTag>(),
+            Array.Empty<UiMetadataProblem>(), literalParsers:
+            [
+                new UiLiteralParserDef("Probe.BadgeTone", "global::Probe.BadgeTone.Parse",
+                    @"^(Neutral|Success|Warning|Danger)$", "one of: Neutral, Success, Warning, Danger",
+                    ["Neutral", "Success", "Warning", "Danger"]),
+            ]);
+        Assert.Equal(a, b);
+        var different = new UiCatalog(Array.Empty<UiElementDef>(), Array.Empty<UiHiddenTag>(),
+            Array.Empty<UiMetadataProblem>(), literalParsers: [BadgeParser with { Candidates = ["Neutral"] }]);
+        Assert.NotEqual(a, different);
     }
 }

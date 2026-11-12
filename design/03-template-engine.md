@@ -667,6 +667,9 @@ parent0.Children.Add(c0.Root);   // 最后挂到父级
 - 使用 `InvariantCulture`；小数点固定 `.`，不使用千分位；`EUI003` 消息给出期望格式示例。
 - 无转换器的类型：字面量报 `EUI023`，提示用 `{expr}` 代替 —— ✅ C3：`UiLiterals.HasConverter(shape)`
   区分"无转换器"（EUI023）与"有转换器但格式/范围/成员错"（EUI003），D14 关闭。
+  ✅ 2026-11-12 扩展：第三方可用声明式解析器 `[UiLiteralParser]`（`public static T Parse(string)`，
+  编译期只读符号 + Pattern Regex 校验，生成 `T.Parse("...")`；R1 保留，R2 放宽为"构造时一次、
+  不逐帧"，见 spec/02 §1）进字面量表，不合规声明进 EUI026。
 
 ### 3.4.2 内置转换器
 
@@ -691,6 +694,8 @@ parent0.Children.Add(c0.Root);   // 最后挂到父级
 - 枚举不接受 `A, B` 组合；Flags 用表达式 `{ MyFlags.A | MyFlags.B }`。
 - TimeSpan 单位只允许单个：`1h30m` 不是字面量；用 `{ TimeSpan.Parse("01:30:00") }` 或 `1.5h`。
 - 字面量中的 `{`/`}`/`<` 不受文本特殊字符规则影响（它们只在引号内是普通字符）。
+- `[UiLiteralParser]` 类型（✅ 2026-11-12）：格式由特性 `Pattern` 编译期校验（不填则运行时
+  `Parse` 自行抛错）；`Hint` 进 EUI003；`Candidates` 供 LSP 引号内补全；内建类型优先于解析器。
 
 ### 3.4.3 字面量与表达式的边界
 

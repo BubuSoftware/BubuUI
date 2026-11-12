@@ -58,6 +58,68 @@ public class CatalogScannerTests
             Assert.Contains(expected, tags);
     }
 
+    // ---- 声明式字面量解析器（design/14 §14.7.3，2026-11-12）----
+
+    [Fact]
+    public void LiteralParser_ValidDeclaration_EntersCatalog()
+    {
+        var catalog = Scan("""
+            using EclipseUI;
+            namespace Probe;
+
+            [UiLiteralParser(Pattern = "^(A|B)$", Hint = "one of: A, B",
+                Candidates = new[] { "A", "B" })]
+            public readonly struct Tone
+            {
+                public static Tone Parse(string s) => default;
+            }
+            """);
+        var parser = Assert.Single(catalog.LiteralParsers);
+        Assert.Equal("Probe.Tone", parser.CanonicalKey);
+        Assert.Equal("global::Probe.Tone.Parse", parser.ParseCall);
+        Assert.Equal("^(A|B)$", parser.Pattern);
+        Assert.Equal("one of: A, B", parser.Hint);
+        Assert.Equal(new[] { "A", "B" }, parser.Candidates);
+        Assert.DoesNotContain(catalog.Problems, p => p.DeclaringTypeName.Contains("Probe.Tone"));
+    }
+
+    [Fact]
+    public void LiteralParser_BadSignature_IsMetadataProblem()
+    {
+        var catalog = Scan("""
+            using EclipseUI;
+            namespace Probe;
+
+            [UiLiteralParser]
+            public readonly struct Tone
+            {
+                public static string Parse(string s) => s;   // 返回类型不是自身 → EUI026
+            }
+            """);
+        Assert.Empty(catalog.LiteralParsers);
+        var problem = Assert.Single(catalog.Problems,
+            p => p.DeclaringTypeName.Contains("Probe.Tone"));
+        Assert.Equal(UiDiagnostics.MetadataDeclarationInvalid, problem.Code);
+        Assert.Contains("public static Tone Parse(string)", problem.Message);
+    }
+
+    [Fact]
+    public void LiteralParser_CustomMethodName_IsHonored()
+    {
+        var catalog = Scan("""
+            using EclipseUI;
+            namespace Probe;
+
+            [UiLiteralParser(ParseMethod = "FromName", Pattern = "^(A|B)$")]
+            public readonly struct Tone
+            {
+                public static Tone FromName(string s) => default;
+            }
+            """);
+        var parser = Assert.Single(catalog.LiteralParsers);
+        Assert.Equal("global::Probe.Tone.FromName", parser.ParseCall);
+    }
+
     [Fact]
     public void BuiltInCatalog_ExcludesInfrastructureAbstractAndBaseTypes()
     {
