@@ -116,7 +116,13 @@ function activate(context) {
   };
 
   client = new LanguageClient('eclipseui', 'EclipseUI Language Server', serverOptions, clientOptions);
-  client.start();
+  // v9 的 start() 返回 Promise。server 启动失败时，库内部 doInitialize -> stop() 会再抛一次
+  // "Client is not running"，不接住就会变成一串 unhandled rejection 刷满调试控制台。
+  // 崩溃/重启由 languageclient 自己管理，这里只负责提示和收口这个 Promise。
+  const startedClient = client;
+  Promise.resolve(startedClient.start()).catch((error) => {
+    vscode.window.showErrorMessage(`EclipseUI: language server failed to start — ${error.message}`);
+  });
 
   // 反编译虚拟文档（design/06 §6.3 L3 第 4 路）：dll/nuget 引用的控件没有源码可达，
   // server 端用 ILSpy 引擎把类型反编译成 C#，definition 返回 eui-decompiled: uri；
@@ -157,15 +163,23 @@ function activate(context) {
           'EclipseUI: restart the window (or run "Reload Tag Catalog") to apply catalog changes.');
       }
     }),
-    { dispose: () => { client.stop(); } },
+    {
+      dispose: () => {
+        // deactivate() 可能已经把 client 清空；重复 stop 在 startFailed 状态下还会 reject。
+        // 两处都吞掉，保证关窗口时不抛 "Cannot read properties of undefined" / 二次异常。
+        const stopping = client;
+        if (!stopping) return;
+        Promise.resolve(stopping.stop()).catch(() => {});
+      },
+    },
   );
 }
 
 function deactivate() {
-  if (!client) return undefined;
+  if (!client) return Promise.resolve();
   const stopping = client;
   client = undefined;
-  return stopping.stop();
+  return Promise.resolve(stopping.stop()).catch(() => {});
 }
 
 module.exports = { activate, deactivate };
