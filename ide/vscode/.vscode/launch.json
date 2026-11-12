@@ -9,7 +9,22 @@
         "--extensionDevelopmentPath=${workspaceFolder}",
         "${workspaceFolder}/../../"
       ],
-      "outFiles": []
+      // 不要用空的 outFiles：js-debug 会把它当成 resolveSourceMapLocations=[]，
+      // 于是对扩展宿主里所有脚本（含 VS Code 内置扩展）都尝试加载 source map。
+      // VS Code 内置扩展带 //# sourceMappingURL 但不发行 .map，就会刷出 ENOENT 警告。
+      "outFiles": [
+        "${workspaceFolder}/**/*.js",
+        "!**/node_modules/**"
+      ],
+      "resolveSourceMapLocations": [
+        "${workspaceFolder}/**",
+        "!**/node_modules/**"
+      ],
+      "skipFiles": [
+        "<node_internals>/**",
+        "**/resources/app/extensions/**",
+        "**/node_modules/**"
+      ]
     }
   ]
 }
