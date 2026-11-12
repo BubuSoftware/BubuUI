@@ -353,6 +353,15 @@ public static class CompletionProvider
             items.Add(new UiCompletionItem("false", UiCompletionKind.Keyword, "bool"));
         }
 
+        // 声明式字面量解析器（design/14 §14.7.3）：[UiLiteralParser] Candidates 提供值候选，
+        // 与 EnumMembers 同一档位；无 Candidates 的解析器类型静默返回空，不猜。
+        if (catalog.FindLiteralParser(shape.CanonicalKey) is { } parser)
+        {
+            foreach (var value in parser.Candidates)
+                items.Add(new UiCompletionItem(value, UiCompletionKind.LiteralValue,
+                    parser.CanonicalKey, parser.Hint));
+        }
+
         return new UiCompletionList(replacement, items);
     }
 

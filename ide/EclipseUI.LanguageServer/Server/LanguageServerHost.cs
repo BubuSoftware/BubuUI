@@ -844,6 +844,7 @@ public sealed class LanguageServerHost
         UiCompletionKind.AttachedProperty => CompletionKindDto.Property,
         UiCompletionKind.Directive => CompletionKindDto.Keyword,
         UiCompletionKind.EnumMember => CompletionKindDto.EnumMember,
+        UiCompletionKind.LiteralValue => CompletionKindDto.Value,
         UiCompletionKind.Keyword => CompletionKindDto.Keyword,
         UiCompletionKind.StyleProperty => CompletionKindDto.Property,
         UiCompletionKind.Namespace => CompletionKindDto.Module,

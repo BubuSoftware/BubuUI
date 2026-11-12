@@ -12,6 +12,9 @@ public enum UiCompletionKind
     Directive,
     EnumMember,
     Keyword,
+
+    /// <summary>声明式字面量解析器的值候选（[UiLiteralParser] Candidates，design/14 §14.7.3）。</summary>
+    LiteralValue,
     StyleProperty,
     Namespace,
 

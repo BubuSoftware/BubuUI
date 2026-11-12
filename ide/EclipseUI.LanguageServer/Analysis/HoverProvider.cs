@@ -210,6 +210,14 @@ public static class HoverProvider
         if (candidate.Shape is { Kind: UiTypeShapeKind.Enum } shape)
             lines.Add("values: " + string.Join(", ", shape.EnumMembers));
 
+        // 声明式字面量解析器（design/14 §14.7.3）：给出期望格式或候选值。
+        if (candidate.Shape is not null
+            && catalog.FindLiteralParser(candidate.Shape.CanonicalKey) is { } parser)
+        {
+            lines.Add("literal — " + (parser.Hint ?? parser.Pattern)
+                + (parser.Candidates.Count > 0 ? " (" + string.Join(", ", parser.Candidates) + ")" : ""));
+        }
+
         return string.Join("\n", lines);
     }
 
@@ -229,6 +237,11 @@ public static class HoverProvider
         if (shape.Kind == UiTypeShapeKind.Enum)
             return $"**{candidate.Name}** — `{TypeNames.Bare(shape.CanonicalKey)}`\n\nvalues: " +
                    string.Join(", ", shape.EnumMembers);
+
+        // 声明式字面量解析器（design/14 §14.7.3）：引号内 hover 给期望格式。
+        if (catalog.FindLiteralParser(shape.CanonicalKey) is { } parser)
+            return $"**{candidate.Name}** — `{candidate.TypeDisplay}`\n\nliteral: " +
+                   (parser.Hint ?? parser.Pattern);
 
         return $"**{candidate.Name}** — `{candidate.TypeDisplay}`";
     }
