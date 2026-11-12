@@ -1181,3 +1181,99 @@ Tier 2 诊断来自**同一快照**的生成器运行。单快照 → 单 Compil
 `EclipseUI.Headless.Tests` **372/372**、`EclipseUI.Rendering.Tests` **106/106**；
 全解决方案构建 0 警告 0 错误。design/18 §5.8 闭合（语义着色 Roslyn 化；代码修复 / 签名帮助
 按 4.9.2 可用性保留并记录）；D 编号由维护者分配，本文不代填。
+
+### 12.13 C# 岛转定义接通统一落点链（2026-11-11）
+
+**用户实测**：`@code` 里点类型（`TaskList.ui` 的 `List<TaskItem>` 的 `TaskItem`）F12 返回
+`definition: no result`，尽管 `TaskItem.cs` 就在同一项目里声明了它。标签 / 属性能跳，C# 岛里的
+类型 / 成员不能。
+
+**根因（机制链）**：两条 C# 岛路径——`{expr}` 的 `ExpressionDefinition` 与 `@code` 的
+`CodeBlockDefinition`——最后都只走 `FromLocation`，而它只认两种落点：① 兄弟 code-behind 树
+（`IsCodeBehindTree`）② 能回映进本文档 `@code` 块的成员（`TryMapMemberSpanToUi`）。其余一律
+`null`。声明在**别的** .cs 的类型（`TaskItem`）两条都不命中；元数据 / dll 类型（`List<>`、框架
+类型）更没有 `IsInSource` 位置，第一步就 null。对比标签 / 属性 / Style 跳转走的是完整三路
+`FromSourceLocation`（任意真实源码文件）→ `WorkspaceSourceDefinition`（跨项目源码）→
+`DecompileProvider`（dll 反编译）——C# 岛当初没接上这条兜底链。
+
+**修法**：抽出共享 `SymbolDefinition(analysis, symbol)`，`ExpressionDefinition` /
+`CodeBlockDefinition` 改走它：
+
+1. 有源码位置 → `FromLocation`（本文档回映 / 兄弟 code-behind）?? `FromSourceLocation`（任意真实 .cs）；
+2. 无源码位置 = 元数据符号 → 类型符号取 `OriginalDefinition`、成员取 `ContainingType`，
+   `WorkspaceSourceDefinition`（跨项目源码）?? `DecompileProvider`（反编译，成员级定位）。
+
+局部 / 参数恒有源码位置，走 1 映不回即 null，不会落到 2 拿 `ContainingType` 误跳。找不到真实
+位置就 null，不猜（§8 / design/06 §6.3 口径不变）。`CodeBlockDefinition` 保留 partial 方法
+「先定义部分、再光标处符号」两步，两步都走 `SymbolDefinition`。
+
+**API 真相（反射探针实测，非文档转述）**：元数据名转换 `MetadataFullName` 用
+`INamedTypeSymbol.MetadataName`——实测它含泛型 arity（`List`1` / `Outer`1`）但**不含**命名空间与
+外层类型；嵌套类型 `MetadataName` 只是内层名（`Inner`），需沿 `ContainingType` 用 `+` 拼接，
+命名空间取 `ContainingNamespace.ToDisplayString()`。`N.Outer`1+Inner` 经
+`GetTypeByMetadataName` 往返成立。`FindSourceTypes` / `DecompileProvider` 都按此口径消费。
+
+**测试**：
+
+- 新增 `ProjectSystemTests.Fixture11_CSharpTypeAndMemberJumpToSource`：`@code` 的 `TaskItem`
+  类型引用、`{expr}` 的 `t.Name` / `t.Id` 成员访问都落到 `TaskItem.cs` 真实声明（span 罩住标识符，
+  非反编译、非本文档）。
+- 订正 `ExpressionProbeTests.Definition_DotAndUnknownIdentifiersReturnNull` →
+  `Definition_UnknownIdentifierReturnsNull_BclMemberDecompiles`：未知标识符仍 null；BCL 成员
+  `tasks.Count` 的 `Count` 源码不可达，接通后走反编译，落点是 `List<T>` 的 `Count` 声明
+  （`eui-decompiled:` 虚拟文档，span 罩住 `Count`）——与框架属性跳转同一口径。旧断言「一律 null」
+  是接通前的限制，不是「此处禁止跳转」的规则。
+
+**验证**：`EclipseUI.Ide.Tests` **190/190**（189 + Fixture11）。改动只在 IDE 定义落点，不触
+生成文本 / `#line`（spec/02 契约不变）。D 编号由维护者分配，本文不代填。
+
+### 12.14 BCL 类型关键字 / 泛型名转定义 + 反编译缓存键归一（2026-11-11）
+
+**用户实测**（接 §12.13 发布后）：`String` 跳到**空文件**；`string`、`List`、`int`、`bool`
+F12 **没反应**（找不到实现）。
+
+**根因（机制链，两支独立）**：
+
+1. **关键字 / 泛型名落 `null`**：`CodeBlockDefinition` 的 `token.Parent` switch 原来只有
+   `IdentifierNameSyntax` 一支接类型名。但 `int`/`bool`/`string` 的语法节点是
+   **`PredefinedTypeSyntax`**（预定义类型关键字），`List<TaskItem>` 的 `List` 是
+   **`GenericNameSyntax`**（泛型名）——两者都不是 `IdentifierNameSyntax`，全落 `_ => null`，
+   用户侧就是「F12 没反应」。`String`（大写类型名）走 `IdentifierNameSyntax` 能解析，所以它
+   的症状不同（见第 2 支）。
+2. **反编译缓存键形态漂移（空文件真根因）**：`DecompileProvider` 存 / 取都用 `BuildUri`
+   的原始 uri 当键。但客户端内容提供器回传的不是原始 uri——见下「API 真相」实测：回传形态
+   把空 authority 的三斜杠折叠成一斜杠、并解码 query 的 `%XX`。存 / 取键对不上 → **所有**
+   反编译类型缓存未命中 → 客户端跳空文件（文件名对、内容空）。
+
+**修法**：
+
+1. switch 把 `IdentifierNameSyntax` 扩成 **`SimpleNameSyntax`**（其基类，涵盖
+   `IdentifierNameSyntax` + `GenericNameSyntax`），并新增 **`PredefinedTypeSyntax`** 支：
+   `model.GetSymbolInfo(predefined).Symbol` 给底层 BCL 类型（`int`→`Int32`、`bool`→`Boolean`、
+   `string`→`String`），随后走 §12.13 的统一三路反编译。
+2. `DecompileProvider` 存 / 取都经 `Key(uri)` 归一：用 `new Uri(uri)` 拆组件，重建
+   `scheme + ":" + AbsolutePath + Uri.UnescapeDataString(Query)` 当键。三斜杠 / 一斜杠经
+   `AbsolutePath` 归一、`%60` / `` ` `` 经 query 解码归一，两种回传形态落到同一键。
+
+**API 真相（真实 vscode-uri 包实测，两次纠正臆断）**：客户端内容提供器回传
+`uri.toString(true)`。装真实 `vscode-uri` 包跑 `URI.parse(serverUri).toString(true)`，实测它做
+两件事：① 空 authority 的 `eui-decompiled:///Path.cs` 折叠成 `eui-decompiled:/Path.cs`
+（**三斜杠→一斜杠**，非 file scheme 不补 `//`）；② 解码 query 里的 `%XX`（`List%601` →
+`` List`1 ``）。**斜杠折叠才是空文件的主因**——只 `UnescapeDataString` 补不平斜杠差。
+（第一版曾据源码摘要断言「`toString(true)` 保留 `%XX`、空文件是客户端陈旧缓存」，被用户复现
+否定；装包实测后纠正：query 确实解码、且还有斜杠折叠。教训：uri 往返要拿真实包跑，不靠源码
+摘要推断。）服务端反编译本身一直正常（`String` 11 万字符），断点只在缓存键。
+
+**测试**：
+
+- 新增 `ExpressionProbeTests.Definition_CodeBlockBclTypeDecompilesWithContent`（Theory 5 例）：
+  `@code` 里 `int`/`bool`/`string`/`String`/`List<int>` 光标落在类型名上 → 反编译
+  `Int32`/`Boolean`/`String`/`List`，span 罩住类型名，且 `Content(原始 uri)` 与
+  `Content(客户端回传形态)`（按实测变换：三斜杠→一斜杠 + query 解码）都回传非空同源文本。
+- 新增 `ProjectSystemTests.Fixture12_BclGenericNameDecompilesWithContent`：项目模式
+  （`GeneratedDocument` 映射路径）下 `TaskList.ui` 的 `List<TaskItem>` 的 `List` 反编译
+  `List`1`，原始 / 客户端回传两种形态都命中缓存。
+- 移除诊断期临时探针 `TempProbe_BclTypes`。
+
+**验证**：`EclipseUI.Ide.Tests` **196/196**（190 + Theory 5 + Fixture12）。改动只在 IDE 定义
+落点与反编译缓存键，不触生成文本 / `#line`（spec/02 契约不变）。D 编号由维护者分配，本文不代填。

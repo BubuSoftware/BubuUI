@@ -10,9 +10,10 @@ namespace EclipseUI.LanguageServer.Analysis;
 /// <summary>
 /// 跳转定义（design/06 §6.3 L3）：<c>{expr}</c> 内的标识符 → 探针符号反查
 /// （<see cref="ExpressionProbe.Locate"/>，与悬停/补全同一台机器）；<c>@code</code> 块内
-/// 的 C# → 成员树语义模型；标签名 → 目录里的 CLR 类型反查工作区源码。落点三类：
-/// 本文档（foreach 头变量名、@code 块内声明——<see cref="DocumentAnalysis.TryMapMemberSpanToUi"/>
-/// 回映）、兄弟 <c>{Name}.cs</c>（spec/02 §2.2 文件契约）、工作区 .cs（标签类型声明）。
+/// 的 C# → 成员树语义模型；标签名 → 目录里的 CLR 类型反查工作区源码。C# 岛与标签/属性
+/// 共用统一落点链（<see cref="SymbolDefinition"/>）：本文档（foreach 头变量名、@code 块内
+/// 声明——<see cref="DocumentAnalysis.TryMapMemberSpanToUi"/> 回映）、兄弟 <c>{Name}.cs</c>
+/// （spec/02 §2.2 文件契约）、任意工作区 .cs（类型/成员声明）、跨项目源码、元数据反编译。
 /// 找不到真实落点返回 null 而不是错位置（design/06 的"不猜"口径）。
 /// </summary>
 public static class DefinitionProvider
@@ -107,7 +108,7 @@ public static class DefinitionProvider
                 return new UiDefinition(null, new TextSpan(scope.NameOffset, scope.VarName.Length), local.Name);
         }
 
-        return FromLocation(analysis, symbol.Locations.FirstOrDefault(static l => l.IsInSource), symbol.Name);
+        return SymbolDefinition(analysis, symbol);
     }
 
     // ---- @code 块内的 C#（L3 第三片） ----
@@ -153,8 +154,13 @@ public static class DefinitionProvider
         var token = memberTree.GetRoot().FindToken(treeOffset);
         var symbol = token.Parent switch
         {
-            IdentifierNameSyntax identifier => model.GetSymbolInfo(identifier).Symbol
-                ?? model.GetDeclaredSymbol(identifier),
+            // SimpleNameSyntax 涵盖 IdentifierNameSyntax 与 GenericNameSyntax：点 List<TaskItem>
+            // 的 List 时 token.Parent 是 GenericNameSyntax（不是 IdentifierNameSyntax），符号挂在它上。
+            SimpleNameSyntax name => model.GetSymbolInfo(name).Symbol
+                ?? model.GetDeclaredSymbol(name),
+            // 预定义类型关键字（int/bool/string…）：GetSymbolInfo 给底层 BCL 类型（Int32/Boolean/String），
+            // 走统一三路反编译。不接这支它们会落 _ => null（用户实测「找不到实现」）。
+            PredefinedTypeSyntax predefined => model.GetSymbolInfo(predefined).Symbol,
             VariableDeclaratorSyntax variable => model.GetDeclaredSymbol(variable),
             ParameterSyntax parameter => model.GetDeclaredSymbol(parameter),
             MethodDeclarationSyntax method => model.GetDeclaredSymbol(method),
@@ -169,11 +175,9 @@ public static class DefinitionProvider
         if (symbol is null) return null;
 
         var declared = symbol is IMethodSymbol methodSymbol ? methodSymbol.PartialDefinitionPart ?? methodSymbol.OriginalDefinition : symbol;
-        var definition = FromLocation(analysis, declared.Locations.FirstOrDefault(static l => l.IsInSource), symbol.Name);
-        if (definition is not null) return definition;
-
-        // 声明就在光标处（点在名字上）：跳它自己，让编辑器至少定位/高亮。
-        return FromLocation(analysis, symbol.Locations.FirstOrDefault(static l => l.IsInSource), symbol.Name);
+        // 先按定义部分（partial 方法的声明处）落点，再退回光标处符号本身（点在名字上至少定位/高亮）；
+        // 两者都走统一三路：本文档回映 / 任意真实源码文件 / 元数据反编译。
+        return SymbolDefinition(analysis, declared) ?? SymbolDefinition(analysis, symbol);
     }
 
     // ---- 属性 / 事件 / 组件参数 / 附加属性（L6，§6.9.0 第 4 条） ----
@@ -748,6 +752,47 @@ public static class DefinitionProvider
     }
 
     // ---- 公共：符号声明位置 → 落点三路 ----
+
+    /// <summary>
+    /// C# 岛（<c>{expr}</c> / <c>@code</c>）符号的统一落点，与标签/属性跳转同一口径：
+    /// ① 有源码位置 → 本文档三路（兄弟 code-behind / @code 回映，<see cref="FromLocation"/>）
+    /// 再任意真实源码文件（<see cref="FromSourceLocation"/>）；② 无源码位置 = 元数据符号
+    /// （引用程序集里的类型/成员）→ 跨项目源码（<see cref="WorkspaceSourceDefinition"/>）
+    /// 再反编译（<see cref="DecompileProvider"/>）。局部/参数恒有源码位置，走①映不回即 null，
+    /// 不会落到②拿 ContainingType 误跳。找不到真实位置就 null，不猜（design/06 §6.3）。
+    /// </summary>
+    private static UiDefinition? SymbolDefinition(DocumentAnalysis analysis, ISymbol symbol)
+    {
+        var source = symbol.Locations.FirstOrDefault(static l => l.IsInSource);
+        if (source is not null)
+            return FromLocation(analysis, source, symbol.Name)
+                   ?? FromSourceLocation(analysis, source, symbol.Name);
+
+        var type = (symbol as INamedTypeSymbol ?? symbol.ContainingType)?.OriginalDefinition;
+        if (type is null) return null;
+        var displayName = MetadataFullName(type);
+        if (displayName.Length == 0) return null;
+        var memberName = symbol is INamedTypeSymbol ? null : symbol.Name;
+
+        var workspace = WorkspaceSourceDefinition(analysis, new[] { displayName },
+            memberName is null ? null : new[] { memberName });
+        return workspace ?? DecompileProvider.Definition(analysis, displayName, memberName);
+    }
+
+    /// <summary>
+    /// 类型符号 → Roslyn 元数据全名（<c>GetTypeByMetadataName</c> 口径）：命名空间点分 +
+    /// 嵌套用 <c>+</c> 连接 + 泛型 arity 后缀。<see cref="INamedTypeSymbol.MetadataName"/> 已含
+    /// <c>`1</c> 但不含命名空间与外层类型，需自行拼（实测 <c>N.Outer`1+Inner</c> 可往返）。
+    /// </summary>
+    private static string MetadataFullName(INamedTypeSymbol type)
+    {
+        var parts = new Stack<string>();
+        for (INamedTypeSymbol? current = type; current is not null; current = current.ContainingType)
+            parts.Push(current.MetadataName);
+        var typeName = string.Join("+", parts);
+        var ns = type.ContainingNamespace;
+        return ns is null || ns.IsGlobalNamespace ? typeName : ns.ToDisplayString() + "." + typeName;
+    }
 
     private static UiDefinition? FromLocation(DocumentAnalysis analysis, Location? location, string name)
     {

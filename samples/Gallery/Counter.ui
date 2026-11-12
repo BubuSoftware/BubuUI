@@ -9,11 +9,20 @@
     <Prefs/>
     
     @if (showButton) {
-        <Button OnClick={() => count++}>+1</Button>
+        <Button OnClick={Test}>+1</Button>
     }
 </StackPanel>
 
 @code {
     public int count;
+
     public bool showButton;
+    
+    public bool showButton2 {get; set;}
+
+    public async void Test()
+    {
+        // await Task.Yield();
+        count+=5;
+    }
 }

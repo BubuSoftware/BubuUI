@@ -90,11 +90,28 @@ public static class DecompileProvider
     /// <summary>虚拟文档内容（客户端内容提供器经 eclipseui/decompiledContent 取回）。</summary>
     public static string? Content(string uri)
     {
-        if (Texts.TryGetValue(uri, out var cached)) return cached;
+        var key = Key(uri);
+        if (Texts.TryGetValue(key, out var cached)) return cached;
 
         // 缓存未命中（理论上只在异常时序出现）：有源记录就重编译并回填。
-        if (!Sources.TryGetValue(uri, out var source)) return null;
+        if (!Sources.TryGetValue(key, out var source)) return null;
         return Decompile(source.AssemblyPath, source.FullTypeName, uri);
+    }
+
+    /// <summary>
+    /// 缓存键归一（实测根因，非臆断）：客户端内容提供器回传 <c>uri.toString(true)</c>，
+    /// 用真实 vscode-uri 包实测 <c>URI.parse(serverUri).toString(true)</c> 会做两件事——
+    /// ① 空 authority 的 <c>eui-decompiled:///Path.cs</c> 折叠成 <c>eui-decompiled:/Path.cs</c>
+    /// （三斜杠→一斜杠）；② 解码 query 里的 %XX（泛型 arity <c>%60</c> → <c>`</c>）。
+    /// 服务端 <see cref="BuildUri"/> 存的是三斜杠 + 转义形态，只 UnescapeDataString 补不平
+    /// 斜杠差，于是**所有**反编译类型缓存未命中→客户端跳空文件（文件名对、内容空）。
+    /// 这里用 <see cref="Uri"/> 组件重建规范键：scheme + 绝对路径 + 解码后的 query，
+    /// 两种回传形态归一到同一键。
+    /// </summary>
+    private static string Key(string uri)
+    {
+        var parsed = new Uri(uri);
+        return parsed.Scheme + ":" + parsed.AbsolutePath + Uri.UnescapeDataString(parsed.Query);
     }
 
     private static string? Decompile(string assemblyPath, string fullTypeName, string uri)
@@ -106,8 +123,9 @@ public static class DecompileProvider
         try
         {
             var text = lazy.Value.DecompileTypeAsString(new FullTypeName(fullTypeName));
-            Texts[uri] = text;
-            Sources[uri] = (assemblyPath, fullTypeName);
+            var key = Key(uri);
+            Texts[key] = text;
+            Sources[key] = (assemblyPath, fullTypeName);
             return text;
         }
         catch (Exception)
@@ -151,8 +169,8 @@ public static class DecompileProvider
 
     /// <summary>
     /// 虚拟 uri：<c>eui-decompiled:///TypeName.cs?assembly=...&amp;fullname=...</c>。
-    /// 只用点/字母数字/转义，保证 VS Code Uri 往返（definition → 内容请求）后逐字符一致，
-    /// 服务端缓存键才对得上。
+    /// 各段用 <c>Uri.EscapeDataString</c> 转义（泛型 arity 的 <c>`</c> → <c>%60</c>）；缓存键
+    /// 经 <see cref="Key"/> 归一，编码 / 解码两种回传形态都命中（见 <see cref="Key"/>）。
     /// </summary>
     private static string BuildUri(string assemblyName, string fullTypeName, string simpleName) =>
         $"{Scheme}:///{Uri.EscapeDataString(simpleName)}.cs" +

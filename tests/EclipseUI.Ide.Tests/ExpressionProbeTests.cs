@@ -239,14 +239,57 @@ public class ExpressionProbeTests
         Assert.Null(DefinitionProvider.Definition(analysis, offset));
     }
 
+    /// <summary>
+    /// 未知标识符无处可跳 → null（不猜）。BCL 成员（<c>tasks.Count</c> 的 <c>Count</c>）源码不可达，
+    /// 接通统一三路后走反编译：落点是 <c>List&lt;T&gt;</c> 的 <c>Count</c> 声明（与框架属性跳转同一口径，
+    /// 2026-11-11 前 {expr} 只走 FromLocation，元数据成员一律 null，现已接通）。
+    /// </summary>
     [Fact]
-    public void Definition_DotAndUnknownIdentifiersReturnNull()
+    public void Definition_UnknownIdentifierReturnsNull_BclMemberDecompiles()
     {
-        var dot = TestHost.Analyze("<TextBlock Text={tasks.|Count} />", CodeBehind);
-        Assert.Null(DefinitionProvider.Definition(dot.Analysis, dot.Offset));
-
         var unknown = TestHost.Analyze("<TextBlock Text={noth|ere.Else} />", CodeBehind);
         Assert.Null(DefinitionProvider.Definition(unknown.Analysis, unknown.Offset));
+
+        var count = TestHost.Analyze("<TextBlock Text={tasks.|Count} />", CodeBehind);
+        var definition = DefinitionProvider.Definition(count.Analysis, count.Offset);
+        Assert.NotNull(definition);
+        Assert.StartsWith("eui-decompiled:", definition!.Uri, StringComparison.Ordinal);
+        Assert.Equal("Count", definition.Text!.Substring(definition.Span.Start, definition.Span.Length));
+    }
+
+    /// <summary>
+    /// <c>@code</c> 里的 BCL 类型关键字/泛型名转定义（用户实测「string, List, int, bool 找不到实现」）：
+    /// <c>int/bool/string</c> 是 PredefinedTypeSyntax、<c>List</c> 是 GenericNameSyntax，都不是
+    /// IdentifierNameSyntax——旧 switch 全落 <c>_ =&gt; null</c>。GetSymbolInfo 给底层 BCL 类型
+    /// （Int32/Boolean/String/List`1），走统一三路反编译；内容请求按客户端实际回传形态
+    /// （vscode-uri 实测：三斜杠折叠成一斜杠 + query 解码）也命中缓存，不再跳空文件。
+    /// </summary>
+    [Theory]
+    [InlineData("public in|t x;", "Int32")]
+    [InlineData("public bo|ol x;", "Boolean")]
+    [InlineData("public stri|ng x;", "String")]
+    [InlineData("public Stri|ng x;", "String")]
+    [InlineData("public Li|st<int> x;", "List")]
+    public void Definition_CodeBlockBclTypeDecompilesWithContent(string declaration, string typeName)
+    {
+        var (analysis, offset) = TestHost.Analyze(
+            "@using System\n@using System.Collections.Generic\n@using EclipseUI.Elements\n" +
+            "<TextBlock />\n@code {\n    " + declaration + "\n}\n");
+        var definition = DefinitionProvider.Definition(analysis, offset);
+
+        Assert.NotNull(definition);
+        Assert.StartsWith("eui-decompiled:", definition!.Uri, StringComparison.Ordinal);
+        Assert.Equal(typeName, definition.Name);
+        Assert.False(string.IsNullOrEmpty(definition.Text));
+        Assert.Equal(typeName, definition.Text!.Substring(definition.Span.Start, definition.Span.Length));
+
+        var raw = definition.Uri!;
+        Assert.Equal(definition.Text, DecompileProvider.Content(raw));
+        // 客户端实际回传形态（真实 vscode-uri 包实测 URI.parse(raw).toString(true)）：
+        // 空 authority 三斜杠折叠成一斜杠 + query %XX 解码。这一形态也必须命中缓存。
+        var clientForm = Uri.UnescapeDataString(
+            raw.Replace(DecompileProvider.Scheme + ":///", DecompileProvider.Scheme + ":/"));
+        Assert.Equal(definition.Text, DecompileProvider.Content(clientForm));
     }
 
     // ---- LanguageService 全链路（真实磁盘兄弟文件） ----

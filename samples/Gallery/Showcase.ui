@@ -105,7 +105,7 @@
 
 @code {
     public int mode;
-    public string[] rows = { "row A", "row B" };
+    public String[] rows = { "row A", "row B" };
 
     // spec/02 §2.7：组件没有 .cs。Ref 的目标字段由模板自己声明——@code 成员就是生成的
     // partial 类的成员，模板内的 Ref={…} 与外部消费者（GalleryScene）看到的是同一个字段。

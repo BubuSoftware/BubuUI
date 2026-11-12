@@ -385,6 +385,80 @@ public class ProjectSystemTests
         }
     }
 
+    /// <summary>
+    /// C# 岛里的类型/成员转定义（2026-11-11 用户实测：<c>@code</c> 里点 <c>TaskItem</c> 返回 null）。
+    /// 根因：ExpressionDefinition/CodeBlockDefinition 只走 FromLocation（兄弟 code-behind /
+    /// <c>@code</c> 回映），声明在别的 .cs 的类型无路可走。接通统一三路后：<c>@code</c> 的
+    /// <c>TaskItem</c> 类型引用与 <c>{expr}</c> 的 <c>t.Name</c>/<c>t.Id</c> 成员访问都落到
+    /// TaskItem.cs 的真实声明（不是反编译、不是本文档）。
+    /// </summary>
+    [Fact]
+    public void Fixture11_CSharpTypeAndMemberJumpToSource()
+    {
+        var fixture = Shared.Value;
+        var path = fixture.Gallery("TaskList.ui");
+        var uri = DocumentStore.PathToUri(path);
+        var text = File.ReadAllText(path);
+        fixture.Service.Documents.Open(uri, text, 1);
+        var model = fixture.Gallery("TaskItem.cs");
+
+        // @code 里的类型引用：List<TaskItem> 的 TaskItem。
+        var typeRef = fixture.Service.Definition(uri,
+            text.IndexOf("List<TaskItem>", StringComparison.Ordinal) + "List<".Length + 2);
+        AssertLandsOn(typeRef, model, "TaskItem");
+
+        // {expr} 里的成员访问：foreach 变量 t（TaskItem）的 Name / Id。
+        var nameRef = fixture.Service.Definition(uri,
+            text.IndexOf("{t.Name}", StringComparison.Ordinal) + "{t.".Length + 1);
+        AssertLandsOn(nameRef, model, "Name");
+        var idRef = fixture.Service.Definition(uri,
+            text.IndexOf("{t.Id}", StringComparison.Ordinal) + "{t.".Length + 1);
+        AssertLandsOn(idRef, model, "Id");
+    }
+
+    /// <summary>落点是真实源码文件（非反编译/非本文档），且 span 正好罩住声明标识符。</summary>
+    private static void AssertLandsOn(
+        EclipseUI.LanguageServer.Analysis.UiDefinition? definition, string sourcePath, string identifier)
+    {
+        Assert.NotNull(definition);
+        Assert.False(definition!.Uri is null, "definition has no target uri");
+        Assert.False(definition.Uri!.StartsWith("eui-decompiled:", StringComparison.Ordinal),
+            "fell back to decompilation: " + definition.Uri);
+        Assert.Equal(Path.GetFullPath(sourcePath), definition.Uri, StringComparer.OrdinalIgnoreCase);
+        Assert.True(File.Exists(definition.Uri), "definition target must be a real file on disk");
+        Assert.NotNull(definition.Text);
+        Assert.Equal(identifier, definition.Text!.Substring(definition.Span.Start, definition.Span.Length));
+    }
+
+    /// <summary>
+    /// 项目模式下 <c>@code</c> 的 BCL 泛型名转定义（用户实测「List 找不到实现」）：
+    /// <c>List&lt;TaskItem&gt;</c> 的 <c>List</c> 是 GenericNameSyntax（不是 IdentifierNameSyntax），
+    /// 旧 switch 落 <c>_ =&gt; null</c>。接通统一三路后反编译 <c>List`1</c>，且内容请求按
+    /// 客户端实际回传形态（vscode-uri 实测：三斜杠折叠成一斜杠 + query %60 解码成 `）也命中缓存。
+    /// </summary>
+    [Fact]
+    public void Fixture12_BclGenericNameDecompilesWithContent()
+    {
+        var fixture = Shared.Value;
+        var path = fixture.Gallery("TaskList.ui");
+        var uri = DocumentStore.PathToUri(path);
+        var text = File.ReadAllText(path);
+        fixture.Service.Documents.Open(uri, text, 1);
+
+        var listRef = fixture.Service.Definition(uri,
+            text.IndexOf("List<TaskItem>", StringComparison.Ordinal) + 2);
+        Assert.NotNull(listRef);
+        Assert.StartsWith("eui-decompiled:", listRef!.Uri, StringComparison.Ordinal);
+        Assert.Equal("List", listRef.Name);
+        Assert.False(string.IsNullOrEmpty(listRef.Text));
+        Assert.Equal("List", listRef.Text!.Substring(listRef.Span.Start, listRef.Span.Length));
+
+        Assert.Equal(listRef.Text, DecompileProvider.Content(listRef.Uri!));
+        var clientForm = Uri.UnescapeDataString(listRef.Uri!.Replace(
+            DecompileProvider.Scheme + ":///", DecompileProvider.Scheme + ":/"));
+        Assert.Equal(listRef.Text, DecompileProvider.Content(clientForm));
+    }
+
     /// <summary>与 VS Code <c>Uri.toString()</c> 同形：小写盘符 + <c>%3A</c>。</summary>
     private static string EditorUri(string path)
     {
