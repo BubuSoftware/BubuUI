@@ -120,6 +120,13 @@ public static class UiDiagnostics
     // 模板自身仍然合法，只是「对外 API」这件事没发生。要暴露参数请写同名 .cs。
     public const string ParameterInCodeBlock = "EUI057";
 
+    // E6（design/19 §4/§7/§8，样式属性自定义化）：[UiStyleProperty] 标注字段的声明问题
+    // （类型非 StyledProperty<T> 闭包 / T 含泛型形参 / 字段非 public static readonly /
+    // Name 解析为空）与样式属性名冲突（用户 vs 内建、用户 vs 用户跨程序集——同名即报，
+    // Error 不静默吞掉作者意图；冲突方不进目录，目录取内建）。
+    public const string StylePropertyDeclarationInvalid = "EUI058";
+    public const string StylePropertyNameConflict = "EUI059";
+
     // 语法诊断
     public const string Syntax = "EUI100";
 

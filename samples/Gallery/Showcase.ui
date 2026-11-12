@@ -33,6 +33,8 @@
     <Button Class="primary" Style="CornerRadius: 18">class=primary paint + inline CornerRadius override</Button>
     <Button Class="tool primary">tool + primary stacked (array order: later wins)</Button>
 
+    @* design/19 P1 (see the custom-property block further down for the visible inline demo). *@
+
     <TextBlock TextWrapping="Wrap" FontSize="13">Nested collapse - structural selectors compile to derived classes and inject into the static subtree (E4)</TextBlock>
     <StackPanel Class="card" Gap="8">
         <TextBlock TextWrapping="Wrap" Class="hint">descendant with class constraint gets card__text-block-hint</TextBlock>
@@ -88,6 +90,20 @@
         </ScrollViewer>
     </Grid>
 
+    @* design/19 P1: custom style properties - [UiStyleProperty] fields in the app assembly
+       (BadgeStyles.cs) join the catalog union, so inline Style= writes them like any built-in.
+       Value forms on show:
+         Glow: 6            number (bare literal)
+         Tone: Success      enum keyword - member table checked at compile time
+         BadgeLabel: inline keyword passes through as a string on string properties
+                            (a quoted "..." literal is the other form, used in app.eustyle)
+       theme() is rejected on custom properties (EUI052 "does not accept theme(dark, light)")
+       and $variables stay number/color only (EUI050). The Ref + {InlineDesc} caption below
+       reads the values back off this element after Style= applied - storage-layer proof
+       without a painter. *@
+    <TextBlock TextWrapping="Wrap" FontSize="13">Custom style properties - catalog union from [UiStyleProperty]; inline Style= writes the local layer</TextBlock>
+    <TextBlock TextWrapping="Wrap" Ref={inlineBadge} FontSize="12" Style="Glow: 6; Tone: Success; BadgeLabel: inline">{InlineDesc}</TextBlock>
+
     <TextBlock TextWrapping="Wrap" FontSize="13">SwitchBlock - conditional branches rebuilt on state</TextBlock>
     <Button OnClick={() => mode = (mode + 1) % 3}>Cycle mode (currently {mode})</Button>
     @switch (mode) {
@@ -110,4 +126,14 @@
     // spec/02 §2.7：组件没有 .cs。Ref 的目标字段由模板自己声明——@code 成员就是生成的
     // partial 类的成员，模板内的 Ref={…} 与外部消费者（GalleryScene）看到的是同一个字段。
     public VirtualizingStackPanel virtualList = null!;
+
+    // design/19：Ref + 内联 Style= —— 元素构造后三种值已写进 local 层，渲染期读回成文案
+    // （属性访问形态与 {mode} 同一条表达式通道；Ref 在 Build 里先于首次渲染赋值）。
+    public TextBlock inlineBadge = null!;
+
+    public string InlineDesc => inlineBadge is null
+        ? ""
+        : $"inline Style= (local layer): Glow={inlineBadge.GetValue(BadgeStyles.GlowProperty)} · " +
+          $"Tone={inlineBadge.GetValue(BadgeStyles.ToneProperty)} · " +
+          $"BadgeLabel=\"{inlineBadge.GetValue(BadgeStyles.BadgeLabelProperty)}\"";
 }

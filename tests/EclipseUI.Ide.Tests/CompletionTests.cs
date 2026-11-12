@@ -172,6 +172,34 @@ public class CompletionTests
         Assert.Equal("CornerRadius: ", Item(list, "CornerRadius").Text);
     }
 
+    /// <summary>
+    /// design/19 §9 值候选：光标在 <c>Prop: |</c> 之后时按目录形态给值——
+    /// enum 属性列成员表（合成目录注入自定义标注属性，内置属性没有 enum 形态）。
+    /// </summary>
+    [Fact]
+    public void Values_OfferEnumMembersForStylePropertyAtValuePosition()
+    {
+        var tone = new StylePropertyDef("Tone", StyleValueKind.Enum,
+            "global::Probe.BadgeStyles.ToneProperty", ResourceField: null,
+            "global::Probe.BadgeStyles", IsBuiltIn: false,
+            "global::Probe.Tone", new[] { "Danger", "Neutral", "Success" });
+        var catalog = new UiCatalog(TestHost.Catalog.Elements, Array.Empty<UiHiddenTag>(),
+            Array.Empty<UiMetadataProblem>(),
+            styleProperties: new StylePropertyCatalog(new[] { tone }, Array.Empty<UiMetadataProblem>()));
+        var (analysis, offset) = TestHost.Analyze(Using + "<Button Style=\"Tone: |\" />", catalog: catalog);
+
+        var list = CompletionProvider.Complete(analysis, catalog, offset);
+
+        Assert.Equal(new[] { "Danger", "Neutral", "Success" },
+            list.Items.Select(i => i.Label).ToArray());
+        Assert.All(list.Items, i => Assert.Equal(UiCompletionKind.EnumMember, i.Kind));
+
+        // 属性名位置（没跟冒号）不受值分支影响，仍列属性名。
+        var (nameAnalysis, nameOffset) = TestHost.Analyze(Using + "<Button Style=\"|\" />", catalog: catalog);
+        var nameList = CompletionProvider.Complete(nameAnalysis, catalog, nameOffset);
+        Assert.Equal(UiCompletionKind.StyleProperty, Item(nameList, "Tone").Kind);
+    }
+
     [Fact]
     public void Values_OfferEnumMembers()
     {

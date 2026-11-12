@@ -227,8 +227,16 @@ public static class HoverProvider
         {
             var property = catalog.StyleProperties.Find(context.Prefix);
             if (property is null) return null;
-            return $"**Style:{property.Name}** — " +
-                   (property.Kind == StyleValueKind.Color ? "color (hex or `theme(dark, light)`)" : "number");
+            var kindText = property.Kind switch
+            {
+                StyleValueKind.Color => "color (hex or `theme(dark, light)`)",
+                StyleValueKind.Number => "number",
+                StyleValueKind.Enum when property.Candidates is { Count: > 0 } members =>
+                    "enum keyword — one of: " + string.Join(", ", members),
+                StyleValueKind.Enum => "enum keyword",
+                _ => "string",
+            };
+            return $"**Style:{property.Name}** — {kindText}";
         }
 
         var candidate = analysis.FindAttribute(catalog, context);

@@ -13,14 +13,14 @@ using Xunit;
 namespace EclipseUI.Compiler.Tests;
 
 /// <summary>
-/// E1（design/17 §4/§5）：Eustyle 样式表解析器、C# 生成器与 .eustyle/@style 管线。
-/// 诊断码：EUI050（语法/不支持形态）、EUI051（未知属性）、EUI052（值类型不符）。
+/// E1（design/17 §4/§5）：Eustyle 样式表解析器、C# 生成器与 .eustyle/@style 管线�?
+/// 诊断码：EUI050（语�?不支持形态）、EUI051（未知属性）、EUI052（值类型不符）�?
 /// </summary>
 public class EustyleTests
 {
-    // ---------- 解析器 ----------
+    // ---------- 解析�?----------
 
-    /// <summary>真实符号派生的属性目录（扫描 Runtime + Rendering，绝不手写固定表）。</summary>
+    /// <summary>真实符号派生的属性目录（扫描 Runtime + Rendering，绝不手写固定表）�?/summary>
     private static StylePropertyCatalog Catalog => UiTestCatalogs.StyleProperties();
 
     private static (EustyleStylesheet Sheet, List<UiDiagnostic> Diags) Parse(string source, int offset = 0)
@@ -219,12 +219,12 @@ public class EustyleTests
 
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.StyleUnknownProperty, diag.Code);
-        // 'colour' 在宿主文件中的绝对位置：100 + 14（第二行第 5 个字符起）
+        // 'colour' 在宿主文件中的绝对位置：100 + 14（第二行�?5 个字符起�?
         Assert.True(diag.Span.Start >= 100);
         Assert.Equal("colour".Length, diag.Span.Length);
     }
 
-    // ---------- C# 生成器 ----------
+    // ---------- C# 生成�?----------
 
     [Fact]
     public void Generator_EmitsDefineChainWithFullyQualifiedTypes()
@@ -232,19 +232,19 @@ public class EustyleTests
         var (sheet, diags) = Parse(".primary { Background: theme(#22a064, #1c8c58); }\n.flat { Background: #aaa; CornerRadius: 1.5; }");
         Assert.Empty(diags);
 
-        var code = EustyleGenerator.EmitDefines(sheet, "registry");
+        var code = EustyleGenerator.EmitDefines(sheet, "registry", Catalog);
 
         Assert.Contains("registry.Define(\"primary\", s =>", code);
         Assert.Contains("new global::EclipseUI.Rendering.ThemeColor(new global::EclipseUI.Rendering.Color(34, 160, 100), new global::EclipseUI.Rendering.Color(28, 140, 88))", code);
         Assert.Contains("registry.Define(\"flat\", s =>", code);
         Assert.Contains("new global::EclipseUI.Rendering.Color(170, 170, 170)", code);
         Assert.Contains("s.CornerRadius(1.5);", code);
-        // 值顺序与声明序一致（theme 的 dark 在 light 之前）
+        // 值顺序与声明序一致（theme �?dark �?light 之前�?
         Assert.True(code.IndexOf("34, 160, 100", StringComparison.Ordinal) <
                     code.IndexOf("28, 140, 88", StringComparison.Ordinal));
     }
 
-    // ---------- 生成器契约（Roslyn 驱动） ----------
+    // ---------- 生成器契约（Roslyn 驱动�?----------
 
     private sealed class TestAdditionalText : AdditionalText
     {
@@ -259,8 +259,8 @@ public class EustyleTests
         public override string Path { get; }
 
         /// <summary>
-        /// 由 <see cref="RunWith"/> 在拿到 code-behind 后填入：<c>@namespace</c> 是必填契约
-        /// （spec/02 §2.2），而夹具在测试体里构造时还看不到 code-behind。
+        /// �?<see cref="RunWith"/> 在拿�?code-behind 后填入：<c>@namespace</c> 是必填契�?
+        /// （spec/02 §2.2），而夹具在测试体里构造时还看不到 code-behind�?
         /// </summary>
         public string DeclaredNamespace { get; set; } = NamespaceDeclarationFixture.SyntheticNamespace;
 
@@ -273,8 +273,8 @@ public class EustyleTests
 
     private static GeneratorRunResult RunWith(string codeBehind, params AdditionalText[] texts)
     {
-        // .ui 的声明与 code-behind 的命名空间必须成对规整，否则 partial 合并不上、
-        // {expr} 看不到 code-behind 成员（spec/02 §2.2）。
+        // .ui 的声明与 code-behind 的命名空间必须成对规整，否则 partial 合并不上�?
+        // {expr} 看不�?code-behind 成员（spec/02 §2.2）�?
         var fixture = NamespaceDeclarationFixture.Prepare("Probe.ui", codeBehind);
         foreach (var text in texts.OfType<TestAdditionalText>())
             text.DeclaredNamespace = NamespaceDeclarationFixture.Prepare(text.Path, codeBehind).NamespaceName;
@@ -309,7 +309,7 @@ public class EustyleTests
         return result.GeneratedSources.Single(s => hintPredicate(s.HintName)).SourceText.ToString();
     }
 
-    /// <summary>生成产物必须过 C# 语法解析（E1 首版曾发射残缺 lambda，Contains 断言没拦住、画廊真实构建才暴露）。</summary>
+    /// <summary>生成产物必须�?C# 语法解析（E1 首版曾发射残�?lambda，Contains 断言没拦住、画廊真实构建才暴露）�?/summary>
     private static void AssertGeneratedCodeParses(string code)
     {
         var errors = CSharpSyntaxTree.ParseText(code)
@@ -357,7 +357,7 @@ public class EustyleTests
         var result = Run(new TestAdditionalText("Probe.ui", ui));
         Assert.Null(result.Exception);
         Assert.Contains(result.Diagnostics, d => d.Id == UiDiagnostics.StyleUnknownProperty);
-        // 错误短路：组件代码不再产出
+        // 错误短路：组件代码不再产�?
         Assert.Empty(result.GeneratedSources);
     }
 
@@ -472,7 +472,7 @@ public class EustyleTests
     [Fact]
     public void StyleDeclarations_Spans_OffsetToHostFile()
     {
-        // attr.ValueSpan.Start 传入 offset——诊断与 setter 值 span 都是宿主 .ui 绝对位置
+        // attr.ValueSpan.Start 传入 offset——诊断与 setter �?span 都是宿主 .ui 绝对位置
         var (decl, diags) = ParseDeclarations("Padding: 4px;", offset: 37);
         Assert.Equal(UiDiagnostics.StyleValueType, Assert.Single(diags).Code);
 
@@ -496,13 +496,13 @@ public class EustyleTests
         Assert.Contains("__el3.SetValue(global::EclipseUI.Elements.Panel.PaddingProperty, 16);", code.Select(c => c.Statement));
         Assert.Contains("__el3.SetValue(global::EclipseUI.Elements.TextBlock.FontSizeProperty, 20);", code.Select(c => c.Statement));
 
-        // 语句必须语法成立（E1 教训：Contains 拦不住缺括号，画廊真实构建才暴露）
+        // 语句必须语法成立（E1 教训：Contains 拦不住缺括号，画廊真实构建才暴露�?
         AssertGeneratedCodeParses(
             "class __EuiProbe { void M(global::EclipseUI.Element __el3) {\n" +
             string.Join("\n", code.Select(c => c.Statement)) + "\n} }");
     }
 
-    // ---------- E2：模板 Class=/Style= 管线（EUI031 转正） ----------
+    // ---------- E2：模�?Class=/Style= 管线（EUI031 转正�?----------
 
     private const string SheetWithCard = """
         .card {
@@ -551,14 +551,14 @@ public class EustyleTests
         var diag = Assert.Single(result.Diagnostics);
         Assert.Equal(UiDiagnostics.StyleAttributeInvalid, diag.Id);
         Assert.Contains("'carrd'", diag.GetMessage());
-        // Error 短路的是该 .ui 的组件产物；StyleBootstrap（.eustyle 管道）不受影响
+        // Error 短路的是�?.ui 的组件产物；StyleBootstrap�?eustyle 管道）不受影�?
         Assert.DoesNotContain(result.GeneratedSources, s => s.HintName.Contains("Probe."));
     }
 
     [Fact]
     public void ClassLiteral_WithoutAnyStylesheet_IsUnknown()
     {
-        // 空目录 = 项目无任何样式类：写了 Class= 就报——编译期闭环的意义所在。
+        // 空目�?= 项目无任何样式类：写�?Class= 就报——编译期闭环的意义所在�?
         var result = Run(new TestAdditionalText("Probe.ui", """
             @using EclipseUI.Elements
             <StackPanel>
@@ -574,7 +574,7 @@ public class EustyleTests
     [Fact]
     public void ClassLiteral_AtStyleBlockClass_ResolvesLocally()
     {
-        // §4.8① 闭环：本文件 @style 块的类名（带组件前缀）对本文件 Class= 可见。
+        // §4.8�?闭环：本文件 @style 块的类名（带组件前缀）对本文�?Class= 可见�?
         const string ui = """
             @using EclipseUI.Elements
             <StackPanel>
@@ -590,9 +590,9 @@ public class EustyleTests
         Assert.Empty(result.Diagnostics);
 
         var code = SourceOf(result, hint => hint.Contains("Probe."));
-        // §4.8① 解析序：本文件 @style 类按注册名（组件前缀）发射
+        // §4.8�?解析序：本文�?@style 类按注册名（组件前缀）发�?
         Assert.Contains("el1.Classes = new global::System.String[] { \"Probe__demo\" };", code);
-        Assert.Contains("Define(\"Probe__demo\"", code); // 注册侧同名
+        Assert.Contains("Define(\"Probe__demo\"", code); // 注册侧同�?
     }
 
     [Fact]
@@ -612,7 +612,7 @@ public class EustyleTests
         var code = SourceOf(result, hint => hint.Contains("Probe."));
         AssertGeneratedCodeParses(code);
         Assert.Contains(".Classes = kind.Split(new[] { ' ', '\\t', '\\r', '\\n' }, global::System.StringSplitOptions.RemoveEmptyEntries);", code);
-        Assert.Contains("private void U0()", code); // 根级动态 → U 方法 + Render 登记
+        Assert.Contains("private void U0()", code); // 根级动�?�?U 方法 + Render 登记
         Assert.Contains("protected override void Render()", code);
     }
 
@@ -703,7 +703,7 @@ public class EustyleTests
         Assert.Contains("Probe.ui", diag.Location.GetLineSpan().Path);
     }
 
-    // ---------- E4：嵌套塌缩（design/17 §4.5，EUI053） ----------
+    // ---------- E4：嵌套塌缩（design/17 §4.5，EUI053�?----------
 
     private static List<UiDiagnostic> Collapse(EustyleStylesheet sheet, out EustyleCollapse.Collapsed collapsed)
     {
@@ -771,7 +771,7 @@ public class EustyleTests
         Assert.Equal("panel", button.RootClass);
         var seg = Assert.Single(button.Chain);
         Assert.True(seg.DirectChild);
-        Assert.Equal("button", seg.TypeName); // ChainSeg 类型名已 kebab 化（与匹配侧同一规则）
+        Assert.Equal("button", seg.TypeName); // ChainSeg 类型名已 kebab 化（与匹配侧同一规则�?
         Assert.Null(seg.ClassConstraint);
 
         var text = collapsed.Injects.Single(static i => i.DerivedName == "panel__button__text");
@@ -783,7 +783,7 @@ public class EustyleTests
     [Fact]
     public void NestedCollapse_SameDerivedName_MergesSettersAndSubtree()
     {
-        // CSS 同选择器多块 = 声明合并（声明序后者胜）；同名子嵌套同理递归聚合
+        // CSS 同选择器多�?= 声明合并（声明序后者胜）；同名子嵌套同理递归聚合
         const string source = """
             .panel {
                 > Button { Padding: 8; }
@@ -824,7 +824,7 @@ public class EustyleTests
     [Fact]
     public void NestedState_SelectorAndVariantBlock_BothLandOnDerivedClass()
     {
-        // '> Button:hover {}' 与 '> Button { &:hover {} }' 两种写法等价——都归派生类的 Hover 变体
+        // '> Button:hover {}' �?'> Button { &:hover {} }' 两种写法等价——都归派生类�?Hover 变体
         const string source = """
             .panel {
                 > Button:hover { Padding: 4; }
@@ -863,14 +863,14 @@ public class EustyleTests
 
         var (sheet, _) = Parse(source);
         Collapse(sheet, out var collapsed);
-        var code = EustyleGenerator.EmitDefines(collapsed.Rules, "registry");
+        var code = EustyleGenerator.EmitDefines(collapsed.Rules, "registry", Catalog);
 
         Assert.Contains("registry.Define(\"panel\", s =>", code);
         Assert.Contains("registry.Define(\"panel__button\", s =>", code);
         AssertGeneratedCodeParses("class __P { void M(global::EclipseUI.Rendering.StyleRegistry registry) {\n" + code + "\n} }");
     }
 
-    // ---------- E4：模板注入管线 ----------
+    // ---------- E4：模板注入管�?----------
 
     private const string NestedSheet = """
         .panel {
@@ -899,9 +899,9 @@ public class EustyleTests
         var code = SourceOf(result, hint => hint.Contains("Probe."));
         AssertGeneratedCodeParses(code);
 
-        // 无 Class 属性的按钮：只发注入类列表
+        // �?Class 属性的按钮：只发注入类列表
         Assert.Contains("el1.Classes = new global::System.String[] { \"panel__button\" };", code);
-        // 已有类名的按钮：注入排在解析类名之后（design/17 §2.2 派生类胜）
+        // 已有类名的按钮：注入排在解析类名之后（design/17 §2.2 派生类胜�?
         Assert.Contains("el2.Classes = new global::System.String[] { \"primary\", \"panel__button\" };", code);
     }
 
@@ -931,7 +931,7 @@ public class EustyleTests
     [Fact]
     public void Inject_ExpressionClass_SkipsInjection()
     {
-        // §4.5-3 明示边界：表达式 Class 的运行时类列表编译期未知，塌缩注入跳过
+        // §4.5-3 明示边界：表达式 Class 的运行时类列表编译期未知，塌缩注入跳�?
         const string ui = """
             @using EclipseUI.Elements
             <StackPanel Class="panel">
@@ -970,7 +970,7 @@ public class EustyleTests
     [Fact]
     public void StyleBlock_NestedRules_InjectWithLocalPrefix()
     {
-        // @style 块嵌套：派生类带组件前缀注册，注入按注册名闭环
+        // @style 块嵌套：派生类带组件前缀注册，注入按注册名闭�?
         const string ui = """
             @using EclipseUI.Elements
             <StackPanel Class="panel">
@@ -1007,7 +1007,7 @@ public class EustyleTests
         Assert.Empty(result.Diagnostics);
     }
 
-    // ---------- E5：注册制伪类（design/17 §3.2/§5/§7）----------
+    // ---------- E5：注册制伪类（design/17 §3.2/§5/§7�?---------
 
     private static (EustyleStylesheet Sheet, List<UiDiagnostic> Diags) ParseWithStates(
         string source, IReadOnlyCollection<string>? externalStates = null, int offset = 0)
@@ -1035,7 +1035,7 @@ public class EustyleTests
         Assert.Equal("spinning", state.Name);
 
         var spinner = sheet.Rules[0];
-        // 基础 + 变体块归属注册名（Variant 保持 None，RegisteredState 承载归属）
+        // 基础 + 变体块归属注册名（Variant 保持 None，RegisteredState 承载归属�?
         Assert.Equal(EustyleVariant.None, spinner.Setters[0].Variant);
         Assert.Null(spinner.Setters[0].RegisteredState);
         var variant = spinner.Setters[1];
@@ -1046,7 +1046,7 @@ public class EustyleTests
         Assert.Equal(EustyleVariant.None, selectorForm.Variant);
         Assert.Equal("spinning", selectorForm.RegisteredState);
 
-        // 生成代码：Apply 顶部注册行 + 变体链 .State(Register("spinning"), …)
+        // 生成代码：Apply 顶部注册�?+ 变体�?.State(Register("spinning"), �?
         var result = Run(new TestAdditionalText("app.eustyle", source));
         var code = SourceOf(result, hint => hint.Contains("StyleBootstrap.g.cs"));
         AssertGeneratedCodeParses(code);
@@ -1059,7 +1059,7 @@ public class EustyleTests
     [Fact]
     public void StatesDeclaration_DeclarationOrderIndependent_AndDeduplicated()
     {
-        // 声明写在规则之后同样可用（预扫两遍解析）；重复声明去重。
+        // 声明写在规则之后同样可用（预扫两遍解析）；重复声明去重�?
         const string source = """
             .spinner:loading { Background: #22c55e; }
             @states {
@@ -1099,7 +1099,7 @@ public class EustyleTests
     {
         var (_, diags) = ParseWithStates(".spinner:loading { Background: #fff; }");
 
-        // EUI050 是 Error → 产物整体短路（无效状态归属不进产物，断言只看诊断）。
+        // EUI050 �?Error �?产物整体短路（无效状态归属不进产物，断言只看诊断）�?
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.StyleSyntax, diag.Code);
         Assert.Contains("unknown pseudo-class ':loading'", diag.Message);
@@ -1119,8 +1119,8 @@ public class EustyleTests
     [Fact]
     public void StatesDeclaration_CrossFileReference_ResolvesViaExternalCatalog()
     {
-        // 本文件未声明、外部目录（其他样式来源的 @states 并集）已声明 → 引用通过；
-        // 外部目录也没有 → 报错。
+        // 本文件未声明、外部目录（其他样式来源�?@states 并集）已声明 �?引用通过�?
+        // 外部目录也没�?�?报错�?
         const string source = ".spinner:loading { Background: #fff; }";
 
         var (sheet, okDiags) = ParseWithStates(source, ["loading"]);
@@ -1155,8 +1155,8 @@ public class EustyleTests
     [Fact]
     public void StyleAttribute_AtDirective_ReportsEUI050()
     {
-        // 元素属性没有「状态」语境（design/17 §4.8②）——@states 与一切 @ 指令不适用。
-        // 直测 ParseDeclarations（.ui 属性值里的 '@' 由 Lexer 指令通道处理，是既有限制）。
+        // 元素属性没有「状态」语境（design/17 §4.8②）——@states 与一�?@ 指令不适用�?
+        // 直测 ParseDeclarations�?ui 属性值里�?'@' �?Lexer 指令通道处理，是既有限制）�?
         var (_, diags) = ParseDeclarations("Background: #fff; @states { loading; }");
 
         var diag = Assert.Single(diags);
@@ -1167,7 +1167,7 @@ public class EustyleTests
     [Fact]
     public void DualChannel_HandwrittenDefine_SameName_ReportsEUI054Warning()
     {
-        // 宿主 code-behind 手写 Define("card", …) × 样式表 .card → EUI054 Warning（不短路生成）。
+        // 宿主 code-behind 手写 Define("card", �? × 样式�?.card �?EUI054 Warning（不短路生成）�?
         const string sheet = """
             .card { Background: theme(#2a3040, #ffffff); }
             .unique { Padding: 8; }
@@ -1211,7 +1211,7 @@ public class EustyleTests
         Assert.Empty(result.Diagnostics);
     }
 
-    // ---------- design/17 §4.3：符号派生目录 + CLR 原名规范名 ----------
+    // ---------- design/17 §4.3：符号派生目�?+ CLR 原名规范�?----------
 
     [Fact]
     public void CanonicalClrNames_ParseToCatalogSetters()
@@ -1228,10 +1228,10 @@ public class EustyleTests
     [InlineData("cornerradius")]
     [InlineData("Corner_Radius")]
     [InlineData("CORNERRADIUS")]
-    [InlineData("background")]  // 大小写敏感：Background 存在，全小写不存在
+    [InlineData("background")]  // 大小写敏感：Background 存在，全小写不存�?
     public void LegacyOrCaseVariantNames_AreRejectedWithEUI051(string legacy)
     {
-        // 只认控件原始 CLR 名，无 kebab 别名、无大小写/分隔符归一化。
+        // 只认控件原始 CLR 名，�?kebab 别名、无大小�?分隔符归一化�?
         var (_, diags) = Parse($".a {{ {legacy}: 8; }}");
 
         var diag = Assert.Single(diags);
@@ -1265,7 +1265,7 @@ public class EustyleTests
         Assert.All(rule.Nested, n => Assert.Single(n.Setters));
 
         var collapsed = EustyleCollapse.Flatten(sheet, new List<UiDiagnostic>());
-        Assert.Equal(3, collapsed.Rules.Count); // 根类 + 两个派生类
+        Assert.Equal(3, collapsed.Rules.Count); // 根类 + 两个派生�?
     }
 
     [Fact]
@@ -1308,5 +1308,235 @@ public class EustyleTests
         Assert.Contains("SetValue(global::EclipseUI.Rendering.Visual.CornerRadiusProperty, 18)", code);
         Assert.Contains("SetValue(global::EclipseUI.Elements.Panel.PaddingProperty, 8)", code);
         AssertGeneratedCodeParses(code);
+    }
+
+    // ---------- design/19：自定义样式属性（[UiStyleProperty] + 值语法扩展） ----------
+
+    /// <summary>标注通道的目录：probe 源里声明 [UiStyleProperty] 字段，与内建并集（真符号派生）。</summary>
+    private static StylePropertyCatalog CustomCatalog(string cs) => UiTestCatalogs.Scan(cs).StyleProperties;
+
+    /// <summary>design/19 §4.1 的示例声明（Glow 数字 / Tone 枚举 / Label 字符串）。</summary>
+    private const string BadgeSource = """
+        public enum Tone { Neutral, Success, Danger }
+        public static class BadgeStyles
+        {
+            [UiStyleProperty]
+            public static readonly StyledProperty<double> GlowProperty =
+                StyledProperty<double>.Register<Probe>("Glow", 0d);
+            [UiStyleProperty(Name = "Tone")]
+            public static readonly StyledProperty<Tone> ToneProperty =
+                StyledProperty<Tone>.Register<Probe>("Tone", Tone.Neutral);
+            [UiStyleProperty]
+            public static readonly StyledProperty<string> LabelProperty =
+                StyledProperty<string>.Register<Probe>("Label", "");
+        }
+        """;
+
+    private static (EustyleStylesheet Sheet, List<UiDiagnostic> Diags) ParseWith(
+        StylePropertyCatalog catalog, string source)
+    {
+        var diags = new List<UiDiagnostic>();
+        var sheet = Eustyle.Parse(source, "custom.eustyle", diags, catalog);
+        return (sheet, diags);
+    }
+
+    private static (EustyleDeclarations Decl, List<UiDiagnostic> Diags) ParseDeclarationsWith(
+        StylePropertyCatalog catalog, string source)
+    {
+        var diags = new List<UiDiagnostic>();
+        var decl = Eustyle.ParseDeclarations(source, "ProbeDoc.ui", diags, catalog);
+        return (decl, diags);
+    }
+
+    [Fact]
+    public void AnnotatedFields_EnterCatalogWithDerivedKinds()
+    {
+        var catalog = CustomCatalog(BadgeSource);
+        Assert.Empty(catalog.Problems);
+
+        var glow = catalog.Find("Glow");
+        Assert.NotNull(glow);
+        Assert.False(glow!.IsBuiltIn);
+        Assert.Equal(StyleValueKind.Number, glow.Kind);
+        Assert.StartsWith("global::", glow.PropertyField);
+        Assert.EndsWith("BadgeStyles.GlowProperty", glow.PropertyField);
+
+        // 显式 Name 生效；枚举属性带成员表与全限定枚举类型名（升序）。
+        var tone = catalog.Find("Tone");
+        Assert.NotNull(tone);
+        Assert.Equal(StyleValueKind.Enum, tone!.Kind);
+        Assert.Equal("global::BadgeStyles.ToneProperty", tone.PropertyField);
+        Assert.Equal("global::Tone", tone.EnumTypeName);
+        Assert.Equal(new[] { "Danger", "Neutral", "Success" }, tone.Candidates);
+
+        var label = catalog.Find("Label");
+        Assert.NotNull(label);
+        Assert.Equal(StyleValueKind.Text, label!.Kind);
+
+        // 内建 6 属性零回归：并集目录里全部保留。
+        Assert.NotNull(catalog.Find("CornerRadius"));
+        Assert.NotNull(catalog.Find("Background"));
+    }
+
+    [Fact]
+    public void CustomEnumProperty_KeywordValue_ParsesAndEmitsEnumMember()
+    {
+        var catalog = CustomCatalog(BadgeSource);
+        var (sheet, diags) = ParseWith(catalog, ".badge { Tone: Success; Glow: 6; Label: \"hi\"; }");
+        Assert.Empty(diags);
+
+        var setters = Assert.Single(sheet.Rules).Setters;
+        Assert.Equal("Tone", setters[0].Property);
+        Assert.Equal("Success", Assert.IsType<EustyleKeyword>(setters[0].Value).Name);
+        Assert.Equal("Glow", setters[1].Property);
+        Assert.Equal("Label", setters[2].Property);
+        Assert.Equal("hi", Assert.IsType<EustyleString>(setters[2].Value).Value);
+
+        var code = EustyleGenerator.EmitDefines(sheet, "registry", catalog);
+        // 自定义属性走泛型逃生口 s.Set(field, value)；枚举发射 T.Member，字符串走 C# 转义。
+        Assert.Contains("s.Set(global::BadgeStyles.ToneProperty, global::Tone.Success);", code);
+        Assert.Contains("s.Set(global::BadgeStyles.GlowProperty, 6);", code);
+        Assert.Contains("s.Set(global::BadgeStyles.LabelProperty, \"hi\");", code);
+        // 内建属性仍走命名方法。
+        Assert.Contains("s.CornerRadius", EustyleGenerator.EmitDefines(
+            Eustyle.Parse(".a { CornerRadius: 4; }", "b.eustyle", new List<UiDiagnostic>(), catalog)
+                , "registry", catalog));
+    }
+
+    [Fact]
+    public void CustomEnumProperty_UnknownMember_ReportsEUI052WithMembers()
+    {
+        var catalog = CustomCatalog(BadgeSource);
+        var (sheet, diags) = ParseWith(catalog, ".badge { Tone: Dangerously; }");
+
+        var diag = Assert.Single(diags);
+        Assert.Equal(UiDiagnostics.StyleValueType, diag.Code);
+        Assert.Contains("'Dangerously' is not a member of global::Tone", diag.Message);
+        Assert.Contains("Danger, Neutral, Success", diag.Message);
+        Assert.Empty(sheet.Rules.Single().Setters);
+    }
+
+    [Fact]
+    public void CustomProperties_ValueKindMismatches_ReportsEUI052()
+    {
+        var catalog = CustomCatalog(BadgeSource);
+        Assert.Equal(UiDiagnostics.StyleValueType,
+            ParseWith(catalog, ".a { Glow: Center; }").Diags.Single().Code);        // keyword → number 属性
+        Assert.Equal(UiDiagnostics.StyleValueType,
+            ParseWith(catalog, ".a { Glow: \"6\"; }").Diags.Single().Code);          // string → number 属性
+        Assert.Equal(UiDiagnostics.StyleValueType,
+            ParseWith(catalog, ".a { Label: 6; }").Diags.Single().Code);             // number → string 属性
+        Assert.Equal(UiDiagnostics.StyleValueType,
+            ParseWith(catalog, ".a { Tone: \"Success\"; }").Diags.Single().Code);    // string → enum 属性
+        Assert.Equal(UiDiagnostics.StyleValueType,
+            ParseWith(catalog, ".a { Label: #fff; }").Diags.Single().Code);          // color → string 属性
+    }
+
+    [Fact]
+    public void StringProperty_AcceptsKeywordDirectPass()
+    {
+        var catalog = CustomCatalog(BadgeSource);
+        var (sheet, diags) = ParseWith(catalog, ".a { Label: hello; }");
+        Assert.Empty(diags);
+        var setter = Assert.Single(sheet.Rules.Single().Setters);
+        Assert.Equal("hello", Assert.IsType<EustyleKeyword>(setter.Value).Name);
+    }
+
+    [Fact]
+    public void CustomProperty_RejectsTheme_NoResourceField()
+    {
+        var catalog = CustomCatalog(BadgeSource);
+        var (_, diags) = ParseWith(catalog, ".a { Glow: theme(#000000, #ffffff); }");
+        var diag = Assert.Single(diags);
+        Assert.Equal(UiDiagnostics.StyleValueType, diag.Code);
+        Assert.Contains("theme(dark, light)", diag.Message);
+    }
+
+    [Fact]
+    public void Variables_KeepNumberAndColorOnly()
+    {
+        var catalog = CustomCatalog(BadgeSource);
+        var (_, diags) = ParseWith(catalog, "$t: Success;\n.a { Glow: 4; }");
+        var diag = Assert.Single(diags);
+        Assert.Equal(UiDiagnostics.StyleSyntax, diag.Code);
+        Assert.Contains("limited to numbers and colors", diag.Message);
+    }
+
+    [Fact]
+    public void InlineStyle_EmitsSetValueForCustomProperties()
+    {
+        var catalog = CustomCatalog(BadgeSource);
+        var (decl, diags) = ParseDeclarationsWith(catalog, "Glow: 6; Tone: Success; Label: inline");
+        Assert.Empty(diags);
+
+        var statements = EustyleGenerator.EmitLocalSetters(decl.Setters, "el", catalog);
+        Assert.Contains("el.SetValue(global::BadgeStyles.GlowProperty, 6);",
+            statements.Select(s => s.Statement));
+        Assert.Contains("el.SetValue(global::BadgeStyles.ToneProperty, global::Tone.Success);",
+            statements.Select(s => s.Statement));
+        Assert.Contains("el.SetValue(global::BadgeStyles.LabelProperty, \"inline\");",
+            statements.Select(s => s.Statement));
+    }
+
+    [Fact]
+    public void Pipeline_ClassChannel_AndInlineStyle_ReachCustomProperties()
+    {
+        var result = RunWith("""
+            using EclipseUI;
+            public enum Tone { Neutral, Success, Danger }
+            public static class BadgeStyles
+            {
+                [UiStyleProperty]
+                public static readonly StyledProperty<double> GlowProperty =
+                    StyledProperty<double>.Register<Probe>("Glow", 0d);
+                [UiStyleProperty(Name = "Tone")]
+                public static readonly StyledProperty<Tone> ToneProperty =
+                    StyledProperty<Tone>.Register<Probe>("Tone", Tone.Neutral);
+            }
+            public partial class Probe { }
+            """,
+            new TestAdditionalText("Probe.ui", """
+                @using EclipseUI.Elements
+                <StackPanel Class="badge">
+                    <Button Style="Glow: 6; Tone: Success">go</Button>
+                </StackPanel>
+                """),
+            new TestAdditionalText("app.eustyle", """
+                .badge {
+                    Glow: 4;
+                    Tone: Danger;
+                }
+                """));
+
+        Assert.Null(result.Exception);
+        Assert.Empty(result.Diagnostics);
+
+        var bootstrap = SourceOf(result, hint => hint.Contains("StyleBootstrap"));
+        Assert.Contains("registry.Define(\"badge\", s =>", bootstrap);
+        Assert.Contains("s.Set(global::TestFixtures.BadgeStyles.GlowProperty, 4);", bootstrap);
+        Assert.Contains("s.Set(global::TestFixtures.BadgeStyles.ToneProperty, global::TestFixtures.Tone.Danger);", bootstrap);
+        AssertGeneratedCodeParses(bootstrap);
+
+        var component = SourceOf(result, hint => hint.Contains("Probe."));
+        Assert.Contains("SetValue(global::TestFixtures.BadgeStyles.GlowProperty, 6)", component);
+        Assert.Contains("SetValue(global::TestFixtures.BadgeStyles.ToneProperty, global::TestFixtures.Tone.Success)", component);
+        AssertGeneratedCodeParses(component);
+    }
+
+    [Fact]
+    public void Pipeline_UnknownCustomProperty_InUnionCatalog_StillEUI051()
+    {
+        var result = Run(new TestAdditionalText("Probe.ui", """
+            @using EclipseUI.Elements
+            <StackPanel />
+            @style {
+                .demo { Glow: 6; }
+            }
+            """));
+
+        // 目录里没有 Glow（codeBehind 没声明标注字段）→ 照常 EUI051。
+        var diag = Assert.Single(result.Diagnostics);
+        Assert.Equal(UiDiagnostics.StyleUnknownProperty, diag.Id);
+        Assert.Contains("Glow", diag.GetMessage());
     }
 }

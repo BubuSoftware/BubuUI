@@ -23,6 +23,16 @@ public sealed record EustyleTheme(EustyleColor Dark, EustyleColor Light, TextSpa
 public sealed record EustyleNumber(double Value, TextSpan Span) : EustyleValue(Span);
 
 /// <summary>
+/// 裸标识符值（design/19 §5.1，keyword 风格）：枚举属性按成员表校验后发射
+/// <c>global::Ns.T.Member</c>；string 属性直通为字符串字面量。值限于数字/颜色的
+/// <c>$变量</c> 不对新形态插值（P1 保持简单）。
+/// </summary>
+public sealed record EustyleKeyword(string Name, TextSpan Span) : EustyleValue(Span);
+
+/// <summary>带引号字符串值（design/19 §5.1）：string 属性直通；其余属性形态不符（EUI052）。</summary>
+public sealed record EustyleString(string Value, TextSpan Span) : EustyleValue(Span);
+
+/// <summary>
 /// 伪类变体（D102 PseudoStates 位掩码的编译期对应物）：
 /// None = 基础序列；<c>:active</c> 是 <see cref="Pressed"/> 的 CSS 别名。
 /// 注册制伪类（E5）不走本枚举——<see cref="EustyleSetter.RegisteredState"/> 携带注册名，

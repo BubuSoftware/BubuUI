@@ -169,8 +169,17 @@ registry.Define("primary", s => s.Background(new ThemeColor(Dark: ..., Light: ..
   `el.SetValue(<字段>, <值>)`。
 - 声明不合规（缺字段、字段歧义、形态不符）进目录 `Problems`，构建期以 `EUI026` 报出；
   `StylePropertyCatalogTests` 用反射把目录与 `StyleBuilder` 的公开 setter 集对死，防漂移。
+- **标注通道（design/19，✅ E6/D115）**：带 `[UiStyleProperty]` 的 `public static readonly
+  StyledProperty<T>` 字段（候选程序集全局扫描，显式 opt-in——不扫全部 `StyledProperty` 字段，
+  避免内部属性污染目录）与内建 setter **取并集**进同一份目录：属性名 = 显式 `Name` ?? 字段名去
+  `Property` 后缀；值形态从 `T` 派生（`double` → number、`Color`/`ThemeColor` → color、枚举 →
+  enum keyword、`string` → string），枚举成员表在扫描期算好存进 def（发射期零符号依赖）。
+  声明不合规报 **EUI058**（字段非 `public static readonly` / 非闭包 `StyledProperty<T>` /
+  `T` 含泛型形参 / `Name` 解析为空 / 值类型不支持），不进目录、不抛异常。冲突规则
+  （design/19 §7）：用户与内建同名 → **EUI059**、内建胜出、目录取内建（字段解析时未标注候选
+  优先——用户同名声明不把内建字段挤成「多程序集歧义」）；两个用户声明同名 → EUI059、双双拒绝。
 
-当前目录（自动派生，非手写）：
+当前目录（自动派生，非手写；另有应用侧 `[UiStyleProperty]` 标注属性并集进入）：
 
 | 规范名（CLR 原名） | 值形态 | 目标字段 | theme() |
 |---|---|---|---|
@@ -187,8 +196,10 @@ registry.Define("primary", s => s.Background(new ThemeColor(Dark: ..., Light: ..
 报 **EUI051**（消息提示使用大小写敏感的 CLR 名并列出目录支持项）。不设旧写法兼容层。
 大写开头的属性名与嵌套类型选择器由前瞻到 `{` / `;` 区分（选择器一定开块）。
 
-加新样式属性：运行时注册 `StyledProperty` 字段 + 加 `StyleBuilder` setter（+ painter 读取点），
-**Compiler/Generator 零改动**；属性名自动成为样式表可写名，旧手写四处表已删除。
+加新样式属性两条路：① 框架内——运行时注册 `StyledProperty` 字段 + 加 `StyleBuilder` setter
+（+ painter 读取点）；② 应用/第三方库——给自己的静态 `StyledProperty<T>` 字段加
+`[UiStyleProperty]` 即可（design/19 P1，✅ E6/D115），**不动 `StyleBuilder`**。两条路都
+**Compiler/Generator 零改动**，属性名自动成为样式表可写名；旧手写四处表已删除。
 
 待办：目录尚未带出 `OwnerType` / `Inherits` / `Invalidate` 与「适用标签类型」，因此
 「`Padding` 写在 `Button` 上静默无效」仍只靠约定，未升级为编译期诊断。
@@ -204,8 +215,24 @@ $primary: theme(#22c55e, #16a34a);     // SCSS 编译期变量（E1 就支持：
   Background: theme(#2a3040, #ffffff);  // 双色函数 → new ThemeColor(Dark, Light)
   Padding: 16;                          // 逻辑单位裸数字
   CornerRadius: 12;
+  Align: Center;                        // 自定义枚举属性 → keyword（成员表编译期校验，E6）
+  Label: "inline";                      // 自定义 string 属性 → 字面量 / keyword 直通（E6）
 }
 ```
+
+值形态分派（design/19 §5.2，✅ E6/D115）——形态由目录 `Kind` 决定，编译期校验，错值报
+**EUI052**；自定义属性的发射走泛型逃生口 `s.Set(<目录字段>, <值>)`，内建属性不变：
+
+| 目标形态 | 接受的值 | 备注 |
+|---|---|---|
+| color | `#hex`、`theme(dark, light)` | theme() 仅当属性有 ThemeColor 资源字段；自定义属性 P1 不支持 theme（design/19 §13） |
+| number | 裸数字 | — |
+| enum | 枚举成员 keyword | 成员表扫描期派生存进 def（发射期零符号依赖）；未命中报 EUI052 并列期望成员 |
+| string | `"字面量"`（含转义）、keyword | keyword 直通为字符串 |
+
+- **theme 准入先行于形态检查**：`theme()` 写在不收 theme 的属性上（含全部自定义属性），
+  报「does not accept theme(dark, light)」而不是「期望 number」这类类别不符消息。
+- **`$变量` 仍限 number/color**——keyword/string 不进变量声明（**EUI050**）。
 
 - **不做**：运行时变量（CSS var）、`lighten()/darken()` 等颜色函数（E5 可选：编译期算好写死常量，
   兼容直配模型）、单位后缀（`px` 等——逻辑单位即唯一单位）。

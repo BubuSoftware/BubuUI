@@ -798,7 +798,7 @@ public sealed class TemplateGenerator : IIncrementalGenerator
             // E5：@states 声明先注册（幂等）——变体链的 Register 实参本就自足，此处保证
             // 未被变体引用的声明位也完成注册（宿主可 GetMask 查询句柄）。
             sb.Append(EustyleGenerator.EmitStateRegisters(collapsed.States));
-            sb.Append(EustyleGenerator.EmitDefines(collapsed.Rules, "registry"));
+            sb.Append(EustyleGenerator.EmitDefines(collapsed.Rules, "registry", properties));
         }
         sb.AppendLine("    }");
         sb.AppendLine("}");

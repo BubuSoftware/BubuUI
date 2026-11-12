@@ -161,6 +161,47 @@ public class AppBuilderTests
         }
     }
 
+    /// <summary>
+    /// design/19 P1 端到端（Gallery 演示）：应用程序集声明的 <c>[UiStyleProperty]</c> 自定义
+    /// 样式属性经 .eustyle 类通道编译为 s.Set 并注册——元素挂 badge 类后，值经
+    /// Styling.Provider 落到 class 层（badge 元素自身 0×0 不绘制，零视觉影响）。
+    /// </summary>
+    [Fact]
+    public void GalleryApp_CustomStyleProperties_ReachTheClassLayer()
+    {
+        try
+        {
+            var app = AppBuilder.Configure<GalleryApp>()
+                .ConfigureServices(s => s.AddSingleton(GalleryLaunchOptions.Parse([])))
+                .UseStyles(StyleRegistry.Instance, StyleBootstrap.Apply)
+                .Build();
+
+            Assert.True(StyleRegistry.Instance.IsDefined("badge"));
+
+            // 第 5 分区的可见类通道演示：读回文案证明 .badge 规则的三个值落在 class 层
+            //（hover 变体的运行时翻转需要真实指针，这里只断言 base 层）。
+            var demo = app.MainWindow!.Content!.Descendants<Button>()
+                .Single(b => b.Label.StartsWith("class .badge", StringComparison.Ordinal));
+            Assert.Contains("Glow=6", demo.Label);
+            Assert.Contains("Tone=Success", demo.Label);
+            Assert.Contains("BadgeLabel=\"eustyle\"", demo.Label);
+
+            var badge = new MyControl();
+            badge.Classes = ["badge"];
+            Assert.Equal(6d, badge.GetValue(BadgeStyles.GlowProperty));
+            Assert.Equal(BadgeTone.Success, badge.GetValue(BadgeStyles.ToneProperty));
+            Assert.Equal("eustyle", badge.GetValue(BadgeStyles.BadgeLabelProperty));
+
+            // 变体通道（&:hover { Glow: 12; }）的运行时行为由 HeadlessRoot.PointerMove
+            // 维护 IsHovered——badge 元素 0×0 不可命中测试，故这里只断言 base 层；
+            // hover 变体的编译与状态选择已由 EustyleTests / StyleTests 覆盖。
+        }
+        finally
+        {
+            Styling.Provider = null;
+        }
+    }
+
     private sealed class TestSetup(Action<IServiceCollection> register) : IPlatformSetup
     {
         public void RegisterServices(IServiceCollection services) => register(services);

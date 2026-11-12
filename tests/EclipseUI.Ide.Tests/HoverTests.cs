@@ -1,3 +1,4 @@
+using EclipseUI.Compiler;
 using EclipseUI.LanguageServer.Analysis;
 using Xunit;
 
@@ -75,6 +76,28 @@ public class HoverTests
         var hover = HoverProvider.Hover(analysis, catalog, offset);
         Assert.NotNull(hover);
         Assert.Contains("Center, Left, Right", hover!.Markdown);
+    }
+
+    /// <summary>design/19 §9：Style 值位置悬停给值形态——enum 属性列出成员表。</summary>
+    [Fact]
+    public void StylePropertyHover_DescribesKindAndEnumMembers()
+    {
+        var tone = new StylePropertyDef("Tone", StyleValueKind.Enum,
+            "global::Probe.BadgeStyles.ToneProperty", ResourceField: null,
+            "global::Probe.BadgeStyles", IsBuiltIn: false,
+            "global::Probe.Tone", new[] { "Danger", "Neutral", "Success" });
+        var catalog = new UiCatalog(TestHost.Catalog.Elements, Array.Empty<UiHiddenTag>(),
+            Array.Empty<UiMetadataProblem>(),
+            styleProperties: new StylePropertyCatalog(new[] { tone }, Array.Empty<UiMetadataProblem>()));
+
+        var text = Using + "<Button Style=\"Tone|: 6\" />";
+        var offset = text.IndexOf('|');
+        var analysis = DocumentAnalysis.Create(text.Remove(offset, 1), "Probe.ui", catalog);
+
+        var hover = HoverProvider.Hover(analysis, catalog, offset);
+        Assert.NotNull(hover);
+        Assert.Contains("Style:Tone", hover!.Markdown);
+        Assert.Contains("one of: Danger, Neutral, Success", hover.Markdown);
     }
 
     [Fact]

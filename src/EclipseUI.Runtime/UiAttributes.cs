@@ -58,6 +58,28 @@ public sealed class UiSlotAttribute : Attribute
 }
 
 /// <summary>
+/// 自定义样式属性（design/19，2026-11-12）：让应用/第三方库从**自己的程序集**声明可写进
+/// 样式表（.eustyle / @style / Style=）的属性——属性目录的进料口从「StyleBuilder 的方法」
+/// 解耦为「带本标注的静态 StyledProperty&lt;T&gt; 字段」（编译器全局符号扫描，显式 opt-in；
+/// 不扫全部 StyledProperty 字段，避免 Bounds 之类内部属性污染目录）。
+/// 编译期只读符号、生成 <c>s.Set(field, value)</c> 调用，运行时零新机制。
+/// </summary>
+[AttributeUsage(AttributeTargets.Field, AllowMultiple = false, Inherited = false)]
+public sealed class UiStylePropertyAttribute : Attribute
+{
+    /// <summary>
+    /// 样式属性名（样式表书写名，大小写敏感的 CLR 原名口径）。缺省 = 字段名去
+    /// <c>Property</c> 后缀；去后为空必须显式命名。
+    /// </summary>
+    public string? Name { get; set; }
+
+    /// <summary>
+    /// 适用控件类型；缺省 = 不校验适用性（与内建属性现状口径一致——Owner 适用性诊断属 P3）。
+    /// </summary>
+    public Type? Owner { get; set; }
+}
+
+/// <summary>
 /// 声明式字面量解析器（design/14 §14.7.3，2026-11-12）：让第三方类型也能在模板里写
 /// <c>P="literal"</c>。编译期只读符号校验一个 <c>public static T Parse(string)</c>
 /// 方法（T 为被标注类型），字面量格式用 <see cref="Pattern"/> 由 BCL Regex 校验

@@ -89,6 +89,120 @@ public class StylePropertyCatalogTests
         Assert.Null(catalog.Find("cornerradius"));
     }
 
+    // ---------- design/19：[UiStyleProperty] 标注通道（§4/§7/§8） ----------
+
+    /// <summary>标注通道走真实符号扫描（probe 源 + 内建并集），与目录出厂同一条路径。</summary>
+    private static StylePropertyCatalog Scan(string source) => UiTestCatalogs.Scan(source).StyleProperties;
+
+    [Fact]
+    public void AnnotatedFields_JoinTheCatalogWithBuiltIns()
+    {
+        var catalog = Scan("""
+            public enum Tone { Neutral, Success }
+            public static class Custom
+            {
+                [UiStyleProperty]
+                public static readonly StyledProperty<double> GlowProperty =
+                    StyledProperty<double>.Register<Probe>("Glow", 0d);
+                [UiStyleProperty(Name = "Tone")]
+                public static readonly StyledProperty<Tone> ToneProperty =
+                    StyledProperty<Tone>.Register<Probe>("Tone", Tone.Neutral);
+            }
+            """);
+
+        Assert.Empty(catalog.Problems);
+        var glow = catalog.Find("Glow");
+        Assert.NotNull(glow);
+        Assert.False(glow!.IsBuiltIn);
+        Assert.Equal(StyleValueKind.Number, glow.Kind);
+        Assert.Equal(StyleValueKind.Enum, catalog.Find("Tone")!.Kind);
+        // 内建属性原样保留（零回归）。
+        Assert.True(catalog.Find("Background")!.IsBuiltIn);
+        Assert.True(catalog.Find("CornerRadius")!.IsBuiltIn);
+    }
+
+    [Fact]
+    public void Annotated_NameConflictWithBuiltIn_ReportsEUI059_BuiltInWins()
+    {
+        var catalog = Scan("""
+            public static class Custom
+            {
+                [UiStyleProperty]
+                public static readonly StyledProperty<double> BackgroundProperty =
+                    StyledProperty<double>.Register<Probe>("Background", 0d);
+            }
+            """);
+
+        var problem = Assert.Single(catalog.Problems, p => p.Code == UiDiagnostics.StylePropertyNameConflict);
+        Assert.Equal(UiDiagnostics.StylePropertyNameConflict, problem.Code);
+        Assert.Contains("'Background'", problem.Message);
+        // 目录取内建（种类是 Color，不是用户的 double）。
+        var builtin = catalog.Find("Background")!;
+        Assert.True(builtin.IsBuiltIn);
+        Assert.Equal(StyleValueKind.Color, builtin.Kind);
+    }
+
+    [Fact]
+    public void Annotated_DuplicateNames_AcrossTypes_BothLeaveTheCatalog()
+    {
+        var catalog = Scan("""
+            public static class A
+            {
+                [UiStyleProperty]
+                public static readonly StyledProperty<double> GlowProperty =
+                    StyledProperty<double>.Register<Probe>("Glow", 0d);
+            }
+            public static class B
+            {
+                [UiStyleProperty]
+                public static readonly StyledProperty<double> GlowProperty =
+                    StyledProperty<double>.Register<Probe>("Glow", 0d);
+            }
+            """);
+
+        Assert.Contains(catalog.Problems, p =>
+            p.Code == UiDiagnostics.StylePropertyNameConflict && p.Message.Contains("'Glow'"));
+        Assert.Null(catalog.Find("Glow"));
+    }
+
+    [Fact]
+    public void Annotated_InvalidDeclarations_ReportsEUI058()
+    {
+        // 非 readonly / 非 StyledProperty<T> 字段 / Name 解析为空 / 不支持的值类型。
+        var catalog = Scan("""
+            public class Widget
+            {
+                [UiStyleProperty]
+                public static StyledProperty<double> MutableProperty =
+                    StyledProperty<double>.Register<Probe>("Mutable", 0d);
+            }
+            public static class Odd
+            {
+                [UiStyleProperty]
+                public static readonly string NotAProperty = "nope";
+                [UiStyleProperty(Name = "")]
+                public static readonly StyledProperty<string> MarkerProperty =
+                    StyledProperty<string>.Register<Probe>("Marker", "");
+                [UiStyleProperty]
+                public static readonly StyledProperty<System.Uri> UnsupportedProperty =
+                    StyledProperty<System.Uri>.Register<Probe>("Unsupported", null!);
+            }
+            """);
+
+        Assert.Contains(catalog.Problems, p =>
+            p.Code == UiDiagnostics.StylePropertyDeclarationInvalid && p.Message.Contains("MutableProperty"));
+        Assert.Contains(catalog.Problems, p =>
+            p.Code == UiDiagnostics.StylePropertyDeclarationInvalid && p.Message.Contains("NotAProperty"));
+        Assert.Contains(catalog.Problems, p =>
+            p.Code == UiDiagnostics.StylePropertyDeclarationInvalid && p.Message.Contains("MarkerProperty"));
+        Assert.Contains(catalog.Problems, p =>
+            p.Code == UiDiagnostics.StylePropertyDeclarationInvalid && p.Message.Contains("UnsupportedProperty"));
+        // 目录只收合规声明。
+        Assert.Null(catalog.Find("Mutable"));
+        Assert.Null(catalog.Find("Marker"));
+        Assert.Null(catalog.Find("Unsupported"));
+    }
+
     private static FieldInfo ResolveField(string display)
     {
         var full = display.Substring("global::".Length);

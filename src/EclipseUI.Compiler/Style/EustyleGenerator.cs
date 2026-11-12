@@ -16,16 +16,20 @@ public static class EustyleGenerator
     /// 发射 Define 序列（每条规则一段，直接拼入外层方法体）。
     /// <paramref name="registryExpression"/> 是目标注册表表达式——.eustyle 产物传形参名
     /// （如 <c>registry</c>），@style 组件块传 <c>global::EclipseUI.Rendering.StyleRegistry.Instance</c>。
+    /// <paramref name="properties"/> 是样式属性目录（design/19 §6.1）：内建属性发命名方法
+    /// <c>s.Name(...)</c>，自定义属性发泛型逃生口 <c>s.Set(field, value)</c>。
     /// </summary>
-    public static string EmitDefines(EustyleStylesheet sheet, string registryExpression, string indent = "        ")
-        => EmitDefines(sheet.Rules, registryExpression, indent);
+    public static string EmitDefines(EustyleStylesheet sheet, string registryExpression,
+        StylePropertyCatalog properties, string indent = "        ")
+        => EmitDefines(sheet.Rules, registryExpression, properties, indent);
 
     /// <summary>塌缩产物入口（E4）：根类与派生类混排的规则列表（<see cref="EustyleCollapse"/> 产出）。</summary>
-    public static string EmitDefines(IReadOnlyList<EustyleRule> rules, string registryExpression, string indent = "        ")
+    public static string EmitDefines(IReadOnlyList<EustyleRule> rules, string registryExpression,
+        StylePropertyCatalog properties, string indent = "        ")
     {
         var sb = new StringBuilder();
         foreach (var rule in rules)
-            EmitRule(sb, rule, registryExpression, indent);
+            EmitRule(sb, rule, registryExpression, properties, indent);
         return sb.ToString();
     }
 
@@ -48,13 +52,14 @@ public static class EustyleGenerator
             var field = definition.FieldFor(setter.Value is EustyleTheme)
                 ?? throw new InvalidOperationException(
                     $"style property '{setter.Property}' has no theme resource field");
-            statements.Add(($"{target}.SetValue({field}, {ValueLiteral(setter.Value)});",
+            statements.Add(($"{target}.SetValue({field}, {ValueLiteral(setter.Value, definition)});",
                 setter.ValueSpan));
         }
         return statements;
     }
 
-    private static void EmitRule(StringBuilder sb, EustyleRule rule, string registry, string indent)
+    private static void EmitRule(StringBuilder sb, EustyleRule rule, string registry,
+        StylePropertyCatalog properties, string indent)
     {
         // 变体按首次出现顺序分组（None 组最前，进 Define 体；组内保持属性声明序）。
         // 分组键 = (平台位, 注册名)——注册制伪类（E5）是独立通道，RegisteredState 非空的
@@ -95,7 +100,7 @@ public static class EustyleGenerator
 
         sb.Append(indent).Append(registry).Append(".Define(\"").Append(Literal(rule.ClassName))
             .Append("\", s =>").AppendLine();
-        EmitSetterGroup(sb, indent + "    ", SettersOf(groups, (EustyleVariant.None, null)));
+        EmitSetterGroup(sb, indent + "    ", SettersOf(groups, (EustyleVariant.None, null)), properties);
         if (chain.Count == 0)
         {
             sb.Append(indent).AppendLine(");");
@@ -118,7 +123,7 @@ public static class EustyleGenerator
                     sb.Append(indent).Append("    .").Append(VariantMethod(chain[i].Key.Variant))
                         .Append("(s =>").AppendLine();
                 }
-                EmitSetterGroup(sb, indent + "    ", chain[i].Value, closing);
+                EmitSetterGroup(sb, indent + "    ", chain[i].Value, properties, closing);
             }
         }
     }
@@ -142,14 +147,25 @@ public static class EustyleGenerator
     }
 
     /// <summary>发射一组 setter（块 lambda 体）。closingSuffix 拼在闭合 '}' 同行——
-    /// 变体链用它带上 ')'/');'，避免多一行孤儿括号。</summary>
+    /// 变体链用它带上 ')'/');'，避免多一行孤儿括号。
+    /// 属性分派（design/19 §6.1）：内建属性走 <c>s.Name(value)</c> 命名方法；自定义属性
+    /// （[UiStyleProperty] 标注通道）StyleBuilder 上没有对应方法，走泛型逃生口
+    /// <c>s.Set(global::Ns.Type.Field, value)</c>——类型安全由目录扫描期推导保证（R3）。</summary>
     private static void EmitSetterGroup(StringBuilder sb, string indent, List<EustyleSetter> setters,
-        string closingSuffix = "")
+        StylePropertyCatalog properties, string closingSuffix = "")
     {
         sb.Append(indent).AppendLine("{");
         foreach (var setter in setters)
-            sb.Append(indent).Append("    s.").Append(setter.Property).Append('(')
-                .Append(ValueLiteral(setter.Value)).AppendLine(");");
+        {
+            var definition = properties.Find(setter.Property)
+                ?? throw new InvalidOperationException(
+                    $"style property '{setter.Property}' is not in the derived catalog");
+            var target = definition.IsBuiltIn
+                ? "s." + definition.Name + "("
+                : "s.Set(" + definition.PropertyField + ", ";
+            sb.Append(indent).Append("    ").Append(target)
+                .Append(ValueLiteral(setter.Value, definition)).AppendLine(");");
+        }
         sb.Append(indent).Append('}').Append(closingSuffix).AppendLine();
     }
 
@@ -181,13 +197,52 @@ public static class EustyleGenerator
         return sb.ToString();
     }
 
-    private static string ValueLiteral(EustyleValue value) => value switch
+    /// <summary>
+    /// 值 → C# 字面量（design/19 §5.2 分派表的发射一半）。enum keyword 需要目录预计算的
+    /// 枚举类型名（成员校验已在解析期完成，这里防御性再查一次）；string 走 C# 转义；
+    /// 其余内建形态不依赖目录。
+    /// </summary>
+    private static string ValueLiteral(EustyleValue value, StylePropertyDef? definition = null) => value switch
     {
         EustyleColor color => ColorLiteral(color.R, color.G, color.B, color.A),
         EustyleTheme theme => ThemeLiteral(theme),
         EustyleNumber number => NumberLiteral(number),
+        EustyleKeyword keyword => KeywordLiteral(keyword, definition),
+        EustyleString text => StringLiteral(text.Value),
         _ => throw new InvalidOperationException("unknown value kind"),
     };
+
+    /// <summary>枚举 keyword → <c>global::Ns.T.Member</c>；string 属性的 keyword 直通为
+    /// 字符串字面量（design/19 §5.2：string 收 keyword 直通）。目录里 enum 属性必有成员表与
+    /// 枚举类型名；未命中成员说明发射期与目录数据不一致（防御，不静默产出坏代码）。</summary>
+    private static string KeywordLiteral(EustyleKeyword keyword, StylePropertyDef? definition)
+    {
+        if (definition is { Kind: StyleValueKind.Text })
+            return StringLiteral(keyword.Name);
+        if (definition is not { Kind: StyleValueKind.Enum, EnumTypeName: { } enumType })
+            throw new InvalidOperationException(
+                $"keyword value '{keyword.Name}' has no enum or string style property to target");
+        var candidates = definition.Candidates ?? (IReadOnlyList<string>)Array.Empty<string>();
+        foreach (var candidate in candidates)
+            if (string.Equals(candidate, keyword.Name, StringComparison.Ordinal))
+                return enumType + "." + keyword.Name;
+        throw new InvalidOperationException(
+            $"'{keyword.Name}' is not a member of {enumType}");
+    }
+
+    /// <summary>字符串值 → C# 字面量：反斜杠与引号转义，控制字符按 \\uXXXX。</summary>
+    private static string StringLiteral(string text)
+    {
+        var sb = new StringBuilder(text.Length + 2).Append('"');
+        foreach (var c in text)
+        {
+            if (c == '\\') sb.Append("\\\\");
+            else if (c == '"') sb.Append("\\\"");
+            else if (char.IsControl(c)) sb.Append("\\u").Append(((int)c).ToString("x4"));
+            else sb.Append(c);
+        }
+        return sb.Append('"').ToString();
+    }
 
     private static string ThemeLiteral(EustyleTheme theme) => "new global::EclipseUI.Rendering.ThemeColor("
         + ColorLiteral(theme.Dark.R, theme.Dark.G, theme.Dark.B, theme.Dark.A) + ", "

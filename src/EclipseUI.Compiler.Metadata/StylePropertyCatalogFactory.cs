@@ -7,12 +7,18 @@ using Microsoft.CodeAnalysis;
 namespace EclipseUI.Compiler.Metadata;
 
 /// <summary>
-/// 可样式属性目录的符号扫描器（design/17 §4.3「单一来源」）：从 <c>StyleBuilder</c> 的公开
-/// setter 推出「允许写什么、期望什么值形态」，从 <c>StyledProperty&lt;T&gt;</c> 静态字段推出
-/// 「值最终落到哪个属性对象」。Parser / 诊断 / Emitter 只读产物，不再各自手维护一份表。
+/// 可样式属性目录的符号扫描器（design/17 §4.3「单一来源」；design/19 §4 属性自定义化）：
+/// 进料口是两条通道的并集——
+/// ① <b>内建</b>：从 <c>StyleBuilder</c> 的公开 setter 推出「允许写什么、期望什么值形态」，
+///    从 <c>StyledProperty&lt;T&gt;</c> 静态字段推出「值最终落到哪个属性对象」；
+/// ② <b>标注</b>（design/19，opt-in）：带 <c>[UiStyleProperty]</c> 的 public static readonly
+///    <c>StyledProperty&lt;T&gt;</c> 字段（全部候选程序集，显式标注同时是文档——不扫全部
+///    StyledProperty 字段，避免内部属性污染目录），属性名/值形态从字段符号派生。
+/// Parser / 诊断 / Emitter 只读产物，不再各自手维护一份表。
 ///
 /// 纯函数：同一个 Compilation 得到结构相等的目录，增量缓存交给生成器管道。
-/// 构建不抛异常：不满足约定的候选进 <see cref="StylePropertyCatalog.Problems"/>。
+/// 构建不抛异常：不满足约定的候选进 <see cref="StylePropertyCatalog.Problems"/>——
+/// 内建通道沿用 EUI026，标注通道报 EUI058/EUI059（design/19 §8）。
 /// </summary>
 public static class StylePropertyCatalogFactory
 {
@@ -20,6 +26,7 @@ public static class StylePropertyCatalogFactory
     private const string StyledPropertyGenericMetadataName = "EclipseUI.StyledProperty`1";
     private const string ColorMetadataName = "EclipseUI.Rendering.Color";
     private const string ThemeColorMetadataName = "EclipseUI.Rendering.ThemeColor";
+    private const string UiStylePropertyAttributeName = "EclipseUI.UiStylePropertyAttribute";
 
     private static readonly SymbolDisplayFormat Qualified = SymbolDisplayFormat.FullyQualifiedFormat;
 
@@ -29,7 +36,7 @@ public static class StylePropertyCatalogFactory
         SymbolDisplayFormat.FullyQualifiedFormat.WithMemberOptions(
             SymbolDisplayMemberOptions.IncludeContainingType);
 
-    /// <summary>元数据声明问题统一归 EUI026（与模板目录同口径）。</summary>
+    /// <summary>内建通道的元数据声明问题统一归 EUI026（与模板目录同口径）。</summary>
     private const string ProblemCode = UiDiagnostics.MetadataDeclarationInvalid;
 
     public static StylePropertyCatalog Build(Compilation compilation)
@@ -44,7 +51,7 @@ public static class StylePropertyCatalogFactory
         var color = compilation.GetTypeByMetadataName(ColorMetadataName);
         var themeColor = compilation.GetTypeByMetadataName(ThemeColorMetadataName);
         var problems = new List<UiMetadataProblem>();
-        var fields = CollectPropertyFields(compilation, styledProperty);
+        var (fields, annotated) = CollectPropertyFields(compilation, styledProperty);
 
         // 同名重载（Color / ThemeColor）合并为一条属性；声明序无关，最终按名字排序。
         var groups = new SortedDictionary<string, (StyleValueKind Kind, bool HasColor, bool HasTheme)>(StringComparer.Ordinal);
@@ -94,8 +101,8 @@ public static class StylePropertyCatalogFactory
             var group = pair.Value;
             var field = ResolveField(fields, name + "Property", builder, problems);
             if (field is null) continue;
-            var fieldKind = KindOf(((INamedTypeSymbol)field.Type).TypeArguments[0], color, themeColor);
-            if (fieldKind is null || fieldKind != group.Kind)
+            var derived = Derive(field, color, themeColor);
+            if (derived.Kind is null || derived.Kind != group.Kind)
             {
                 Problem(problems, builder, name,
                     $"StyledProperty field '{name}Property' has value type " +
@@ -119,23 +126,167 @@ public static class StylePropertyCatalogFactory
             }
 
             properties.Add(new StylePropertyDef(
-                name, group.Kind, Display(field), resourceField, Display(field.ContainingType)));
+                name, group.Kind, Display(field), resourceField, Display(field.ContainingType),
+                IsBuiltIn: true, derived.EnumTypeName, derived.Candidates));
         }
+
+        // 标注通道（design/19 §4.3）：并集进目录，冲突规则 §7——同名即报（Error），
+        // 内建胜出；两个用户声明同名则双双拒绝。
+        properties.AddRange(CollectAnnotated(annotated, styledProperty, groups.Keys,
+            color, themeColor, problems));
 
         return new StylePropertyCatalog(properties, problems);
     }
 
-    /// <summary>收集候选程序集里全部 public static 的 <c>StyledProperty&lt;T&gt;</c> 字段，按字段名分桶。</summary>
-    private static Dictionary<string, List<IFieldSymbol>> CollectPropertyFields(
-        Compilation compilation, INamedTypeSymbol styledProperty)
+    /// <summary>
+    /// 标注通道（design/19 §4.3）：收集 <c>[UiStyleProperty]</c> 字段 → 派生属性名与值形态
+    /// → 冲突查重。声明不合规报 <c>EUI058</c> 不进目录、不抛异常（构建不抛异常口径）。
+    /// </summary>
+    private static List<StylePropertyDef> CollectAnnotated(
+        IReadOnlyList<IFieldSymbol> annotated, INamedTypeSymbol styledProperty,
+        IReadOnlyCollection<string> builtInNames,
+        INamedTypeSymbol? color, INamedTypeSymbol? themeColor,
+        List<UiMetadataProblem> problems)
+    {
+        if (annotated.Count == 0) return [];
+
+        // 第一道：字段声明合规（类型闭包 / readonly / Name 解析），合规者按名字分组。
+        var valid = new SortedDictionary<string, List<IFieldSymbol>>(StringComparer.Ordinal);
+        foreach (var field in annotated)
+        {
+            var declaring = Display(field.ContainingType);
+            if (!field.IsStatic || field.DeclaredAccessibility != Accessibility.Public)
+            {
+                Problem(problems, field, UiDiagnostics.StylePropertyDeclarationInvalid,
+                    $"[UiStyleProperty] field '{field.Name}' on '{declaring}' must be public static readonly");
+                continue;
+            }
+            if (!field.IsReadOnly)
+            {
+                Problem(problems, field, UiDiagnostics.StylePropertyDeclarationInvalid,
+                    $"[UiStyleProperty] field '{field.Name}' on '{declaring}' must be readonly");
+                continue;
+            }
+            if (field.Type is not INamedTypeSymbol fieldType ||
+                !SymbolEqualityComparer.Default.Equals(fieldType.OriginalDefinition, styledProperty) ||
+                fieldType.TypeArguments.Length != 1)
+            {
+                Problem(problems, field, UiDiagnostics.StylePropertyDeclarationInvalid,
+                    $"[UiStyleProperty] field '{field.Name}' on '{declaring}' must be a " +
+                    "StyledProperty<T> field (closed generic — T must be a real type, not a type parameter)");
+                continue;
+            }
+            // T 含泛型形参：发射出的 s.Set<T>(…) 在宿主代码里不可解析（R3）。
+            if (ContainsTypeParameter(fieldType.TypeArguments[0]))
+            {
+                Problem(problems, field, UiDiagnostics.StylePropertyDeclarationInvalid,
+                    $"[UiStyleProperty] field '{field.Name}' on '{declaring}' has an open generic " +
+                    $"value type '{fieldType.TypeArguments[0].ToDisplayString()}'; style values must be closed types");
+                continue;
+            }
+
+            var name = PropertyNameOf(field);
+            if (name is not { Length: > 0 })
+            {
+                Problem(problems, field, UiDiagnostics.StylePropertyDeclarationInvalid,
+                    $"[UiStyleProperty] field '{field.Name}' on '{declaring}' resolves to an empty " +
+                    "property name; name the property explicitly ([UiStyleProperty(Name = \"...\")])");
+                continue;
+            }
+            if (!valid.TryGetValue(name, out var bucket))
+                valid[name] = bucket = [];
+            bucket.Add(field);
+        }
+
+        // 第二道：冲突查重（design/19 §7）——内建同名 → 用户声明败（EUI059，目录取内建）；
+        // 两个用户声明同名（跨程序集/同程序集皆然）→ 双双拒绝（对齐 ResolveField 的多程序集歧义口径）。
+        var result = new List<StylePropertyDef>();
+        foreach (var pair in valid)
+        {
+            var name = pair.Key;
+            var candidates = pair.Value;
+            if (builtInNames.Contains(name))
+            {
+                Problem(problems, candidates[0], UiDiagnostics.StylePropertyNameConflict,
+                    $"style property '{name}' conflicts with a built-in StyleBuilder property; " +
+                    "the built-in wins and this declaration leaves the catalog — rename it " +
+                    "([UiStyleProperty(Name = \"...\")])");
+                continue;
+            }
+            if (candidates.Count > 1)
+            {
+                Problem(problems, candidates[0], UiDiagnostics.StylePropertyNameConflict,
+                    $"style property '{name}' is declared {candidates.Count} times " +
+                    $"({string.Join(", ", candidates.Select(static f => Display(f.ContainingType)).Distinct(StringComparer.Ordinal))}); " +
+                    "all declarations leave the catalog — the name is ambiguous");
+                continue;
+            }
+
+            var field = candidates[0];
+            var derived = Derive(field, color, themeColor);
+            if (derived.Kind is null)
+            {
+                Problem(problems, field, UiDiagnostics.StylePropertyDeclarationInvalid,
+                    $"[UiStyleProperty] field '{field.Name}' has unsupported value type " +
+                    $"'{((INamedTypeSymbol)field.Type).TypeArguments[0].ToDisplayString()}'; " +
+                    "style values are double numbers, Color/ThemeColor colors, enums or strings");
+                continue;
+            }
+            result.Add(new StylePropertyDef(
+                name, derived.Kind.Value, Display(field), ResourceField: null, Display(field.ContainingType),
+                IsBuiltIn: false, derived.EnumTypeName, derived.Candidates));
+        }
+        return result;
+    }
+
+    /// <summary>标注属性名：显式 <c>Name</c> → 用之；否则字段名去 <c>Property</c> 后缀（去后为空 → null）。</summary>
+    private static string? PropertyNameOf(IFieldSymbol field)
+    {
+        var attribute = FindAttribute(field);
+        if (attribute is not null)
+            foreach (var pair in attribute.NamedArguments)
+                if (pair.Key == "Name" && pair.Value.Value is string explicitName)
+                    return explicitName.Length == 0 ? null : explicitName;
+
+        return field.Name.EndsWith("Property", StringComparison.Ordinal) &&
+               field.Name.Length > "Property".Length
+            ? field.Name.Substring(0, field.Name.Length - "Property".Length)
+            : null;
+    }
+
+    private static AttributeData? FindAttribute(IFieldSymbol field) =>
+        field.GetAttributes().FirstOrDefault(static a =>
+            a.AttributeClass is { } attribute &&
+            attribute.MetadataName == "UiStylePropertyAttribute" &&
+            string.Equals(attribute.ContainingNamespace.ToDisplayString(), "EclipseUI", StringComparison.Ordinal));
+
+    /// <summary>T（或其泛型实参链）是否含泛型形参（open generic 不可发射）。</summary>
+    private static bool ContainsTypeParameter(ITypeSymbol type)
+    {
+        if (type.TypeKind == TypeKind.TypeParameter) return true;
+        if (type is INamedTypeSymbol named)
+            return named.TypeArguments.Any(ContainsTypeParameter);
+        if (type is IArrayTypeSymbol array)
+            return ContainsTypeParameter(array.ElementType);
+        return false;
+    }
+
+    /// <summary>收集候选程序集里全部 public static 的 <c>StyledProperty&lt;T&gt;</c> 字段：
+    /// 按字段名分桶（内建字段解析用）+ 标注字段的平铺清单（标注通道用）。</summary>
+    private static (Dictionary<string, List<IFieldSymbol>> ByName, List<IFieldSymbol> Annotated)
+        CollectPropertyFields(Compilation compilation, INamedTypeSymbol styledProperty)
     {
         var fields = new Dictionary<string, List<IFieldSymbol>>(StringComparer.Ordinal);
+        var annotated = new List<IFieldSymbol>();
         foreach (var assembly in UiCatalogFactory.CandidateAssembliesFor(compilation))
         {
             foreach (var type in UiCatalogFactory.WalkTypesFor(assembly.GlobalNamespace))
             {
                 foreach (var member in type.GetMembers().OfType<IFieldSymbol>())
                 {
+                    // 标注收集在类型过滤之前：[UiStyleProperty] 标在非 StyledProperty 字段上
+                    // 也是作者意图，要进 CollectAnnotated 报 EUI058，而不是被静默忽略。
+                    if (FindAttribute(member) is not null) annotated.Add(member);
                     if (!member.IsStatic || member.DeclaredAccessibility != Accessibility.Public) continue;
                     if (member.Type is not INamedTypeSymbol fieldType ||
                         !SymbolEqualityComparer.Default.Equals(fieldType.OriginalDefinition, styledProperty))
@@ -146,7 +297,7 @@ public static class StylePropertyCatalogFactory
                 }
             }
         }
-        return fields;
+        return (fields, annotated);
     }
 
     private static IFieldSymbol? ResolveField(
@@ -162,6 +313,10 @@ public static class StylePropertyCatalogFactory
             return null;
         }
         if (candidates.Count == 1) return candidates[0];
+        // 多候选时未标注者优先：用户带 [UiStyleProperty] 的同名声明是 EUI059 冲突方
+        // （用户败、内建胜），它不该让内建字段本身落入「多程序集歧义」而从目录消失。
+        var builtIn = candidates.Where(static c => FindAttribute(c) is null).ToArray();
+        if (builtIn.Length == 1) return builtIn[0];
         if (problems is not null)
             Problem(problems, builder, fieldName,
                 $"StyledProperty field '{fieldName}' is declared in {candidates.Count} assemblies; " +
@@ -169,7 +324,28 @@ public static class StylePropertyCatalogFactory
         return null;
     }
 
-    /// <summary>从 CLR 类型派生值形态（可空包装解一层）。</summary>
+    /// <summary>值形态派生（design/19 §5.2 分派表的编译期一半）：从字段泛型实参 T 推出
+    /// kind + 枚举类型名/成员表（发射期零符号依赖——enum 信息在扫描期算好存进 def）。</summary>
+    private static (StyleValueKind? Kind, string? EnumTypeName, IReadOnlyList<string>? Candidates) Derive(
+        IFieldSymbol field, INamedTypeSymbol? color, INamedTypeSymbol? themeColor)
+    {
+        var kind = KindOf(((INamedTypeSymbol)field.Type).TypeArguments[0], color, themeColor);
+        if (kind is not StyleValueKind.Enum) return (kind, null, null);
+
+        var enumType = (INamedTypeSymbol)((INamedTypeSymbol)field.Type).TypeArguments[0];
+        if (enumType.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
+            enumType = (INamedTypeSymbol)enumType.TypeArguments[0];
+        var members = enumType.GetMembers()
+            .OfType<IFieldSymbol>()
+            .Where(static f => f.IsConst)
+            .Select(static f => f.Name)
+            .OrderBy(static n => n, StringComparer.Ordinal)
+            .ToArray();
+        return (StyleValueKind.Enum, Display(enumType), members);
+    }
+
+    /// <summary>从 CLR 类型派生值形态（可空包装解一层）。design/19 §5.2 扩展：
+    /// 枚举 → keyword、string → string；其余仍只认 double / Color / ThemeColor。</summary>
     private static StyleValueKind? KindOf(ITypeSymbol type, INamedTypeSymbol? color, INamedTypeSymbol? themeColor)
     {
         if (type.SpecialType == SpecialType.System_Double) return StyleValueKind.Number;
@@ -182,6 +358,8 @@ public static class StylePropertyCatalogFactory
             return StyleValueKind.Color;
         if (themeColor is not null && SymbolEqualityComparer.Default.Equals(named.OriginalDefinition, themeColor))
             return StyleValueKind.Color;
+        if (named.TypeKind == TypeKind.Enum) return StyleValueKind.Enum;
+        if (named.SpecialType == SpecialType.System_String) return StyleValueKind.Text;
         return null;
     }
 
@@ -192,4 +370,9 @@ public static class StylePropertyCatalogFactory
     private static void Problem(List<UiMetadataProblem> problems, INamedTypeSymbol builder,
         string member, string message) =>
         problems.Add(new UiMetadataProblem(ProblemCode, message, Display(builder), member));
+
+    /// <summary>标注通道问题：定位到字段声明类型（EUI058/EUI059 自带源定位出口）。</summary>
+    private static void Problem(List<UiMetadataProblem> problems, IFieldSymbol field,
+        string code, string message) =>
+        problems.Add(new UiMetadataProblem(code, message, Display(field.ContainingType), field.Name));
 }

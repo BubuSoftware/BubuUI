@@ -183,6 +183,18 @@
 > `Showcase.ui` 已改用规范名。全量 784 例（359/319/106），除本机
 > `PixelGoldens_MatchBaseline` 的像素哈希差异（改动前既有的环境差异）外 0 回归。
 >
+> **样式属性自定义化已通过（2026-11-12，D115，design/19 P1 / E6 片）**：属性目录进料口扩为
+> 「`StyleBuilder` setter ∪ `[UiStyleProperty]` 标注字段」——应用/第三方库给自己的
+> `public static readonly StyledProperty<T>` 字段加标注即可写进 `.eustyle` / `@style` /
+> `Style=`（属性名 `Name` ?? 去 `Property` 后缀；`double`/`Color`/枚举/`string` 四种值形态，
+> 枚举成员表扫描期派生）；声明不合规 **EUI058**、同名冲突 **EUI059**（用户 vs 内建：内建胜；
+> 用户 vs 用户：双双拒绝）。自定义属性发射走 `s.Set(<目录字段>, <值>)`，内建仍 `s.Name(...)`；
+> LSP 在 `Prop: |` 值位置给枚举成员候选、值悬停给形态文案。画廊 `BadgeStyles`（Glow/Tone/
+> BadgeLabel）端到端演示：画廊**第 5 分区**把类通道收到的值读回成可见文案（hover 翻 Glow 6→12
+> 经 `PropertyChanged` 即时刷新），Showcase 第 3 分区以内联 `Style=` + `{InlineDesc}` 读回
+> local 层三值，`app.eustyle` 注释覆盖全部 P1 写法（keyword 直通 / `$var` 限 number/color /
+> theme 拒绝 / 显式 `Name`）。新用例 17 例；全量 **1095 例全绿（392/394/201/108）** 0 警告。
+>
 > **布局契约已通过（2026-11-13，D116）**：`Element` 级统一布局面（Avalonia `Layoutable` 对齐）——
 > `Margin` / `Width` / `Height` / `Min*/Max*`（宽高 NaN 缺省）+ `HorizontalAlignment/VerticalAlignment`
 > （默认 **Stretch**，既有布局零回归）+ `TextBlock.TextWrapping`（Wrap 贪心断行：空格换行、

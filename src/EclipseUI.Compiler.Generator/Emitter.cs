@@ -175,7 +175,8 @@ public sealed class Emitter
             _sb.Append(EustyleGenerator.EmitStateRegisters(_styleStates, "        "));
             _sb.Append(EustyleGenerator.EmitDefines(
                 new EustyleStylesheet(_styleRules),
-                "global::EclipseUI.Rendering.StyleRegistry.Instance"));
+                "global::EclipseUI.Rendering.StyleRegistry.Instance",
+                _styleProperties));
             _sb.AppendLine("    }");
             _sb.AppendLine();
         }

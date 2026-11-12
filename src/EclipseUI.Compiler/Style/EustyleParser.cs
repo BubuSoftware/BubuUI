@@ -13,6 +13,7 @@ namespace EclipseUI.Compiler;
 /// .panel { &gt; Button { … }  TextBlock.title { … }  &gt; Button:hover { … } }   // E4 嵌套
 /// </code>
 /// value := theme(color, color) | #rgb | #rrggbb | #rrggbbaa | number | $var
+///        | keyword（枚举成员，按属性目录成员表校验）| "string"（design/19 §5.1）
 /// state := hover | active | pressed | focus | disabled（active 是 pressed 的 CSS 别名）
 ///        | @states 声明的注册名（E5；本文件声明优先，未声明查 <paramref name="externalStates"/>）
 /// 注释 := // 行注释 | /* 块注释 */
@@ -371,6 +372,16 @@ public static class Eustyle
             }
 
             var value = ParseValue();
+            if (value is EustyleKeyword or EustyleString)
+            {
+                // design/19 §5.1：$变量仍限于数字/颜色——keyword/string 是字面量形态，
+                // 不做变量插值也不进变量表（P1 保持简单）。
+                ErrorSpan(value.Span,
+                    "'$variable' values are limited to numbers and colors; " +
+                    "enum keywords and string literals must be written inline (EUI050)",
+                    UiDiagnostics.StyleSyntax);
+                value = null;
+            }
             SkipTrivia();
             if (Take(';'))
             {
@@ -667,22 +678,38 @@ public static class Eustyle
                 return;
             }
 
-            // 值形态校验：color 属性接受颜色/theme 双色；number 属性只接受裸数字（EUI052）。
-            var actualKind = value is EustyleNumber ? StyleValueKind.Number : StyleValueKind.Color;
-            if (actualKind != definition.Kind)
-            {
-                ErrorSpan(value.Span,
-                    $"property '{prop}' expects a {KindName(definition.Kind)} value; " +
-                    DescribeValue(value) + " is not one (EUI052)",
-                    UiDiagnostics.StyleValueType);
-                return;
-            }
+            // theme 准入先于值形态检查（design/19 §5.2「theme() 准入另行检查」）：
+            // theme() 落在 number/enum/string 属性上时，读者需要的是「这个属性不收 theme()」
+            // 而不是「这个属性期望 number」——形态检查会把 theme 误报成类别不符。
             if (value is EustyleTheme && !definition.AllowsTheme)
             {
                 ErrorSpan(value.Span,
                     $"property '{prop}' does not accept theme(dark, light); " +
                     "only properties with a ThemeColor resource overload do (EUI052)",
                     UiDiagnostics.StyleValueType);
+                return;
+            }
+
+            // 值形态校验（design/19 §5.2 分派表）：number 属性只收裸数字；color 属性收
+            // 颜色/theme 双色（theme 准入已在上面检查）；enum 属性收 keyword（编译期成员表校验）；
+            // string 属性收字符串字面量或 keyword 直通（EUI052）。
+            if (!ValueMatches(value, definition))
+            {
+                if (value is EustyleKeyword keyword && definition.Kind == StyleValueKind.Enum &&
+                    EnumMembersOf(definition, out var members))
+                {
+                    ErrorSpan(value.Span,
+                        $"'{keyword.Name}' is not a member of {definition.EnumTypeName}; " +
+                        "supported: " + string.Join(", ", members) + " (EUI052)",
+                        UiDiagnostics.StyleValueType);
+                }
+                else
+                {
+                    ErrorSpan(value.Span,
+                        $"property '{prop}' expects a {KindName(definition.Kind)} value; " +
+                        DescribeValue(value) + " is not one (EUI052)",
+                        UiDiagnostics.StyleValueType);
+                }
                 return;
             }
 
@@ -702,14 +729,62 @@ public static class Eustyle
             }
         }
 
-        private static string KindName(StyleValueKind kind) =>
-            kind == StyleValueKind.Number ? "number" : "color";
+        /// <summary>值形态分派（design/19 §5.2）：枚举成员是否命中 <see cref="StylePropertyDef.Candidates"/>。
+        /// 目录里 enum 属性必有成员表（扫描期从枚举符号派生）；缺失视为目录数据不合规，一律拒绝。</summary>
+        private static bool EnumMembersOf(StylePropertyDef definition, out IReadOnlyList<string> members)
+        {
+            var candidates = definition.Candidates;
+            if (candidates is { Count: > 0 })
+            {
+                members = candidates;
+                return true;
+            }
+            members = Array.Empty<string>();
+            return false;
+        }
+
+        /// <summary>值形态分派（design/19 §5.2）：
+        /// number → 裸数字；color → hex/theme；enum → 命中成员表的 keyword；
+        /// string → 字符串字面量或任意 keyword（CSS keyword 风格直通）。</summary>
+        private static bool ValueMatches(EustyleValue value, StylePropertyDef definition) => value switch
+        {
+            EustyleNumber => definition.Kind == StyleValueKind.Number,
+            EustyleColor => definition.Kind == StyleValueKind.Color,
+            EustyleTheme => definition.Kind == StyleValueKind.Color,   // theme 准入另行检查
+            EustyleKeyword keyword => definition.Kind switch
+            {
+                StyleValueKind.Enum => EnumMembersOf(definition, out var members)
+                    && IndexOf(members, keyword.Name) >= 0,
+                StyleValueKind.Text => true,
+                _ => false,
+            },
+            EustyleString => definition.Kind == StyleValueKind.Text,
+            _ => false,
+        };
+
+        /// <summary>netstandard2.0 兼容的成员表线性查找（成员表不建字典）。</summary>
+        private static int IndexOf(IReadOnlyList<string> source, string value)
+        {
+            for (var i = 0; i < source.Count; i++)
+                if (string.Equals(source[i], value, StringComparison.Ordinal)) return i;
+            return -1;
+        }
+
+        private static string KindName(StyleValueKind kind) => kind switch
+        {
+            StyleValueKind.Number => "number",
+            StyleValueKind.Color => "color",
+            StyleValueKind.Enum => "keyword (an enum member)",
+            _ => "string",
+        };
 
         private static string DescribeValue(EustyleValue value) => value switch
         {
             EustyleNumber n => $"the number {n.Value.ToString("0.################", CultureInfo.InvariantCulture)}",
             EustyleColor => "a color literal",
             EustyleTheme => "a theme() pair",
+            EustyleKeyword k => $"the keyword '{k.Name}'",
+            EustyleString => "a string literal",
             _ => "the value",
         };
 
@@ -721,23 +796,62 @@ public static class Eustyle
             var start = _i;
             if (Eof)
             {
-                Error(start, start + 1, "expected a value: theme(dark, light), a color (#hex) or a number");
+                Error(start, start + 1,
+                    "expected a value: theme(dark, light), a color (#hex), a number, an enum keyword or a string");
                 return null;
             }
             var c = _s[_i];
             if (c == '#') return ParseColor();
             if (c == '$') return ParseVarRef();
+            if (c == '"') return ParseString();
             if (c == '-' || char.IsDigit(c)) return ParseNumber();
             if (char.IsLetter(c))
             {
                 var word = Ident();
                 if (word == "theme") return ParseTheme(start);
-                Error(start, _i, $"unexpected '{word}'; expected theme(dark, light), a color (#hex) or a number");
-                return null;
+                // design/19 §5.1：theme 之外的裸标识符 = keyword 值（枚举成员 / string 直通）——
+                // 是否合法由声明处的属性目录校验（ParseDeclaration 的值形态分派）。
+                return new EustyleKeyword(word, SpanAt(start, _i - start));
             }
             Error(start, start + 1,
-                $"unexpected character '{Printable(c)}'; expected theme(dark, light), a color (#hex) or a number");
+                "unexpected character; expected theme(dark, light), a color (#hex), a number, an enum keyword or a string");
             return null;
+        }
+
+        /// <summary>带引号字符串值（design/19 §5.1）：直到未转义的闭合引号；支持
+        /// <c>\\</c> / <c>\"</c> 转义，其余字符原样保留。未闭合 → EUI050。</summary>
+        private EustyleValue? ParseString()
+        {
+            var start = _i;
+            _i++; // 开引号
+            var sb = new System.Text.StringBuilder();
+            while (true)
+            {
+                if (Eof)
+                {
+                    Error(start, _i, "unterminated string literal; add the closing '\"'");
+                    return null;
+                }
+                var c = _s[_i];
+                if (c == '\\')
+                {
+                    if (_i + 1 >= _s.Length)
+                    {
+                        _i++;
+                        Error(start, _i, "unterminated string literal; add the closing '\"'");
+                        return null;
+                    }
+                    var next = _s[_i + 1];
+                    if (next is '"' or '\\') { sb.Append(next); _i += 2; continue; }
+                    sb.Append(c); // 未知转义原样保留反斜杠（不做 \n 等扩展）
+                    _i++;
+                    continue;
+                }
+                if (c == '"') { _i++; break; }
+                sb.Append(c);
+                _i++;
+            }
+            return new EustyleString(sb.ToString(), SpanAt(start, _i - start));
         }
 
         private EustyleValue? ParseTheme(int start)

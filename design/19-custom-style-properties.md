@@ -1,7 +1,9 @@
 # 19 · 样式属性自定义化设计（User-Defined Style Properties）
 
-> 状态：**提案（未实施）**——2026-11-12 起草；基于 `[UiLiteralParser]` 落地先例（见 §11 前提）
-> 关联：design/17（样式系统 §4.3 目录单一来源 / §4.4 值语法）、design/14 §14.7.3（字面量转换与
+> 状态：**P1 落地（2026-11-12，E6 片，台账 D115）**——2026-11-12 起草并当日实施；
+> P2/P3 仍为提案（未实施）。基于 `[UiLiteralParser]` 落地先例（见 §11 前提）
+> 关联：design/17（样式系统 §4.3 目录单一来源 / §4.4 值语法，已随 P1 同步）、
+> design/14 §14.7.3（字面量转换与
 > `[UiLiteralParser]` 声明式扩展先例）、spec/01 §5（模板字面量）、spec/02 §1（R1/R2 约束）
 > 代码基线：`src/EclipseUI.Compiler.Metadata/StylePropertyCatalogFactory.cs`、
 > `src/EclipseUI.Compiler/Style/`（EustyleParser/EustyleGenerator/EustyleAst）、
@@ -213,7 +215,7 @@ EUI055–057 已被 IDE 支持与模板契约占用（spec/01 §5 / design/06 §
 
 | 阶段 | 内容 | 改动面 | 出口标准 |
 |---|---|---|---|
-| **P1** | `[UiStyleProperty]` + 标注扫描 + enum/string/number 值 + `s.Set` 发射 + EUI058/059 | `UiAttributes.cs`、`StylePropertyCatalogFactory.cs`、`EustyleAst/Parser`（两种新值）、`EustyleGenerator`（ValueLiteral 分派 + EmitRule 判据）、`Diagnostics.cs`、LSP 值候选 | Gallery 加一个自定义属性端到端演示；新测试 ≥10 例；全量测试 0 回归 |
+| ✅ **P1**（2026-11-12，D115） | `[UiStyleProperty]` + 标注扫描 + enum/string/number 值 + `s.Set` 发射 + EUI058/059 | `UiAttributes.cs`、`StylePropertyCatalogFactory.cs`、`EustyleAst/Parser`（两种新值）、`EustyleGenerator`（ValueLiteral 分派 + EmitRule 判据）、`Diagnostics.cs`、LSP 候选 | ✅ Gallery 端到端：`BadgeStyles.cs` + `.badge` 类通道（第 5 分区可见读回 + hover 变体实时刷新）+ Showcase inline `Style=` 读回文案；新测试 17 例；全量 0 回归 |
 | **P2** | 复用 `[UiLiteralParser]` 支持任意复杂类型（`Thickness.Parse` 等） | 目录 def 预计算分派接 `UiCatalog.FindLiteralParser`；发射期 `Parse` 调用 | `Inset: "8 16 8 16"`（`Thickness.Parse(string)`）端到端 |
 | **P3** | 多值语法 `Padding: 8 16 8 16` + `Owner` 适用性诊断（清 design/17 §4.3 待办「`Padding` 写在 `Button` 上静默无效」） | `ParseDeclaration` 多 token 消费 + 声明 arity 约定 + Analyzer 适用性检查 | 多值端到端 + 误用报错 |
 

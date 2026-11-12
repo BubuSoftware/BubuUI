@@ -94,8 +94,16 @@ public static class GalleryScene
         // ④ 样式系统：有效值分层 local > class > theme 的按钮四连 + Visual 覆盖卡片。
         page.Children.Add(Section("4. Styles - theme tokens + class layers + registered states", BuildStyleSection()));
 
+        // ⑤ 自定义样式属性（design/19 E6）：[UiStyleProperty] 标注字段并集进目录——
+        //    类通道落值 + &:hover 变体翻自定义属性 + 值读回（内联 Style= 读回在第 3 分区）。
+        page.Children.Add(Section(
+            "5. Custom style properties - [UiStyleProperty] catalog union (design/19)",
+            BuildCustomPropertySection()));
+
         page.Children.Add(Text("EclipseUI - retained segment caching (D93) - scroll to browse the whole gallery", 12));
 
+        // 根滚动器显式 Auto：极窄窗口下保留按需横滚兜底（方向开关默认 Disabled——
+        // Avalonia 对齐，其余 ScrollView 溢出裁剪不出条，design/05 §布局契约）。
         var rootViewer = new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Auto };
         rootViewer.Children.Add(page);
         return new Scene(rootViewer, counter, taskList, addTaskButton, themeButton);
@@ -155,6 +163,45 @@ public static class GalleryScene
         section.Children.Add(row);
         section.Children.Add(card);
         section.Children.Add(chips);
+        // 自定义样式属性（design/19 E6）的类通道演示在第 5 分区（可见 + 值读回）。
+        return section;
+    }
+
+    /// <summary>
+    /// design/19 E6 自定义样式属性演示区（可见）：<c>BadgeStyles</c> 的 <c>[UiStyleProperty]</c>
+    /// 字段并集进目录后，.eustyle 类通道与模板内联 <c>Style=</c> 都能写（后者在第 3 分区
+    /// Showcase 内读回）。自定义属性没有 painter 读点——值是存储层事实，所以把元素收到的值
+    /// 读回文案；类通道按钮 hover 时 <c>.badge &amp;:hover</c> 把 Glow 从 6 翻到 12，
+    /// PropertyChanged 即时刷新文案，变体落在 class 层肉眼可见。
+    /// </summary>
+    private static StackPanel BuildCustomPropertySection()
+    {
+        var section = new StackPanel { Gap = 8 };
+        // 文案行长对齐画廊既有口径（~90 字符内）：TextBlock 不换行，纵向 StackPanel 取最宽
+        // 子项作整页宽度——超长行会把整页撑宽、所有分区横向溢出（2026-11-12 实测教训）。
+        section.Children.Add(Text(
+            "App-assembly [UiStyleProperty] fields join the style catalog - no framework changes.", 13));
+
+        // 类通道：.badge 规则（app.eustyle）发射 s.Set(field, value)。先订阅再挂类——
+        // 初次应用与后续变体翻转走同一条 SetValue → PropertyChanged 路径。
+        var classDemo = new Button();
+        void RefreshLabel() => classDemo.Label =
+            $"class .badge: Glow={classDemo.GetValue(BadgeStyles.GlowProperty)} · " +
+            $"Tone={classDemo.GetValue(BadgeStyles.ToneProperty)} · " +
+            $"BadgeLabel=\"{classDemo.GetValue(BadgeStyles.BadgeLabelProperty)}\"";
+        classDemo.PropertyChanged += (_, property) =>
+        {
+            if (ReferenceEquals(property, BadgeStyles.GlowProperty)) RefreshLabel();
+        };
+        classDemo.Classes = ["badge"];   // Provider 已在宿主装配期接线（UseStyles 先于场景构建）
+        RefreshLabel();                   // 初次应用的事件可能早于 Tone/BadgeLabel 落值，补一次全量读
+        section.Children.Add(classDemo);
+
+        section.Children.Add(Text(
+            "Number / enum keyword / string - all three forms declared in BadgeStyles.cs; " +
+            "hover flips Glow 6 → 12 via the .badge &:hover variant.", 12));
+        section.Children.Add(Text(
+            "Inline Style= in Showcase (section 3) writes the same fields locally; its caption reads the values back.", 12));
         return section;
     }
 
@@ -180,6 +227,8 @@ public static class GalleryScene
 
     private static TextBlock Text(string text, double fontSize)
     {
+        // Wrap：窄窗口下说明文案随视口收窄换行（TextBlock 换行契约，design/05）；
+        // 宽窗口下宽度富余，视觉与单行完全一致。
         var block = new TextBlock { FontSize = fontSize, TextWrapping = TextWrapping.Wrap };
         block.AddRun(new TextRun(text));
         return block;

@@ -285,5 +285,13 @@ public class TemplateOnlyComponentTests
 
         Assert.Same(component.virtualList, root.Content.Descendants<VirtualizingStackPanel>().Single());
         Assert.NotEmpty(component.virtualList.Children);
+
+        // design/19 内联读回：Style="Glow: 6; Tone: Success; BadgeLabel: inline" 在元素构造后
+        // 写进 local 层，{InlineDesc} 属性渲染期读回三种值（keyword 直通形态 BadgeLabel=inline）。
+        var caption = root.Content.Descendants<TextBlock>()
+            .Single(t => t.FullText().StartsWith("inline Style=", StringComparison.Ordinal));
+        Assert.Contains("Glow=6", caption.FullText());
+        Assert.Contains("Tone=Success", caption.FullText());
+        Assert.Contains("BadgeLabel=\"inline\"", caption.FullText());
     }
 }

@@ -324,12 +324,26 @@ public static class CompletionProvider
 
         if (string.Equals(context.AttributeName, "Style", StringComparison.Ordinal))
         {
+            // 值位置（光标在 "Prop: |" 之后）：按属性形态给值候选（design/19 §9）——
+            // enum 属性列成员表；string/number/color 是自由字面量，静默空表。
+            if (StyleValueTarget(analysis, catalog, context) is { } valueTarget)
+            {
+                if (valueTarget.Kind == StyleValueKind.Enum &&
+                    valueTarget.Candidates is { Count: > 0 } members)
+                {
+                    var enumName = TypeNames.Bare(valueTarget.EnumTypeName ?? valueTarget.Name);
+                    foreach (var member in members)
+                        items.Add(new UiCompletionItem(member, UiCompletionKind.EnumMember, enumName));
+                }
+                return new UiCompletionList(replacement, items);
+            }
+
             foreach (var property in catalog.StyleProperties.Properties.OrderBy(static p => p.Name, StringComparer.Ordinal))
             {
                 items.Add(new UiCompletionItem(
                     property.Name,
                     UiCompletionKind.StyleProperty,
-                    property.Kind == StyleValueKind.Color ? "color" : "number",
+                    KindLabel(property.Kind),
                     property.AllowsTheme ? "accepts theme(dark, light)" : null,
                     InsertText: property.Name + ": "));
             }
@@ -363,6 +377,32 @@ public static class CompletionProvider
         }
 
         return new UiCompletionList(replacement, items);
+    }
+
+    /// <summary>Style 值位置的形态标签（design/19 §5.2 分派表）。</summary>
+    private static string KindLabel(StyleValueKind kind) => kind switch
+    {
+        StyleValueKind.Color => "color",
+        StyleValueKind.Number => "number",
+        StyleValueKind.Enum => "enum keyword",
+        _ => "string",
+    };
+
+    /// <summary>
+    /// Style 属性值位置的目标属性（design/19 §9 值候选）：光标前是 <c>Prop:</c>（只差空白）
+    /// 时按 Ordinal 查目录。属性名位置（没跟冒号）返回 null，调用方列属性名。
+    /// </summary>
+    private static StylePropertyDef? StyleValueTarget(
+        DocumentAnalysis analysis, UiCatalog catalog, CursorContext context)
+    {
+        var text = analysis.Text;
+        var i = Math.Min(context.TokenStart, text.Length);
+        while (i > 0 && char.IsWhiteSpace(text[i - 1])) i--;
+        if (i == 0 || text[i - 1] != ':') return null;
+        i--;
+        var end = i;
+        while (i > 0 && (char.IsLetterOrDigit(text[i - 1]) || text[i - 1] is '_' or '-')) i--;
+        return i == end ? null : catalog.StyleProperties.Find(text.Substring(i, end - i));
     }
 
     // ---- 指令与命名空间 ----

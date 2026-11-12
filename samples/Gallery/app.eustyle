@@ -55,3 +55,27 @@ $primary: theme(#22a064, #1c8c58);
 
     &:spinning { Background: theme(#22c55e, #1aad52); }  // state-driven highlight
 }
+
+// design/19 P1: custom style properties declared in the app assembly
+// (samples/Gallery/BadgeStyles.cs, [UiStyleProperty] fields — no framework changes).
+// Value forms cover the dispatch table: number, enum keyword (member-checked at
+// compile time, emitted as T.Member) and string. Class channel emits the generic
+// s.Set(field, value) escape hatch; inline Style= emits target.SetValue(field, value).
+// More catalog-union forms (gallery section 5 reads these values back live):
+//   BadgeLabel: inline;     keyword passes through as a string on string properties
+//                           (a quoted "..." literal — used below — is the other form)
+//   $g: 6;  Glow: $g;       $variables stay number/color: a keyword or string in a
+//                           variable declaration is rejected (EUI050)
+//   Glow: theme(#000, #fff); rejected: custom properties have no XxxResourceProperty
+//                           convention yet → EUI052 "does not accept theme(dark, light)"
+//   [UiStyleProperty(Name = "Tone")] — explicit Name overrides the default
+//                           field-name-minus-"Property" rule (Glow/BadgeLabel rely on it)
+.badge {
+    Glow: 6;
+    Tone: Success;
+    BadgeLabel: "eustyle";
+
+    // Variants chain over custom properties like any built-in: the section-5 demo
+    // button flips Glow 6 → 12 while hovered (readback label refreshes via PropertyChanged).
+    &:hover { Glow: 12; }
+}

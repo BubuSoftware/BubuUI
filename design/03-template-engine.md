@@ -756,7 +756,7 @@ parent0.Children.Add(c0.Root);   // 最后挂到父级
 | `@foreach` | 3.3.6.2 | ✅ / S2–S4 | 当前集合必须是信号名；S2 支持可观察属性，S4 INCC/嵌套 |
 | `Key` | 3.3.6.3 | ✅ / S2 | S2 起同 Key 不同 item 重建；`EUI039` |
 | `Ref` | 3.3.9 | G3 | 当前 `EUI002`（D4） |
-| `Class`/`Style` | 3.3.9 | ✅ E2（2026-11-09，D105） | 转正：目录校验 + local 直赋（design/17 §4.8）；E5（D107）：@states 声明目录校验注册名伪类 + EUI054 双通道 Warning |
+| `Class`/`Style` | 3.3.9 | ✅ E2（2026-11-09，D105） | 转正：目录校验 + local 直赋（design/17 §4.8）；E5（D107）：@states 声明目录校验注册名伪类 + EUI054 双通道 Warning；E6（D115，2026-11-12）：Style 值扩 enum keyword/string，`[UiStyleProperty]` 自定义属性并集进目录（EUI058/059，design/19 P1） |
 | 具名插槽/`ContentSlot` | 3.3.9 | G4 | 当前 `EUI001`（D3） |
 | 泛型标签 | 3.3.9 | G4 | 当前 `EUI100`（D5） |
 | 附加属性 | 3.3.9 | ✅ G4（2026-11-09） | 已注册正常解析；未注册 `EUI002`（D19） |
