@@ -208,14 +208,23 @@ public sealed record UiComponentDeclaration(string Tag, string? Namespace)
     /// <summary>.ui 文件路径（目录侧声明问题的 <see cref="UiSourceLocation"/> 载体）。</summary>
     public string Path { get; init; } = "";
 
-    /// <summary>根层 <c>@code</code> 块（文档顺序）；无 <c>@code</code> 时为空。</summary>
+    /// <summary>根层 <c>@code</c> 块（文档顺序）；无 <c>@code</c> 时为空。</summary>
     public IReadOnlyList<UiCodeBlockText> CodeBlocks { get; init; } = Array.Empty<UiCodeBlockText>();
+
+    /// <summary>
+    /// design/20：根节点是保留的 <c>&lt;Window&gt;</c> → 窗口模板。退出「可组合组件」表面
+    /// （目录侧注册为 HiddenTag，EUI060），生成类派生 <c>WindowComponent</c>。
+    /// 进值相等：根标签从控件改为 Window 是对外表面的实质变化（目录形状随之变化），
+    /// 模板正文其余部分的编辑仍不破坏增量缓存命中。
+    /// </summary>
+    public bool IsWindowRoot { get; init; }
 
     public bool Equals(UiComponentDeclaration? other) =>
         other is not null
         && Tag == other.Tag
         && Namespace == other.Namespace
         && Path == other.Path
+        && IsWindowRoot == other.IsWindowRoot
         && CatalogValueEq.Sequence(CodeBlocks, other.CodeBlocks);
 
     public override int GetHashCode()
@@ -223,6 +232,7 @@ public sealed record UiComponentDeclaration(string Tag, string? Namespace)
         var hash = CatalogValueEq.Add(CatalogValueEq.Start, Tag);
         hash = CatalogValueEq.Add(hash, Namespace ?? "");
         hash = CatalogValueEq.Add(hash, Path);
+        hash = CatalogValueEq.Add(hash, IsWindowRoot);
         return CatalogValueEq.AddSequence(hash, CodeBlocks);
     }
 }
@@ -337,7 +347,8 @@ public sealed class UiCatalog : IEquatable<UiCatalog>
         IEnumerable<UiMetadataProblem> problems,
         IEnumerable<UiAttachedPropDef>? attachedProperties = null,
         StylePropertyCatalog? styleProperties = null,
-        IEnumerable<UiLiteralParserDef>? literalParsers = null)
+        IEnumerable<UiLiteralParserDef>? literalParsers = null,
+        UiElementDef? windowRoot = null)
     {
         _byTag = elements
             .GroupBy(e => e.Tag, StringComparer.Ordinal)
@@ -392,10 +403,19 @@ public sealed class UiCatalog : IEquatable<UiCatalog>
         // 编译期派生的可样式属性表面（design/17 §4.3）：与标签表面同一次符号扫描产出，
         // 随 UiCatalog 一起走增量缓存；缺省空目录仅供无符号语境的静态前端。
         StyleProperties = styleProperties ?? StylePropertyCatalog.Empty;
+        // design/20：模板根类型 def（未引用 Runtime 的编译为 null——根 <Window> 回落 EUI001）。
+        WindowRoot = windowRoot;
     }
 
     /// <summary>可样式属性目录（StyleBuilder setter + StyledProperty 字段派生，单一来源）。</summary>
     public StylePropertyCatalog StyleProperties { get; }
+
+    /// <summary>
+    /// design/20：模板根类型的 def（P1 = <c>WindowComponent</c> 的 [UiParameter] 面）。独立槽位、
+    /// 不进 <see cref="Elements"/>/<c>_byTag</c>——它不能按普通标签解析（非根位置 EUI060），只在
+    /// 分析器窗口分支作属性解析依据。未引用 Runtime 的编译为 null（根 &lt;Window&gt; 回落 EUI001）。
+    /// </summary>
+    public UiElementDef? WindowRoot { get; }
 
     public IReadOnlyList<UiElementDef> Elements { get; }
 
@@ -523,7 +543,8 @@ public sealed class UiCatalog : IEquatable<UiCatalog>
         && CatalogValueEq.Sequence(Problems, other.Problems)
         && CatalogValueEq.Sequence(AttachedProperties, other.AttachedProperties)
         && CatalogValueEq.Sequence(LiteralParsers, other.LiteralParsers)
-        && StyleProperties.Equals(other.StyleProperties);
+        && StyleProperties.Equals(other.StyleProperties)
+        && (WindowRoot is null ? other.WindowRoot is null : WindowRoot.Equals(other.WindowRoot));
 
     public override bool Equals(object? obj) => Equals(obj as UiCatalog);
 
@@ -535,7 +556,8 @@ public sealed class UiCatalog : IEquatable<UiCatalog>
         hash = CatalogValueEq.AddSequence(hash, Problems);
         hash = CatalogValueEq.AddSequence(hash, AttachedProperties);
         hash = CatalogValueEq.AddSequence(hash, LiteralParsers);
-        return CatalogValueEq.Add(hash, StyleProperties);
+        hash = CatalogValueEq.Add(hash, StyleProperties);
+        return CatalogValueEq.Add(hash, WindowRoot);
     }
 }
 

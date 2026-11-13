@@ -22,6 +22,7 @@ public static class UiCatalogFactory
     // 锚点一律按 metadata name 判定，不按程序集名匹配（design/14 §14.4.6）
     private const string ElementMetadataName = "EclipseUI.Element";
     private const string ComponentMetadataName = "EclipseUI.Component";
+    private const string WindowComponentMetadataName = "EclipseUI.WindowComponent";
     private const string RoutedEventMetadataName = "EclipseUI.RoutedEvent";
     private const string StyledPropertyGenericMetadataName = "EclipseUI.StyledProperty`1";
     private const string AttachedPropertyGenericMetadataName = "EclipseUI.AttachedProperty`1";
@@ -33,6 +34,7 @@ public static class UiCatalogFactory
     private const string UiParameterAttributeName = "EclipseUI.UiParameterAttribute";
     private const string UiSlotAttributeName = "EclipseUI.UiSlotAttribute";
     private const string UiLiteralParserAttributeName = "EclipseUI.UiLiteralParserAttribute";
+    private const string UiTemplateRootAttributeName = "EclipseUI.UiTemplateRootAttribute";
 
     /// <summary>运行时只有 <c>RoutedEventArgs</c> 一种事件实参形状；typed args 属 G4（design/14 §14.4.3）。</summary>
     internal const string DefaultEventArgsType = "global::EclipseUI.RoutedEventArgs";
@@ -80,6 +82,7 @@ public static class UiCatalogFactory
         private readonly Compilation _compilation;
         private readonly INamedTypeSymbol? _element;
         private readonly INamedTypeSymbol? _component;
+        private readonly INamedTypeSymbol? _windowComponent;
         private readonly INamedTypeSymbol? _routedEvent;
         private readonly INamedTypeSymbol? _styledPropertyGeneric;
         private readonly INamedTypeSymbol? _attachedPropertyGeneric;
@@ -109,6 +112,7 @@ public static class UiCatalogFactory
             _declarations = declarations ?? Array.Empty<UiComponentDeclaration>();
             _element = compilation.GetTypeByMetadataName(ElementMetadataName);
             _component = compilation.GetTypeByMetadataName(ComponentMetadataName);
+            _windowComponent = compilation.GetTypeByMetadataName(WindowComponentMetadataName);
             _routedEvent = compilation.GetTypeByMetadataName(RoutedEventMetadataName);
             _styledPropertyGeneric = compilation.GetTypeByMetadataName(StyledPropertyGenericMetadataName);
             _attachedPropertyGeneric = compilation.GetTypeByMetadataName(AttachedPropertyGenericMetadataName);
@@ -167,6 +171,21 @@ public static class UiCatalogFactory
                     if (origin is null) continue;
                     if (!IsPubliclyVisible(type)) continue;              // 不可见 → 使用点 EUI001
                     if (HasIgnore(type)) continue;                       // 完全退出模板表面
+
+                    // design/20：模板根类型（[UiTemplateRoot] 标注的组件及其子类）与窗口模板文件
+                    // （声明 IsWindowRoot，含同名 code-behind）退出「可组合组件」表面——它们只能
+                    // 作为模板根，不能被其他模板当标签用。注册为 HiddenTag：使用点走 Unavailable
+                    // 通道拿到 EUI060 定向诊断，补全自动过滤（§14.9.1）。
+                    if (origin == UiElementOrigin.Component &&
+                        (IsTemplateRootType(type) || DeclarationFor(type) is { IsWindowRoot: true }))
+                    {
+                        hidden.Add(new UiHiddenTag(type.Name, Display(type), UiDiagnostics.TemplateRootMisuse,
+                            $"'{type.Name}' is a template-root type ([UiTemplateRoot], design/20); it cannot be " +
+                            "used as a component tag inside another template — instantiate it from application " +
+                            "code instead (window templates: new MyWindow().CreateWindow())"));
+                        continue;
+                    }
+
                     if (!CanExpose(type, out var reasonCode, out var reason))
                     {
                         hidden.Add(new UiHiddenTag(type.Name, Display(type), reasonCode, reason));
@@ -196,7 +215,17 @@ public static class UiCatalogFactory
             // 形状取最小——无内容、无参数、无事件。要参数就写 .cs。
             AppendTemplateOnlyComponents(exposed, hidden, knownTypeNames);
 
-            return new UiCatalog(exposed, hidden, problems, attached, styleProperties, literalParsers);
+            // design/20：模板根类型的 def（P1 = WindowComponent）。复用组件描述路径——
+            // [UiParameter] 面进 Parameters，属性解析、字面量转换、建议算法全部免费获得。
+            // 不进 Elements（_byTag）：它不能按普通标签解析（非根位置 EUI060），只在分析器
+            // 窗口分支作属性解析依据。未引用 Runtime 的编译保持 null。
+            UiElementDef? windowRoot = null;
+            if (_windowComponent is not null && _component is not null && DerivesFrom(_windowComponent, _component))
+                windowRoot = Describe(_windowComponent, UiElementOrigin.Component,
+                    fromReferencedAssembly: !SymbolEqualityComparer.Default.Equals(
+                        _windowComponent.ContainingAssembly, _compilation.Assembly));
+
+            return new UiCatalog(exposed, hidden, problems, attached, styleProperties, literalParsers, windowRoot);
         }
 
         private void AppendTemplateOnlyComponents(List<UiElementDef> exposed, List<UiHiddenTag> hidden,
@@ -206,6 +235,23 @@ public static class UiCatalogFactory
             foreach (var declaration in _declarations.OrderBy(static d => d.Tag, StringComparer.Ordinal))
             {
                 var tag = declaration.Tag;
+                // design/20：窗口模板文件不合成可组合 def——注册为 HiddenTag（EUI060），任何位置
+                // <MainWindow/> 都得到定向诊断。同名类型存在时类型循环已按声明 IsWindowRoot 注册
+                // 过 HiddenTag，这里去重。
+                if (declaration.IsWindowRoot)
+                {
+                    if (!hidden.Any(h => string.Equals(h.Tag, tag, StringComparison.Ordinal)))
+                    {
+                        var windowClrName = string.IsNullOrEmpty(declaration.Namespace)
+                            ? "global::" + tag
+                            : "global::" + declaration.Namespace + "." + tag;
+                        hidden.Add(new UiHiddenTag(tag, windowClrName, UiDiagnostics.TemplateRootMisuse,
+                            $"'{tag}' is a window template (design/20): window templates cannot be used as " +
+                            "component tags inside other templates — instantiate from application code " +
+                            $"(new {tag}().CreateWindow())"));
+                    }
+                    continue;
+                }
                 if (exposed.Any(e => string.Equals(e.Tag, tag, StringComparison.Ordinal))) continue;
                 // 类型存在但被挡在目录外（抽象、不可见、[UiIgnore]…）：让既有诊断说话，
                 // 合成一份空的只会把真实原因盖掉。
@@ -755,6 +801,41 @@ public static class UiCatalogFactory
         }
 
         // ---- 暴露判定 ----
+
+        /// <summary>
+        /// design/20：类型（或其基链）是否带 <c>[UiTemplateRoot]</c> 标记。标记类型的任何子类
+        /// 同为模板根类型——派生一个窗口基类就是声明「这是窗口模板」。
+        /// </summary>
+        private bool IsTemplateRootType(INamedTypeSymbol type)
+        {
+            for (var current = type; current is not null && current.SpecialType != SpecialType.System_Object; current = current.BaseType)
+                if (FindAttribute(current, UiTemplateRootAttributeName) is not null)
+                    return true;
+            return false;
+        }
+
+        /// <summary>与类型同名同命名空间匹配的 .ui 声明（无则 null）。命名空间口径与 <see cref="DeclaredAsTemplate"/> 一致。</summary>
+        private UiComponentDeclaration? DeclarationFor(INamedTypeSymbol type)
+        {
+            var ns = type.ContainingNamespace?.ToDisplayString();
+            foreach (var declaration in _declarations)
+            {
+                if (!string.Equals(declaration.Tag, type.Name, StringComparison.Ordinal)) continue;
+                if (declaration.Namespace is null
+                    || string.Equals(ns, declaration.Namespace, StringComparison.Ordinal))
+                    return declaration;
+            }
+            return null;
+        }
+
+        /// <summary><paramref name="type"/> 是否派生自 <paramref name="baseType"/>（身份比较，含自身）。</summary>
+        private static bool DerivesFrom(INamedTypeSymbol type, INamedTypeSymbol baseType)
+        {
+            for (var current = type; current is not null && current.SpecialType != SpecialType.System_Object; current = current.BaseType)
+                if (SymbolEqualityComparer.Default.Equals(current, baseType))
+                    return true;
+            return false;
+        }
 
         private UiElementOrigin? OriginOf(INamedTypeSymbol type)
         {

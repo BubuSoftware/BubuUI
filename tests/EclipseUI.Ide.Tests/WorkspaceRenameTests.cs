@@ -9,7 +9,7 @@ namespace EclipseUI.Ide.Tests;
 /// design/18 阶段 3（§5.6）：项目模式重命名走 Roslyn Renamer——Solution diff，
 /// 源 .cs 直接交付，生成文档编辑经统一映射服务回映 .ui，任一处映不回整体拒绝。
 /// 夹具借用 Gallery 真实 .ui 路径注入缓冲区；TaskItem 是 Gallery 真实模型类型，
-/// 跨文档引用（TaskList.ui / GalleryScene.cs）天然存在。
+/// 跨文档引用（TaskList.ui / TaskItem.cs）天然存在。
 /// </summary>
 public class WorkspaceRenameTests
 {
@@ -148,10 +148,9 @@ public class WorkspaceRenameTests
         var byPath = result!.Files.ToDictionary(
             f => f.Path is null ? fixture.Path : System.IO.Path.GetFullPath(f.Path),
             StringComparer.OrdinalIgnoreCase);
-        // 当前 .ui + TaskItem.cs 声明 + TaskList.ui 的 {t.Name} + GalleryScene.cs 的对象初始化器。
+        // 当前 .ui + TaskItem.cs 声明 + TaskList.ui（{t.Name} + 种子/追加的对象初始化器，design/20 P2）。
         Assert.Contains(System.IO.Path.GetFullPath(System.IO.Path.Combine(root, "samples", "Gallery", "TaskItem.cs")), byPath.Keys);
         Assert.Contains(System.IO.Path.GetFullPath(System.IO.Path.Combine(root, "samples", "Gallery", "TaskList.ui")), byPath.Keys);
-        Assert.Contains(System.IO.Path.GetFullPath(System.IO.Path.Combine(root, "samples", "Gallery", "GalleryScene.cs")), byPath.Keys);
         Assert.Contains(fixture.Path, byPath.Keys);
 
         // Roslyn 最小 diff 可能只替换标识符的一部分（Name→Title 共享后缀 e，实际编辑是
@@ -163,9 +162,9 @@ public class WorkspaceRenameTests
                 System.Text.RegularExpressions.Regex.Replace(file.Text, @"\bName\b", "Title"), applied);
         }
 
-        // TaskList.ui 只有 {t.Name} 一处引用 TaskItem.Name。
+        // TaskList.ui 引用 TaskItem.Name 五处：{t.Name} + 三条种子 + Add() 的对象初始化器（design/20 P2）。
         var taskList = byPath[System.IO.Path.GetFullPath(System.IO.Path.Combine(root, "samples", "Gallery", "TaskList.ui"))];
-        Assert.Single(taskList.Edits);
+        Assert.Equal(5, taskList.Edits.Count);
     }
 
     // 按区间倒序应用编辑，得到重命名后的整文（与 diff 粒度无关）。

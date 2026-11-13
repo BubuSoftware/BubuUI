@@ -10,4 +10,9 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.14" />
   </ItemGroup>
 
+  <!-- design/20：窗口模板动态属性的回推通道由平台生命周期安装（WindowComponent.LiveUpdater）。 -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="EclipseUI.Platform.Windows" />
+  </ItemGroup>
+
 </Project>

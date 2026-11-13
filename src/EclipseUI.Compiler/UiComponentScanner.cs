@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 
 namespace EclipseUI.Compiler;
 
@@ -40,6 +41,11 @@ public static class UiComponentScanner
         {
             Path = path,
             CodeBlocks = blocks,
+            // design/20：根节点是保留的 <Window> → 窗口模板（退出「可组合组件」表面，目录侧
+            // HiddenTag/EUI060；生成类派生 WindowComponent）。FrontEnd.Parse 在上面已全量执行，
+            // 这里读根标签零额外成本。P1 只有一个模板根类型；出现第二个 [UiTemplateRoot] 类型时
+            // 这里改为按根类型表判定。
+            IsWindowRoot = doc.Nodes.OfType<UiElement>().FirstOrDefault()?.Tag == "Window",
         };
     }
 

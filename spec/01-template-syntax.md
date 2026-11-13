@@ -72,6 +72,16 @@
   （其余基类，包括 `Component` 的派生类，一律 `EUI045`，见 spec/02 §10.1）；
   code-behind 不得声明 `Build()`/`Render()` 或与生成字段同名的成员（`EUI045`）。
 - 根元素必须是元素标签（控件或组件标签）；根层出现文本或 `@if`/`@foreach` → `EUI006`；根元素数量不为 1 → `EUI012`。
+- **窗口模板（design/20，✅ P1 已实现（2026-11-13/D117））**：根元素标签为保留的 `Window`
+  （保留模板根标签，无需 `@using` 可见）时，该文件是**窗口模板**：生成类派生
+  `global::EclipseUI.WindowComponent`（「根标签决定基类」，`[UiTemplateRoot]` 标记的组件型
+  根类型；控件根不走派生语义，spec/03 §5.3）。标签属性 = `WindowComponent` 的 `[UiParameter]`
+  面（`Title`/`Width`/`Height`/`Theme`/`MaxFramesPerSecond`/`AlwaysRender`/`CloseOnEscape`/
+  `IdleSleepMilliseconds`；`Theme` 仅 `{表达式}` 形式）；内容必须是**恰好一个子元素**（0/多个/
+  文本/块/槽/指令 → `EUI061`）；`Class`/`Style`/`Key`/`Ref`/附加属性/`@bind-` → `EUI062`；
+  非根位置 `<Window>` 与「窗口模板被其他模板当标签用」→ `EUI060`（窗口模板退出可组合表面）。
+  窗口描述由 `CreateWindow()` 一次性产出（spec/02 §2）；动态属性 live 面（Title/尺寸）见
+  spec/02 §4.1.3。
 
 ### 1.2 code-behind 与状态
 
@@ -988,6 +998,10 @@ new cmp0
 | `EUI047` | `@switch` 的 case 标签不是编译期常量（K29 ②）：语法层拒绝非常量形态，常量性由探针判定 | case 标签 | Error | ✅ S6（2026-11-08） |
 | `EUI048` | `@using` 别名不合法（K31）：目标不是目录里的已知元素/组件、同一模板重复声明、与已导入命名空间同名 | 指令 / 目标类型名 | Error | ✅ K31（2026-11-09） |
 | `EUI057` | `@code` 里声明 `[UiParameter]`/`[UiSlot]`/`[UiContent]` **且存在同名 `.cs`**：目录符号扫描只看 `.cs` 半边，这些特性到不了其他模板（spec/02 §2.7）；要对外暴露就把声明挪进 `.cs`。**无 `.cs` 的纯 `.ui` 组件不报**——`@code` 特性由目录语法级提取为对外表面（K34/D112） | `@code` 特性名 | Warning | ✅ 2026-11-11（K34 收窄） |
+| `EUI060` | 模板根类型被误用为组件（design/20）：窗口模板（根 = `<Window>` 的 `.ui`）或任何 `[UiTemplateRoot]` 标记类型的子类，被其他模板当标签使用（`<MainWindow/>`，目录 HiddenTag 通道给定向原因）；以及 `<Window>` 出现在非根位置（保留模板根标签只能作模板的单根元素） | 标签名 | Error | ✅ P1（2026-11-13，D117） |
+| `EUI061` | 窗口模板的内容不是恰好一个子元素（design/20）：0 个/多个子元素、文本、`@if`/`@foreach`/`@switch` 块、`<Slot>`/`<ContentSlot>`、块内指令——窗口内容没有「多子元素自动包裹」语义（与模板恰一根元素同一哲学） | `<Window>` 标签 / 内容位置 | Error | ✅ P1（2026-11-13，D117） |
+| `EUI062` | `<Window>` 根上的非法属性形态（design/20）：`Class`/`Style`/`Key`/`Ref`/附加属性（`Owner.Prop`）/`@bind-`——窗口没有自己的根元素可承接组件根的元素级属性语义；窗口属性 = `WindowComponent` 的 `[UiParameter]` 面，未知属性仍走 `EUI002`（带建议）、无转换器的字面量走 `EUI023` | 属性名 | Error | ✅ P1（2026-11-13，D117） |
+| `EUI063` | code-behind 基类与窗口模板不一致（design/20，双向）：窗口文件的 code-behind 声明了非 `WindowComponent` 基类（生成侧发 `: WindowComponent`，省略基类合法）；或普通模板的 code-behind 派生 `WindowComponent`（生成侧发 `: Component`，partial 合并会撞 CS0263） | code-behind 基类声明 | Error | ✅ P1（2026-11-13，D117） |
 | `EUI100` | 纯语法错误（标签不匹配、属性缺值、未闭合注释、未闭合 `@code`、`@{}`、（`@switch`）空 section / 缺 `break;`、非法 `@bind-` 形态等） | 语法位置 | Error | ✅ |
 
 停用码的纪律：
@@ -996,7 +1010,8 @@ new cmp0
   测试必须断言零出现。
 - 停用码保持"停用"，不复用编号；不得用它们表达新语义。
 - 新增诊断从 `EUI046` 起：`EUI048`（K31 `@using` 别名）、`EUI050`–`EUI054`（样式表，design/17 §5）、
-  `EUI055`/`EUI056`（`@namespace` 契约，spec/02 §2.2）、`EUI057`（`@code` 里的模板元数据特性，spec/02 §2.7）。
+  `EUI055`/`EUI056`（`@namespace` 契约，spec/02 §2.2）、`EUI057`（`@code` 里的模板元数据特性，spec/02 §2.7）、
+  `EUI060`–`EUI063`（窗口模板，design/20，spec/02 §2/§4.1.3）。
 
 ### 6.3 建议算法
 

@@ -44,6 +44,7 @@
 | 17 | [样式系统完整设计](./17-style-system.md) | **✅ 五片落地（2026-11-10）**：有效值四层级联、`.eustyle` 样式表、伪类位掩码、主题双色、编译期校验；D98–D107 / E1–E5 |
 | 18 | [Razor C# 智能提示借鉴](./18-razor-csharp-intellisense.md) | **调研 + 方案建议（2026-11-11，未实施）**：Razor 的生成文档 / `SourceGeneratedDocument` / `SourceMapping` / VS Code 虚拟 HTML 链路；EclipseUI 的 Document 层与统一映射差距；P0–P3 借鉴项、落地顺序、验收与待拍板 |
 | 19 | [样式属性自定义化设计](./19-custom-style-properties.md) | **提案（2026-11-12，未实施）**：`[UiStyleProperty]` 字段标注 + 全局符号扫描进样式目录、值语法扩展（枚举 keyword/字符串/复用 `[UiLiteralParser]`）、`s.Set(field,…)` 发射通道、目录并集冲突规则（EUI058/059）、P1–P3 落地切分与规范影响清单 |
+| 20 | [窗口模板设计](./20-window-template-root.md) | **P1 落地（2026-11-13，D117）**：`.ui` 根节点 `<Window>`（保留模板根标签，根 = 基类的 Avalonia 式规则落在 Component 家族内）→ `WindowComponent` 子类 + `CreateWindow()` 一行装配；窗口模板退出可组合表面（EUI060–063）；动态属性经失效循环回推已材料化窗口（`IWindowLiveUpdater`，live 面 Title/尺寸） |
 
 ## 报告
 

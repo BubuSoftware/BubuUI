@@ -154,6 +154,8 @@ public sealed class TemplateGenerator : IIncrementalGenerator
         var codeBlocks = doc.Nodes.OfType<UiCodeBlock>().ToList();
 
         var type = validName ? FindCodeBehind(compilation, className) : null;
+        // design/20：本文件是否窗口模板（根标签为保留的 <Window>）——决定 code-behind 基类口径。
+        var isWindowTemplate = doc.Nodes.OfType<UiElement>().FirstOrDefault()?.Tag == "Window";
         if (validName && type is not null)
         {
             if (type.ContainingType is not null)
@@ -197,8 +199,9 @@ public sealed class TemplateGenerator : IIncrementalGenerator
         }
 
         // D57/EUI045（spec/02 §10）：code-behind 与生成成员/基类成员冲突。
+        // design/20：基类口径按窗口/普通模板分流（EUI063）。
         if (type is not null)
-            ProbeCodeBehindConflicts(type, codeBehindDiags);
+            ProbeCodeBehindConflicts(type, codeBehindDiags, isWindowTemplate);
 
         // K25：EUI045 扩展到 @code 成员——撞生成保留名（Build/Render/U{N}/R{N}/__el{N}/…）
         // 报在 .ui 的 @code 块内成员位置。@code ↔ 同名 .cs 的冲突由 C# partial 规则兜底，不在这里报。
@@ -898,9 +901,12 @@ public sealed class TemplateGenerator : IIncrementalGenerator
     /// <summary>
     /// D57/EUI045（spec/02 §10）：code-behind 与生成成员冲突。生成器不改名、仍按契约输出；
     /// 诊断落在 code-behind 的源声明，错误诊断本身阻断构建。
-    /// 五类触发：Build/Render 声明、生成成员保留名、非 Component 基类、隐藏生成代码依赖成员。
+    /// 触发：Build/Render 声明、生成成员保留名、非法基类、隐藏生成代码依赖成员。
+    /// design/20：基类口径按模板形态分流——窗口模板（根 = &lt;Window&gt;）允许省略或
+    /// 恰好 <c>WindowComponent</c>（EUI063），普通模板维持「省略或恰好 Component」（EUI045）；
+    /// 反向（普通模板的 code-behind 派生 WindowComponent）同样 EUI063。
     /// </summary>
-    private static void ProbeCodeBehindConflicts(INamedTypeSymbol type, List<UiDiagnostic> diags)
+    private static void ProbeCodeBehindConflicts(INamedTypeSymbol type, List<UiDiagnostic> diags, bool windowTemplate)
     {
         foreach (var member in type.GetMembers())
         {
@@ -917,6 +923,9 @@ public sealed class TemplateGenerator : IIncrementalGenerator
                 diags.Add(Conflict(reason, member.Locations.FirstOrDefault(static l => l.IsInSource)));
         }
 
+        // design/20：基类一致性按模板形态分流（语法循环覆盖该类型的全部 partial 声明位）。
+        // 窗口模板：省略或恰好 WindowComponent（生成器发 ': WindowComponent'）；普通模板：
+        // 省略或恰好 Component。窗口基类出现在普通模板 → EUI063 定向（不落 EUI045 的通用文案）。
         foreach (var reference in type.DeclaringSyntaxReferences)
         {
             if (reference.GetSyntax() is not TypeDeclarationSyntax declaration || declaration.BaseList is null)
@@ -924,10 +933,28 @@ public sealed class TemplateGenerator : IIncrementalGenerator
             foreach (var baseType in declaration.BaseList.Types)
             {
                 var text = baseType.Type.ToString();
-                if (!IsComponentBase(text))
+                if (windowTemplate)
+                {
+                    if (!IsWindowComponentBase(text))
+                        diags.Add(SourceConflict(UiDiagnostics.WindowCodeBehindMismatch,
+                            $"window template '{type.Name}' derives '{text}'; the code-behind of a <Window> " +
+                            "template must omit the base (the generator emits ': WindowComponent') or declare " +
+                            "exactly WindowComponent (design/20)",
+                            baseType.GetLocation()));
+                }
+                else if (IsWindowComponentBase(text))
+                {
+                    diags.Add(SourceConflict(UiDiagnostics.WindowCodeBehindMismatch,
+                        $"code-behind class '{type.Name}' derives '{text}'; window base classes are only valid " +
+                        "for templates whose root element is <Window> (design/20)",
+                        baseType.GetLocation()));
+                }
+                else if (!IsComponentBase(text))
+                {
                     diags.Add(Conflict(
                         $"code-behind base '{text}' must be omitted or exactly Component",
                         baseType.GetLocation()));
+                }
             }
         }
     }
@@ -939,6 +966,10 @@ public sealed class TemplateGenerator : IIncrementalGenerator
 
     private static bool IsComponentBase(string text) => text is
         "Component" or "EclipseUI.Component" or "global::EclipseUI.Component";
+
+    /// <summary>design/20：窗口模板 code-behind 的合法基类写法（省略 = 由生成侧声明）。</summary>
+    private static bool IsWindowComponentBase(string text) => text is
+        "WindowComponent" or "EclipseUI.WindowComponent" or "global::EclipseUI.WindowComponent";
 
     /// <summary>__el{N}/__cmp{N}/__blk{N}/__run{N}/__bind{N}/__eui*/U{N}/R{N} 是生成成员保留名。</summary>
     private static bool IsGeneratedMemberName(string name)
@@ -952,7 +983,11 @@ public sealed class TemplateGenerator : IIncrementalGenerator
         return false;
     }
 
-    private static UiDiagnostic Conflict(string message, Location? location)
+    private static UiDiagnostic Conflict(string message, Location? location) =>
+        SourceConflict(UiDiagnostics.CodeBehindConflict, message, location);
+
+    /// <summary>落在 code-behind 源声明上的诊断（design/18 口径）：Location → 纯数据 UiSourceLocation，.ui 侧 span 置零。</summary>
+    private static UiDiagnostic SourceConflict(string code, string message, Location? location)
     {
         UiSourceLocation? source = null;
         if (location is { IsInSource: true })
@@ -963,7 +998,7 @@ public sealed class TemplateGenerator : IIncrementalGenerator
                 line.StartLinePosition.Line, line.StartLinePosition.Character,
                 line.EndLinePosition.Line, line.EndLinePosition.Character);
         }
-        return UiDiagnostics.Error(UiDiagnostics.CodeBehindConflict, message, UiSpan.Zero, source);
+        return UiDiagnostics.Error(code, message, UiSpan.Zero, source);
     }
 
     /// <summary>

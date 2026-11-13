@@ -1,0 +1,19 @@
+@namespace Gallery
+@using EclipseUI
+@using EclipseUI.Elements
+
+@* 画廊分区卡片（design/20 P2 模板化）：原 GalleryScene.Section 的模板形态——卡片背景/圆角
+   与标题前景走 theme() 双色（S-C 主题资源，亮暗切换自动换色），标题文案是 [UiParameter]，
+   内容经具名插槽 Body（单根）注入。组件没有 .cs：参数与插槽由 @code 语法级提取（K34/D112），
+   <ContentSlot> 的宿主解析走目录短名匹配（偏差 D75）。 *@
+
+<StackPanel Gap="10" Padding="16" Style="Background: theme(#1f2532, #ffffff); CornerRadius: 12">
+    <TextBlock FontSize="18" TextWrapping="Wrap" Style="Foreground: theme(#e9eef8, #1e222c)">{Title}</TextBlock>
+    <ContentSlot Name="Body" />
+</StackPanel>
+
+@code {
+    [UiParameter] public string Title { get; set; } = "";
+
+    [UiSlot("Body")] public Element? BodySlot { get; set; }
+}

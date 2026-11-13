@@ -1,0 +1,16 @@
+@namespace EclipseUI.Headless.Tests
+@using EclipseUI.Elements
+
+<Window Title={TitleText} Width={W} Height={H}>
+    <StackPanel Gap="8">
+        <TextBlock FontSize="20">Shell content</TextBlock>
+    </StackPanel>
+</Window>
+
+@code {
+    // design/20：窗口模板 fixture——运行期值经 [UiParameter] 从应用侧传入，
+    // 窗口属性（Title/Width/Height）是 live 面：失效循环经 U 推送更新基类属性并回推平台。
+    [UiParameter] public string TitleText { get; set; } = "Shell";
+    [UiParameter] public double W { get; set; }
+    [UiParameter] public double H { get; set; }
+}

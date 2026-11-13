@@ -80,6 +80,7 @@
 | `Key` | §4.13 | ✅ S2 |
 | `Ref` | §4.14 | ✅ C5（Class/Style 仍 G4；附加属性 ✅ G4 → §4.19） |
 | 具名插槽（`<Slot>` + `<ContentSlot>`） | §4.12.5 | ✅ C6 |
+| 窗口模板根（`<Window>`） | §4.1.3 | ✅ design/20 P1（D117） |
 
 ### 0.6 示例约定
 
@@ -212,6 +213,14 @@ namespace {Namespace};
 - `{accessibility}` 与 code-behind 声明一致（`public`/`internal`）；code-behind 未写时用 `internal`。
 - 生成部分重复 `: global::EclipseUI.Component` 是合法的 partial 声明；
   code-behind 省略基类或原样重复 `: Component` 都合法，其他基类（含 `Component` 的派生类）→ `EUI045`。
+- **窗口模板（design/20，✅ P1（2026-11-13，D117））**：根节点为保留 `<Window>` 的文件，类基为
+  `global::EclipseUI.WindowComponent`（「根标签决定基类」，`[UiTemplateRoot]` 标记的组件型根类型）；
+  code-behind 省略基类或原样重复 `: WindowComponent` 都合法，其余基类 → `EUI063`（普通模板的
+  code-behind 派生 `WindowComponent` 同样 `EUI063`）。基类承载 `[UiParameter]` 属性面
+  （`Title`/`Width`/`Height`/`Theme`/`MaxFramesPerSecond`/`AlwaysRender`/`CloseOnEscape`/
+  `IdleSleepMilliseconds`），模板属性在 `Build()` 开头赋给 `this`；`CreateWindow()`（运行时，
+  非生成）把它们一次性组装为 `Window` 描述并接线 `Content`/`RootComponent`——窗口模板本身
+  **不生成** `CreateWindow`/`ConfigureWindow` 之类成员，仍只占五类白名单。
 - 生成成员白名单，**S6 起五类**（K23 ④，spec/01 §1.5 / D86 ✅）：
   1. 字段：`private {Type} __{prefix}{N} = null!;`
   2. `protected override global::EclipseUI.Element Build()`
@@ -513,6 +522,40 @@ parentN.Children.Add(el0);   // 非根时在元素块末尾
 - 根必须是元素/组件标签；根层文本或块 → `EUI006`；根数量不为 1 → `EUI012`。
 - 根为控件时 `Build()` 返回 `el{N}`/`__el{N}`。
 - 根为组件时返回 `cmp{N}.Root`；组件仍按 §4.12.1 登记与 `Mount()`。
+
+#### 4.1.3 窗口模板根（design/20，✅ P1（2026-11-13，D117））
+
+根节点为保留 `<Window>`（spec/01 §1.1）时，`Build()` 的产出是 `<Window>` 的**恰好一个子元素**
+（EUI061 由分析器保证，错误路径不发射），按 §4.1.2 同一语义发射（控件根 `el{N}`、组件根
+`Track`/`Mount`/`cmp{N}.Root`）：
+
+1. **属性赋值**：`<Window>` 上的 `[UiParameter]` 面属性在内容构造前赋给本类——
+   字面量 `this.Title = "EclipseUI Gallery";`（build-once，字面量经目录转换）；表达式
+   `this.Width = (global::System.Double)(W);`（一次性求值）。`Class`/`Style`/`Key`/`Ref`/
+   附加属性/`@bind-` → `EUI062`，不发射。
+2. **live 推送面**（`Title`/`Width`/`Height`）：表达式属性另发 `U{N}`——守卫基准是基类属性
+   本身（`Build` 的一次性赋值把它初始化为当前值，属性即「上次推送值」，无缓存字段）：
+
+   ```csharp
+   private void U0()
+   {
+       var v = (global::System.String)(TitleText);
+       #line …
+       if (!global::System.Collections.Generic.EqualityComparer<global::System.String>.Default.Equals(this.Title, v))
+       {
+           this.Title = v;
+           PushWindowTitle(this.Title);   // Width/Height: PushWindowClientSize(this.Width, this.Height)
+       }
+   }
+   ```
+
+   `U{N}` 在 `Build` 内首调一次并登记进 `Render()`（与 §4.3.3 组件参数推送同构；Width/Height
+   各自守卫、统一成对下发）。帧调节项（`MaxFramesPerSecond` 等）是创建期一次性量
+   （`WindowHostOptions` 固化），只发一次性赋值、不进 live 面。
+3. **运行时回推**：`WindowComponent.LiveUpdater`（internal，Runtime IVT → Platform.Windows）
+   由 `ClassicDesktopLifetime.Run` 在材料化后安装（`Win32WindowLiveUpdater`，`IsClosed` 守卫）；
+   未安装（无头/材料化前）推送 no-op。窗口描述（`CreateWindow` 产物）是创建期一次性数据，
+   不随失效循环变化（D101）。
 
 ### 4.2 字面量属性
 
@@ -1748,6 +1791,7 @@ D64/D68 ✅ C1。
 | D112 | ✅ **`@code` 模板特性语法级提取——`.ui` 无 `.cs` 也能开发完整组件（K34）**：`UiComponentDeclaration` 增 `Path` + `CodeBlocks`（块体原文 + 绝对 span + 起点 0 基行列；值相等口径——只有 `@code` 内容变化才使清单值变化，改模板标记正文不破坏增量缓存命中），`UiComponentScanner.FromFile` 负责提取，生成器与 IDE 仍同一份清单。`UiCatalogFactory.AppendTemplateOnlyComponents` 对「输入编译里没有同名类型」的声明新增 `CollectTemplateCodeMembers`：`[UiParameter]`/`[UiSlot]`/`[UiContent]` 属性、可写性（显式 public + 访问器继承语义 + 非 `init`/`required`）、`Required`、插槽名/唯一性、内容多/单根、`{P}Changed` 形状配对（D110 规则的**文本级**版本，归一化 `CanonicalTypeKey`），`UiTypeShape` 按文本推导（primitive 关键字/Action-Func 委托/`Signal<T>`/同 `@code` 枚举成员，其余 Other）。声明问题（EUI028/EUI021）带 `UiSourceLocation` 指回 `.ui` 的 `@code` 内位置，走既有目录级出口 `ReportCatalogProblems`。**EUI057 收窄**：只在同名 `.cs` 存在时报（`ProbeCodeMemberConflicts` 增加 `hasCodeBehind` 门控）——那时符号扫描只看 `.cs` 半边，警告理由仍成立。语法级口径的三点收窄见 §2.7（委托只认 `Action`/`Action<T,…>`、类型身份按文本、Span/指针 EUI028 不做）。用例：`SecondComponentSourceTests` +5（表面即参数/配对与拒因/只读与静态与字段/插槽内容形状/有 `.cs` 仍警告/**端到端 `<Card Title="hello" @bind-Count={n}/>` 全项目真编译零错误**），987 例全绿（375/372/134/106） | spec/02 §2.7、spec/01 §1.5/§6、design/14 §14.6.1/§14.10.2、ide/README | ✅（2026-11-11） |
 | D115 | ✅ G4：**样式属性自定义化（E6 片，design/19 P1）**——属性目录进料口从「`StyleBuilder` 的方法」扩为「内建 setter ∪ `[UiStyleProperty]` 标注字段」：① 运行时 `UiStylePropertyAttribute`（`Name` 缺省去 `Property` 后缀、`Owner` 预留 P3 适用性）；② `StylePropertyCatalogFactory` 标注通道——候选程序集全局扫 `public static readonly StyledProperty<T>`（显式 opt-in，不扫全量字段防内部属性污染），`Derive()` 从 `T` 派生值形态（double→number、Color/ThemeColor→color、枚举→enum keyword + 扫描期算好的成员表、string→string，发射期零符号依赖），声明不合规报 **EUI058**（非 public static readonly / 非闭包 `StyledProperty<T>` / `T` 含泛型形参 / `Name` 解析为空 / 值类型不支持——标注收集先于类型过滤，标在非 StyledProperty 字段上同样报出），冲突报 **EUI059**（用户 vs 内建：内建胜、目录取内建——字段解析多候选时未标注者优先，用户同名声明不把内建字段挤成多程序集歧义；用户 vs 用户：双双拒绝），管线 `ReportStylePropertyProblems` 把 Problems 一律按 Error 短路；③ `StyleValueKind` 扩 `Enum`/`Text`、`StylePropertyDef` 扩 `IsBuiltIn`/`EnumTypeName`/`Candidates`（手写 `Equals`/`GetHashCode` 走 `CatalogValueEq`，候选数组不破坏值相等）；④ `EustyleParser` 增 keyword/字符串两种值（enum 按成员表校验未命中报 EUI052、string 的 keyword 直通），`$变量` 仍限 number/color（EUI050），**theme 准入先于形态检查**（`theme()` 写在 number/自定义属性上报「does not accept theme(dark, light)」而非类别不符）；⑤ `EustyleGenerator` 的 `EmitDefines`/`EmitRule`/`EmitSetterGroup` 携带目录分派——内建 `s.Name(value)`、自定义 `s.Set(global::Ns.Type.Field, value)`（`Style=`/`.eustyle` 类通道/`@style` 三处调用方同改）；⑥ LSP：`CompletionProvider` 在 Style 值位置（`Prop:` 之后）按形态列候选（enum 列成员表、`KindLabel` 形态标签），`HoverProvider` 值悬停给形态文案（enum 列成员）；⑦ 画廊演示（**可见读回**；像素金样是合成场景，画廊加分区不影响基线）：`BadgeStyles.cs`（Glow number / Tone enum / BadgeLabel string）+ `app.eustyle` `.badge` 类通道（含 `&:hover` 翻自定义属性）+ GalleryScene **第 5 分区**类通道按钮把 class 层收到的值读回文案（hover 翻 Glow 6→12 经 `PropertyChanged` 即时刷新）+ `Showcase.ui` 内联 `Style=` + `{InlineDesc}` 渲染期读回 local 层三值；`app.eustyle`/`Showcase.ui` 注释覆盖 P1 全部写法（keyword 直通 / `$var` 限 number/color / theme 拒绝 / 显式 `Name`）。开放问题 §13.1 拍板：**P1 自定义属性不支持 `theme()`**（需要 `XxxResourceProperty` 约定，等真实需求）。用例 17 例：`EustyleTests` +10（值形态/变量限制/诊断含 theme 准入次序/发射契约/管线）、`StylePropertyCatalogTests` +4（并集入目录/EUI058 五类/EUI059 内建胜与双拒）、`AppBuilderTests` +1（Gallery badge 类通道落 class 层 + 第 5 分区读回文案断言）、`EndToEndTests.TemplateOnlyComponentTests` 补 Showcase 内联读回断言、Ide `CompletionTests`+`HoverTests` +2（值位置枚举候选与悬停文案）；全量 **1095 例全绿（392/394/201/108）** 0 警告 | design/17 §4.3/§4.4、design/19 §4/§5.2/§7/§10、spec/02 §1 R2、ide/README | ✅ G4（2026-11-12） |
 | D116 | ✅ G4：**布局契约（design/05 §布局契约，Layoutable 级统一面，三片同落）**——把「宽度跟不跟父走」从各面板硬编码约定升格为 Element 可声明契约（两遍布局与约束语义与 Avalonia 同构：available 是「报价」不是「强制」，期望可超约束）：① **对齐 + 显式尺寸 + Margin**：`HorizontalAlignment/VerticalAlignment`（默认 **Stretch** 零回归）、`Width/Height`（NaN 缺省）+ `Min*/Max*` 钳制（Min > Max 时 Min 胜）、`Margin`（均匀标量，与 Padding 同口径）——Measure 期扣 Margin 进 MeasureCore、期望经尺寸约束钳制后加回（DesiredSize 含 Margin，面板堆叠自动留位）；Arrange 期槽扣 Margin → 显式值 > Stretch 填满 > 钳制期望对齐落位，`FinalRect` 存核心矩形（绘制/命中/脏区正本），排列槽另存缓存键；② **ScrollViewer 方向开关**：`Horizontal/VerticalScrollBarVisibility` 四档（Auto 按需 / Visible 恒显 / Hidden 可滚不显 / **Disabled** 禁滚——`Scrollable*` 报 0、偏移钳 0、内容按视口排列、溢出 PushClip 裁剪），Horizontal 默认 Disabled、Vertical 默认 Auto（**Avalonia 对齐**）；painter 出条判据走开关（Auto 按需/Visible 恒显/Hidden+Disabled 不画）；**登记差异**：Auto 档测量约束仍是视口宽而非 Avalonia 的无穷宽——可收缩内容（WrapPanel/Grid 星号）继续随视口自适应、滚动条只在真刚性溢出时出现（无穷宽会让 WrapPanel 退化单行、星号轨道失去参照）；③ **TextBlock 换行**：`TextWrapping`（NoWrap 缺省 / Wrap 贪心断行）——空格换行机会、行首/行尾空白折叠、超行宽长词（CJK 无空格串）字符级硬切；`TextLines` 段序列是绘制正本（跨行 run 的 FinalRect 只落首段），painter 按段定位；垂直 StackPanel 子项槽宽改 `max(面板宽, 子项期望)`（裁剪语义下刚性子项保留完整宽度，Avalonia 同款）。画廊接入 Wrap（`Text()` 助手 + Showcase 15 处文案）：窄窗口下文案随视口换行、不再横向溢出（宽窗 hash 与改动前一致=零回归铁证）；根滚动器显式 Auto 保留按需横滚兜底。表面：契约 10 属性进模板表面（快照 122 属性项，golden 显式重生成评审）；窄窗演示按钮文案收窄（Button label 不换行）。用例 15 例：`LayoutContractTests` +6（Margin 计入/显式尺寸/Min-Max 钳制/对齐定位/组合/Stretch 零回归）、`ScrollViewerTests` +4（Disabled 钳制禁滚/Auto 刚性溢出/Auto 可收缩自适应/Hidden 可滚不显）、`TextBlockWrapTests` +5（词界断行/字符硬切/空白折叠/NoWrap 零回归/painter 段定位）；全量 **1110 例全绿（392/409/201/108）** 0 警告；整页出图目检（宽 1000 / 窄 640 两档） | design/05 §布局契约、design/09 §9.3 文本、design/14 §14.11.1、README | ✅ G4（2026-11-13） |
+| D117 | ✅ **窗口模板（design/20 P1）**——`.ui` 根节点 `<Window>`（保留模板根标签，Avalonia 式「根标签决定基类」落在 Component 家族内）：① 运行时 `WindowComponent : Component`（`[UiTemplateRoot]` 标记；`[UiParameter]` 属性面镜像 `Window` 数据类：Title/Width/Height/Theme/MaxFramesPerSecond/AlwaysRender/CloseOnEscape/IdleSleepMilliseconds）+ `CreateWindow()`（幂等 Mount → 一次性组装 `Window` 描述并接线 Content/RootComponent，重复调用抛异常）+ `IWindowLiveUpdater`/`PushWindowTitle`/`PushWindowClientSize`（internal 安装槽，Runtime IVT → Platform.Windows）；② 扫描器根标签判定 → `UiComponentDeclaration.IsWindowRoot`（进值相等）；③ 目录：`UiCatalog.WindowRoot` 独立槽位（`Describe(WindowComponent)` 复用组件 CLR 扫描，[UiParameter] 面进 Parameters），窗口声明与 `[UiTemplateRoot]` 基链类型不进 Elements、注册 HiddenTag（ReasonCode=**EUI060**，使用点 Unavailable 通道定向诊断 + LSP 补全过滤）；④ 分析器窗口分支：属性按 WindowRoot.Parameters 解析（EUI002/EUI003/EUI023/建议复用），Class/Style/Key/Ref/附加属性/@bind 报 **EUI062**，内容恰一子元素（0/多/文本/块/槽/指令报 **EUI061**），子元素按模板根继续访问（组件根同语义）；非根 `<Window>` 解析前拦截报 EUI060；⑤ 生成器：类基切换 `: global::EclipseUI.WindowComponent`，`Build()` = 属性赋给 `this`（字面量 build-once、表达式一次性求值）+ 恰一子元素按 §4.1.2 发射；live 面（Title/Width/Height）发 `U{N}` 推送（守卫基准 = 基类属性本身，无缓存字段；Width/Height 成对 `PushWindowClientSize`），帧调节项只一次性赋值；EUI063 code-behind 基类双向分流（窗口文件省略/`: WindowComponent` 合法）；⑥ 平台：`Win32WindowLiveUpdater`（SetTitle/SetClientSize + IsClosed 守卫，零新平台机制）+ `ClassicDesktopLifetime.Run` 材料化后对 `RootComponent is WindowComponent` 安装——推送经既有失效循环自然触发，WindowHost 零改动；窗口描述是创建期一次性数据（D101），live 值经回推通道落到实际窗口；⑦ golden `BuiltInSurface.golden.txt` +1 行（`[hidden] WindowComponent … EUI060`）。用例 23 例：`WindowTemplateTests`（Compiler）+17（生成契约 4/EUI060×2/EUI061×3/EUI062/EUI002 建议/EUI023/EUI063×3/目录装配与值相等）、`WindowTemplateTests`（Headless）+6（CreateWindow 接线/one-shot/无头布局/live 推送更新组件且描述不变/批内取最新值/AppBuilder 一行装配）；全量 **1133 例全绿（409/415/201/108）** 0 警告 | design/20 §4–§9、spec/01 §1.1/§6.2、design/README、Window.cs（数据类未动） | ✅ P1（2026-11-13） |
 
 - 每项收敛必须同时删除对应的 v3 路径；不得两套模型并存。
 - 新增偏差必须登记编号（从 D89 起）并注明目标阶段；不得只改代码不改台账。

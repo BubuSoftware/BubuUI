@@ -267,7 +267,7 @@ public class TaskListEndToEndTests
 /// <summary>
 /// spec/02 §2.7「第二组件来源」：Gallery 的四个组件都没有同名 <c>.cs</c>。
 /// <c>@code</c> 里声明的成员就是生成 partial 类的成员——模板里的 <c>Ref={…}</c> 与外部
-/// 消费者（GalleryScene）看到的是同一个字段，不需要额外一层 code-behind 转接。
+/// 消费者（GalleryApp）看到的是同一个字段，不需要额外一层 code-behind 转接。
 /// </summary>
 public class TemplateOnlyComponentTests
 {
@@ -279,7 +279,7 @@ public class TemplateOnlyComponentTests
 
         Assert.NotNull(component.virtualList);
 
-        // 外部消费者（GalleryScene 同款接线）：字段对外可见、可直接注入工厂，无需 code-behind。
+        // 外部消费者（GalleryApp 同款接线）：字段对外可见、可直接注入工厂，无需 code-behind。
         component.virtualList.ItemFactory = i => new Button { Label = $"item {i}" };
         root.UpdateLayout();
 

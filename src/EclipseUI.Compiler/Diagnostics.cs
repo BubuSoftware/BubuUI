@@ -127,6 +127,16 @@ public static class UiDiagnostics
     public const string StylePropertyDeclarationInvalid = "EUI058";
     public const string StylePropertyNameConflict = "EUI059";
 
+    // design/20（窗口模板）：根节点为 <Window> 的 .ui 编译为 WindowComponent 子类
+    // （「根标签决定基类」，[UiTemplateRoot] 标记）。EUI060 = 模板根类型被误用为组件标签
+    // （目录 HiddenTag 通道 + 非根位置 <Window> 拦截）；EUI061 = 窗口内容不是恰好一个子元素；
+    // EUI062 = <Window> 根上的非法属性形态（Class/Style/Key/Ref/附加属性/@bind）；
+    // EUI063 = code-behind 基类与窗口模板不一致（双向）。
+    public const string TemplateRootMisuse = "EUI060";
+    public const string WindowContentInvalid = "EUI061";
+    public const string WindowAttributeInvalid = "EUI062";
+    public const string WindowCodeBehindMismatch = "EUI063";
+
     // 语法诊断
     public const string Syntax = "EUI100";
 

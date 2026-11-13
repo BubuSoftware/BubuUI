@@ -50,6 +50,12 @@ internal sealed class ClassicDesktopLifetime : IApplicationLifetime
         var height = window.Height > 0 ? (int)window.Height : 640;
 
         using var win = new Win32Window(window.Title, width, height);
+
+        // design/20：窗口模板（RootComponent 是 WindowComponent）材料化后安装动态属性回推通道
+        // ——生成代码的 U 推送经它落到实际窗口（SetTitle/SetClientSize）；手工路径不受影响。
+        if (window.RootComponent is WindowComponent windowComponent)
+            windowComponent.LiveUpdater = new Win32WindowLiveUpdater(win);
+
         using var presenter = surfaceFactory.Create(
             win.Handle, Math.Max(win.ClientWidth, 1), Math.Max(win.ClientHeight, 1));
 

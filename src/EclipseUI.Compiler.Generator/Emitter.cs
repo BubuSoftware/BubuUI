@@ -55,6 +55,10 @@ public sealed class Emitter
     }
 
     private readonly UiDocument _doc;
+    /// <summary>design/20：根节点为保留的 &lt;Window&gt; → 窗口模板（生成类派生 WindowComponent）。
+    /// 分析器窗口分支只在 catalog.WindowRoot 就绪时放行，错误路径已在发射前短路，所以这里
+    /// 按根标签判定与分析器口径一致。</summary>
+    private readonly bool _isWindowTemplate;
     private readonly string _accessibility;
     private readonly string _namespace;
     private readonly string _className;
@@ -101,6 +105,7 @@ public sealed class Emitter
         StylePropertyCatalog? styleProperties = null)
     {
         _doc = doc;
+        _isWindowTemplate = doc.Nodes.OfType<UiElement>().FirstOrDefault()?.Tag == "Window";
         _accessibility = accessibility;
         _namespace = namespaceName;
         _className = className;
@@ -127,7 +132,20 @@ public sealed class Emitter
         // E1：组件私有样式在 Build 首行幂等注册（类名带组件前缀，树重建重复调用零开销）。
         if (_styleRules.Count > 0)
             Line("__RegisterStyles();");
-        var rootVar = EmitElement(root, parentVar: null, EmitContext.Root());
+        string rootVar;
+        if (_isWindowTemplate)
+        {
+            // design/20：窗口模板——Build() 产出窗口内容（恰一子元素，Analyzer 已校验并短路
+            // 错误路径）。<Window> 的属性在内容构造前赋给本类属性（this.{P} = …），CreateWindow
+            // 读它们组装 Window 描述；动态属性另发缓存字段 + U 推送（守卫 + live 回推）。
+            EmitWindowAttributes(root);
+            var content = root.Children.OfType<UiElement>().First();
+            rootVar = EmitElement(content, parentVar: null, EmitContext.Root());
+        }
+        else
+        {
+            rootVar = EmitElement(root, parentVar: null, EmitContext.Root());
+        }
         Line($"return {rootVar};");
 
         _out = _sb;
@@ -145,7 +163,8 @@ public sealed class Emitter
             _sb.AppendLine($"namespace {_namespace};");
             _sb.AppendLine();
         }
-        _sb.AppendLine($"{_accessibility} partial class {_className} : global::EclipseUI.Component");
+        _sb.AppendLine($"{_accessibility} partial class {_className} : " +
+                       (_isWindowTemplate ? "global::EclipseUI.WindowComponent" : "global::EclipseUI.Component"));
         _sb.AppendLine("{");
 
         // K21/K23 ④（D86）：@code 成员按块源码顺序透传（spec/02 §2.3 白名单第五类），
@@ -585,6 +604,79 @@ public sealed class Emitter
 
     private static string ClassStatement(string target, string names, bool call) =>
         call ? $"{target}({names})" : $"{target}.Classes = {names}";
+
+    /// <summary>
+    /// design/20：窗口根属性发射（&lt;Window&gt; 上的 [UiParameter] 面）。字面量 = build-once
+    /// 赋值（§4.2）；表达式 = Build 时一次性求值 + 缓存字段，live 面（Title/Width/Height）另发
+    /// U 推送进 Render（§4.3.3 同构：相等守卫 → 写基类属性 + Push 助手回推）；帧调节项
+    /// （MaxFramesPerSecond 等）是 WindowHostOptions 固化的创建期一次性量，只发一次性赋值。
+    /// </summary>
+    private void EmitWindowAttributes(UiElement window)
+    {
+        foreach (var attr in window.Attributes)
+        {
+            if (attr.ParamDef is null) continue;        // 未解析名：Analyzer 已报 EUI002
+            if (attr.IsBind) continue;                  // EUI062 已报
+            var p = attr.ParamDef;
+            var span = AttrSpan(attr);
+
+            if (attr.Kind == AttrValueKind.Literal)
+            {
+                if (attr.ConvertedLiteral is null) continue;   // EUI003/EUI023 已报
+                MappedToken(span, $"this.{p.Name} = {attr.ConvertedLiteral};", attr.ConvertedLiteral);
+                continue;
+            }
+
+            var expr = attr.Value.Trim();
+            MappedToken(span, $"this.{p.Name} = ({p.ClrTypeDisplayName})({expr});", expr);
+            if (!IsLiveWindowProperty(p.Name)) continue;
+
+            // live 面：U 推送（Build 首调 + Render 登记）。守卫基准直接用基类属性——Build 的
+            // 一次性赋值已把它初始化为当前值，属性本身就是「上次推送值」，不需要额外缓存字段
+            // （也避开值类型字段与 `= null!` 初始化器的冲突）。
+            EmitWindowPush(p, expr, span);
+        }
+    }
+
+    /// <summary>design/20 的 live 回推面：Title 与客户区尺寸（Width/Height）。帧调节项不随失效循环更新（WindowHostOptions 固化）。</summary>
+    private static bool IsLiveWindowProperty(string name) => name is "Title" or "Width" or "Height";
+
+    /// <summary>
+    /// 窗口属性的动态推送（与组件参数推送 §4.3.3 同构）：相等守卫（基准 = 基类属性的上次值）
+    /// 下写属性并经 Push 助手回推平台。Width/Height 各自守卫但统一
+    /// <c>PushWindowClientSize(Width, Height)</c>——读取当前属性成对下发，两路推送不会发出不一致的尺寸。
+    /// </summary>
+    private void EmitWindowPush(UiParameterDef p, string expression, TextSpan span)
+    {
+        var name = $"U{_fnCounter++}";
+        var sb = new StringBuilder();
+        var savedOut = _out;
+        var savedIndent = _indent;
+        _out = sb;
+        _indent = 2;
+        var type = p.ClrTypeDisplayName;
+        MappedToken(span, $"var v = ({type})({expression});", expression);
+        Line($"if (!global::System.Collections.Generic.EqualityComparer<{type}>.Default.Equals(this.{p.Name}, v))");
+        Line("{");
+        _indent++;
+        Mapped(span, $"this.{p.Name} = v;");
+        switch (p.Name)
+        {
+            case "Title":
+                Mapped(span, "PushWindowTitle(this.Title);");
+                break;
+            default: // "Width" / "Height"（IsLiveWindowProperty 保证）
+                Mapped(span, "PushWindowClientSize(this.Width, this.Height);");
+                break;
+        }
+        _indent--;
+        Line("}");
+        _out = savedOut;
+        _indent = savedIndent;
+        _uMethods.Add(new UMethod(name, sb));
+        Line($"{name}();");
+        _renderCalls.Add($"{name}();");
+    }
 
     private string EmitElement(UiElement element, string? parentVar, EmitContext ctx)
     {

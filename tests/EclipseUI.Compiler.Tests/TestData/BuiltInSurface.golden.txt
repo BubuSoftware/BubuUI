@@ -223,3 +223,4 @@
 [hidden] Element global::EclipseUI.Element EUI017 the type is abstract
 [hidden] Panel global::EclipseUI.Elements.Panel EUI017 the type is abstract
 [hidden] StackPanelBase global::EclipseUI.Elements.StackPanelBase EUI017 the type is abstract
+[hidden] WindowComponent global::EclipseUI.WindowComponent EUI060 'WindowComponent' is a template-root type ([UiTemplateRoot], design/20); it cannot be used as a component tag inside another template — instantiate it from application code instead (window templates: new MyWindow().CreateWindow())

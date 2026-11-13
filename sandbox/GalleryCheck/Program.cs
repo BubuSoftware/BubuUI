@@ -77,14 +77,17 @@ if (harfBuzz is not null) TextMeasurer.Current = harfBuzz;
 var theme = lightTheme ? ElementTheme.Light : new ElementTheme();
 Styling.Provider = StyleRegistry.Instance; // S-B：装配 Class 样式（类名直配 setter 序列）
 StyleBootstrap.Apply(StyleRegistry.Instance); // E1：app.eustyle 编译产物（生成的 Define 序列）
-var scene = GalleryScene.Build();
-var galleryRoot = new GalleryRoot(scene.Counter, scene.Tasks, scene.RootViewer);
-galleryRoot.Mount();
-var gallery = galleryRoot.Root;
-var counter = scene.Counter;
-var taskList = scene.Tasks;
-var addTaskButton = scene.AddButton;
-var themeButton = scene.ThemeButton;
+// design/20 P2：主窗口 = MainWindow.ui 窗口模板——场景构建、挂载与 Content/RootComponent
+// 接线收敛为 CreateWindow() 一步；验证壳直接消费窗口描述与 Ref 锚点字段。
+var mainWindow = new MainWindow();
+var windowDescription = mainWindow.CreateWindow();
+GalleryApp.WireInteractions(mainWindow); // 应用级接线（注册伪类/读回订阅/条目工厂/启用开关）
+var galleryRoot = windowDescription.RootComponent!;
+var gallery = windowDescription.Content!;
+var counter = mainWindow.CounterView;
+var taskList = mainWindow.TaskListView;
+var addTaskButton = mainWindow.AddButton;
+var themeButton = mainWindow.ThemeButton;
 
 using (galleryRoot)
 {
@@ -118,7 +121,7 @@ themeButton.AddHandler(Button.ClickEvent, () =>
 });
 
     // 根滚动视图（2026-11-09 画廊重构）：交互目标可能被滚出视口，点击前先 EnsureVisible。
-    var rootViewer = scene.RootViewer;
+    var rootViewer = mainWindow.RootViewer;
     var checkBox = gallery.Descendants().OfType<CheckBox>().First(c => c.Label == "Button visible");
     var failures = new List<string>();
     var measured = new List<double>();
