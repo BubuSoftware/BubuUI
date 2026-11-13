@@ -89,9 +89,7 @@ public abstract class StackPanelBase : Panel
             }
             if (!first) y += gap;
             first = false;
-            // 子项槽宽 = max(面板宽, 子项期望宽)（Avalonia StackPanel 同款）：刚性子项
-            //（不换行文本等）在「面板被钳到视口宽」的裁剪语义下保留完整宽度、由祖先裁剪，
-            // 而不是被压缩到面板宽；子项期望更窄时仍由基类对齐契约（Stretch）填满面板宽。
+            // DesiredSize 已受横向约束；局部显式尺寸溢出由 Element.Arrange 处理。
             child.Arrange(new Rect(padding, y,
                 Math.Max(innerWidth, child.DesiredSize.Width), child.DesiredSize.Height));
             y += child.DesiredSize.Height;

@@ -263,6 +263,78 @@ public class GridTests
 
     private static void Measure(Grid grid) => grid.Measure(new Size(1000, 1000));
 
+    [Fact]
+    public void StarColumn_RemeasuresWrappedContentBeforeResolvingAutoRow()
+    {
+        var grid = new Grid { ColumnDefinitions = "50,*", RowDefinitions = "Auto,Auto", Gap = 10, Padding = 5 };
+        var text = new TextBlock { TextWrapping = TextWrapping.Wrap };
+        text.AddRun(new string('a', 20));
+        Grid.SetColumn(text, 1);
+        var next = new FixedBox(10, 10);
+        Grid.SetRow(next, 1);
+        grid.Children.Add(text);
+        grid.Children.Add(next);
+        foreach (var width in new[] { 120d, 300d, 120d })
+        {
+            grid.Measure(new Size(width, double.PositiveInfinity));
+            grid.Arrange(new Rect(0, 0, width, grid.DesiredSize.Height));
+            var lines = width == 120 ? 4 : 1;
+            Assert.Equal(lines, text.TextLines.Count);
+            Assert.Equal(lines * 19.6, text.FinalRect.Height, 5);
+            Assert.Equal(5 + lines * 19.6 + 10, next.FinalRect.Y, 5);
+            Assert.Equal(lines * 19.6 + 30, grid.DesiredSize.Height, 5);
+        }
+    }
+
+    [Fact]
+    public void FinalColumnWidth_RemeasuresWrappedContentAndAutoRow()
+    {
+        var grid = new Grid { RowDefinitions = "Auto,Auto" };
+        var text = new TextBlock { TextWrapping = TextWrapping.Wrap };
+        text.AddRun(new string('a', 20));
+        var next = new FixedBox(10, 10);
+        Grid.SetRow(next, 1);
+        grid.Children.Add(text);
+        grid.Children.Add(next);
+        grid.Measure(new Size(300, double.PositiveInfinity));
+        grid.Arrange(new Rect(0, 0, 50, 300));
+        Assert.Equal(4, text.TextLines.Count);
+        Assert.Equal(4 * 19.6, next.FinalRect.Y, 5);
+        grid.Arrange(new Rect(0, 0, 300, 300));
+        Assert.Single(text.TextLines);
+        Assert.Equal(19.6, next.FinalRect.Y, 5);
+    }
+
+    [Fact]
+    public void OverconstrainedFixedAndAutoTracks_DoNotExpandDesiredSize()
+    {
+        var grid = new Grid { ColumnDefinitions = "400,Auto", RowDefinitions = "200" };
+        var child = new FixedBox(800, 300);
+        Grid.SetColumn(child, 1);
+        grid.Children.Add(child);
+        grid.Measure(new Size(300, 100));
+        Assert.Equal(new Size(300, 100), grid.DesiredSize);
+        grid.Arrange(new Rect(0, 0, 300, 100));
+        Assert.Equal(new Rect(400, 0, 800, 200), child.FinalRect);
+    }
+
+    [Fact]
+    public void DefinitionChanges_DoNotReuseStaleTracksOrZeroStarSizes()
+    {
+        var grid = new Grid { ColumnDefinitions = "100,100,100", RowDefinitions = "100,100,100" };
+        grid.Children.Add(new FixedBox(10, 10));
+        grid.Measure(new Size(400, 400));
+        Assert.Equal(new Size(300, 300), grid.DesiredSize);
+        grid.ColumnDefinitions = "100";
+        grid.RowDefinitions = "100";
+        grid.Measure(new Size(400, 400));
+        Assert.Equal(new Size(100, 100), grid.DesiredSize);
+        grid.ColumnDefinitions = "0*";
+        grid.RowDefinitions = "0*";
+        grid.Measure(new Size(400, 400));
+        Assert.Equal(Size.Empty, grid.DesiredSize);
+    }
+
     /// <summary>固定期望尺寸的探针元素（绕过 Measure 递归）。</summary>
     private sealed class FixedBox : Panel
     {

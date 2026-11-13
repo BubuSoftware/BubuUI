@@ -163,9 +163,9 @@ public class ScrollViewerTests
         var root = new HeadlessRoot(sv) { AvailableSize = new Size(400, 300) };
         root.UpdateLayout();
 
-        // 期望宽如实报告（800 > 视口 400），但 Disabled 不可滚：Scrollable 报 0、偏移钳 0、
-        // 内容按视口宽排列——溢出由 PushClip 裁剪（Avalonia-Disabled 裁剪语义）。
-        Assert.Equal(800, sv.ExtentWidth, 5);
+        // Disabled 保留有限横向测量约束，内容对外报告不得超过视口。
+        Assert.Equal(400, content.DesiredSize.Width, 5);
+        Assert.Equal(400, sv.ExtentWidth, 5);
         Assert.Equal(0, sv.ScrollableWidth, 5);
         sv.ScrollToHorizontalOffset(100);
         Assert.Equal(0, sv.HorizontalOffset, 5);
@@ -204,8 +204,7 @@ public class ScrollViewerTests
         var root = new HeadlessRoot(grid) { AvailableSize = new Size(400, 300) };
         root.UpdateLayout();
 
-        // 可收缩内容跟随视口（测量约束仍是视口宽——design/05 登记的与 Avalonia 差异点）：
-        // 不产生横向滚动条；宽度拉伸填满视口（纵向可滚，高度铺 max(视口, 内容)）。
+        // 自然需求小于视口时不产生横滚，排列拉伸填满视口。
         Assert.Equal(0, sv.ScrollableWidth, 5);
         Assert.Equal(new Rect(0, 0, 400, 300), content.FinalRect);
     }

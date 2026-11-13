@@ -12,9 +12,7 @@ namespace EclipseUI.Elements;
 /// <item><see cref="Disabled"/>：该方向不可滚——<c>Scrollable*</c> 报 0、偏移钳到 0、
 ///   内容按视口宽/高排列，溢出由 PushClip 裁剪。</item>
 /// </list>
-/// 与 Avalonia 的差异（design/05 登记）：Auto 档的测量约束仍是视口宽而非无穷——
-/// 可收缩内容（WrapPanel/Grid 星号）继续跟随视口自适应，滚动条只在真刚性溢出时出现；
-/// Avalonia-Auto 的无穷宽测量会让 WrapPanel 退化为单行、星号轨道失去参照。
+/// 可滚方向以无穷约束测量内容；Disabled 方向保留视口约束。
 /// </summary>
 public enum ScrollBarVisibility
 {
@@ -25,7 +23,7 @@ public enum ScrollBarVisibility
 }
 
 /// <summary>
-/// 滚动视口（G4 布局切片）：首个子元素作为内容，测量时纵向给无穷约束量出完整
+/// 滚动视口：首个子元素作为内容，测量时按可滚方向给无穷约束量出完整
 /// <see cref="ExtentHeight"/>，排列时内容按 -Offset 平移到视口内、绘制侧由
 /// <c>ElementPainter</c> 对本元素强制 PushClip。
 /// <list type="bullet">
@@ -57,13 +55,13 @@ public class ScrollViewer : Panel
     public static readonly StyledProperty<ScrollBarVisibility> HorizontalScrollBarVisibilityProperty =
         StyledProperty<ScrollBarVisibility>.Register<ScrollViewer>("HorizontalScrollBarVisibility",
             ScrollBarVisibility.Disabled,
-            new PropertyOptions { Invalidate = InvalidateKind.Arrange });
+            new PropertyOptions { Invalidate = InvalidateKind.Measure });
 
     /// <summary>纵向滚动开关（默认 Auto：按需出条）。</summary>
     public static readonly StyledProperty<ScrollBarVisibility> VerticalScrollBarVisibilityProperty =
         StyledProperty<ScrollBarVisibility>.Register<ScrollViewer>("VerticalScrollBarVisibility",
             ScrollBarVisibility.Auto,
-            new PropertyOptions { Invalidate = InvalidateKind.Arrange });
+            new PropertyOptions { Invalidate = InvalidateKind.Measure });
 
     public ScrollViewer()
     {
@@ -87,13 +85,13 @@ public class ScrollViewer : Panel
 
     public double VerticalOffset
     {
-        get => GetValue(VerticalOffsetProperty);
+        get => Math.Clamp(GetValue(VerticalOffsetProperty), 0, ScrollableHeight);
         set => SetValue(VerticalOffsetProperty, value);
     }
 
     public double HorizontalOffset
     {
-        get => GetValue(HorizontalOffsetProperty);
+        get => Math.Clamp(GetValue(HorizontalOffsetProperty), 0, ScrollableWidth);
         set => SetValue(HorizontalOffsetProperty, value);
     }
 
@@ -116,10 +114,10 @@ public class ScrollViewer : Panel
 
     private bool CanVerticallyScroll => VerticalScrollBarVisibility != ScrollBarVisibility.Disabled;
 
-    /// <summary>内容完整尺寸（测量产出；排列期不重测）。</summary>
+    /// <summary>内容范围；可滚方向由无穷约束测量得到。</summary>
     public double ExtentHeight { get; private set; }
 
-    /// <summary>内容完整尺寸（测量产出；排列期不重测）。</summary>
+    /// <summary>内容范围；可滚方向由无穷约束测量得到。</summary>
     public double ExtentWidth { get; private set; }
 
     /// <summary>可视区尺寸（测量期按可用估计，排列期按最终矩形定值）。</summary>
@@ -160,18 +158,14 @@ public class ScrollViewer : Panel
         if (content is null)
         {
             ExtentWidth = ExtentHeight = 0;
-            ViewportWidth = availW;
-            ViewportHeight = availH;
+            ViewportWidth = double.IsPositiveInfinity(availW) ? 0 : availW;
+            ViewportHeight = double.IsPositiveInfinity(availH) ? 0 : availH;
             return new Size(
                 double.IsPositiveInfinity(availW) ? padding * 2 : availW + padding * 2,
                 double.IsPositiveInfinity(availH) ? padding * 2 : availH + padding * 2);
         }
 
-        // 纵向给无穷：内容量出完整期望即 extent；横向给视口约束。
-        content.Measure(new Size(availW, double.PositiveInfinity));
-        var desired = content.DesiredSize;
-        ExtentWidth = desired.Width;
-        ExtentHeight = desired.Height;
+        MeasureContent(content, availW, availH);
 
         // 视口估计：可用有限时取 min(extent, 可用)——内容不满不空占，内容超出即出滚动条。
         ViewportWidth = double.IsPositiveInfinity(availW) ? ExtentWidth : Math.Min(availW, ExtentWidth);
@@ -190,12 +184,14 @@ public class ScrollViewer : Panel
         ViewportWidth = innerW;
         ViewportHeight = innerH;
 
+        var content = Content;
+        if (content is null) return;
+        // 最终视口可能与测量条件不同。方向约束相同则命中子级缓存，偏移变化不重测。
+        MeasureContent(content, innerW, innerH);
+
         // 偏移在使用点钳制；不回写属性（排列期写带 Arrange 失效的属性会循环）。
         var vOffset = Math.Clamp(VerticalOffset, 0, ScrollableHeight);
         var hOffset = Math.Clamp(HorizontalOffset, 0, ScrollableWidth);
-
-        var content = Content;
-        if (content is null) return;
 
         // 内容铺 max(viewport, extent)：窄于视口时拉伸填满，宽于视口时保留全部可滚区域。
         // 方向开关（design/05 §布局契约）：Disabled 时该方向钳到视口宽/高——溢出由
@@ -205,5 +201,14 @@ public class ScrollViewer : Panel
             padding - vOffset,
             CanHorizontallyScroll ? Math.Max(innerW, ExtentWidth) : innerW,
             CanVerticallyScroll ? Math.Max(innerH, ExtentHeight) : innerH));
+    }
+
+    private void MeasureContent(Element content, double viewportWidth, double viewportHeight)
+    {
+        content.Measure(new Size(
+            CanHorizontallyScroll ? double.PositiveInfinity : viewportWidth,
+            CanVerticallyScroll ? double.PositiveInfinity : viewportHeight));
+        ExtentWidth = content.DesiredSize.Width;
+        ExtentHeight = content.DesiredSize.Height;
     }
 }

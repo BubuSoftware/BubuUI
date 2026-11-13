@@ -60,7 +60,7 @@ public class WrapPanelTests
         // 超宽独占一行且不裁剪（测量给无穷主轴约束）；下一元素换行
         Assert.Equal(new Rect(0, 0, 300, 30), wide.FinalRect);
         Assert.Equal(new Rect(0, 30, 50, 20), normal.FinalRect);
-        Assert.Equal(300, wrap.DesiredSize.Width, 5);
+        Assert.Equal(250, wrap.DesiredSize.Width, 5); // 局部子项溢出不扩大面板对外期望。
         Assert.Equal(50, wrap.DesiredSize.Height, 5);
     }
 

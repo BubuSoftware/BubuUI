@@ -385,6 +385,70 @@ public class ElementPainterTests
         Assert.DoesNotContain(list.Commands, c => c is FillRoundedRect f && Math.Abs(f.Rect.Width - 6) < 0.5);
     }
 
+    [Theory]
+    [InlineData(ScrollBarVisibility.Auto, true)]
+    [InlineData(ScrollBarVisibility.Visible, true)]
+    [InlineData(ScrollBarVisibility.Hidden, false)]
+    [InlineData(ScrollBarVisibility.Disabled, false)]
+    public void ScrollViewer_HorizontalMode_ControlsThumb(ScrollBarVisibility mode, bool showThumb)
+    {
+        var viewer = new ScrollViewer { HorizontalScrollBarVisibility = mode };
+        viewer.Children.Add(new FixedBox(800, 40));
+        viewer.Measure(new Size(300, 100));
+        viewer.Arrange(new Rect(0, 0, 300, 100));
+        var list = new ElementPainter().Build(viewer, new Size(300, 100));
+        var thumbs = list.Commands.OfType<FillRoundedRect>().Where(f => Math.Abs(f.Rect.Height - 6) < 0.5);
+        Assert.Equal(showThumb ? 1 : 0, thumbs.Count());
+        Assert.Empty(list.Validate());
+    }
+
+    [Fact]
+    public void ScrollViewer_PaddingIsExcludedFromContentClip()
+    {
+        var viewer = new ScrollViewer { Padding = 10 };
+        viewer.Children.Add(new FixedBox(300, 600));
+        viewer.Measure(new Size(300, 100));
+        viewer.Arrange(new Rect(0, 0, 300, 100));
+        viewer.ScrollToVerticalOffset(25);
+        viewer.Arrange(new Rect(0, 0, 300, 100));
+        var list = new ElementPainter().Build(viewer, new Size(300, 100));
+        Assert.Contains(list.Commands, command => command is PushClip { Rect: var rect } && rect == new Rect(10, 10, 280, 80));
+        Assert.Empty(list.Validate());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ScrollViewer_VisibleWithoutOverflow_ThumbsFillTracks(bool empty)
+    {
+        var viewer = new ScrollViewer
+        {
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Visible,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Visible,
+        };
+        if (!empty) viewer.Children.Add(new FixedBox(40, 30));
+        viewer.Measure(new Size(300, 100));
+        viewer.Arrange(new Rect(0, 0, 300, 100));
+        var list = new ElementPainter().Build(viewer, new Size(300, 100));
+        var vertical = Assert.Single(list.Commands.OfType<FillRoundedRect>(), command => command.Rect.Width == 6);
+        var horizontal = Assert.Single(list.Commands.OfType<FillRoundedRect>(), command => command.Rect.Height == 6);
+        Assert.Equal(new Rect(290, 4, 6, 92), vertical.Rect);
+        Assert.Equal(new Rect(4, 90, 292, 6), horizontal.Rect);
+        Assert.Empty(list.Validate());
+    }
+
+    [Fact]
+    public void ZeroSizeClip_IsKeptForOverflowingChildren()
+    {
+        var panel = new StackPanel { ClipToBounds = true };
+        panel.Children.Add(new Button { Width = 200, Height = 40 });
+        panel.Measure(new Size(0, 0));
+        panel.Arrange(new Rect(10, 10, 0, 0));
+        var list = new ElementPainter().Build(panel, new Size(300, 100));
+        Assert.Contains(list.Commands, command => command is PushClip { Rect: var rect } && rect == new Rect(10, 10, 0, 0));
+        Assert.Empty(list.Validate());
+    }
+
     /// <summary>固定期望尺寸的探针元素（绕过 Measure 递归）。</summary>
     private sealed class FixedBox : Panel
     {

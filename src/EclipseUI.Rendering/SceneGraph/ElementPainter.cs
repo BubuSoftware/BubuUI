@@ -165,9 +165,14 @@ public sealed class ElementPainter
         }
 
         // ScrollViewer 无论 ClipToBounds 与否都必须裁剪：内容按 -Offset 平移，不裁就画出视口外。
-        var clip = (element is Panel { ClipToBounds: true } || element is ScrollViewer)
-                   && rect.Width > 0 && rect.Height > 0;
-        if (clip) _list.Add(new PushClip(rect));
+        var clip = element is Panel { ClipToBounds: true } || element is ScrollViewer;
+        if (clip)
+        {
+            var clipRect = element is ScrollViewer scroll
+                ? new Rect(rect.X + scroll.Padding, rect.Y + scroll.Padding, scroll.ViewportWidth, scroll.ViewportHeight)
+                : rect;
+            _list.Add(new PushClip(clipRect));
+        }
 
         // G2 的可视子节点全部来自 Panel（TextBlock 的 run 也是 Panel.Children 的一部分）。
         if (element is Panel panel)
@@ -229,7 +234,7 @@ public sealed class ElementPainter
             var trackHeight = rect.Height - ScrollBarInset * 2;
             if (trackHeight > ScrollBarThickness * 2)
             {
-                var thumbHeight = Math.Max(ScrollBarThickness,
+                var thumbHeight = viewer.ScrollableHeight == 0 ? trackHeight : Math.Max(ScrollBarThickness,
                     trackHeight * viewer.ViewportHeight / Math.Max(1, viewer.ExtentHeight));
                 var maxScroll = Math.Max(1, viewer.ScrollableHeight);
                 var offset = Math.Clamp(viewer.VerticalOffset, 0, viewer.ScrollableHeight);
@@ -247,7 +252,7 @@ public sealed class ElementPainter
             var trackWidth = rect.Width - ScrollBarInset * 2;
             if (trackWidth > ScrollBarThickness * 2)
             {
-                var thumbWidth = Math.Max(ScrollBarThickness,
+                var thumbWidth = viewer.ScrollableWidth == 0 ? trackWidth : Math.Max(ScrollBarThickness,
                     trackWidth * viewer.ViewportWidth / Math.Max(1, viewer.ExtentWidth));
                 var maxScroll = Math.Max(1, viewer.ScrollableWidth);
                 var offset = Math.Clamp(viewer.HorizontalOffset, 0, viewer.ScrollableWidth);

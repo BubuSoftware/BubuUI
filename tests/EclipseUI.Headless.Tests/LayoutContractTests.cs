@@ -8,7 +8,7 @@ namespace EclipseUI.Headless.Tests;
 /// <summary>
 /// 布局契约（design/05 §布局契约，Layoutable 级统一面）：Margin 计入 DesiredSize、
 /// 显式 Width/Height 覆盖测量期望、Min*/Max* 钳制、对齐档在排列槽内定位。
-/// 默认 Stretch 与既有面板行为零回归——本套与 LayoutTests / WrapPanelTests / GridTests
+/// 默认 Stretch 填满槽并统一应用尺寸约束——本套与 LayoutTests / WrapPanelTests / GridTests
 /// 互为护栏（naive 测量器确定性：普通字符 0.6×字号、行高 1.4×字号）。
 /// </summary>
 public class LayoutContractTests
@@ -66,7 +66,7 @@ public class LayoutContractTests
         panel.Arrange(new Rect(0, 0, 100, 400));
 
         Assert.Equal(new Size(50, 20), panel.DesiredSize);
-        AssertRect(child.FinalRect, 0, 0, 50, 20);
+        AssertRect(child.FinalRect, 25, 0, 50, 20);
     }
 
     [Fact]
@@ -81,11 +81,15 @@ public class LayoutContractTests
         panel.Children.Add(shrunk);
 
         panel.Measure(Size.Infinity);
-        panel.Arrange(new Rect(0, 0, 100, 400));
-
         Assert.Equal(200, grown.DesiredSize.Width, 3);
         Assert.Equal(200, panel.DesiredSize.Width, 3);
         Assert.Equal(30, shrunk.DesiredSize.Width, 3);
+
+        panel.Arrange(new Rect(0, 0, 100, 400));
+        Assert.Equal(100, panel.DesiredSize.Width, 3);
+        Assert.Equal(100, grown.DesiredSize.Width, 3);
+        AssertRect(grown.FinalRect, -50, 0, 200, TextHeight);
+        AssertRect(shrunk.FinalRect, 35, TextHeight, 30, TextHeight);
     }
 
     [Fact]
@@ -120,8 +124,7 @@ public class LayoutContractTests
         grid.Measure(Size.Infinity);
         grid.Arrange(new Rect(0, 0, 200, 50));
 
-        // 显式宽 + Right：贴右缘；垂直未设对齐 → Stretch 填满行高（Min*/Max* 只钳测量期望，
-        // 不改 Stretch 的填满语义——Avalonia 同口径，Min/Max 钳制另见 Min_AndMax 测试）。
+        // 显式宽 + Right：贴右缘；垂直未设尺寸约束，Stretch 填满行高。
         AssertRect(child.FinalRect, 200 - 100, 0, 100, 50);
     }
 

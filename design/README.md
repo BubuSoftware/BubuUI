@@ -9,7 +9,7 @@
 | 文档 | 用途 |
 |---|---|
 | [04 · 运行时与元素](./04-runtime-and-elements.md) | UiObject、实际内容树、值层和宿主 |
-| [05 · 布局渲染输入](./05-layout-rendering-input.md) | 几何与绘制分工；2026-11-13 布局约束契约修订、实现差距与验收，运行时修正待实施 |
+| [05 · 布局渲染输入](./05-layout-rendering-input.md) | 几何与绘制分工；2026-11-13 布局约束修正已实施，见 [验证报告](./reports/layout-constraints-2026-11-13.md) |
 | [06 · IDE](./06-ide-support.md) | LSP与Roslyn生成文档、语义能力 |
 | [09 · 开发计划](./09-development-plan.md) | 总体路线；最新统一工作见21 |
 | [17 · 样式](./17-style-system.md) | Class、主题、样式编译 |

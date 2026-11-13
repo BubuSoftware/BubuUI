@@ -209,9 +209,10 @@ public abstract class Element : UiObject
     private Size _desired;
     private Rect _final;
     private Size _lastMeasureConstraint;
-    // 布局契约（design/05 §布局契约）：_coreDesired = 尺寸约束钳制后、不含 Margin 的自身期望，
-    // 排列期对齐用；FinalRect 存核心矩形（Margin/对齐已折算），排列槽另存缓存键。
+    // 内容需求与向父级报告的受约束尺寸分开保存。排列不能把内容需求传播回父级槽。
     private Size _coreDesired;
+    private Size _lastCoreMeasureConstraint;
+    private bool _hasMeasured;
     private Rect _lastArrangeSlot;
     internal bool _needsMeasure = true;
     internal bool _needsArrange = true;
@@ -637,23 +638,32 @@ public abstract class Element : UiObject
     public void InvalidateRender() => _renderVersion++;
 
     /// <summary>
-    /// 测量（design/05 §布局契约）：约束先扣 <see cref="Margin"/> 再进 <see cref="MeasureCore"/>，
-    /// 期望值经 Width/Height/Min*/Max* 钳制后加回 Margin——<see cref="DesiredSize"/> 含外边距，
-    /// 面板按 DesiredSize 堆叠即自动为 Margin 留位，无需各自感知。
+    /// 测量先扣 Margin 并应用本地尺寸要求，使换行使用正确宽度。
+    /// 内容需求加回 Margin 后受 available 限制，不能扩大父级的约束。
     /// </summary>
     public void Measure(Size available)
     {
+        if (double.IsNaN(available.Width) || double.IsNaN(available.Height) ||
+            available.Width < 0 || available.Height < 0)
+            throw new ArgumentOutOfRangeException(nameof(available), "Measure constraints must be non-negative or positive infinity.");
         EnsureInitialized();
         if (!_needsMeasure && available == _lastMeasureConstraint) return;
-        _lastMeasureConstraint = available;
         var margin = Margin;
         var inner = margin == 0
             ? available
             : new Size(Math.Max(0, available.Width - margin * 2), Math.Max(0, available.Height - margin * 2));
-        _coreDesired = ApplySizeConstraints(MeasureCore(inner));
-        _desired = margin == 0
-            ? _coreDesired
-            : new Size(_coreDesired.Width + margin * 2, _coreDesired.Height + margin * 2);
+        var constraint = ApplySizeConstraints(inner);
+        var content = MeasureCore(constraint);
+        ValidateMeasuredSize(content);
+        _coreDesired = ApplySizeConstraints(content);
+        ValidateMeasuredSize(_coreDesired);
+        _desired = new Size(
+            Math.Min(available.Width, Math.Max(0, _coreDesired.Width + margin * 2)),
+            Math.Min(available.Height, Math.Max(0, _coreDesired.Height + margin * 2)));
+        ValidateMeasuredSize(_desired);
+        _lastMeasureConstraint = available;
+        _lastCoreMeasureConstraint = constraint;
+        _hasMeasured = true;
         _needsMeasure = false;
         _needsArrange = true;
     }
@@ -661,12 +671,16 @@ public abstract class Element : UiObject
     /// <summary>
     /// 排列（design/05 §布局契约）：<paramref name="slot"/> 是父给的本元素槽（含 Margin 区），
     /// 先扣 Margin 得内槽，再按对齐档与显式尺寸落核心矩形——<see cref="FinalRect"/> 即核心矩形
-    /// （绘制、命中测试、脏区都读它）。默认 Stretch 填满内槽，与既有布局行为零回归。
+    /// （绘制、命中测试、脏区都读它）。Stretch 同样受显式尺寸和 Min/Max 约束。
     /// </summary>
     public void Arrange(Rect slot)
     {
+        if (!double.IsFinite(slot.X) || !double.IsFinite(slot.Y) ||
+            !double.IsFinite(slot.Width) || !double.IsFinite(slot.Height) || slot.Width < 0 || slot.Height < 0)
+            throw new ArgumentOutOfRangeException(nameof(slot), "Arrange slots must be finite with non-negative sizes.");
+        if (!_hasMeasured) Measure(slot.Size);
+        else if (_needsMeasure) Measure(_lastMeasureConstraint);
         if (!_needsArrange && slot == _lastArrangeSlot) return;
-        _lastArrangeSlot = slot;
 
         var margin = Margin;
         var inner = margin == 0
@@ -674,33 +688,47 @@ public abstract class Element : UiObject
             : new Rect(slot.X + margin, slot.Y + margin,
                 Math.Max(0, slot.Width - margin * 2), Math.Max(0, slot.Height - margin * 2));
 
-        // 排列尺寸：显式 Width/Height 优先；Stretch 填满内槽；对齐档取钳制后的期望宽
-        //（可溢出内槽，由祖先裁剪——Avalonia 同语义）。
-        double w = !double.IsNaN(Width) ? Width
-            : HorizontalAlignment == HorizontalAlignment.Stretch ? inner.Width
-            : _coreDesired.Width;
-        double h = !double.IsNaN(Height) ? Height
-            : VerticalAlignment == VerticalAlignment.Stretch ? inner.Height
-            : _coreDesired.Height;
+        var size = ArrangeSize(inner.Size, margin);
+        // 父级最终槽可能不同于测量报价。按实际宽度受控重测一次，让子面板的高度、
+        // 文本断行和绘制一致；保留纵向测量条件，不把完整内容高度截成排列槽高度。
+        if (size.Width != _lastCoreMeasureConstraint.Width &&
+            (size.Width > _lastCoreMeasureConstraint.Width || size.Width < _coreDesired.Width))
+        {
+            Measure(new Size(Math.Max(0, size.Width + margin * 2), _lastMeasureConstraint.Height));
+            size = ArrangeSize(inner.Size, margin);
+        }
+        var w = size.Width;
+        var h = size.Height;
 
         var x = HorizontalAlignment switch
         {
             HorizontalAlignment.Left => inner.X,
             HorizontalAlignment.Center => inner.X + (inner.Width - w) / 2,
             HorizontalAlignment.Right => inner.Right - w,
-            _ => inner.X,
+            _ => inner.X + (inner.Width - w) / 2,
         };
         var y = VerticalAlignment switch
         {
             VerticalAlignment.Top => inner.Y,
             VerticalAlignment.Center => inner.Y + (inner.Height - h) / 2,
             VerticalAlignment.Bottom => inner.Bottom - h,
-            _ => inner.Y,
+            _ => inner.Y + (inner.Height - h) / 2,
         };
 
         _final = new Rect(x, y, w, h);
         ArrangeCore(_final);
+        _lastArrangeSlot = slot;
         _needsArrange = false;
+    }
+
+    private Size ArrangeSize(Size slot, double margin) => ApplySizeConstraints(new Size(
+        HorizontalAlignment == HorizontalAlignment.Stretch ? slot.Width : Math.Min(slot.Width, Math.Max(0, _desired.Width - margin * 2)),
+        VerticalAlignment == VerticalAlignment.Stretch ? slot.Height : Math.Min(slot.Height, Math.Max(0, _desired.Height - margin * 2))));
+
+    private static void ValidateMeasuredSize(Size size)
+    {
+        if (!double.IsFinite(size.Width) || !double.IsFinite(size.Height) || size.Width < 0 || size.Height < 0)
+            throw new InvalidOperationException("Measured sizes must be finite and non-negative.");
     }
 
     protected internal abstract Size MeasureCore(Size available);
@@ -740,7 +768,7 @@ public abstract class Element : UiObject
         StyledProperty<double>.Register<Element>("MaxHeight", double.PositiveInfinity,
             new PropertyOptions { Invalidate = InvalidateKind.Measure });
 
-    /// <summary>水平对齐（默认 Stretch = 填满排列槽，与既有面板行为零回归）。</summary>
+    /// <summary>水平对齐（默认 Stretch，填满槽后统一应用尺寸约束）。</summary>
     public static readonly StyledProperty<HorizontalAlignment> HorizontalAlignmentProperty =
         StyledProperty<HorizontalAlignment>.Register<Element>("HorizontalAlignment", HorizontalAlignment.Stretch,
             new PropertyOptions { Invalidate = InvalidateKind.Arrange });
@@ -804,7 +832,7 @@ public abstract class Element : UiObject
         set => SetValue(VerticalAlignmentProperty, value);
     }
 
-    /// <summary>尺寸约束钳制（Measure 期）：显式 Width/Height 覆盖测量期望，Min/Max 兜底
+    /// <summary>测量条件、内容需求和排列尺寸共用：显式 Width/Height 优先，Min/Max 兜底
     ///（Min &gt; Max 时 Min 胜——Avalonia 同口径，不抛异常）。</summary>
     private Size ApplySizeConstraints(Size core)
     {
@@ -893,13 +921,19 @@ public abstract class Element : UiObject
     public Element? HitTest(Point point)
     {
         if (!IsHitTestVisible) return null;
-        if (!new Rect(default, FinalRect.Size).Contains(PointFromRoot(point))) return null;
+        var inside = new Rect(default, FinalRect.Size).Contains(PointFromRoot(point));
+        // 与绘制相同：仅宿主边界、显式裁剪和滚动视口阻止遍历溢出的子项。
+        if (!inside && (Parent is null || this is Panel { ClipToBounds: true } || this is ScrollViewer))
+            return null;
+        if (this is ScrollViewer viewer &&
+            !new Rect(viewer.Padding, viewer.Padding, viewer.ViewportWidth, viewer.ViewportHeight).Contains(PointFromRoot(point)))
+            return inside ? this : null;
         foreach (var child in VisualChildren.Reverse())
         {
             if (child.HitTest(point) is { } hit)
                 return hit;
         }
-        return this;
+        return inside ? this : null;
     }
 
     /// <summary>根坐标 → 本元素局部坐标（沿父链累减 FinalRect 原点）。</summary>

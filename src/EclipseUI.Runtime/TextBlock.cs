@@ -144,7 +144,8 @@ public class TextBlock : Panel, ITextContentHost
         double width = 0, height = 0;
         foreach (var run in _runs)
         {
-            run.Measure(new Size(available.Width, double.PositiveInfinity));
+            // 单行 run 保留自然宽度，供后续 run 的绘制位置使用；TextBlock 自身对外受约束。
+            run.Measure(Size.Infinity);
             width += run.DesiredSize.Width;
             height = Math.Max(height, run.DesiredSize.Height);
         }

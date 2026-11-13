@@ -2,15 +2,15 @@ namespace EclipseUI;
 
 /// <summary>
 /// 水平对齐（design/05 §布局契约，Avalonia 同名枚举语义对齐）：决定元素在排列槽内
-/// 的水平占位。默认 <see cref="Stretch"/> 与既有面板行为零回归——排列槽填满；
-/// 非 Stretch 档按期望宽占位（可用 <see cref="Element.Width"/> 显式定宽）。
+/// 的水平占位。默认 <see cref="Stretch"/> 填满排列槽并应用尺寸约束；
+/// 非 Stretch 档采用槽与受约束期望的较小值，再应用显式尺寸和 Min/Max。
 /// </summary>
 public enum HorizontalAlignment
 {
-    /// <summary>填满排列槽（缺省——与既有布局行为一致）。</summary>
+    /// <summary>填满排列槽；受尺寸约束未铺满时居中。</summary>
     Stretch,
 
-    /// <summary>靠槽左缘，宽度取期望宽（可溢出槽，由祖先裁剪）。</summary>
+    /// <summary>靠槽左缘。</summary>
     Left,
 
     /// <summary>槽内水平居中。</summary>

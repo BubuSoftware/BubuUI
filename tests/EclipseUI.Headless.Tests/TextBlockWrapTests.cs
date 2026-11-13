@@ -81,7 +81,8 @@ public class TextBlockWrapTests
         block.Measure(new Size(40, double.PositiveInfinity));
 
         Assert.Equal(TextWrapping.NoWrap, block.TextWrapping);   // 缺省
-        Assert.Equal(46.2, block.DesiredSize.Width, 3);
+        Assert.Equal(40, block.DesiredSize.Width, 3);
+        Assert.Equal(46.2, block.Runs[0].DesiredSize.Width, 3); // 内部单行内容需求独立保存。
         Assert.Empty(block.TextLines);
     }
 

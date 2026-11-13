@@ -145,13 +145,15 @@ public class Grid : Panel
         cells.RemoveAll(c => IsSkipped(c.Child));
 
         _colSizes = ResolveTrackSizes(cols, TrackMaxDesired(cols, cells, horizontal: true, ref _colDesired), innerW, gap, ref _colSizes);
+        // 列宽先定，再按单元格宽度重测；Auto 行高必须来自这次真实断行结果。
+        MeasureCellsAtColumnWidths(cells, rows);
         _rowSizes = ResolveTrackSizes(rows, TrackMaxDesired(rows, cells, horizontal: false, ref _rowDesired), innerH, gap, ref _rowSizes);
         var colSizes = _colSizes;
         var rowSizes = _rowSizes;
 
         return new Size(
-            Sum(colSizes) + GapTotal(cols.Length, gap) + padding * 2,
-            Sum(rowSizes) + GapTotal(rows.Length, gap) + padding * 2);
+            Sum(colSizes, cols.Length) + GapTotal(cols.Length, gap) + padding * 2,
+            Sum(rowSizes, rows.Length) + GapTotal(rows.Length, gap) + padding * 2);
     }
 
     protected internal override void ArrangeCore(Rect final)
@@ -180,7 +182,9 @@ public class Grid : Panel
                 ClampIndex(Grid.GetColumn(child), cols.Length)));
         }
 
-        _colSizes = ResolveTrackSizes(cols, TrackMaxDesired(cols, cells, horizontal: true, ref _colDesired), innerW, gap, ref _colSizes);
+        // Auto 列的自然需求保留测量产物，避免被星号列的受约束期望反向污染。
+        _colSizes = ResolveTrackSizes(cols, _colDesired, innerW, gap, ref _colSizes);
+        MeasureCellsAtColumnWidths(cells, rows);
         _rowSizes = ResolveTrackSizes(rows, TrackMaxDesired(rows, cells, horizontal: false, ref _rowDesired), innerH, gap, ref _rowSizes);
         var colSizes = _colSizes;
         var rowSizes = _rowSizes;
@@ -193,6 +197,13 @@ public class Grid : Panel
                 colSizes[cell.Col],
                 rowSizes[cell.Row]));
         }
+    }
+
+    private void MeasureCellsAtColumnWidths(List<Cell> cells, TrackDef[] rows)
+    {
+        foreach (var cell in cells)
+            cell.Child.Measure(new Size(_colSizes[cell.Col],
+                rows[cell.Row].Type == GridUnitType.Pixel ? rows[cell.Row].Value : double.PositiveInfinity));
     }
 
     /// <summary>布局透明的空块整体退出网格：不占格（D77 口径，与 StackPanelBase 一致）。</summary>
@@ -238,6 +249,7 @@ public class Grid : Panel
                     contentSum += sizes[i];
                     break;
                 case GridUnitType.Star:
+                    sizes[i] = 0;
                     if (double.IsPositiveInfinity(inner))
                     {
                         sizes[i] = maxDesired[i];
@@ -274,10 +286,10 @@ public class Grid : Panel
 
     private static double GapTotal(int trackCount, double gap) => trackCount > 1 ? gap * (trackCount - 1) : 0;
 
-    private static double Sum(double[] sizes)
+    private static double Sum(double[] sizes, int count)
     {
         double total = 0;
-        foreach (var size in sizes) total += size;
+        for (var i = 0; i < count; i++) total += sizes[i];
         return total;
     }
 
@@ -315,7 +327,7 @@ public class Grid : Panel
     private static double ParseNonNegative(ReadOnlySpan<char> text, string raw)
     {
         if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
-            || double.IsNaN(value) || value < 0)
+            || !double.IsFinite(value) || value < 0)
             throw new FormatException($"Invalid Grid definition '{raw}': unrecognized track '{text.ToString()}' (use Auto, N* or a non-negative number)");
         return value;
     }
