@@ -1,0 +1,50 @@
+name: Linux desktop
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  x11:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      SDL_VIDEODRIVER: x11
+      LIBGL_ALWAYS_SOFTWARE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Install display, Vulkan and font dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build xvfb xauth libvulkan1 libvulkan-dev mesa-vulkan-drivers \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev \
+            libxss-dev libxtst-dev libwayland-dev libxkbcommon-dev libdecor-0-dev \
+            fonts-dejavu-core fonts-noto-cjk fonts-noto-color-emoji
+      - name: Build SDL3 runtime
+        run: |
+          curl -fsSL https://github.com/libsdl-org/SDL/releases/download/release-3.2.28/SDL3-3.2.28.tar.gz -o "$RUNNER_TEMP/SDL3.tar.gz"
+          tar -xzf "$RUNNER_TEMP/SDL3.tar.gz" -C "$RUNNER_TEMP"
+          cmake -S "$RUNNER_TEMP/SDL3-3.2.28" -B "$RUNNER_TEMP/sdl-build" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DSDL_SHARED=ON -DSDL_STATIC=OFF -DSDL_TESTS=OFF \
+            -DSDL_AUDIO=OFF -DSDL_JOYSTICK=OFF -DSDL_HAPTIC=OFF -DSDL_CAMERA=OFF
+          cmake --build "$RUNNER_TEMP/sdl-build" --parallel 2
+          sudo cmake --install "$RUNNER_TEMP/sdl-build"
+          sudo ldconfig
+      - name: Native window, GPU presentation, UTF-8 input and fonts
+        run: xvfb-run -a dotnet test tests/EclipseUI.Platform.Linux.Tests --logger "trx;LogFileName=linux.trx"
+      - name: Gallery window and offscreen snapshot
+        run: |
+          dotnet publish samples/Gallery.Desktop -c Release -r linux-x64 --self-contained true -o out/linux-x64
+          xvfb-run -a out/linux-x64/Gallery.Desktop --frames 5
+          out/linux-x64/Gallery.Desktop --cpu --shot out/gallery-linux.png
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-validation
+          path: |
+            tests/EclipseUI.Platform.Linux.Tests/TestResults/*.trx
+            out/gallery-linux.png

@@ -10,6 +10,7 @@ namespace EclipseUI.Platform.Windows;
 /// 的描述材料化为 Win32 窗口 + 表面（<c>ISurfaceFactory</c>，另经 <c>UseVello()</c> 注册）+
 /// <see cref="WindowHost"/> 帧循环，跑至窗口关闭。
 /// </summary>
+[SupportedOSPlatform("windows")]
 public static class WindowsAppBuilderExtensions
 {
     /// <summary>使用 Win32 窗口与消息/帧循环（Windows 桌面生命周期）。</summary>

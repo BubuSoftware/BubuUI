@@ -8,6 +8,7 @@
 
 | 文档 | 用途 |
 |---|---|
+| [26 · Linux 平台](./26-linux-platform.md) | SDL3 X11/Wayland 窗口、Vello 表面、输入/字体与运行验证 |
 | [25 · 焦点状态与视觉提示](./25-focus-visuals.md) | 已实施：输入来源、focus-visible/focus-within、控件自身提示、导航几何与绘制缓存；附验证报告 |
 | [24 · 控件库](./24-control-library.md) | 2026-11-14 控件清单、输入/浮层/绘制扩展、虚拟化及验证 |
 | [04 · 运行时与元素](./04-runtime-and-elements.md) | UiObject、实际内容树、值层和宿主 |

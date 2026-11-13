@@ -10,6 +10,7 @@
     <ProjectReference Include="..\EclipseUI.Runtime\EclipseUI.Runtime.csproj" />
     <ProjectReference Include="..\EclipseUI.Rendering\EclipseUI.Rendering.csproj" />
     <PackageReference Include="HarfBuzzSharp" Version="2.8.2.3" />
+    <PackageReference Include="HarfBuzzSharp.NativeAssets.Linux" Version="2.8.2.3" />
   </ItemGroup>
 
 </Project>

@@ -90,8 +90,8 @@ public sealed class PixelProbe
         {
             var top = string.Join(", ", TopColors(histogram, 3));
             Fail(
-                $"DominantColor[{Describe(region)}] 期望 {expected} 覆盖率 ≥ {minRatio:P1}，" +
-                $"实际 {ratio:P1}（{matched}/{total}）主要颜色：{top}{Because(because)}");
+                $"DominantColor[{Describe(region)}] 期望 {expected} 覆盖率 ≥ {Percent(minRatio)}，" +
+                $"实际 {Percent(ratio)}（{matched}/{total}）主要颜色：{top}{Because(because)}");
         }
         return this;
     }
@@ -311,6 +311,8 @@ public sealed class PixelProbe
         regions.Count == 1 ? Describe(regions[0]) : $"{regions.Count} rects";
 
     private static string Because(string? because) => because is null ? "" : $"（{because}）";
+
+    private static string Percent(double ratio) => FormattableString.Invariant($"{ratio * 100:0.0}%");
 
     private static IEnumerable<string> TopColors(Dictionary<Color, int> histogram, int count) =>
         histogram.OrderByDescending(kv => kv.Value).Take(count)

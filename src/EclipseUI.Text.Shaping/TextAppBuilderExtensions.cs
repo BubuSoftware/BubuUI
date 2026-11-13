@@ -9,12 +9,16 @@ namespace EclipseUI.Text.Shaping;
 public sealed class HarfBuzzTextOptions
 {
     /// <summary>主字体候选路径（第一个可加载者生效）；全部失败时宿主回落 <see cref="MeasuringTextPainter"/>（只测量）。</summary>
-    public IReadOnlyList<string> FontPaths { get; set; } =
-    [
-        @"C:\Windows\Fonts\segoeui.ttf",
-        @"C:\Windows\Fonts\msyh.ttc",
-        @"C:\Windows\Fonts\arial.ttf",
-    ];
+    public IReadOnlyList<string> FontPaths { get; set; } = OperatingSystem.IsWindows()
+        ? [@"C:\Windows\Fonts\segoeui.ttf", @"C:\Windows\Fonts\msyh.ttc", @"C:\Windows\Fonts\arial.ttf"]
+        : OperatingSystem.IsMacOS()
+            ? ["/System/Library/Fonts/Supplemental/Arial.ttf", "/System/Library/Fonts/Helvetica.ttc"]
+            : ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+               "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+               "/usr/share/fonts/noto/NotoSans-Regular.ttf",
+               "/usr/share/fonts/google-noto/NotoSans-Regular.ttf",
+               "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
+               "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"];
 
     /// <summary>Per-text-element fallback chain; empty disables fallback. Loaded fonts are owned by the painter.</summary>
     public IReadOnlyList<string> FallbackFontPaths { get; set; } = HarfBuzzTextPainter.DefaultFallbackFontPaths;

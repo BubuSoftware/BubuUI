@@ -66,6 +66,23 @@ dotnet run --project sandbox/GalleryCheck -- --cpu --selfcheck --shot out/galler
 
 所有样例和测试使用统一 UiObject 机制。旧组件包装、第二所有权树、来源枚举和窗口模板兼容层均已移除。
 
+## Linux 桌面
+
+`Gallery.Desktop` 自动选择 Windows / Linux 平台。Linux 使用 SDL3 3.2+ 创建 X11 或 Wayland 窗口，Vello 通过 Vulkan 上屏；需安装 `libSDL3.so.0`、Vulkan loader/驱动和字体（建议 DejaVu Sans、Noto CJK、Noto Color Emoji）。
+
+```bash
+dotnet run --project samples/Gallery.Desktop
+SDL_VIDEODRIVER=wayland dotnet run --project samples/Gallery.Desktop
+SDL_VIDEODRIVER=x11 dotnet run --project samples/Gallery.Desktop
+
+# 离屏截图不需要显示服务器或 SDL3
+dotnet run --project samples/Gallery.Desktop -- --cpu --shot out/gallery-linux.png
+
+dotnet publish samples/Gallery.Desktop -c Release -r linux-x64 --self-contained true
+```
+
+自建应用通过 `.UseLinux().UseVello().UseHarfBuzzText()` 注册平台。窗口、DPI 缩放、输入/输入法、剪贴板及验证范围见 [Linux 平台说明](./design/26-linux-platform.md)。已在 WSLg 验证 X11 / Wayland 原生窗口、队列输入与缩放；仓库提供 Linux X11 原生窗口 CI。旧 SDL 配合缺少输入法协议的 Wayland 环境会回退基本键盘输入，完整 IME 可选择 X11；真实输入法候选交互仍需验收。
+
 ## 当前能力
 
 - 保留静态树、编译期动态槽和 if/foreach/switch 块；普通 CLR 状态＋显式失效，无依赖追踪或运行时通用树 diff。

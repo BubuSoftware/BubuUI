@@ -2,11 +2,11 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Gallery.Desktop</RootNamespace>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Description>EclipseUI 画廊的 Windows 平台入口（Avalonia 式分层）：Win32 窗口 + 主循环，仅负责展示与截图。验证/自检见 sandbox/GalleryCheck。</Description>
+    <Description>EclipseUI 画廊桌面入口：Windows (Win32) / Linux (SDL3 X11/Wayland)，支持窗口与离屏截图。</Description>
     <!-- S5 AOT/裁剪试点（D95）：PublishTrimmed 放项目属性而非 -p: 命令行——命令行全局属性
          会传染到 netstandard2.0 的源生成器项目（PublishTrimmed=true → NETSDK1124）。 -->
     <PublishTrimmed Condition="'$(Configuration)' == 'Release'">true</PublishTrimmed>
@@ -19,6 +19,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Gallery\Gallery.csproj" />
     <ProjectReference Include="..\..\src\EclipseUI.Platform.Windows\EclipseUI.Platform.Windows.csproj" />
+    <ProjectReference Include="..\..\src\EclipseUI.Platform.Linux\EclipseUI.Platform.Linux.csproj" />
     <ProjectReference Include="..\..\src\EclipseUI.Rendering.Vello\EclipseUI.Rendering.Vello.csproj" />
   </ItemGroup>
 

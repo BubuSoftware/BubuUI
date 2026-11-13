@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace EclipseUI;
@@ -24,6 +25,7 @@ namespace EclipseUI;
 /// </summary>
 public sealed class AppBuilder
 {
+    [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)]
     private Type? _appType;
     private readonly List<IPlatformSetup> _setups = [];
     private Action<IServiceCollection>? _configureServices;

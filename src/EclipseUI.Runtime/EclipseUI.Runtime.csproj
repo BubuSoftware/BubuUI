@@ -13,6 +13,7 @@
   <!-- 平台生命周期安装窗口对象的属性回推通道。 -->
   <ItemGroup>
     <InternalsVisibleTo Include="EclipseUI.Platform.Windows" />
+    <InternalsVisibleTo Include="EclipseUI.Platform.Linux" />
   </ItemGroup>
 
 </Project>

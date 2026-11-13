@@ -1,4 +1,3 @@
-using System.Runtime.Versioning;
 using EclipseUI;
 using EclipseUI.Rendering;
 using Microsoft.Extensions.DependencyInjection;
@@ -11,7 +10,6 @@ namespace EclipseUI.Rendering.Vello;
 /// AppBuilder.Configure&lt;App&gt;().UseWindows().UseVello().Start(args);
 /// </code>
 /// </summary>
-[SupportedOSPlatform("windows")]
 public static class VelloAppBuilderExtensions
 {
     /// <summary>使用 Vello 渲染后端上屏（GPU 优先；<c>new VelloSurfaceOptions { PreferVsync = false }</c> 可调表面行为）。</summary>
@@ -31,5 +29,8 @@ public static class VelloAppBuilderExtensions
     {
         public ISurfacePresenter Create(nint handle, int width, int height)
             => VelloSurfaceBackend.Create(handle, width, height, options);
+
+        public ISurfacePresenter Create(NativeWindowHandle window, int width, int height)
+            => VelloSurfaceBackend.Create(window, width, height, options);
     }
 }

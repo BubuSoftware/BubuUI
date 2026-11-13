@@ -9,4 +9,10 @@ public interface ISurfaceFactory
 {
     /// <summary>为窗口客户区创建上屏表面（生命周期负责随窗口一起释放返回值）。</summary>
     ISurfacePresenter Create(nint handle, int width, int height);
+
+    /// <summary>Create a surface using explicit platform and display handles.</summary>
+    ISurfacePresenter Create(NativeWindowHandle window, int width, int height)
+        => window.Kind == NativeWindowKind.Win32
+            ? Create(window.Handle, width, height)
+            : throw new PlatformNotSupportedException($"This surface factory does not support {window.Kind} windows.");
 }

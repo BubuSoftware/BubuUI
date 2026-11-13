@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Runtime.Versioning;
 using EclipseUI.Rendering;
 using VelloSharp;
 
@@ -16,7 +15,7 @@ public sealed class VelloSurfaceOptions
     public AntialiasingMode Antialiasing { get; init; } = AntialiasingMode.Area;
 
     /// <summary>优先使用的 wgpu 后端；null 表示由 wgpu 自动选择。</summary>
-    public WgpuBackend? PreferredBackend { get; init; } = WgpuBackend.Dx12;
+    public WgpuBackend? PreferredBackend { get; init; } = OperatingSystem.IsWindows() ? WgpuBackend.Dx12 : WgpuBackend.Vulkan;
 
     /// <summary>优先垂直同步；false 时选 Immediate（仅用于测帧率上限）。</summary>
     public bool PreferVsync { get; init; } = true;
@@ -31,10 +30,9 @@ public sealed class VelloSurfaceOptions
 }
 
 /// <summary>
-/// Vello GPU surface 后端：wgpu instance/adapter/device + 平台表面（Win32 HWND）。
+/// Vello GPU surface 后端：wgpu instance/adapter/device + Win32/X11/Wayland 表面。
 /// 帧路径：AcquireNextTexture → RenderSurface → Present，不经过 CPU 回读。
 /// </summary>
-[SupportedOSPlatform("windows")]
 public sealed class VelloSurfaceBackend : ISurfacePresenter
 {
     private readonly VelloSurfaceOptions _options;
@@ -86,18 +84,21 @@ public sealed class VelloSurfaceBackend : ISurfacePresenter
     public SurfaceFrameTimings LastTimings { get; private set; }
 
     public static VelloSurfaceBackend Create(nint hwnd, int width, int height, VelloSurfaceOptions? options = null)
+        => Create(NativeWindowHandle.FromWin32(hwnd), width, height, options);
+
+    public static VelloSurfaceBackend Create(NativeWindowHandle window, int width, int height, VelloSurfaceOptions? options = null)
     {
-        if (!OperatingSystem.IsWindows())
-            throw new PlatformNotSupportedException("VelloSurfaceBackend requires Windows.");
-        if (hwnd == nint.Zero)
-            throw new ArgumentException("window handle must not be zero", nameof(hwnd));
+        if (window.Kind == NativeWindowKind.Unknown || window.Handle == 0)
+            throw new ArgumentException("A valid native window handle is required.", nameof(window));
+        if (window.Kind == NativeWindowKind.Win32 ? !OperatingSystem.IsWindows() : !OperatingSystem.IsLinux())
+            throw new PlatformNotSupportedException($"Cannot create a {window.Kind} surface on this operating system.");
         if (width <= 0) throw new ArgumentOutOfRangeException(nameof(width));
         if (height <= 0) throw new ArgumentOutOfRangeException(nameof(height));
 
         var backend = new VelloSurfaceBackend(options ?? new VelloSurfaceOptions());
         try
         {
-            backend.Initialize(hwnd, width, height);
+            backend.Initialize(window, width, height);
             return backend;
         }
         catch
@@ -107,28 +108,26 @@ public sealed class VelloSurfaceBackend : ISurfacePresenter
         }
     }
 
-    private void Initialize(nint hwnd, int width, int height)
+    private void Initialize(NativeWindowHandle window, int width, int height)
     {
-        (_instance, _adapter) = CreateInstanceAndAdapter();
-        if (_adapter is null)
-            throw new InvalidOperationException("wgpu: no compatible adapter found.");
-        BackendType = _options.PreferredBackend;
-
-        _device = _adapter.RequestDevice()
-            ?? throw new InvalidOperationException("wgpu: RequestDevice returned null.");
-
         var descriptor = new SurfaceDescriptor
         {
             Width = (uint)width,
             Height = (uint)height,
             PresentMode = _options.PreferVsync ? PresentMode.AutoVsync : PresentMode.AutoNoVsync,
-            Handle = SurfaceHandle.FromWin32(hwnd),
+            Handle = window.Kind switch
+            {
+                NativeWindowKind.Win32 => SurfaceHandle.FromWin32(window.Handle),
+                NativeWindowKind.Xlib => SurfaceHandle.FromXlib(unchecked((ulong)(nuint)window.Handle), window.Display, window.Screen, 0),
+                NativeWindowKind.Wayland => SurfaceHandle.FromWayland(window.Handle, window.Display),
+                _ => throw new PlatformNotSupportedException($"Unsupported window kind: {window.Kind}."),
+            },
         };
+        CreateSurfaceAndAdapter(descriptor);
+        _device = _adapter!.RequestDevice()
+            ?? throw new InvalidOperationException("wgpu: RequestDevice returned null.");
 
-        _surface = WgpuSurface.Create(_instance, descriptor)
-            ?? throw new InvalidOperationException("wgpu: WgpuSurface.Create returned null.");
-
-        var capabilities = _surface.GetCapabilities(_adapter);
+        var capabilities = _surface!.GetCapabilities(_adapter);
         _format = SelectFormat(capabilities.Formats);
         _renderFormat = _format is WgpuTextureFormat.Bgra8Unorm or WgpuTextureFormat.Bgra8UnormSrgb
             ? RenderFormat.Bgra8
@@ -146,27 +145,37 @@ public sealed class VelloSurfaceBackend : ISurfacePresenter
         Height = height;
     }
 
-    private (WgpuInstance Instance, WgpuAdapter? Adapter) CreateInstanceAndAdapter()
+    private void CreateSurfaceAndAdapter(SurfaceDescriptor descriptor)
     {
         if (_options.PreferredBackend is { } preferred)
         {
             try
             {
-                var instance = new WgpuInstance(new WgpuInstanceOptions { Backends = preferred });
-                var adapter = instance.RequestAdapter();
-                if (adapter is not null) return (instance, adapter);
-
-                // 该后端不可用：整体释放后再回退，避免悬挂的 adapter id。
-                instance.Dispose();
+                Create(preferred);
+                return;
             }
             catch
             {
-                // 回退到默认后端组合。
+                _surface?.Dispose();
+                _surface = null;
+                _instance?.Dispose();
+                _instance = null;
             }
         }
 
-        var fallback = new WgpuInstance();
-        return (fallback, fallback.RequestAdapter());
+        Create(null);
+
+        void Create(WgpuBackend? backend)
+        {
+            _instance = backend is { } value
+                ? new WgpuInstance(new WgpuInstanceOptions { Backends = value })
+                : new WgpuInstance();
+            _surface = WgpuSurface.Create(_instance, descriptor)
+                ?? throw new InvalidOperationException("wgpu: WgpuSurface.Create returned null.");
+            _adapter = _instance.RequestAdapter(new WgpuRequestAdapterOptions { CompatibleSurface = _surface })
+                ?? throw new InvalidOperationException("wgpu: no surface-compatible adapter found.");
+            BackendType = backend;
+        }
     }
 
     private WgpuTextureFormat SelectFormat(IReadOnlyList<WgpuTextureFormat> available)
@@ -200,13 +209,15 @@ public sealed class VelloSurfaceBackend : ISurfacePresenter
 
     private void Configure(int width, int height)
     {
-        var capabilities = _surface!.GetCapabilities(_adapter!);
-        _surface.Configure(_device!, new WgpuSurfaceConfiguration
+        _surface!.Configure(_device!, new WgpuSurfaceConfiguration
         {
             Width = (uint)width,
             Height = (uint)height,
             Format = _format,
-            Usage = capabilities.Usage,
+            // RenderSurface blits to the swapchain through a render pass. Advertising
+            // every supported usage also adds StorageBinding on some Vulkan drivers,
+            // but BGRA storage requires an optional device feature we do not enable.
+            Usage = WgpuTextureUsage.RenderAttachment,
             PresentMode = _presentMode,
             AlphaMode = WgpuCompositeAlphaMode.Opaque,
             ViewFormats = Array.Empty<WgpuTextureFormat>(),

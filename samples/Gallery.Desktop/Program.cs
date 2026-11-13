@@ -1,13 +1,14 @@
-using System.Runtime.Versioning;
+using System.Diagnostics.CodeAnalysis;
 using EclipseUI;
 using EclipseUI.Platform.Windows;
+using EclipseUI.Platform.Linux;
 using EclipseUI.Rendering;
 using EclipseUI.Rendering.Vello;
 using EclipseUI.Text.Shaping;
 using Gallery;
 using Microsoft.Extensions.DependencyInjection;
 
-// EclipseUI 画廊 · Windows 平台入口（D101 AppBuilder 形态：共享 UI 在 samples/Gallery，本工程只是平台壳）。
+// EclipseUI 画廊 · Windows/Linux 桌面入口；共享 UI 在 samples/Gallery。
 //   dotnet run --project samples/Gallery.Desktop -c Release
 //   dotnet run --project samples/Gallery.Desktop -c Release -- --shot out/gallery-cpu.png   （离屏快照）
 //   dotnet run --project samples/Gallery.Desktop -c Release -- --cpu --shot out/gallery-cpu.png
@@ -18,7 +19,6 @@ if (options is null)
     return 2;
 
 var builder = AppBuilder.Configure<GalleryApp>()
-    .UseWindows()
     .UseVello(new VelloSurfaceOptions { PreferVsync = options.Vsync })
     .UseHarfBuzzText()
     .UseTheme(ElementTheme.Dark)
@@ -29,8 +29,14 @@ var builder = AppBuilder.Configure<GalleryApp>()
 if (options.Offscreen)
     return RunOffscreen(builder, options);
 
+if (OperatingSystem.IsWindows()) builder.UseWindows();
+else if (OperatingSystem.IsLinux()) builder.UseLinux();
+else throw new PlatformNotSupportedException("Gallery.Desktop supports Windows and Linux.");
+
 return builder.Start(args);
 
+// The gallery's editable DataGrid resolves these row properties by name after trimming.
+[DynamicDependency(DynamicallyAccessedMemberTypes.PublicProperties, typeof(DemoRow))]
 static GalleryLaunchOptions? ParseArgs(string[] args)
 {
     try
@@ -47,7 +53,6 @@ static GalleryLaunchOptions? ParseArgs(string[] args)
     }
 }
 
-[SupportedOSPlatform("windows")]
 static int RunOffscreen(AppBuilder builder, GalleryLaunchOptions options)
 {
     var app = builder.Build();
