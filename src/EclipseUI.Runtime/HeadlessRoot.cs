@@ -3,11 +3,14 @@ using System;
 namespace EclipseUI;
 
 /// <summary>无头布局宿主：不开窗口跑 measure/arrange 全链路（测试与工具链用）。</summary>
-public sealed class HeadlessRoot
+public sealed class HeadlessRoot : IDisposable
 {
-    private readonly Element _content;
+    private Element _content;
+    private InputRouter _input;
     private readonly UiObject _uiRoot;
     private UiSynchronizationContext? _uiContext;
+    private readonly List<UiScope> _uiScopes = new();
+    private bool _disposed;
 
     public HeadlessRoot(UiObject root)
     {
@@ -16,15 +19,32 @@ public sealed class HeadlessRoot
         _uiRoot = root;
         _content = root as Element ?? root.ContentElement
             ?? throw new InvalidOperationException("The UI root has no element content.");
-        Input = new InputRouter(_content);
+        _input = new InputRouter(_content);
+        try
+        {
+            root.AttachToHost(this);
+            SyncContent();
+        }
+        catch (Exception error)
+        {
+            try { root.DetachFromHost(this); }
+            catch (Exception cleanup)
+            {
+                throw new AggregateException("Host attachment and cleanup failed.", error, cleanup);
+            }
+            throw;
+        }
     }
 
     public Size AvailableSize { get; set; } = new Size(1280, 800);
 
-    public Element Content => _content;
+    public Element Content => SyncContent();
 
     /// <summary>指针/键盘路由（与真实窗口宿主共用）。</summary>
-    public InputRouter Input { get; }
+    public InputRouter Input
+    {
+        get { SyncContent(); return _input; }
+    }
 
     public FocusManager Focus => Input.Focus;
 
@@ -38,9 +58,11 @@ public sealed class HeadlessRoot
     /// </summary>
     public UiScope InstallSynchronizationContext()
     {
-        var scope = UiSynchronizationContext.Install(_content);
+        var scope = UiSynchronizationContext.Install(SyncContent());
         _uiContext = scope.Context;
-        return new UiScope(this, scope);
+        var result = new UiScope(this, scope);
+        _uiScopes.Add(result);
+        return result;
     }
 
     /// <summary>
@@ -49,6 +71,7 @@ public sealed class HeadlessRoot
     /// </summary>
     public int DrainPostedWork()
     {
+        ThrowIfDisposed();
         if (_uiContext is null)
             return 0;
         var ran = _uiContext.Drain();
@@ -75,13 +98,21 @@ public sealed class HeadlessRoot
         public UiSynchronizationContext Context => _scope.Context;
 
         /// <summary>等价于宿主帧循环里的 drain 步骤。</summary>
-        public int Drain() => _host.DrainPostedWork();
+        public int Drain()
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return _host.DrainPostedWork();
+        }
 
         public void Dispose()
         {
             if (_disposed) return;
+            if (!Context.IsUiThread)
+                throw new UiThreadViolationException("HeadlessRoot.UiScope.Dispose", Context.UiThreadId,
+                    Environment.CurrentManagedThreadId);
             _disposed = true;
-            _host._uiContext = null;
+            _host._uiScopes.Remove(this);
+            _host._uiContext = _host._uiScopes.LastOrDefault()?.Context;
             _scope.Dispose();
         }
     }
@@ -91,8 +122,9 @@ public sealed class HeadlessRoot
         // 卸载/摘除后焦点元素可能已离树：布局前修剪，避免 Tab 从游离元素起算。
         Focus.ClearFocusIfDetached();
         _uiRoot.ProcessInvalidations();
-        _content.Measure(AvailableSize);
-        _content.Arrange(new Rect(Point.Zero, _content.DesiredSize));
+        var content = SyncContent();
+        content.Measure(AvailableSize);
+        content.Arrange(new Rect(Point.Zero, content.DesiredSize));
     }
 
     /// <summary>滚轮输入（无头测试与 Win32 宿主共用同一 InputRouter 路径）。</summary>
@@ -112,4 +144,47 @@ public sealed class HeadlessRoot
 
     /// <summary>按键。Tab 由焦点系统拦截做遍历；其余 KeyDown 从焦点元素（或根）路由。</summary>
     public void KeyPress(Key key) => Input.KeyPress(key);
+
+    private void ThrowIfDisposed()
+        => ObjectDisposedException.ThrowIf(_disposed || _uiRoot.IsDisposed, this);
+
+    private Element SyncContent()
+    {
+        ThrowIfDisposed();
+        for (var round = 0; round < 100; round++)
+        {
+            ThrowIfDisposed();
+            var content = _uiRoot as Element ?? _uiRoot.ContentElement
+                ?? throw new InvalidOperationException("The UI root has no element content.");
+            if (ReferenceEquals(content, _content)) return _content;
+            var previousInput = _input;
+            _content = content;
+            _input = new InputRouter(content);
+            previousInput.Reset();
+        }
+        throw new InvalidOperationException("UI content replacement exceeded 100 rounds while resetting input.");
+    }
+
+    /// <summary>Ends the host attachment without disposing the caller-owned UI tree.</summary>
+    public void Dispose()
+    {
+        if (_disposed) return;
+        UiThreadGuard.AssertUiThread(_uiRoot, "HeadlessRoot.Dispose");
+        foreach (var scope in _uiScopes)
+            if (!scope.Context.IsUiThread)
+                throw new UiThreadViolationException("HeadlessRoot.Dispose", scope.Context.UiThreadId,
+                    Environment.CurrentManagedThreadId);
+        _disposed = true;
+        List<Exception>? failures = null;
+        try { _uiRoot.DetachFromHost(this); }
+        catch (Exception error) { (failures ??= new()).Add(error); }
+        try { _input.Reset(); }
+        catch (Exception error) { (failures ??= new()).Add(error); }
+        foreach (var scope in _uiScopes.ToArray().Reverse())
+        {
+            try { scope.Dispose(); }
+            catch (Exception error) { (failures ??= new()).Add(error); }
+        }
+        if (failures is not null) throw new AggregateException("Host cleanup failed.", failures);
+    }
 }

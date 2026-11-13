@@ -67,11 +67,13 @@ public sealed class WindowHost : IDisposable, IWindowHost
 {
     private readonly Win32Window _window;
     private readonly ISurfacePresenter _presenter;
-    private readonly Element _root;
+    private Element _root;
+    private InputRouter _input;
     private readonly UiObject _uiRoot;
     private readonly WindowHostOptions _options;
     private readonly ElementPainter _painter;
     private bool _disposed;
+    private bool _running;
 
     public WindowHost(
         Win32Window window,
@@ -89,7 +91,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
         _options = options ?? new WindowHostOptions();
 
         _painter = new ElementPainter(_options.Theme, _options.TextPainter);
-        Input = new InputRouter(root);
+        _input = new InputRouter(root);
 
         _window.Resized += OnResized;
         _window.PaintRequested += OnPaintRequested;
@@ -105,7 +107,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
 
     public ISurfacePresenter Presenter => _presenter;
 
-    public Element Root => _root;
+    public Element Root => SyncRoot();
 
     public ElementPainter Painter => _painter;
 
@@ -125,7 +127,10 @@ public sealed class WindowHost : IDisposable, IWindowHost
         => SetTheme(theme as ElementTheme
             ?? throw new ArgumentException($"Theme must be an ElementTheme (got {theme?.GetType().Name ?? "null"}).", nameof(theme)));
 
-    public InputRouter Input { get; }
+    public InputRouter Input
+    {
+        get { SyncRoot(); return _input; }
+    }
 
     /// <summary>本次 Run 的循环次数（包含跳过上屏的空闲帧）。</summary>
     public int Ticks { get; private set; }
@@ -157,11 +162,37 @@ public sealed class WindowHost : IDisposable, IWindowHost
     public int Run(int? maxFrames = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_running) throw new InvalidOperationException("The window host is already running.");
 
         // design/15 §15.14.2：帧循环在 UI 线程装单线程同步上下文，退出时还原。
         // async void 事件处理器的 await 续体从此 Post 回来，而不是落线程池跨线程写状态。
-        using var uiScope = UiSynchronizationContext.Install(_root);
+        using var uiScope = UiSynchronizationContext.Install(SyncRoot());
+        _running = true;
+        Exception? failure = null;
+        try
+        {
+            _uiRoot.AttachToHost(this);
+            return RunFrames(uiScope.Context, maxFrames);
+        }
+        catch (Exception error)
+        {
+            failure = error;
+            throw;
+        }
+        finally
+        {
+            _running = false;
+            try { _uiRoot.DetachFromHost(this); }
+            catch (Exception cleanup) when (failure is not null)
+            {
+                throw new AggregateException("Window loop and detachment failed.", failure, cleanup);
+            }
+        }
+    }
 
+    private int RunFrames(UiSynchronizationContext context, int? maxFrames)
+    {
+        SyncRoot();
         _window.Show();
         SyncPresenterSize();
         _painter.ResetDamage();
@@ -175,18 +206,19 @@ public sealed class WindowHost : IDisposable, IWindowHost
             : 0;
         var clock = Stopwatch.StartNew();
 
-        while (_window.PumpMessages())
+        while (!_disposed && !_uiRoot.IsDisposed && _window.PumpMessages())
         {
-            if (_window.IsClosed || IsExiting) break;
+            if (_disposed || _uiRoot.IsDisposed || _window.IsClosed || IsExiting) break;
 
             // tick 顺序：PumpMessages → Drain →（自动失效）→ ProcessInvalidations → 布局 → present。
             // drain 按快照批执行，回调里新 Post 的续体下一 tick 再跑；只要跑过回调就按批
             // 整体失效当前 UI 子树一次，续体可能修改任意后代的普通 CLR 状态。
             // 放在最小化分支之前：最小化时也不能把后台续体饿死。
-            if (uiScope.Context.Drain() > 0)
+            if (context.Drain() > 0)
             {
                 _uiRoot.InvalidateSubtree();
             }
+            if (_disposed || _uiRoot.IsDisposed || _window.IsClosed || IsExiting) break;
 
             var size = _window.LogicalClientSize;
             if (size.IsEmpty)
@@ -201,10 +233,12 @@ public sealed class WindowHost : IDisposable, IWindowHost
             // 卸载/摘除后焦点元素可能已离树：布局前修剪（G4/K33）。
             Input.Focus.ClearFocusIfDetached();
             _uiRoot.ProcessInvalidations();
-            _root.Measure(size);
-            _root.Arrange(new Rect(Point.Zero, size));
+            if (_disposed || _uiRoot.IsDisposed) break;
+            var root = SyncRoot();
+            root.Measure(size);
+            root.Arrange(new Rect(Point.Zero, size));
 
-            var frame = _painter.BuildFrame(_root, size, _window.ScaleFactor, Input.Focus.Focused);
+            var frame = _painter.BuildFrame(root, size, _window.ScaleFactor, _input.Focus.Focused);
             var presented = _options.AlwaysRender || !frame.Damage.IsEmpty;
             if (presented)
             {
@@ -289,9 +323,29 @@ public sealed class WindowHost : IDisposable, IWindowHost
     private static double Elapsed(long startTimestamp)
         => (Stopwatch.GetTimestamp() - startTimestamp) * 1000.0 / Stopwatch.Frequency;
 
+    private Element SyncRoot()
+    {
+        ObjectDisposedException.ThrowIf(_disposed || _uiRoot.IsDisposed, this);
+        for (var round = 0; round < 100; round++)
+        {
+            ObjectDisposedException.ThrowIf(_disposed || _uiRoot.IsDisposed, this);
+            var root = _uiRoot as Element ?? _uiRoot.ContentElement
+                ?? throw new InvalidOperationException("The UI root has no element content.");
+            if (ReferenceEquals(root, _root)) return _root;
+            var previousInput = _input;
+            _root = root;
+            _input = new InputRouter(root);
+            _painter.ResetSegments();
+            _painter.ResetDamage();
+            previousInput.Reset();
+        }
+        throw new InvalidOperationException("UI content replacement exceeded 100 rounds while resetting input.");
+    }
+
     public void Dispose()
     {
         if (_disposed) return;
+        UiThreadGuard.AssertUiThread(_uiRoot, "WindowHost.Dispose");
         _disposed = true;
 
         _window.Resized -= OnResized;
@@ -302,5 +356,11 @@ public sealed class WindowHost : IDisposable, IWindowHost
         _window.PointerWheel -= OnPointerWheel;
         _window.KeyDown -= OnKeyDown;
         _window.Closing -= OnClosing;
+        List<Exception>? failures = null;
+        try { _uiRoot.DetachFromHost(this); }
+        catch (Exception error) { (failures ??= new()).Add(error); }
+        try { _input.Reset(); }
+        catch (Exception error) { (failures ??= new()).Add(error); }
+        if (failures is not null) throw new AggregateException("Window host cleanup failed.", failures);
     }
 }

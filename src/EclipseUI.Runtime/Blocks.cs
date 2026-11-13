@@ -488,10 +488,7 @@ public sealed class ForEachBlock<T> : StackPanelBase, IDisposable
 
         if (same) return;
 
-        Children.Clear();
-        foreach (var entry in _entries)
-            foreach (var root in entry.Scope.Roots)
-                Children.Add(root);
+        Children.ReplaceAll(_entries.SelectMany(entry => entry.Scope.Roots));
     }
 
     protected override void OnDispose()

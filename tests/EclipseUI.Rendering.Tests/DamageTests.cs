@@ -16,7 +16,10 @@ public class DamageTests
     private static readonly Size DefaultSize = new(600, 400);
 
     private static void Layout(Element root)
-        => new HeadlessRoot(root) { AvailableSize = DefaultSize }.UpdateLayout();
+    {
+        using var host = new HeadlessRoot(root) { AvailableSize = DefaultSize };
+        host.UpdateLayout();
+    }
 
     private static Rect Absolute(Element element)
     {

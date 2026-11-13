@@ -21,7 +21,10 @@ public class ThemeTests
     }
 
     private static void Layout(Element root)
-        => new HeadlessRoot(root) { AvailableSize = Surface }.UpdateLayout();
+    {
+        using var host = new HeadlessRoot(root) { AvailableSize = Surface };
+        host.UpdateLayout();
+    }
 
     [Fact]
     public void PresetThemes_DifferOnKeyTokens()

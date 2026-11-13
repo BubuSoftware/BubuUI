@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using System.Threading;
 
@@ -19,6 +20,7 @@ namespace EclipseUI;
 /// </summary>
 public sealed class UiSynchronizationContext : SynchronizationContext
 {
+    private static readonly ConditionalWeakTable<UiSynchronizationContext, UiThreadScope> Scopes = new();
     private readonly object _gate = new();
     private readonly Queue<WorkItem> _queue = new();
     private UiObject? _boundRoot;
@@ -118,7 +120,7 @@ public sealed class UiSynchronizationContext : SynchronizationContext
         }
         finally
         {
-            SetSynchronizationContext(previous);
+            Restore(previous);
         }
     }
 
@@ -131,15 +133,26 @@ public sealed class UiSynchronizationContext : SynchronizationContext
         var previous = Current;
         var context = new UiSynchronizationContext();
         SetSynchronizationContext(context);
-        if (root is not null)
-            context.AttachTo(root);
-        return new UiThreadScope(context, previous);
+        try
+        {
+            if (root is not null)
+                context.AttachTo(root);
+            var scope = new UiThreadScope(context, previous);
+            Scopes.Add(context, scope);
+            return scope;
+        }
+        catch
+        {
+            Restore(previous);
+            throw;
+        }
     }
 
     /// <summary>把上下文绑定到宿主根元素；断言沿元素父链查找（元素在块内动态创建也能覆盖）。</summary>
     public void AttachTo(Element root)
     {
         ArgumentNullException.ThrowIfNull(root);
+        _boundRoot?.ClearUiContext(this);
         _boundRoot = root.SchedulingRoot;
         _boundRoot.BindUiContext(this);
     }
@@ -148,6 +161,16 @@ public sealed class UiSynchronizationContext : SynchronizationContext
     {
         _boundRoot?.ClearUiContext(this);
         _boundRoot = null;
+    }
+
+    private static void Restore(SynchronizationContext? previous)
+    {
+        while (previous is UiSynchronizationContext context
+            && Scopes.TryGetValue(context, out var scope) && scope.IsDisposed)
+            previous = scope.Previous;
+        SetSynchronizationContext(previous);
+        if (previous is UiSynchronizationContext restored)
+            restored._boundRoot?.BindUiContext(restored);
     }
 
     /// <summary>安装范围：退出时还原 <see cref="SynchronizationContext"/> 并解除根绑定。</summary>
@@ -163,16 +186,28 @@ public sealed class UiSynchronizationContext : SynchronizationContext
         }
 
         public UiSynchronizationContext Context { get; }
+        internal bool IsDisposed => _disposed;
+        internal SynchronizationContext? Previous => _previous;
 
         /// <summary>等价于帧循环里的 drain 步骤（不含自动失效，那是宿主的职责）。</summary>
-        public int Drain() => Context.Drain();
+        public int Drain()
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return Context.Drain();
+        }
 
         public void Dispose()
         {
             if (_disposed) return;
+            if (!Context.IsUiThread)
+                throw new UiThreadViolationException("UiThreadScope.Dispose", Context.UiThreadId,
+                    Environment.CurrentManagedThreadId);
             _disposed = true;
             Context.Detach();
-            SetSynchronizationContext(_previous);
+            // An outer host can end while another scope is current. Do not replace that
+            // scope, and skip ended outer scopes when an inner scope eventually exits.
+            if (ReferenceEquals(Current, Context))
+                Restore(_previous);
         }
     }
 

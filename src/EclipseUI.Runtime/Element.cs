@@ -11,7 +11,7 @@ public enum RoutingStrategy
     Tunnel,
     Bubble,
 
-    /// <summary>只在目标元素自身分发（不沿父链）。用于元素自身的生命周期通知（Unmounted）。</summary>
+    /// <summary>只在目标元素自身分发，不沿父链。</summary>
     Direct,
 }
 
@@ -51,34 +51,37 @@ public sealed class ElementCollection : IReadOnlyList<Element>
     public void Add(Element child)
     {
         ArgumentNullException.ThrowIfNull(child);
-        ObjectDisposedException.ThrowIf(_owner.IsDisposed, _owner);
-        ObjectDisposedException.ThrowIf(child.IsDisposed, child);
-        if (child._parent is not null)
-            throw new InvalidOperationException($"Element '{child}' already has a parent.");
-        if (child._contentOwner is not null)
-            throw new InvalidOperationException($"Element '{child}' already belongs to another content owner.");
-        for (Element? ancestor = _owner; ancestor is not null; ancestor = ancestor._parent)
-            if (ReferenceEquals(ancestor, child))
-                throw new InvalidOperationException("An element cannot contain itself or an ancestor.");
+        UiThreadGuard.AssertUiThread(_owner, "ElementCollection.Add");
+        ValidateChild(child, allowCurrent: false);
         child.EnsureInitialized();
+        // User initialization can dispose the owner or attach this child elsewhere.
+        ValidateChild(child, allowCurrent: false);
         child._parent = _owner;
+        child._parentCollection = this;
         _items.Add(child);
         child.ReconnectUpdates();
         child._needsMeasure = true;
         child._needsArrange = true;
         _owner.InvalidateMeasure();
         _owner.InvalidateRender();
+        child.AttachToParent(_owner);
     }
 
     public bool Remove(Element child)
     {
-        var previousRoot = child.SchedulingRoot;
-        if (_items.Remove(child))
+        ArgumentNullException.ThrowIfNull(child);
+        UiThreadGuard.AssertUiThread(_owner, "ElementCollection.Remove");
+        for (var i = 0; i < _items.Count; i++)
         {
+            if (!ReferenceEquals(_items[i], child)) continue;
+            var previousRoot = child.SchedulingRoot;
+            _items.RemoveAt(i);
             child._parent = null;
+            child._parentCollection = null;
             child.ReconnectUpdates(previousRoot);
             _owner.InvalidateMeasure();
             _owner.InvalidateRender();
+            child.DetachFromTree();
             return true;
         }
         return false;
@@ -86,16 +89,104 @@ public sealed class ElementCollection : IReadOnlyList<Element>
 
     public void Clear()
     {
+        UiThreadGuard.AssertUiThread(_owner, "ElementCollection.Clear");
         if (_items.Count == 0) return;
         var previousRoot = _owner.SchedulingRoot;
-        foreach (var child in _items)
+        var removed = _items.ToArray();
+        _items.Clear();
+        foreach (var child in removed)
         {
             child._parent = null;
+            child._parentCollection = null;
             child.ReconnectUpdates(previousRoot);
         }
-        _items.Clear();
         _owner.InvalidateMeasure();
         _owner.InvalidateRender();
+        List<Exception>? failures = null;
+        foreach (var child in removed.Reverse())
+        {
+            try { child.DetachFromTree(); }
+            catch (Exception error) { (failures ??= new()).Add(error); }
+        }
+        if (failures is not null)
+            throw new AggregateException("Content removal lifecycle notifications failed.", failures);
+    }
+
+    /// <summary>Commits a new order while preserving attachment of retained child instances.</summary>
+    internal void ReplaceAll(IEnumerable<Element> children)
+    {
+        ArgumentNullException.ThrowIfNull(children);
+        UiThreadGuard.AssertUiThread(_owner, "ElementCollection.ReplaceAll");
+        ObjectDisposedException.ThrowIf(_owner.IsDisposed, _owner);
+        var next = children.ToArray();
+        var nextSet = new HashSet<Element>(ReferenceEqualityComparer.Instance);
+        foreach (var child in next)
+        {
+            ArgumentNullException.ThrowIfNull(child);
+            if (!nextSet.Add(child))
+                throw new InvalidOperationException("A content collection cannot contain the same element twice.");
+            ValidateChild(child, allowCurrent: true);
+        }
+        foreach (var child in next) child.EnsureInitialized();
+        // Initialization may have changed ownership, including an earlier child's ownership.
+        foreach (var child in next) ValidateChild(child, allowCurrent: true);
+        ObjectDisposedException.ThrowIf(_owner.IsDisposed, _owner);
+        if (_items.Count == next.Length && _items.Zip(next).All(pair => ReferenceEquals(pair.First, pair.Second)))
+            return;
+
+        var previousSet = new HashSet<Element>(_items, ReferenceEqualityComparer.Instance);
+        var removed = _items.Where(child => !nextSet.Contains(child)).ToArray();
+        var added = next.Where(child => !previousSet.Contains(child)).ToArray();
+        var previousRoot = _owner.SchedulingRoot;
+        _items.Clear();
+        _items.AddRange(next);
+        foreach (var child in removed)
+        {
+            child._parent = null;
+            child._parentCollection = null;
+            child.ReconnectUpdates(previousRoot);
+        }
+        foreach (var child in added)
+        {
+            child._parent = _owner;
+            child._parentCollection = this;
+            child.ReconnectUpdates();
+            child._needsMeasure = true;
+            child._needsArrange = true;
+        }
+        _owner.InvalidateMeasure();
+        _owner.InvalidateRender();
+
+        List<Exception>? failures = null;
+        foreach (var child in removed.Reverse())
+        {
+            try { child.DetachFromTree(); }
+            catch (Exception error) { (failures ??= new()).Add(error); }
+        }
+        foreach (var child in added)
+        {
+            // Earlier callbacks may have removed or already attached a newly added child.
+            if (!ReferenceEquals(child._parentCollection, this) || child.IsAttached) continue;
+            try { child.AttachToParent(_owner); }
+            catch (Exception error) { (failures ??= new()).Add(error); }
+        }
+        if (failures is not null)
+            throw new AggregateException("Content replacement lifecycle notifications failed.", failures);
+    }
+
+    private void ValidateChild(Element child, bool allowCurrent)
+    {
+        ObjectDisposedException.ThrowIf(_owner.IsDisposed, _owner);
+        ObjectDisposedException.ThrowIf(child.IsDisposed, child);
+        var current = allowCurrent && ReferenceEquals(child._parentCollection, this);
+        if (!current && child._parent is not null)
+            throw new InvalidOperationException($"Element '{child}' already has a parent.");
+        if (child._contentOwner is not null)
+            throw new InvalidOperationException($"Element '{child}' already belongs to another content owner.");
+        for (UiObject? ancestor = _owner; ancestor is not null; ancestor = ancestor.UpdateParent)
+            if (ReferenceEquals(ancestor, child))
+                throw new InvalidOperationException("An element cannot contain itself or an ancestor.");
+        if (!current) child.ValidateCanAttach();
     }
 
     // foreach 走 List<T>.Enumerator struct（S5 预算：不装箱）；接口实现保留给
@@ -113,6 +204,7 @@ public sealed class ElementCollection : IReadOnlyList<Element>
 public abstract class Element : UiObject
 {
     internal Element? _parent;
+    internal ElementCollection? _parentCollection;
     internal UiObject? _contentOwner;
     private Size _desired;
     private Rect _final;
@@ -166,14 +258,6 @@ public abstract class Element : UiObject
     public static readonly RoutedEvent KeyUpEvent = new RoutedEvent("KeyUp", RoutingStrategy.Bubble);
     public static readonly RoutedEvent GotFocusEvent = new RoutedEvent("GotFocus", RoutingStrategy.Bubble);
     public static readonly RoutedEvent LostFocusEvent = new RoutedEvent("LostFocus", RoutingStrategy.Bubble);
-
-    /// <summary>
-    /// 元素被卸载（<see cref="Unmount"/>，或作为其祖先卸载子树的一部分）。
-    /// <see cref="RoutingStrategy.Direct"/>：子树按自上而下逐元素分发，处理方拿到的是当前元素。
-    /// 生命周期通知而非模板作者事件：[UiIgnore] 使其退出目录派生的事件表面（design/14 §14.4.3，K33）。
-    /// </summary>
-    [UiIgnore]
-    public static readonly RoutedEvent UnmountedEvent = new RoutedEvent("Unmounted", RoutingStrategy.Direct);
 
     public T GetValue<T>(StyledProperty<T> property)
     {
@@ -830,38 +914,10 @@ public abstract class Element : UiObject
         return new Point(x, y);
     }
 
-    // ---- 卸载（G4，K33）----
-    // 显式卸载触发子树通知并释放真实内容树及其资源；Children.Remove 只摘除，
-    // 保留节点状态以支持移动和重新挂接。
-
-    /// <summary>
-    /// 卸载子树：先从父级摘除（若仍在树上），再自上而下对子树每个元素触发
-    /// <see cref="OnUnmount"/> 钩子与 <see cref="UnmountedEvent"/>。
-    /// 幂等：已脱离父级的元素可安全重复调用（测试用来验证事件可重入，不做「只发一次」标记，
-    /// 以支持「卸载 → 改树 → 再卸载」的调试场景）。
-    /// </summary>
-    public void Unmount()
+    internal override void RemoveFromParent()
     {
-        if (_parent is Panel panel)
-            panel.Children.Remove(this);
-        else if (_contentOwner is { } owner)
-            owner.DetachContent(this);
-        UnmountSubtree();
-    }
-
-    private void UnmountSubtree()
-    {
-        OnUnmount();
-        RaiseEvent(new RoutedEventArgs(UnmountedEvent));
-        // OnUnmount/处理器理论上可能改动子树，快照后再递归。
-        foreach (var child in VisualChildren.ToArray())
-            child.UnmountSubtree();
-        Dispose();
-    }
-
-    /// <summary>卸载钩子：控件可在此停动画/释放原生资源；此时 Parent 已为 null。</summary>
-    protected virtual void OnUnmount()
-    {
+        if (_parentCollection is { } collection) collection.Remove(this);
+        else _contentOwner?.DetachContent(this);
     }
 
     protected override void OnDispose()

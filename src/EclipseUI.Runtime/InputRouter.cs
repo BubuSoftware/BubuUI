@@ -26,6 +26,23 @@ public sealed class InputRouter
     /// 捕获期间冻结在捕获元素上，释放后重算。</summary>
     public Element? Hovered { get; private set; }
 
+    /// <summary>Ends input ownership without synthesizing a release/click on the previous tree.</summary>
+    internal void Reset()
+    {
+        var captured = Captured;
+        var hovered = Hovered;
+        Captured = null;
+        Hovered = null;
+        List<Exception>? failures = null;
+        try { if (captured is not null) captured.IsPressed = false; }
+        catch (Exception error) { (failures ??= new()).Add(error); }
+        try { if (hovered is not null) hovered.IsHovered = false; }
+        catch (Exception error) { (failures ??= new()).Add(error); }
+        try { Focus.ClearFocus(); }
+        catch (Exception error) { (failures ??= new()).Add(error); }
+        if (failures is not null) throw new AggregateException("Input reset failed.", failures);
+    }
+
     public Element? HitTest(Point point) => _root.HitTest(point);
 
     /// <summary>

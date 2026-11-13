@@ -467,9 +467,10 @@ string        ::= '"' raw-char* '"'
 ### 4.8 生命周期与资源
 
 - EnsureInitialized 幂等构造静态内容与首次动态值；Render 只刷新动态槽、绑定与块。
+- @code 与纯 C# 共用 OnInitialized、OnAttached、OnDetached、OnUpdating、OnUpdated、OnDispose。挂接指接入活跃宿主树，离线组树不触发；挂接父先子，摘除子先父。
 - 普通子控件归实际内容树，根/块绑定资源分别登记到 UiObject.Track/BlockScope。
 - 短命构建作用域在失败时清理尚未挂接对象，成功后不保留第二套子项表。
-- Children.Remove/Clear 只摘除，允许重挂；Unmount 负责摘除、通知并释放。Dispose 幂等，按子树和资源逆序完成清理。
+- Children.Remove/Clear 只摘除，允许重挂；Dispose 与 Unmount 统一摘除并释放，按子树和资源逆序完成清理且幂等。释放 HeadlessRoot 只结束宿主挂接，树仍归调用方。
 - if 分支变化、foreach 身份变化/条目移除及块释放都会清理旧作用域与根实例。
 - 不存在独立组件生命周期、挂载 API 或根转发。详见 spec/03。
 

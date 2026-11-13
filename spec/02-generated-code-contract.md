@@ -81,6 +81,8 @@ public partial class Card : global::EclipseUI.Elements.StackPanel
 
 初始化在 `new` 和对象初始化器之后，由 EnsureInitialized 幂等触发；父集合挂接、宿主连接和测量自动确保初始化。需要在挂接前读取 Ref 的调用方可显式调用 EnsureInitialized。
 
+完整的 InitializeUi 继承链返回后，运行时标记 IsInitialized 并调用一次 OnInitialized；生成器不在各层构建体中重复发通知。作者在 @code 中 override OnInitialized、OnAttached、OnDetached、OnUpdating、OnUpdated、OnDispose，调用 base 保留基类行为。OnUpdating/OnUpdated 由运行时包围完整 Render 继承链，与初次构建分开。生命周期钩子不占标签属性或路由事件表面。
+
 没有显式默认内容的根声明保留调用方传入的默认内容参数，不生成空列表覆盖输入；只有写了默认内容子项时才赋该内容参数。
 
 ### 4.2 属性与文本

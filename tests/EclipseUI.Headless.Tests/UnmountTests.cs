@@ -8,11 +8,7 @@ using Xunit;
 namespace EclipseUI.Headless.Tests;
 
 /// <summary>
-/// G4/K33 卸载链路回归：
-///  1) Element.Unmount 子树级 UnmountedEvent（Direct，自上而下）与 OnUnmount 钩子；
-///  2) 组件根被卸载 → 组件 Dispose → Track 的资源/绑定随之解除（修复 v1「手工移除不释放」限制）；
-///  3) 直接 Children.Remove 仍不触发释放（保守原语义，锁定契约）；
-///  4) 焦点离树修剪（FocusManager.ClearFocusIfDetached，宿主布局前调用）。
+/// 通用终止入口：摘除活动子树、释放资源与绑定，并在下一次布局修剪焦点。
 /// </summary>
 public class UnmountTests
 {
@@ -32,27 +28,25 @@ public class UnmountTests
         }
     }
 
-    // ---- 1. 事件与钩子 ----
+    // ---- 1. 通用摘除钩子 ----
 
     [Fact]
-    public void Unmount_RaisesEventOnEverySubtreeElement_TopDown()
+    public void Unmount_NotifiesAttachedSubtree_BottomUp()
     {
-        var panel = new StackPanel();
-        var button = new Button();
+        var order = new List<Element>();
+        var panel = new HookPanel { Detached = element => order.Add(element) };
+        var button = new HookPanel { Detached = element => order.Add(element) };
         var text = new TextBlock();
         panel.Children.Add(button);
         panel.Children.Add(text);
-
-        var order = new List<Element>();
-        panel.AddHandler(Element.UnmountedEvent, e => order.Add(e.Source!));
-        button.AddHandler(Element.UnmountedEvent, e => order.Add(e.Source!));
+        using var host = new HeadlessRoot(panel);
 
         panel.Unmount();
 
         Assert.Null(panel.Parent);
         Assert.Equal(2, order.Count);
-        Assert.Same(panel, order[0]); // 自上而下：先父后子
-        Assert.Same(button, order[1]);
+        Assert.Same(button, order[0]);
+        Assert.Same(panel, order[1]);
     }
 
     [Fact]
@@ -71,28 +65,32 @@ public class UnmountTests
     }
 
     [Fact]
-    public void OnUnmount_HookRuns_WithParentAlreadyNull()
+    public void OnDetached_HookRuns_WithRemovedRootParentAlreadyNull()
     {
         var panel = new HookPanel();
         var root = new StackPanel();
         root.Children.Add(panel);
+        using var host = new HeadlessRoot(root);
 
         panel.Unmount();
 
         Assert.Contains("hook", panel.Log);
-        Assert.Null(panel.ParentAtUnmount); // 钩子触发时已摘除
+        Assert.Null(panel.ParentAtDetach);
         Assert.Null(panel.Parent);
     }
 
     private sealed class HookPanel : StackPanel
     {
         public List<string> Log { get; } = new();
-        public Element? ParentAtUnmount;
+        public Element? ParentAtDetach;
+        public Action<Element>? Detached;
 
-        protected override void OnUnmount()
+        protected override void OnDetached()
         {
-            ParentAtUnmount = Parent;
+            ParentAtDetach = Parent;
             Log.Add("hook");
+            Detached?.Invoke(this);
+            base.OnDetached();
         }
     }
 

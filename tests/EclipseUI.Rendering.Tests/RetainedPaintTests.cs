@@ -32,7 +32,10 @@ public class RetainedPaintTests
     }
 
     private static void Layout(Element root)
-        => new HeadlessRoot(root) { AvailableSize = Surface }.UpdateLayout();
+    {
+        using var host = new HeadlessRoot(root) { AvailableSize = Surface };
+        host.UpdateLayout();
+    }
 
     /// <summary>命令类型序列（忽略 record 值细节：PathGeometry 等引用每次重建）。</summary>
     private static string CommandShape(DisplayList list) =>

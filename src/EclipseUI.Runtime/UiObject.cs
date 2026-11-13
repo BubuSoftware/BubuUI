@@ -12,6 +12,7 @@ public abstract class UiObject : IDisposable
 {
     private const int MaxUpdateRounds = 100;
     private bool _initializing;
+    private bool _processingUpdates;
     private volatile bool _initialized;
     private volatile bool _disposed;
     private Exception? _initializationFailure;
@@ -21,15 +22,22 @@ public abstract class UiObject : IDisposable
     private UiObject? _publishedRoot;
     private Element? _singleContent;
     private UiSynchronizationContext? _uiContext;
+    private object? _attachedHost;
+    private bool _attachmentNotified;
+    private bool _detachmentPending;
+    private long _attachmentVersion;
 
     public bool IsInitialized => _initialized;
     public bool IsDisposed => _disposed;
+    /// <summary>Whether this object belongs to an active host tree, independently of its content parent.</summary>
+    public bool IsAttached => _attachedHost is not null;
 
     /// <summary>Initializes once, after caller-supplied property values have been assigned.</summary>
     public void EnsureInitialized()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_initialized || _initializing) return;
+        UiThreadGuard.AssertUiThread(this, nameof(EnsureInitialized));
         if (_initializationFailure is not null)
             throw new InvalidOperationException($"Initialization of '{GetType().FullName}' previously failed.", _initializationFailure);
         _initializing = true;
@@ -38,6 +46,8 @@ public abstract class UiObject : IDisposable
             InitializeUi();
             ObjectDisposedException.ThrowIf(_disposed, this);
             _initialized = true;
+            OnInitialized();
+            ObjectDisposedException.ThrowIf(_disposed, this);
         }
         catch (Exception error)
         {
@@ -57,6 +67,17 @@ public abstract class UiObject : IDisposable
     protected virtual void Render() { }
     protected virtual bool ShouldRender() => true;
 
+    /// <summary>Runs once after the complete UI and its initial values are available, before host attachment.</summary>
+    protected virtual void OnInitialized() { }
+    /// <summary>Runs on entering an active host tree; ancestors are notified before descendants.</summary>
+    protected virtual void OnAttached() { }
+    /// <summary>Runs on leaving an active host tree; descendants are notified before ancestors.</summary>
+    protected virtual void OnDetached() { }
+    /// <summary>Runs before an accepted dynamic update. Initial construction is not an update.</summary>
+    protected virtual void OnUpdating() { }
+    /// <summary>Runs after a successful dynamic update.</summary>
+    protected virtual void OnUpdated() { }
+
     internal virtual UiObject? UpdateParent => null;
     protected internal virtual IEnumerable<UiObject> UiChildren
     {
@@ -73,32 +94,167 @@ public abstract class UiObject : IDisposable
         {
             if (ReferenceEquals(_singleContent, value)) return;
             ObjectDisposedException.ThrowIf(_disposed, this);
+            UiThreadGuard.AssertUiThread(this, nameof(SingleContent));
             if (value is not null)
             {
-                if (value.Parent is not null || value._contentOwner is not null)
-                    throw new InvalidOperationException("Content already belongs to another UI tree.");
-                for (UiObject? ancestor = this; ancestor is not null; ancestor = ancestor.UpdateParent)
-                    if (ReferenceEquals(ancestor, value))
-                        throw new InvalidOperationException("UI content cannot contain itself or an ancestor.");
+                ValidateContent(value);
                 value.EnsureInitialized();
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                ValidateContent(value);
             }
-            if (_singleContent is { } previous)
+            var previousRoot = SchedulingRoot;
+            var previous = _singleContent;
+            _singleContent = value;
+            if (previous is not null)
             {
                 previous._contentOwner = null;
-                previous.ReconnectUpdates(SchedulingRoot);
+                previous.ReconnectUpdates(previousRoot);
             }
-            _singleContent = value;
             if (value is not null)
             {
                 value._contentOwner = this;
                 value.ReconnectUpdates();
             }
+            List<Exception>? failures = null;
+            try { previous?.DetachFromTree(); }
+            catch (Exception error) { (failures ??= new()).Add(error); }
+            try { value?.AttachToParent(this); }
+            catch (Exception error) { (failures ??= new()).Add(error); }
+            if (failures is not null) throw new AggregateException("Content lifecycle notification failed.", failures);
         }
+    }
+
+    private void ValidateContent(Element value)
+    {
+        value.ValidateCanAttach();
+        if (value.UpdateParent is not null)
+            throw new InvalidOperationException("Content already belongs to another UI tree.");
+        for (UiObject? ancestor = this; ancestor is not null; ancestor = ancestor.UpdateParent)
+            if (ReferenceEquals(ancestor, value))
+                throw new InvalidOperationException("UI content cannot contain itself or an ancestor.");
     }
 
     internal void DetachContent(Element child)
     {
-        if (ReferenceEquals(_singleContent, child)) SingleContent = null;
+        if (!ReferenceEquals(_singleContent, child)) return;
+        // Child disposal must also unlink content while its owner is already disposing.
+        var previousRoot = SchedulingRoot;
+        _singleContent = null;
+        child._contentOwner = null;
+        child.ReconnectUpdates(previousRoot);
+        child.DetachFromTree();
+    }
+
+    internal virtual void RemoveFromParent() { }
+
+    internal void ValidateCanAttach()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_detachmentPending)
+            throw new InvalidOperationException("An object awaiting OnDetached cannot be reattached.");
+        if (IsAttached)
+            throw new InvalidOperationException("The object already belongs to an active host tree.");
+    }
+
+    // Host tokens prevent a stale host from detaching a tree which has since moved elsewhere.
+    internal void AttachToHost(object host)
+    {
+        ArgumentNullException.ThrowIfNull(host);
+        ValidateHostRoot();
+        EnsureInitialized();
+        ValidateHostRoot();
+        try
+        {
+            ChangeAttachment(host);
+            ObjectDisposedException.ThrowIf(_disposed, this);
+        }
+        catch (Exception original)
+        {
+            try { DetachFromHost(host); }
+            catch (Exception cleanup)
+            {
+                throw new AggregateException("Host attachment and rollback failed.", original, cleanup);
+            }
+            throw;
+        }
+    }
+
+    private void ValidateHostRoot()
+    {
+        ValidateCanAttach();
+        if (UpdateParent is not null)
+            throw new InvalidOperationException("Only a root without a content parent can be attached to a host.");
+    }
+
+    internal void DetachFromHost(object host)
+    {
+        if (ReferenceEquals(_attachedHost, host)) DetachFromTree();
+    }
+
+    internal void AttachToParent(UiObject parent)
+    {
+        // An earlier notification may have removed, moved or disposed this node.
+        if (_disposed || parent._disposed || !ReferenceEquals(UpdateParent, parent)) return;
+        if (!ReferenceEquals(_attachedHost, parent._attachedHost)) ChangeAttachment(parent._attachedHost);
+    }
+
+    internal void DetachFromTree()
+    {
+        if (IsAttached) ChangeAttachment(null);
+    }
+
+    private void ChangeAttachment(object? host)
+    {
+        UiThreadGuard.AssertUiThread(this, "UiObject attachment");
+        var changes = new List<(UiObject Node, long Version, bool Notify)>();
+        Collect(this);
+
+        // Commit the entire subtree before invoking user code. Version checks suppress stale
+        // notifications if an earlier hook removes, adds or disposes part of this snapshot.
+        foreach (var change in changes)
+        {
+            var node = change.Node;
+            node._attachedHost = host;
+            node._attachmentVersion = change.Version;
+            node._attachmentNotified = false;
+            node._detachmentPending = host is null && change.Notify;
+        }
+
+        List<Exception>? failures = null;
+        var ordered = host is null ? changes.AsEnumerable().Reverse() : changes;
+        foreach (var (node, version, notify) in ordered)
+        {
+            if (node._attachmentVersion != version) continue;
+            node._detachmentPending = false;
+            if (!notify) continue;
+            if (host is not null)
+            {
+                if (node._disposed || !ReferenceEquals(node._attachedHost, host)) continue;
+                node._attachmentNotified = true;
+            }
+            try
+            {
+                if (host is null) node.OnDetached();
+                else node.OnAttached();
+            }
+            catch (Exception error) { (failures ??= new()).Add(error); }
+        }
+        if (failures is not null) throw new AggregateException("UI lifecycle notification failed.", failures);
+
+        void Collect(UiObject node)
+        {
+            if (host is not null)
+            {
+                ObjectDisposedException.ThrowIf(node._disposed, node);
+                if (node._detachmentPending)
+                    throw new InvalidOperationException("An object awaiting OnDetached cannot be reattached.");
+                if (node._attachedHost is not null && !ReferenceEquals(node._attachedHost, host))
+                    throw new InvalidOperationException("The object already belongs to another active host tree.");
+            }
+            if (!ReferenceEquals(node._attachedHost, host))
+                changes.Add((node, node._attachmentVersion + 1, host is not null || node._attachmentNotified));
+            foreach (var child in node.UiChildren.ToArray()) Collect(child);
+        }
     }
 
     internal void BindUiContext(UiSynchronizationContext context) => _uiContext = context;
@@ -177,10 +333,19 @@ public abstract class UiObject : IDisposable
     /// <summary>Drains the real tree's shared update queue, ancestors before descendants.</summary>
     public bool ProcessInvalidations()
     {
-        if (_disposed) return false;
+        if (_disposed || _initializing) return false;
         EnsureInitialized();
         var root = UpdateRoot;
         if (!ReferenceEquals(root, this)) return root.ProcessInvalidations();
+        if (_processingUpdates) return false;
+        _processingUpdates = true;
+        try { return ProcessUpdates(); }
+        finally { _processingUpdates = false; }
+    }
+
+    private bool ProcessUpdates()
+    {
+        var root = this;
         var queue = _updates;
         if (queue is null) return false;
         var didWork = false;
@@ -197,9 +362,24 @@ public abstract class UiObject : IDisposable
                     node.Invalidate();
                     continue;
                 }
-                if (!node.ShouldRender()) continue;
                 UiThreadGuard.AssertUiThread(node, "UiObject.Render");
+                var shouldRender = node.ShouldRender();
+                if (node._disposed) continue;
+                if (!ReferenceEquals(node.UpdateRoot, root))
+                {
+                    node.Invalidate();
+                    continue;
+                }
+                if (!shouldRender) continue;
+                node.OnUpdating();
+                if (node._disposed) continue;
+                if (!ReferenceEquals(node.UpdateRoot, root))
+                {
+                    node.Invalidate();
+                    continue;
+                }
                 node.Render();
+                if (!node._disposed) node.OnUpdated();
                 didWork = true;
             }
         }
@@ -240,9 +420,16 @@ public abstract class UiObject : IDisposable
     public virtual void Dispose()
     {
         if (_disposed) return;
+        if (_detachmentPending)
+            throw new InvalidOperationException("An object awaiting OnDetached cannot be disposed before its notification.");
+        UiThreadGuard.AssertUiThread(this, nameof(Dispose));
         _disposed = true;
         _updates?.Clear();
         List<Exception>? failures = null;
+        try { RemoveFromParent(); }
+        catch (Exception error) { (failures ??= new()).Add(error); }
+        try { DetachFromTree(); }
+        catch (Exception error) { (failures ??= new()).Add(error); }
         foreach (var child in UiChildren.ToArray().Reverse())
         {
             try { child.Dispose(); }
@@ -263,6 +450,9 @@ public abstract class UiObject : IDisposable
     }
 
     protected virtual void OnDispose() { }
+
+    /// <summary>Detaches and permanently disposes this object and its content, using the common lifecycle.</summary>
+    public void Unmount() => Dispose();
 
     private UpdateQueue GetUpdates()
     {

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using EclipseUI;
 
 namespace EclipseUI.Elements;
@@ -57,14 +58,15 @@ public class VirtualizingStackPanel : Panel
     /// <summary>数据或工厂变更后调用：清行高与窗口缓存并触发重排（旧 item 0 容器一并丢弃）。</summary>
     public void Refresh()
     {
-        if (_probe is not null) Children.Remove(_probe);
+        if (IsDisposed) return;
+        var retired = new HashSet<Element>(_realized.Values, ReferenceEqualityComparer.Instance);
+        if (_probe is not null) retired.Add(_probe);
+        _realized.Clear();
         _probe = null;
         _itemHeight = 0;
         _probedForCount = -1;
-        foreach (var (_, child) in _realized)
-            Children.Remove(child);
-        _realized.Clear();
         InvalidateMeasure();
+        DisposeItems(retired);
     }
 
     protected internal override Size MeasureCore(Size available)
@@ -81,22 +83,23 @@ public class VirtualizingStackPanel : Panel
         // 注意不能用 availH 判断——ScrollViewer 内容的可用高恒为无穷。
         if (owner is null)
         {
-            foreach (var (_, child) in _realized)
-                Children.Remove(child);
-            _realized.Clear();
+            DiscardWindowExceptRange(0, ItemFactory is null ? -1 : count - 1);
             double width = 0, height = 0;
+            var ordered = new List<Element>(count);
             if (ItemFactory is not null)
             {
                 for (int i = 0; i < count; i++)
                 {
                     var child = GetOrRealize(i);
+                    ordered.Add(child);
                     child.Measure(new Size(availW, double.PositiveInfinity));
                     var desired = child.DesiredSize;
                     width = Math.Max(width, desired.Width);
                     height += desired.Height + (i > 0 ? gap : 0);
                 }
             }
-            _itemHeight = count > 0 ? (height - Math.Max(0, count - 1) * gap) / count : 0;
+            Children.ReplaceAll(ordered);
+            _itemHeight = ordered.Count > 0 ? (height - Math.Max(0, count - 1) * gap) / count : 0;
             return new Size(
                 double.IsPositiveInfinity(availW) ? width + padding * 2 : availW + padding * 2,
                 height + padding * 2);
@@ -171,14 +174,24 @@ public class VirtualizingStackPanel : Panel
             _itemHeight = 0;
             return;
         }
-        if (_probe is null || _probedForCount != count)
+        // A panel moved from the nonvirtual mode already owns its item-zero instance.
+        if (_probe is null && _realized.TryGetValue(0, out var existing))
         {
-            if (_probe is not null) Children.Remove(_probe);
-            _realized.Remove(0);
-            _probe = ItemFactory(0);
-            _probe.Measure(new Size(availW, double.PositiveInfinity));
+            _probe = existing;
             _probedForCount = count;
         }
+        if (_probe is null || _probedForCount != count)
+        {
+            var retired = _probe;
+            _probe = null;
+            _realized.Remove(0);
+            _probedForCount = -1;
+            retired?.Dispose();
+            _probe = ItemFactory(0);
+        }
+        _probe.EnsureInitialized();
+        _probe.Measure(new Size(availW, double.PositiveInfinity));
+        _probedForCount = count;
         _itemHeight = _probe.DesiredSize.Height;
     }
 
@@ -202,19 +215,49 @@ public class VirtualizingStackPanel : Panel
         return created;
     }
 
-    /// <summary>把窗口外容器从可视树摘除（item 0 退回探针缓存）；只清理 _realized 表。</summary>
+    /// <summary>释放窗口外容器；item 0 只摘除并退回探针缓存，回到视口时复用。</summary>
     private void DiscardWindowExceptRange(int lo, int hi)
     {
-        List<int>? doomed = null;
-        foreach (var (index, child) in _realized)
+        var doomed = _realized.Where(entry => entry.Key < lo || entry.Key > hi).ToArray();
+        foreach (var (index, child) in doomed)
         {
-            if (index >= lo && index <= hi) continue;
-            Children.Remove(child);
-            if (index == 0) { _probe = child; _probedForCount = ItemCount; }
-            (doomed ??= new List<int>()).Add(index);
-        }
-        if (doomed is null) return;
-        foreach (var index in doomed)
             _realized.Remove(index);
+            if (index == 0) { _probe = child; _probedForCount = ItemCount; }
+        }
+        List<Exception>? failures = null;
+        foreach (var (index, child) in doomed.Reverse())
+        {
+            try
+            {
+                if (index == 0) Children.Remove(child);
+                else child.Dispose();
+            }
+            catch (Exception error) { (failures ??= new()).Add(error); }
+        }
+        if (failures is not null)
+            throw new AggregateException("Virtualized item retirement failed.", failures);
+    }
+
+    protected override void OnDispose()
+    {
+        var probe = _probe;
+        _probe = null;
+        _realized.Clear();
+        _itemHeight = 0;
+        _probedForCount = -1;
+        try { probe?.Dispose(); }
+        finally { base.OnDispose(); }
+    }
+
+    private static void DisposeItems(IEnumerable<Element> items)
+    {
+        List<Exception>? failures = null;
+        foreach (var item in items.Reverse())
+        {
+            try { item.Dispose(); }
+            catch (Exception error) { (failures ??= new()).Add(error); }
+        }
+        if (failures is not null)
+            throw new AggregateException("Virtualized item cleanup failed.", failures);
     }
 }

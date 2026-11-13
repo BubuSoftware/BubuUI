@@ -24,6 +24,7 @@ EnsureInitialized 是幂等入口，在对象初始化器/标签输入赋值之�
 - 实际内容树共享根队列；不存在独立组件所有权树。
 - 同一批请求按对象去重，按深度升序、同深度入队顺序更新。
 - 当前批完成后若又有失效，进入下一轮；100 限制针对更新轮次，不针对独立脏对象数量。
+- 初始化或更新钩子内重入 ProcessInvalidations 不嵌套执行更新；失效保留到初始化结束或当前更新结束后的批次。
 - 子树移入新父时发布新调度根并迁移旧队列；入队后复查句柄，避免并发移动丢失更新。
 - ShouldRender 默认 true；false 跳过本次对象重算，不改变子项身份或布局状态。
 - Render 异常向宿主传播，不吞异常，也不提供任意外部副作用事务回滚。
@@ -38,10 +39,16 @@ HeadlessRoot 接受 UiObject，经控件本身或通用单内容服务取得布�
 
 ## 5. 生命周期与所有权
 
-- 内容集合建立真实父子关系；通用 SingleContent 服务维护单项内容归属。
-- Children.Remove/Clear 是结构摘除，允许重挂接，不自动承诺释放所有资源。
-- 显式 Unmount 从内容树摘除并通知/释放子树；Dispose 为资源释放终态且幂等。
-- Dispose 按子树及资源登记逆序清理，尽量完成所有清理并聚合异常。
+- 生命周期统一由 UiObject 提供，ui 与纯 C#、Window 与 Element 使用相同钩子。
+- InitializeUi/Render 是结构构建和动态更新入口；ui 作者在 @code 中使用 OnInitialized、OnAttached、OnDetached、OnUpdating、OnUpdated、OnDispose，不重声明生成入口。
+- OnInitialized 在完整 InitializeUi 返回且 IsInitialized=true 后调用一次；此时 Ref 和初始动态值已就位，但不保证 Parent 或宿主存在。钩子失败同样清理并终止对象。
+- IsAttached 表示接入活跃宿主树，不等同于拥有 Parent。离线组树只初始化；宿主挂接时先提交整棵子树的状态，再按父先子调用 OnAttached。
+- 离开活跃宿主时先清除子树的挂接状态，再按子先父调用 OnDetached；内部父子关系保留，只有被移除子树的根解除外部归属。摘除不释放，重新挂接可再次调用 OnAttached，不再初始化。
+- 内容集合与 SingleContent 的增删替换共用上述机制；foreach 保留节点的换序不产生摘除/挂接通知。一个根不能同时接入两个宿主。
+- ShouldRender=true 时依次调用 OnUpdating、Render、OnUpdated；Render 失败不调用 OnUpdated。OnUpdating 中销毁对象或移交调度根会中止本次更新，不调用 OnUpdated。初次构建不额外执行更新钩子。
+- 生命周期通知按快照遍历，状态先于回调提交；回调失败继续通知其余节点，最后聚合抛出。宿主首次挂接失败时撤销已建立的挂接。通知过程中可增删内容；尚在等待 OnDetached 的祖先不能被重新挂接或销毁，避免交错的生命周期。
+- Children.Remove/Clear 只摘除不销毁。Dispose 是幂等终态：先解除外部内容归属和宿主挂接，再按子树及资源登记逆序清理，最后 OnDispose；尽量完成所有清理并聚合异常。Unmount 是同一终止入口的便利方法，不再存在 Element 专用 OnUnmount/Unmounted 生命周期。
+- HeadlessRoot 实现 IDisposable；释放宿主只摘除根，不销毁调用方的树。Windows 帧循环先安装同步上下文再挂接，退出时先摘除再还原上下文；桌面应用最终释放 Window。宿主必须同步单项布局根的替换。
 - Track 只登记绑定、块、计时器等资源，不登记第二套子组件所有权边。
 - 块根由 BlockScope 管理；构建中的临时对象由 UiConstructionScope 管理，成功提交后清空临时引用。构建失败调用Abort保留根因，清理也失败则聚合全部错误。
 - 事件声明与回调只安装一次；卸载后的对象不可继续初始化或处理更新。
