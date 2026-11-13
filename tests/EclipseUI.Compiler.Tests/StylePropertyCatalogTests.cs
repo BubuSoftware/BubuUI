@@ -210,7 +210,7 @@ public class StylePropertyCatalogTests
         var typeName = full.Substring(0, dot);
         var fieldName = full.Substring(dot + 1);
         // 显式触碰运行时/渲染程序集：按需加载可能尚未把目标类型带进 AppDomain
-        var type = new[] { typeof(StyleBuilder).Assembly, typeof(EclipseUI.Component).Assembly }
+        var type = new[] { typeof(StyleBuilder).Assembly, typeof(EclipseUI.UiObject).Assembly }
             .Concat(AppDomain.CurrentDomain.GetAssemblies())
             .Distinct()
             .Select(a => a.GetType(typeName, throwOnError: false))

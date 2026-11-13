@@ -89,7 +89,7 @@ public class LineSpanMappingTests
             .Split(System.IO.Path.PathSeparator)
             .Select(path => (MetadataReference)MetadataReference.CreateFromFile(path))
             .ToList();
-        references.Add(MetadataReference.CreateFromFile(typeof(Component).Assembly.Location));
+        references.Add(MetadataReference.CreateFromFile(typeof(UiObject).Assembly.Location));
         var fixture = NamespaceDeclarationFixture.Prepare(uiPath, codeBehind);
         var compilation = CSharpCompilation.Create("LineSpanProbe",
             new[] { CSharpSyntaxTree.ParseText(fixture.CodeBehind) }, references,

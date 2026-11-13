@@ -334,9 +334,7 @@ public static class RenameProvider
     {
         var memberTree = analysis.MemberTree;
         if (memberTree is null) return;
-        var augmented = analysis.CompilationContains(memberTree)
-            ? probe.Compilation
-            : probe.Compilation.AddSyntaxTrees(memberTree);
+        var augmented = probe.Compilation;
         var model = augmented.GetSemanticModel(memberTree);
         var treeText = memberTree.ToString();
         var targetSignature = SignatureOf(target);
@@ -365,9 +363,7 @@ public static class RenameProvider
     {
         var memberTree = analysis.MemberTree;
         if (memberTree is null) return false;
-        var augmented = analysis.CompilationContains(memberTree)
-            ? probe.Compilation
-            : probe.Compilation.AddSyntaxTrees(memberTree);
+        var augmented = probe.Compilation;
         var model = augmented.GetSemanticModel(memberTree);
         var found = false;
         foreach (var span in CodeScopedReferenceSpans(memberTree.GetRoot(), model, target.DeclarationSpan))

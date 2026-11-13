@@ -9,14 +9,12 @@ namespace EclipseUI.Headless.Tests;
 
 public class InvalidationTests
 {
-    private class TestComponent : Component
+    private class TestComponent : global::EclipseUI.Elements.StackPanel
     {
         public int RenderCount { get; private set; }
         public int ShouldRenderCount { get; private set; }
         public bool AllowRender { get; set; } = true;
         public Action? OnRender { get; set; }
-
-        protected override Element Build() => new StackPanel();
 
         protected override bool ShouldRender()
         {
@@ -31,19 +29,15 @@ public class InvalidationTests
         }
     }
 
-    private sealed class ParentComponent : Component
+    private sealed class ParentComponent : global::EclipseUI.Elements.StackPanel
     {
         public TestComponent Child { get; } = new();
         public List<string> Rendered { get; } = new();
 
-        protected override Element Build()
+        protected override void InitializeUi()
         {
-            var panel = new StackPanel();
-            Track(Child);
             Child.OnRender = () => Rendered.Add("child");
-            Child.Mount();
-            panel.Children.Add(Child.Root);
-            return panel;
+            Children.Add(Child);
         }
 
         protected override void Render() => Rendered.Add("parent");
@@ -53,7 +47,7 @@ public class InvalidationTests
     public void Invalidate_MergesMultipleRequestsIntoOneRender()
     {
         var component = new TestComponent();
-        component.Mount();
+        component.EnsureInitialized();
 
         component.Invalidate();
         component.Invalidate();
@@ -71,7 +65,7 @@ public class InvalidationTests
         Assert.False(component.ProcessInvalidations());
         Assert.Equal(0, component.RenderCount);
 
-        component.Mount();
+        component.EnsureInitialized();
         component.Dispose();
         component.Invalidate();
         Assert.False(component.ProcessInvalidations());
@@ -82,7 +76,7 @@ public class InvalidationTests
     public void ShouldRenderFalse_ConsumesInvalidationWithoutRender()
     {
         var component = new TestComponent { AllowRender = false };
-        component.Mount();
+        component.EnsureInitialized();
         component.Invalidate();
 
         Assert.False(component.ProcessInvalidations());
@@ -97,7 +91,7 @@ public class InvalidationTests
     public void ProcessInvalidations_RendersParentBeforeChild()
     {
         var parent = new ParentComponent();
-        parent.Mount();
+        parent.EnsureInitialized();
 
         parent.Child.Invalidate();
         parent.Invalidate();
@@ -110,7 +104,7 @@ public class InvalidationTests
     public void ProcessInvalidations_OnChild_ProcessesRootQueue()
     {
         var parent = new ParentComponent();
-        parent.Mount();
+        parent.EnsureInitialized();
 
         parent.Child.Invalidate();
 
@@ -129,7 +123,7 @@ public class InvalidationTests
             reentered = true;
             component.Invalidate();
         };
-        component.Mount();
+        component.EnsureInitialized();
 
         component.Invalidate();
         Assert.True(component.ProcessInvalidations());
@@ -141,7 +135,7 @@ public class InvalidationTests
     {
         var component = new TestComponent();
         component.OnRender = component.Invalidate;
-        component.Mount();
+        component.EnsureInitialized();
         component.Invalidate();
 
         var error = Assert.Throws<InvalidOperationException>(() => component.ProcessInvalidations());
@@ -152,7 +146,7 @@ public class InvalidationTests
     public void Invalidate_FromBackgroundThreads_IsCoalesced()
     {
         var component = new TestComponent();
-        component.Mount();
+        component.EnsureInitialized();
 
         Parallel.For(0, 1_000, _ => component.Invalidate());
 
@@ -170,19 +164,19 @@ public class InvalidationTests
         host.UpdateLayout();
 
         Assert.Equal(1, component.RenderCount);
-        Assert.Same(component, host.RootComponent);
+        Assert.Same(component, host.Content);
     }
 
     [Fact]
-    public void Adopt_RejectsSecondOwnerAndSelf()
+    public void Children_RejectsSecondParentAndSelf()
     {
         var first = new TestComponent();
         var second = new TestComponent();
         var child = new TestComponent();
 
-        first.Adopt(child);
-        Assert.Throws<InvalidOperationException>(() => second.Adopt(child));
-        Assert.Throws<InvalidOperationException>(() => first.Adopt(first));
+        first.Children.Add(child);
+        Assert.Throws<InvalidOperationException>(() => second.Children.Add(child));
+        Assert.Throws<InvalidOperationException>(() => first.Children.Add(first));
     }
 
     // spec/03 §2.6：一轮 ProcessInvalidations() 必须有迭代上限（实现定义 100 次 Render），
@@ -191,12 +185,12 @@ public class InvalidationTests
     public void RenderLoop_SelfInvalidatingRender_ThrowsAtIterationLimit()
     {
         var component = new TestComponent();
-        component.Mount();
+        component.EnsureInitialized();
         component.OnRender = component.Invalidate; // 每次渲染再自我失效 → 死循环
         component.Invalidate();                    // 启动第一次失效
 
         var ex = Assert.Throws<InvalidOperationException>(() => component.ProcessInvalidations());
-        Assert.Contains("Render loop exceeded", ex.Message);
+        Assert.Contains("UI update loop exceeded", ex.Message);
         // 上限口径 = 100 次 Render；第 101 次进入前拦截
         Assert.Equal(100, component.RenderCount);
     }
@@ -205,7 +199,7 @@ public class InvalidationTests
     public void RenderLoop_ExactlyAtIterationLimit_ConvergesWithoutThrow()
     {
         var component = new TestComponent();
-        component.Mount();
+        component.EnsureInitialized();
         var remaining = 100; // 前 99 次 Render 各自失效，第 100 次停 → 恰好在上限内收敛
         component.OnRender = () =>
         {

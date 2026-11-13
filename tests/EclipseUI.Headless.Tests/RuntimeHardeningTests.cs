@@ -9,7 +9,7 @@ namespace EclipseUI.Headless.Tests;
 /// <summary>
 /// S4/S5 运行时硬化回归：
 ///  A1 —— 属性本地值改用 ValueBox&lt;T&gt; 内联存储，重复赋值不再把值类型装箱；
-///  A2 —— Component.Dispose 清空自身失效队列，释放对组件的强引用；
+///  A2 —— UiObject.Dispose 清空自身失效队列，释放对组件的强引用；
 ///  并锁定 GetValue/SetValue 的既有语义（相等短路、脏标记、通知、继承、绑定对象身份）。
 /// </summary>
 public class RuntimeHardeningTests
@@ -191,29 +191,22 @@ public class RuntimeHardeningTests
 
     // ---- A2：失效队列清理 / 泄漏回归 ----
 
-    private sealed class ProbeComponent : Component
+    private sealed class ProbeComponent : global::EclipseUI.Elements.StackPanel
     {
         public int RenderCount { get; private set; }
-        protected override Element Build() => new StackPanel();
         protected override void Render() => RenderCount++;
     }
 
-    private sealed class LeakHost : Component
+    private sealed class LeakHost : global::EclipseUI.Elements.StackPanel
     {
         // 可清空：避免 Dispose 后 host 仍通过字段强引用子组件（否则 GC 断言失效）。
-        public Component? Child;
+        public Element? Child;
 
-        protected override Element Build()
+        protected override void InitializeUi()
         {
-            var panel = new StackPanel();
             var child = Child;
             if (child is not null)
-            {
-                Track(child);                       // adopt + 随 host 释放
-                child.Mount();                      // 使其 Invalidate 生效
-                panel.Children.Add(child.Root);     // 视觉树只持有 Element，不持有 Component
-            }
-            return panel;
+                Children.Add(child);
         }
     }
 
@@ -238,12 +231,14 @@ public class RuntimeHardeningTests
     {
         var child = new ProbeComponent();
         var root = new LeakHost { Child = child };
-        root.Mount();                 // Track(child)、Mount(child)、把 child.Root 挂进视觉树
+        root.EnsureInitialized();                 // 初始化并把 child 本身挂进内容树
 
-        child.Invalidate();           // 登记到 root 的失效队列（root 是 RootComponent），形成强引用
+        child.Invalidate();           // 登记到 root 的失效队列（root 是实际内容树根），形成强引用
         var weak = new WeakReference(child);
 
         root.Child = null;            // 去掉 host 字段强引用
+        root.Children.Remove(child);
+        child.Dispose();
         root.Dispose();               // 级联 Dispose(child) + A2 清空 root 的 _pendingRenders/_pendingSet
         child = null;                 // 去掉局部强引用
         return (root, weak);
@@ -259,7 +254,7 @@ public class RuntimeHardeningTests
     public void Dispose_IsIdempotent_AndInvalidationStopsProcessingComponent()
     {
         var root = new LeakHost { Child = new ProbeComponent() };
-        root.Mount();
+        root.EnsureInitialized();
         var child = (ProbeComponent)root.Child!;
 
         child.Invalidate();          // 入队到 root 的失效队列

@@ -50,51 +50,24 @@ public sealed class ExpressionProbe
     private readonly INamedTypeSymbol? _type;
     private readonly string _className;
     private readonly string _namespace;
-    private readonly ImmutableArray<SyntaxTree> _memberTrees;
     private readonly ImmutableArray<string> _usings;
     private int _counter;
 
     public ExpressionProbe(Compilation compilation, INamedTypeSymbol? type, string className,
-        string namespaceName, ImmutableArray<SyntaxTree> memberTrees, ImmutableArray<string> usings)
+        string namespaceName, ImmutableArray<string> usings)
     {
         _compilation = compilation;
         _type = type;
         _className = className;
         _namespace = namespaceName;
-        _memberTrees = memberTrees;
         _usings = usings;
     }
 
-    /// <summary>探针编译单元（基编译 + code-behind 源码，如有）；env 构建与成员枚举用它。</summary>
+    /// <summary>包含根继承关系、code-behind 和 @code 的统一符号编译单元。</summary>
     public Compilation Compilation => _compilation;
 
-    /// <summary>code-behind 类符号（无 code-behind 时 null）；裸前缀补全列它的成员。</summary>
+    /// <summary>当前模板类型符号（含继承成员和 @code）；裸前缀补全由此枚举。</summary>
     public INamedTypeSymbol? ThisType => _type;
-
-    /// <summary>
-    /// 合成 partial 类成员树（@code 原文透传，K21/K23 ④）。成员为空时返回 null——
-    /// 无 @code 的模板不产生合成树（与生成器口径一致）。
-    /// </summary>
-    public static SyntaxTree? BuildMemberTree(IReadOnlyList<string> memberBodies, string className,
-        string namespaceName, bool publicAccessibility, ImmutableArray<string> usings, Compilation compilation)
-    {
-        if (memberBodies.Count == 0) return null;
-        var sb = new StringBuilder();
-        sb.AppendLine("#nullable enable");
-        foreach (var ns in usings)
-            sb.AppendLine($"using {ns};");
-        if (namespaceName.Length > 0)
-            sb.Append("namespace ").AppendLine(namespaceName + ";");
-        sb.Append(publicAccessibility ? "public" : "internal").Append(" partial class ").AppendLine(className);
-        sb.AppendLine("{");
-        foreach (var body in memberBodies)
-            sb.AppendLine(body);
-        sb.AppendLine("}");
-
-        var parseOptions = compilation.SyntaxTrees.FirstOrDefault()?.Options as CSharpParseOptions
-            ?? CSharpParseOptions.Default;
-        return CSharpSyntaxTree.ParseText(sb.ToString(), parseOptions);
-    }
 
     /// <summary>
     /// 集合类型的元素类型（<see cref="ExpressionEnvironment"/> 建环境用）：
@@ -115,16 +88,6 @@ public sealed class ExpressionProbe
     }
 
     /// <summary>
-    /// 派生 Compilation：@code 成员合成树（K21，通常为空——多数模板没有 @code）+ 探针树。
-    /// 同一棵 memberTree 实例加入多次派生 Compilation 是安全的（树不可变）。
-    /// </summary>
-    private Compilation Augment(SyntaxTree tree)
-    {
-        var result = _memberTrees.IsEmpty ? _compilation : _compilation.AddSyntaxTrees(_memberTrees);
-        return result.AddSyntaxTrees(tree);
-    }
-
-    /// <summary>
     /// 表达式求值类型（含流调整可空性）：合成 <c>var __value = (expr);</c> 携带语句，
     /// 取 <c>GetTypeInfo(初始化式).Type</c>。不能用 <c>GetDeclaredSymbol</c> 的 var 局部符号
     /// 当返回值——其注解未经 nullable 流精化（一律 Annotated，实测 var d = task 会得到 TaskItem?）。
@@ -132,7 +95,7 @@ public sealed class ExpressionProbe
     public ITypeSymbol? InferType(string expression, IReadOnlyList<(ITypeSymbol Type, string Name)> env)
     {
         var tree = ProbeTree("var __value = (" + expression + ");", env);
-        var model = Augment(tree).GetSemanticModel(tree);
+        var model = _compilation.AddSyntaxTrees(tree).GetSemanticModel(tree);
         var initializer = tree.GetRoot().DescendantNodes().OfType<VariableDeclaratorSyntax>()
             .FirstOrDefault(v => v.Identifier.ValueText == "__value")?.Initializer?.Value;
         if (initializer is null) return null;
@@ -149,7 +112,7 @@ public sealed class ExpressionProbe
     public IMethodSymbol? ResolveMethod(string expression, IReadOnlyList<(ITypeSymbol Type, string Name)> env)
     {
         var tree = ProbeTree("var __value = (" + expression + ");", env);
-        var model = Augment(tree).GetSemanticModel(tree);
+        var model = _compilation.AddSyntaxTrees(tree).GetSemanticModel(tree);
         var initializer = tree.GetRoot().DescendantNodes().OfType<VariableDeclaratorSyntax>()
             .FirstOrDefault(v => v.Identifier.ValueText == "__value")?.Initializer?.Value;
         return initializer is null ? null : model.GetSymbolInfo(initializer).Symbol as IMethodSymbol;
@@ -219,7 +182,7 @@ public sealed class ExpressionProbe
         string expression, IReadOnlyList<(ITypeSymbol Type, string Name)> env)
     {
         var tree = ProbeTree("var __value = (" + expression + ");", env);
-        var model = Augment(tree).GetSemanticModel(tree);
+        var model = _compilation.AddSyntaxTrees(tree).GetSemanticModel(tree);
         var initializer = tree.GetRoot().DescendantNodes().OfType<VariableDeclaratorSyntax>()
             .FirstOrDefault(v => v.Identifier.ValueText == "__value")?.Initializer?.Value
             as ParenthesizedExpressionSyntax;
@@ -259,7 +222,7 @@ public sealed class ExpressionProbe
 
         var tree = ProbeTree($"{expression} = __bindValue;", env,
             $"        {ClrTypeOf(targetClrType)} __bindValue = default!;");
-        var augmented = Augment(tree);
+        var augmented = _compilation.AddSyntaxTrees(tree);
         var model = augmented.GetSemanticModel(tree);
         var assignment = tree.GetRoot().DescendantNodes().OfType<AssignmentExpressionSyntax>().FirstOrDefault();
         if (assignment is null)
@@ -320,7 +283,7 @@ public sealed class ExpressionProbe
 
         var tree = ProbeTree($"{target} = __refValue;", env,
             $"        {ClrTypeOf(valueClrType)} __refValue = default!;");
-        var augmented = Augment(tree);
+        var augmented = _compilation.AddSyntaxTrees(tree);
         var model = augmented.GetSemanticModel(tree);
         var assignment = tree.GetRoot().DescendantNodes().OfType<AssignmentExpressionSyntax>().FirstOrDefault();
         if (assignment is null)
@@ -389,7 +352,7 @@ public sealed class ExpressionProbe
 
         var target = ClrTypeOf(delegateType);
         var tree = ProbeTree("var __handler = (" + target + ")(" + expression + ")", env);
-        var model = Augment(tree).GetSemanticModel(tree);
+        var model = _compilation.AddSyntaxTrees(tree).GetSemanticModel(tree);
         var initializer = tree.GetRoot().DescendantNodes().OfType<VariableDeclaratorSyntax>()
             .FirstOrDefault(v => v.Identifier.ValueText == "__handler")?.Initializer?.Value;
         if (initializer is not CastExpressionSyntax cast) return null;
@@ -443,7 +406,7 @@ public sealed class ExpressionProbe
                 ClrTypeOf(targetClrType) + " __value = default!; __value = (" + expression + ");", env);
         }
 
-            var model = Augment(tree).GetSemanticModel(tree);
+            var model = _compilation.AddSyntaxTrees(tree).GetSemanticModel(tree);
             var valueNode = targetClrType is null
                 ? tree.GetRoot().DescendantNodes().OfType<VariableDeclaratorSyntax>()
                     .FirstOrDefault(v => v.Identifier.ValueText == "__value")?.Initializer?.Value
@@ -473,7 +436,7 @@ public sealed class ExpressionProbe
         var tree = ProbeTree(
             "const " + ClrTypeOf(targetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)) +
             " __caseKey = " + expression, env);
-        var model = Augment(tree).GetSemanticModel(tree);
+        var model = _compilation.AddSyntaxTrees(tree).GetSemanticModel(tree);
         var declarator = tree.GetRoot().DescendantNodes().OfType<VariableDeclaratorSyntax>()
             .FirstOrDefault(v => v.Identifier.ValueText == "__caseKey");
         if (declarator?.Initializer is null) return true;

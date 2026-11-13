@@ -48,17 +48,6 @@ public sealed class UiParameterAttribute : Attribute
     public bool Required { get; set; }
 }
 
-/// <summary>
-/// 模板根类型标记（design/20）：标注的 <see cref="Component"/> 派生类可作 .ui 模板根——
-/// 根标签决定生成类的基类（Avalonia 式），标签属性 = 本类型的 <c>[UiParameter]</c> 面，
-/// 子元素 = 模板内容。标记类型的任何子类同为模板根类型，并退出「可组合组件」表面：
-/// 不能作为其他模板的标签使用（使用点 EUI060），只能从应用代码实例化。
-/// </summary>
-[AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
-public sealed class UiTemplateRootAttribute : Attribute
-{
-}
-
 /// <summary>具名插槽（design/14 §14.6.3，G4 实现）。</summary>
 [AttributeUsage(AttributeTargets.Property)]
 public sealed class UiSlotAttribute : Attribute

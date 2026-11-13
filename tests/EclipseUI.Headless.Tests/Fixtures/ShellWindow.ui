@@ -8,8 +8,7 @@
 </Window>
 
 @code {
-    // design/20：窗口模板 fixture——运行期值经 [UiParameter] 从应用侧传入，
-    // 窗口属性（Title/Width/Height）是 live 面：失效循环经 U 推送更新基类属性并回推平台。
+    // 应用侧传入初值后统一初始化；动态槽直接更新当前窗口实例的属性。
     [UiParameter] public string TitleText { get; set; } = "Shell";
     [UiParameter] public double W { get; set; }
     [UiParameter] public double H { get; set; }

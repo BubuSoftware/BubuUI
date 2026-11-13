@@ -5,7 +5,7 @@ using EclipseUI;
 namespace EclipseUI.Platform.Windows;
 
 /// <summary>
-/// design/20：窗口模板动态属性的回推实现——把 <see cref="WindowComponent"/> 的 U 推送落到
+/// 窗口属性的回推实现——把 <see cref="Window"/> 的属性变更落到
 /// 已材料化的 Win32 窗口（<c>SetTitle</c>/<c>SetClientSize</c>，均为既有 Win32Window 能力，
 /// 零新平台机制）。窗口关闭后 no-op（IsClosed 守卫）；生命周期随 ClassicDesktopLifetime.Run
 /// 的 <c>using</c> 作用域结束自然失效。

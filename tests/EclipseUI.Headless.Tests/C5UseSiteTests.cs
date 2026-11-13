@@ -25,9 +25,9 @@ public class C5UseSiteTests
     }
 
     /// <summary>合成 def：无可用成员，Problems 即全部表面（属性/事件/参数只经 Problems 触达）。</summary>
-    private static UiElementDef Def(string tag, string clrName, UiElementOrigin origin,
+    private static UiElementDef Def(string tag, string clrName,
         bool referenced, params UiMetadataProblem[] problems) => new(
-        tag, clrName, origin, UiContentModel.None, null,
+        tag, clrName, UiContentModel.None, null,
         new Dictionary<string, UiPropDef>(StringComparer.Ordinal),
         new Dictionary<string, UiEventDef>(StringComparer.Ordinal),
         new Dictionary<string, UiParameterDef>(StringComparer.Ordinal),
@@ -38,10 +38,9 @@ public class C5UseSiteTests
     private static UiCatalog CatalogWithReferencedDefs()
     {
         var built = UiTestCatalogs.BuiltIn();
-        var broken = Def("Broken", "global::Probe.Broken", UiElementOrigin.Control, referenced: true,
+        var broken = Def("Broken", "global::Probe.Broken", referenced: true,
             gapProblem, clickProblem);
-        var faultyCard = Def("FaultyCard", "global::Probe.FaultyCard", UiElementOrigin.Component,
-            referenced: true, contentProblem);
+        var faultyCard = Def("FaultyCard", "global::Probe.FaultyCard", referenced: true, contentProblem);
         var merged = built.Elements.Append(broken).Append(faultyCard);
         return new UiCatalog(merged, built.HiddenTags, built.Problems, built.AttachedProperties);
     }
@@ -50,10 +49,9 @@ public class C5UseSiteTests
     private static UiCatalog CatalogWithSourceDefs()
     {
         var built = UiTestCatalogs.BuiltIn();
-        var broken = Def("Broken", "global::Probe.Broken", UiElementOrigin.Control, referenced: false,
+        var broken = Def("Broken", "global::Probe.Broken", referenced: false,
             gapProblem, clickProblem);
-        var faultyCard = Def("FaultyCard", "global::Probe.FaultyCard", UiElementOrigin.Component,
-            referenced: false, contentProblem);
+        var faultyCard = Def("FaultyCard", "global::Probe.FaultyCard", referenced: false, contentProblem);
         var merged = built.Elements.Append(broken).Append(faultyCard);
         return new UiCatalog(merged, built.HiddenTags, built.Problems, built.AttachedProperties);
     }

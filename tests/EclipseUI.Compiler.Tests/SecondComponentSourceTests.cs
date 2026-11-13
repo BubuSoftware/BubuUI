@@ -26,7 +26,7 @@ public class SecondComponentSourceTests
             .Split(System.IO.Path.PathSeparator)
             .Select(path => (MetadataReference)MetadataReference.CreateFromFile(path))
             .ToList();
-        references.Add(MetadataReference.CreateFromFile(typeof(Component).Assembly.Location));
+        references.Add(MetadataReference.CreateFromFile(typeof(UiObject).Assembly.Location));
         return CSharpCompilation.Create(
             "SecondSourceProbe",
             files.Select(f => CSharpSyntaxTree.ParseText(f.Text, path: f.Path)),
@@ -40,7 +40,7 @@ public class SecondComponentSourceTests
     /// <summary>用共享扫描路径构造单文件目录（K34：走的就是生产代码的 FromFile 提取）。</summary>
     private static UiCatalog CatalogOf(string path, string ui)
     {
-        var declaration = UiComponentScanner.FromFile(path, ui);
+        var declaration = UiTemplateScanner.FromFile(path, ui);
         Assert.NotNull(declaration);
         return UiCatalogFactory.Build(Compile(), new[] { declaration });
     }
@@ -62,15 +62,15 @@ public class SecondComponentSourceTests
         // 纯 .ui：输入编译里连符号都没有，目录合成一份最小形状。
         var catalog = UiCatalogFactory.Build(Compile(), new[]
         {
-            new UiComponentDeclaration("Counter", "Gallery"),
+            new UiTemplateDeclaration("Counter", "Gallery") { RootTag = "EclipseUI.Elements.StackPanel" },
         });
 
         var def = Assert.IsType<UiElementDef>(Find(catalog, "Counter"));
-        Assert.Equal(UiElementOrigin.Component, def.Origin);
-        Assert.Equal(UiContentModel.None, def.Content);
+        Assert.True(def.IsEmbeddable);
+        Assert.Equal(UiContentModel.Children, def.Content);
         Assert.Equal("global::Gallery.Counter", def.ClrTypeDisplayName);
-        Assert.Empty(def.Parameters);
-        Assert.Empty(def.Properties);
+        Assert.Contains("IsEnabled", def.Parameters.Keys);
+        Assert.Contains("Gap", def.Properties.Keys);
         Assert.False(def.IsFromReferencedAssembly);
     }
 
@@ -82,10 +82,10 @@ public class SecondComponentSourceTests
         var catalog = UiCatalogFactory.Build(Compile(
                 ("Prefs.cs", "using EclipseUI;\nnamespace Demo;\npublic partial class Prefs " +
                              "{ [UiParameter] public string? Title { get; set; } }\n")),
-            new[] { new UiComponentDeclaration("Prefs", "Demo") });
+            new[] { new UiTemplateDeclaration("Prefs", "Demo") { RootTag = "EclipseUI.Elements.StackPanel" } });
 
         var def = Assert.IsType<UiElementDef>(Find(catalog, "Prefs"));
-        Assert.Equal(UiElementOrigin.Component, def.Origin);
+        Assert.True(def.IsEmbeddable);
         Assert.True(def.Parameters.ContainsKey("Title"));
     }
 
@@ -96,7 +96,7 @@ public class SecondComponentSourceTests
         // 一定指向不存在的类型（CS0246）。命名空间不符由生成器的 EUI056 报，使用点保持 EUI001。
         var catalog = UiCatalogFactory.Build(Compile(
                 ("Prefs.cs", "namespace Demo;\npublic partial class Prefs { }\n")),
-            new[] { new UiComponentDeclaration("Prefs", "Other") });
+            new[] { new UiTemplateDeclaration("Prefs", "Other") });
 
         Assert.Null(Find(catalog, "Prefs"));
     }
@@ -107,37 +107,35 @@ public class SecondComponentSourceTests
         // 显式派生自 Element 的类型即使配了同 .ui 也仍是控件：清单只补「没写基类」这一条。
         var catalog = UiCatalogFactory.Build(Compile(
                 ("Widget.cs", "namespace Demo;\npublic class Widget : EclipseUI.Elements.StackPanel { }\n")),
-            new[] { new UiComponentDeclaration("Widget", "Demo") });
+            new[] { new UiTemplateDeclaration("Widget", "Demo") });
 
         var def = Assert.IsType<UiElementDef>(Find(catalog, "Widget"));
-        Assert.Equal(UiElementOrigin.Control, def.Origin);
+        Assert.True(def.IsEmbeddable);
     }
 
     [Fact]
     public void Declaration_IsIdempotentForExplicitComponent()
     {
-        // 显式 : Component + 清单 → 与只靠基类时同形，不因为清单多出一份重复项。
+        // 显式 : global::EclipseUI.Elements.StackPanel + 清单 → 与只靠基类时同形，不因为清单多出一份重复项。
         var catalog = UiCatalogFactory.Build(Compile(
-                ("Card.cs", "namespace Demo;\npublic partial class Card : EclipseUI.Component { }\n")),
-            new[] { new UiComponentDeclaration("Card", "Demo") });
+                ("Card.cs", "namespace Demo;\npublic partial class Card : EclipseUI.Elements.StackPanel { }\n")),
+            new[] { new UiTemplateDeclaration("Card", "Demo") });
 
         var def = Assert.IsType<UiElementDef>(Find(catalog, "Card"));
-        Assert.Equal(UiElementOrigin.Component, def.Origin);
+        Assert.True(def.IsEmbeddable);
         Assert.Single(catalog.Elements, e => e.Tag == "Card");
     }
 
     [Fact]
-    public void Declaration_GlobalNamespaceTemplateUsesBareName()
+    public void Declaration_WithoutNamespaceDoesNotCreateAnUnusableType()
     {
         // @namespace 缺失时（EUI055 会报），清单只带标签名；合成名字不能拼出 "global::.Counter"。
         var catalog = UiCatalogFactory.Build(Compile(), new[]
         {
-            new UiComponentDeclaration("Counter", null),
+            new UiTemplateDeclaration("Counter", null),
         });
 
-        var def = Assert.IsType<UiElementDef>(Find(catalog, "Counter"));
-        Assert.Equal("global::Counter", def.ClrTypeDisplayName);
-        Assert.Equal(UiElementOrigin.Component, def.Origin);
+        Assert.Null(Find(catalog, "Counter"));
     }
 
     // ---------- 端到端：生成器真的把 .ui 清单喂进目录 ----------
@@ -215,7 +213,7 @@ public class SecondComponentSourceTests
 
         var counter = GeneratedSource(result, "Counter");
         Assert.Contains("namespace Gallery", counter);
-        Assert.Contains("partial class Counter : global::EclipseUI.Component", counter);
+        Assert.Contains("partial class Counter : global::EclipseUI.Elements.StackPanel", counter);
 
         Assert.Contains("new global::Gallery.Counter()", GeneratedSource(result, "Showcase"));
 
@@ -265,7 +263,7 @@ public class SecondComponentSourceTests
     }
 
     [Fact]
-    public void CodeBlockParameterAttribute_WithCodeBehind_StillWarns()
+    public void CodeBlockParameterAttribute_WithCodeBehind_IsSharedSurface()
     {
         // 有同名 .cs 时目录符号扫描只看 .cs 半边，@code 的模板特性确实到不了别的模板——
         // EUI057 的原始理由仍然成立。
@@ -281,15 +279,17 @@ public class SecondComponentSourceTests
 
         var (result, _) = RunProject("namespace Gallery;\npublic partial class Card { }", ("Card.ui", ui));
 
-        var warning = Assert.Single(result.Diagnostics, d => d.Id == "EUI057");
-        Assert.Equal(Microsoft.CodeAnalysis.DiagnosticSeverity.Warning, warning.Severity);
-        Assert.Contains("UiParameter", warning.GetMessage(), StringComparison.Ordinal);
-        Assert.Single(result.GeneratedSources);               // 警告不短路
+        Assert.DoesNotContain(result.Diagnostics, d => d.Id == "EUI057");
+        Assert.Single(result.GeneratedSources);
+        var catalog = UiCatalogFactory.Build(Compile(("Card.cs", "namespace Gallery; public partial class Card { }")),
+            new[] { UiTemplateScanner.FromFile("Card.ui", ui)! });
+        Assert.Contains("Title", Assert.Single(catalog.Elements, e => e.Tag == "Card").Parameters.Keys);
     }
 
     // ---------- K34（D112）：@code 模板特性的目录级提取 ----------
 
     private const string CodeMemberUi = """
+        @using System
         @using EclipseUI
         @using EclipseUI.Elements
         <StackPanel />
@@ -319,7 +319,7 @@ public class SecondComponentSourceTests
         var def = Assert.IsType<UiElementDef>(Find(CatalogOf("C:\\templates\\Card.ui", CodeMemberUi), "Card"));
 
         var title = def.Parameters["Title"];
-        Assert.Equal("string?", title.ClrTypeDisplayName);
+        Assert.Equal("global::System.String", title.ClrTypeDisplayName);
         Assert.True(title.CanWrite);
         Assert.False(title.Required);
 
@@ -328,7 +328,7 @@ public class SecondComponentSourceTests
         // 绑定通道：形状正确的配对回填，形状不对的记原因（D110 规则的文本级版本）
         Assert.Equal("CountChanged", def.Parameters["Count"].ChangedCallbackName);
         Assert.Null(def.Parameters["Bad2"].ChangedCallbackName);
-        Assert.Contains("takes int but 'Bad2' is string?", def.Parameters["Bad2"].ChangedShapeProblem, StringComparison.Ordinal);
+        Assert.Contains("takes int but 'Bad2' is string", def.Parameters["Bad2"].ChangedShapeProblem, StringComparison.Ordinal);
         Assert.Null(def.Parameters["Bad0"].ChangedCallbackName);
         Assert.Contains("0 argument(s)", def.Parameters["Bad0"].ChangedShapeProblem, StringComparison.Ordinal);
         Assert.True(def.Parameters["Bad0Changed"].IsDelegate);
@@ -339,7 +339,8 @@ public class SecondComponentSourceTests
         Assert.Equal("HeaderSlot", Assert.Single(def.Slots.Values).PropertyName);
 
         // 公开非参数属性给出「为什么不可用」，私有属性不进表面
-        Assert.Equal("carries no [UiParameter] attribute", def.BindRejection("NotAParameter"));
+        Assert.Contains("NotAParameter", def.Parameters.Keys);
+        Assert.Null(def.BindRejection("NotAParameter"));
         Assert.Null(def.BindRejection("PrivateProp"));
     }
 
@@ -348,6 +349,7 @@ public class SecondComponentSourceTests
     {
         const string ui = """
             @using EclipseUI
+            @using EclipseUI.Elements
             <StackPanel />
             @namespace Gallery
             @code {
@@ -376,6 +378,7 @@ public class SecondComponentSourceTests
     {
         const string ui = """
             @using EclipseUI
+            @using EclipseUI.Elements
             <StackPanel />
             @namespace Gallery
             @code {
@@ -388,7 +391,7 @@ public class SecondComponentSourceTests
         var def = Assert.IsType<UiElementDef>(Find(CatalogOf("C:\\templates\\Card.ui", ui), "Card"));
 
         Assert.Empty(def.Slots);
-        Assert.Empty(def.Parameters);
+        Assert.DoesNotContain(def.Parameters.Keys, name => name is "noName" or "wrongType" or "wrongContent");
         Assert.Contains(def.Problems, p => p.Message.Contains("[UiSlot] must name the slot", StringComparison.Ordinal));
         Assert.Contains(def.Problems, p => p.Message.Contains("[UiSlot] properties must be", StringComparison.Ordinal));
         Assert.Contains(def.Problems, p => p.Message.Contains("[UiContent] parameters must be", StringComparison.Ordinal));
@@ -431,7 +434,7 @@ public class SecondComponentSourceTests
 
         var showcase = GeneratedSource(result, "Showcase");
         Assert.Contains(".Title = \"hello\"", showcase);
-        Assert.Contains(".CountChanged = v =>", showcase);
+        Assert.Contains(".CountChanged = value =>", showcase);
 
         var errors = output.GetDiagnostics()
             .Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
@@ -473,7 +476,7 @@ public class SecondComponentSourceTests
             .RunGenerators(compilation).GetRunResult().Results.Single();
 
         // 清单步骤确实重跑了（AdditionalText 变了），但产出值相等 → Unchanged，不传播为 Modified/New。
-        Assert.All(ReasonsOf(result, "TemplateComponents"),
+        Assert.All(ReasonsOf(result, "TemplateTypes"),
             reason => Assert.Equal(IncrementalStepRunReason.Unchanged, reason));
         // 目录因此不重建：下游拿到缓存值。
         Assert.All(ReasonsOf(result, "TemplateCatalog"),

@@ -159,7 +159,7 @@ public class DiagnosticTests
 
         Assert.DoesNotContain(diagnostics, d => d.Code == UiDiagnostics.UnknownProperty);
         var diagnostic = Assert.Single(diagnostics, d => d.Code == UiDiagnostics.BindTargetInvalid);
-        Assert.Contains("IsEnabledProperty", diagnostic.Message);
+        Assert.Contains("IsEnabledChanged", diagnostic.Message);
         // 报在属性名上，且覆盖整个 `@bind-IsEnabled`（属性名前缀也是这条诊断的一部分）
         Assert.Equal(Using.Length + "<Button ".Length, diagnostic.Span.Start);
         Assert.Equal("@bind-IsEnabled".Length, diagnostic.Span.Length);

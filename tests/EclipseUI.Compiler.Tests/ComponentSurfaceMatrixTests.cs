@@ -29,7 +29,7 @@ public class ComponentSurfaceMatrixTests
 
         namespace Matrix
         {
-            public class ProbeCard : Component
+            public class ProbeCard : StackPanel
             {
                 [UiParameter] public string Title { get; set; } = "";
                 [UiParameter] public int Count { get; set; }
@@ -41,13 +41,12 @@ public class ComponentSurfaceMatrixTests
                 [UiSlot("Rows")] public IReadOnlyList<Element>? Rows { get; set; }
                 [UiContent] public IReadOnlyList<Element>? Body { get; set; }
 
-                protected override Element Build()
+                protected override void InitializeUi()
                 {
-                    var root = new StackPanel();
-                    if (Header is not null) root.Children.Add(Header);
-                    if (Rows is not null) foreach (var row in Rows) root.Children.Add(row);
-                    if (Body is not null) foreach (var child in Body) root.Children.Add(child);
-                    return root;
+                    base.InitializeUi();
+                    if (Header is not null) Children.Add(Header);
+                    if (Rows is not null) foreach (var row in Rows) Children.Add(row);
+                    if (Body is not null) foreach (var child in Body) Children.Add(child);
                 }
             }
 
@@ -117,9 +116,9 @@ public class ComponentSurfaceMatrixTests
         var code = Assert.Single(result.GeneratedSources).SourceText.ToString();
         // ProbeCard 就在 @namespace Matrix 里：K33 起不需要 `@using Matrix`（模板刻意不写）
         Assert.Contains("new global::Matrix.ProbeCard()", code);
-        Assert.Contains(".HueChanged = v =>", code);          // @bind 的回调（build-once）
-        Assert.Contains(".ApplyClasses(", code);              // 组件标签上的 Class → 根元素
-        Assert.Contains("Grid.SetRow(", code);                // 附加属性 → 根元素
+        Assert.Contains(".HueChanged = ", code);             // @bind 的回调（build-once）
+        Assert.Contains(".ApplyClasses(", code);              // Class 直接作用于控件实例
+        Assert.Contains("Grid.SetRow(", code);                // 附加属性直接作用于控件实例
 
         var compileErrors = output.GetDiagnostics()
             .Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
@@ -135,7 +134,7 @@ public class ComponentSurfaceMatrixTests
             .Split(System.IO.Path.PathSeparator)
             .Select(path => (MetadataReference)MetadataReference.CreateFromFile(path))
             .ToList();
-        references.Add(MetadataReference.CreateFromFile(typeof(Component).Assembly.Location));
+        references.Add(MetadataReference.CreateFromFile(typeof(UiObject).Assembly.Location));
 
         return CSharpCompilation.Create(
             "ComponentSurfaceProbe",

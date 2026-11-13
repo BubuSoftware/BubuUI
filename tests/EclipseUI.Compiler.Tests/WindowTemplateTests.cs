@@ -13,8 +13,7 @@ using Xunit;
 namespace EclipseUI.Compiler.Tests;
 
 /// <summary>
-/// design/20：窗口模板——根节点为保留 &lt;Window&gt; 的 .ui 编译为 WindowComponent 子类
-/// （「根标签决定基类」），窗口属性 = 基类 [UiParameter] 面，窗口模板退出可组合表面（EUI060）。
+/// Root inheritance shares object initialization and content typing between windows and controls.
 /// </summary>
 public class WindowTemplateTests
 {
@@ -39,7 +38,7 @@ public class WindowTemplateTests
             .Split(System.IO.Path.PathSeparator)
             .Select(path => (MetadataReference)MetadataReference.CreateFromFile(path))
             .ToList();
-        references.Add(MetadataReference.CreateFromFile(typeof(EclipseUI.Component).Assembly.Location));
+        references.Add(MetadataReference.CreateFromFile(typeof(EclipseUI.UiObject).Assembly.Location));
         return CSharpCompilation.Create(
             "TemplateProbe",
             codeBehind.Length == 0
@@ -76,7 +75,7 @@ public class WindowTemplateTests
     // ---- 生成契约 ----
 
     [Fact]
-    public void WindowTemplate_GeneratesWindowComponentBase()
+    public void WindowTemplate_GeneratesRootTypeBase()
     {
         const string ui = """
             @using EclipseUI.Elements
@@ -90,13 +89,15 @@ public class WindowTemplateTests
 
         var code = Generated(RunFiles(("C:\\templates\\Shell.ui", ui, null)));
 
-        Assert.Contains("partial class Shell : global::EclipseUI.WindowComponent", code);
+        Assert.Contains("partial class Shell : global::EclipseUI.Window", code);
         // 内容根按普通根发射：局部变量构造并返回
-        Assert.Contains("var el0 = new global::EclipseUI.Elements.StackPanel();", code);
-        Assert.Contains("return el0;", code);
+        Assert.Contains("var el1 = new global::EclipseUI.Elements.StackPanel();", code);
+        Assert.Contains("this.Content = el1;", code);
+        Assert.DoesNotContain("return el0;", code);
         // 字面量 build-once；表达式一次性求值（无缓存字段——守卫基准是基类属性）
         Assert.Contains("this.Title = \"EclipseUI Gallery\";", code);
-        Assert.Contains("this.Width = (global::System.Double)(W);", code);
+        Assert.Contains("(global::System.Double)(W)", code);
+        Assert.Contains("this.Width = v;", code);
         Assert.DoesNotContain("__w", code);
     }
 
@@ -123,8 +124,10 @@ public class WindowTemplateTests
         Assert.Contains("private void U2()", code);
         Assert.Contains("protected override void Render()", code);
         Assert.Contains("if (!global::System.Collections.Generic.EqualityComparer<global::System.Double>.Default.Equals(this.Width, v))", code);
-        Assert.Contains("PushWindowTitle(this.Title);", code);
-        Assert.Contains("PushWindowClientSize(this.Width, this.Height);", code);
+        Assert.Contains("this.Title = v;", code);
+        Assert.DoesNotContain("PushWindowTitle", code);
+        Assert.Contains("this.Width = v;", code);
+        Assert.DoesNotContain("PushWindowClientSize", code);
     }
 
     [Fact]
@@ -145,7 +148,7 @@ public class WindowTemplateTests
     }
 
     [Fact]
-    public void WindowTemplate_NonLiveExpression_IsBuildOnce()
+    public void WindowTemplate_AllValueExpressionsUseSharedUpdatePipeline()
     {
         const string ui = """
             @using EclipseUI.Elements
@@ -160,11 +163,11 @@ public class WindowTemplateTests
 
         var code = Generated(RunFiles(("C:\\templates\\Shell.ui", ui, null)));
 
-        Assert.Contains("this.MaxFramesPerSecond = (global::System.Int32)(fps);", code);
-        Assert.Contains("this.AlwaysRender = (global::System.Boolean)(always);", code);
+        Assert.Contains("this.MaxFramesPerSecond = v;", code);
+        Assert.Contains("this.AlwaysRender = v;", code);
         // 帧调节项是创建期一次性量：不进 live 推送面
         Assert.DoesNotContain("PushWindowClientSize", code);
-        Assert.DoesNotContain("protected override void Render()", code);
+        Assert.Contains("protected override void Render()", code);
     }
 
     // ---- 组合限制（EUI060）----
@@ -211,10 +214,10 @@ public class WindowTemplateTests
             string.Join("\n", result.Diagnostics.Select(d => $"{d.Id}: {d.GetMessage()}")));
     }
 
-    // ---- 内容与属性形态（EUI061/EUI062）----
+    // ---- 内容与属性能力检查 ----
 
     [Fact]
-    public void WindowTemplate_WithoutChild_ReportsEUI061()
+    public void WindowTemplate_WithoutChild_IsValidSingleContentObject()
     {
         const string ui = """
             @using EclipseUI.Elements
@@ -223,12 +226,11 @@ public class WindowTemplateTests
 
         var result = RunFiles(("C:\\templates\\Shell.ui", ui, null));
 
-        Assert.True(HasDiagnostic(result, "EUI061"),
-            string.Join("\n", result.Diagnostics.Select(d => $"{d.Id}: {d.GetMessage()}")));
+        Assert.DoesNotContain(result.Diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
     }
 
     [Fact]
-    public void WindowTemplate_WithTwoChildren_ReportsEUI061()
+    public void WindowTemplate_WithTwoChildren_ReportsContentTypeError()
     {
         const string ui = """
             @using EclipseUI.Elements
@@ -240,12 +242,12 @@ public class WindowTemplateTests
 
         var result = RunFiles(("C:\\templates\\Shell.ui", ui, null));
 
-        Assert.True(HasDiagnostic(result, "EUI061"),
+        Assert.True(HasDiagnostic(result, "EUI021"),
             string.Join("\n", result.Diagnostics.Select(d => $"{d.Id}: {d.GetMessage()}")));
     }
 
     [Fact]
-    public void WindowTemplate_WithBlockContent_ReportsEUI061()
+    public void WindowTemplate_WithBlockContent_UsesOrdinaryElementContent()
     {
         const string ui = """
             @using EclipseUI.Elements
@@ -261,12 +263,11 @@ public class WindowTemplateTests
 
         var result = RunFiles(("C:\\templates\\Shell.ui", ui, null));
 
-        Assert.True(HasDiagnostic(result, "EUI061"),
-            string.Join("\n", result.Diagnostics.Select(d => $"{d.Id}: {d.GetMessage()}")));
+        Assert.DoesNotContain(result.Diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
     }
 
     [Fact]
-    public void WindowRoot_ClassAndBind_ReportsEUI062()
+    public void WindowRoot_ElementOnlyAttribute_ReportsTargetTypeError()
     {
         const string ui = """
             @using EclipseUI.Elements
@@ -277,7 +278,7 @@ public class WindowTemplateTests
 
         var result = RunFiles(("C:\\templates\\Shell.ui", ui, null));
 
-        Assert.True(HasDiagnostic(result, "EUI062"),
+        Assert.True(HasDiagnostic(result, "EUI002"),
             string.Join("\n", result.Diagnostics.Select(d => $"{d.Id}: {d.GetMessage()}")));
     }
 
@@ -314,10 +315,10 @@ public class WindowTemplateTests
             string.Join("\n", result.Diagnostics.Select(d => $"{d.Id}: {d.GetMessage()}")));
     }
 
-    // ---- code-behind 基类一致性（EUI063）----
+    // ---- code-behind 基类一致性 ----
 
     [Fact]
-    public void WindowTemplate_CodeBehindDerivingComponent_ReportsEUI063()
+    public void WindowTemplate_CodeBehindDerivingComponent_ReportsBaseMismatch()
     {
         const string ui = """
             @using EclipseUI.Elements
@@ -327,14 +328,14 @@ public class WindowTemplateTests
             """;
 
         var result = RunFiles(("C:\\templates\\Shell.ui", ui,
-            "public partial class Shell : global::EclipseUI.Component { }"));
+            "public partial class Shell : global::EclipseUI.Elements.StackPanel { }"));
 
-        Assert.True(HasDiagnostic(result, "EUI063"),
+        Assert.True(HasDiagnostic(result, "EUI045"),
             string.Join("\n", result.Diagnostics.Select(d => $"{d.Id}: {d.GetMessage()}")));
     }
 
     [Fact]
-    public void NormalTemplate_CodeBehindDerivingWindowComponent_ReportsEUI063()
+    public void NormalTemplate_CodeBehindDerivingWindow_ReportsBaseMismatch()
     {
         const string ui = """
             @using EclipseUI.Elements
@@ -342,14 +343,14 @@ public class WindowTemplateTests
             """;
 
         var result = RunFiles(("C:\\templates\\App.ui", ui,
-            "public partial class App : global::EclipseUI.WindowComponent { }"));
+            "public partial class App : global::EclipseUI.Window { }"));
 
-        Assert.True(HasDiagnostic(result, "EUI063"),
+        Assert.True(HasDiagnostic(result, "EUI045"),
             string.Join("\n", result.Diagnostics.Select(d => $"{d.Id}: {d.GetMessage()}")));
     }
 
     [Fact]
-    public void WindowTemplate_CodeBehindDerivingWindowComponent_IsAccepted()
+    public void WindowTemplate_CodeBehindDerivingWindow_IsAccepted()
     {
         const string ui = """
             @using EclipseUI.Elements
@@ -359,16 +360,16 @@ public class WindowTemplateTests
             """;
 
         var result = RunFiles(("C:\\templates\\Shell.ui", ui,
-            "public partial class Shell : global::EclipseUI.WindowComponent { }"));
+            "public partial class Shell : global::EclipseUI.Window { }"));
 
-        Assert.DoesNotContain(result.Diagnostics, d => d.Id is "EUI063" or "EUI045");
-        Assert.Contains("partial class Shell : global::EclipseUI.WindowComponent", Generated(result));
+        Assert.DoesNotContain(result.Diagnostics, d => d.Id == "EUI045");
+        Assert.Contains("partial class Shell : global::EclipseUI.Window", Generated(result));
     }
 
     // ---- 目录侧 ----
 
     [Fact]
-    public void Catalog_WiresWindowRoot_AndRegistersWindowTemplateAsHidden()
+    public void Catalog_UsesRootTypeAndContentAssignability()
     {
         const string ui = """
             @using EclipseUI.Elements
@@ -377,26 +378,25 @@ public class WindowTemplateTests
             </Window>
             """;
         var compilation = CreateCompilation("");
-        var declaration = UiComponentScanner.FromFile(
+        var declaration = UiTemplateScanner.FromFile(
             "C:\\templates\\Shell.ui", NamespaceDeclarationFixture.Ensure("Shell.ui", ui))!;
 
-        Assert.True(declaration.IsWindowRoot);
+        Assert.Equal("Window", declaration.RootTag);
 
         var catalog = UiCatalogFactory.Build(compilation, new[] { declaration });
 
-        // WindowRoot def：WindowComponent 的 [UiParameter] 面
-        Assert.NotNull(catalog.WindowRoot);
-        Assert.Equal("global::EclipseUI.WindowComponent", catalog.WindowRoot!.ClrTypeDisplayName);
-        Assert.Contains("Title", catalog.WindowRoot.Parameters.Keys);
-        Assert.Contains("Width", catalog.WindowRoot.Parameters.Keys);
-        Assert.Contains("Height", catalog.WindowRoot.Parameters.Keys);
-        Assert.Contains("CloseOnEscape", catalog.WindowRoot.Parameters.Keys);
-        Assert.Contains("Theme", catalog.WindowRoot.Parameters.Keys);
-        Assert.DoesNotContain(catalog.WindowRoot, catalog.Elements);
-        // 窗口模板声明 → HiddenTag（EUI060），不进 Elements
-        Assert.DoesNotContain(catalog.Elements, e => e.Tag == "Shell");
-        var hidden = Assert.Single(catalog.HiddenTags, h => h.Tag == "Shell");
-        Assert.Equal("EUI060", hidden.ReasonCode);
+        var root = Assert.Single(catalog.Elements, e => e.Tag == "Window");
+        Assert.Equal("global::EclipseUI.Window", root.ClrTypeDisplayName);
+        Assert.Contains("Title", root.Parameters.Keys);
+        Assert.Contains("Width", root.Parameters.Keys);
+        Assert.Contains("Height", root.Parameters.Keys);
+        Assert.Contains("CloseOnEscape", root.Parameters.Keys);
+        Assert.Contains("Theme", root.Parameters.Keys);
+        Assert.True(root.ContentIsSingle);
+        Assert.False(root.IsEmbeddable);
+        var shell = Assert.Single(catalog.Elements, e => e.Tag == "Shell");
+        Assert.False(shell.IsEmbeddable);
+        Assert.DoesNotContain(catalog.HiddenTags, h => h.Tag == "Shell");
     }
 
     [Fact]
@@ -409,7 +409,7 @@ public class WindowTemplateTests
             </Window>
             """;
         var compilation = CreateCompilation("");
-        var declaration = UiComponentScanner.FromFile(
+        var declaration = UiTemplateScanner.FromFile(
             "C:\\templates\\Shell.ui", NamespaceDeclarationFixture.Ensure("Shell.ui", ui))!;
 
         var first = UiCatalogFactory.Build(compilation, new[] { declaration });

@@ -50,10 +50,20 @@ public sealed class ElementCollection : IReadOnlyList<Element>
 
     public void Add(Element child)
     {
+        ArgumentNullException.ThrowIfNull(child);
+        ObjectDisposedException.ThrowIf(_owner.IsDisposed, _owner);
+        ObjectDisposedException.ThrowIf(child.IsDisposed, child);
         if (child._parent is not null)
             throw new InvalidOperationException($"Element '{child}' already has a parent.");
+        if (child._contentOwner is not null)
+            throw new InvalidOperationException($"Element '{child}' already belongs to another content owner.");
+        for (Element? ancestor = _owner; ancestor is not null; ancestor = ancestor._parent)
+            if (ReferenceEquals(ancestor, child))
+                throw new InvalidOperationException("An element cannot contain itself or an ancestor.");
+        child.EnsureInitialized();
         child._parent = _owner;
         _items.Add(child);
+        child.ReconnectUpdates();
         child._needsMeasure = true;
         child._needsArrange = true;
         _owner.InvalidateMeasure();
@@ -62,9 +72,11 @@ public sealed class ElementCollection : IReadOnlyList<Element>
 
     public bool Remove(Element child)
     {
+        var previousRoot = child.SchedulingRoot;
         if (_items.Remove(child))
         {
             child._parent = null;
+            child.ReconnectUpdates(previousRoot);
             _owner.InvalidateMeasure();
             _owner.InvalidateRender();
             return true;
@@ -75,8 +87,12 @@ public sealed class ElementCollection : IReadOnlyList<Element>
     public void Clear()
     {
         if (_items.Count == 0) return;
+        var previousRoot = _owner.SchedulingRoot;
         foreach (var child in _items)
+        {
             child._parent = null;
+            child.ReconnectUpdates(previousRoot);
+        }
         _items.Clear();
         _owner.InvalidateMeasure();
         _owner.InvalidateRender();
@@ -94,9 +110,10 @@ public sealed class ElementCollection : IReadOnlyList<Element>
 /// 元素：唯一参与布局/绘制/输入的节点。属性引擎是唯一真相源，
 /// 变更只标脏不做布局，布局在帧调度时按脏标记增量执行。
 /// </summary>
-public abstract class Element
+public abstract class Element : UiObject
 {
     internal Element? _parent;
+    internal UiObject? _contentOwner;
     private Size _desired;
     private Rect _final;
     private Size _lastMeasureConstraint;
@@ -108,8 +125,12 @@ public abstract class Element
     internal bool _needsArrange = true;
     private long _renderVersion;
     private Dictionary<StyledProperty, IValueBox>? _localValues;
+    private Dictionary<StyledProperty, IValueBox>? _templateValues;
+    private int _templateValueDepth;
     private Dictionary<StyledProperty, IValueBox>? _styleValues;
     private IReadOnlyList<string>? _classes;
+    private IReadOnlyList<string>? _templateClasses;
+    private IReadOnlyList<string>? _localClasses;
     private bool _isHovered;
     private bool _isPressed;
     private bool _isFocused;
@@ -117,9 +138,10 @@ public abstract class Element
     private Dictionary<RoutedEvent, List<Action<RoutedEventArgs>>>? _handlers;
     // 宿主安装 UiSynchronizationContext 时只绑定到根元素；Debug 线程亲和断言沿父链查找，
     // 因此块内动态创建的元素无需再登记（design/15 §15.14.3）。
-    private UiSynchronizationContext? _uiContext;
 
     public Element? Parent => _parent;
+    internal override UiObject? UpdateParent => (UiObject?)_parent ?? _contentOwner;
+    protected internal override IEnumerable<UiObject> UiChildren => VisualChildren;
     public Size DesiredSize => _desired;
     public Rect FinalRect => _final;
 
@@ -129,25 +151,6 @@ public abstract class Element
     /// 版本不变也可能因布局移动进入脏区。
     /// </summary>
     public long RenderVersion => _renderVersion;
-
-    /// <summary>由 <see cref="UiSynchronizationContext.AttachTo"/> 在宿主根元素上设置。</summary>
-    internal void BindUiContext(UiSynchronizationContext context) => _uiContext = context;
-
-    /// <summary>宿主退出帧循环时解除绑定（只清自己装的，避免覆盖后续宿主）。</summary>
-    internal void ClearUiContext(UiSynchronizationContext context)
-    {
-        if (ReferenceEquals(_uiContext, context))
-            _uiContext = null;
-    }
-
-    /// <summary>沿父链查找最近的宿主上下文；未挂到宿主树上的元素返回 null（不判定）。</summary>
-    internal UiSynchronizationContext? FindUiContext()
-    {
-        for (var node = this; node is not null; node = node._parent)
-            if (node._uiContext is { } context)
-                return context;
-        return null;
-    }
 
     /// <summary>属性变更通知（值短路：相等不触发）。</summary>
     public event Action<Element, StyledProperty>? PropertyChanged;
@@ -180,6 +183,10 @@ public abstract class Element
             _localValues.TryGetValue(property, out var box) &&
             box is ValueBox<T> typedBox)
             return typedBox.Value;
+        if (_templateValues is not null &&
+            _templateValues.TryGetValue(property, out var templateBox) &&
+            templateBox is ValueBox<T> templateTyped)
+            return templateTyped.Value;
         if (_styleValues is not null &&
             _styleValues.TryGetValue(property, out var styleBox) &&
             styleBox is ValueBox<T> styleTyped)
@@ -192,6 +199,11 @@ public abstract class Element
     public void SetValue<T>(StyledProperty<T> property, T value)
     {
         UiThreadGuard.AssertUiThread(this, nameof(SetValue));
+        if (_templateValueDepth > 0)
+        {
+            SetTemplateValue(property, value);
+            return;
+        }
         if (_localValues is not null &&
             _localValues.TryGetValue(property, out var existing) &&
             existing is ValueBox<T> typedBox)
@@ -209,6 +221,56 @@ public abstract class Element
         }
 
         ApplyValueChange(property);
+    }
+
+    /// <summary>Initializes a template root value without replacing a caller's local override.</summary>
+    public void SetTemplateValue<T>(StyledProperty<T> property, T value)
+    {
+        UiThreadGuard.AssertUiThread(this, nameof(SetTemplateValue));
+        var previous = GetValue(property);
+        if (_templateValues is not null &&
+            _templateValues.TryGetValue(property, out var existing) && existing is ValueBox<T> typed)
+        {
+            if (EqualityComparer<T>.Default.Equals(typed.Value, value)) return;
+            typed.Value = value;
+        }
+        else
+            (_templateValues ??= new())[property] = new ValueBox<T>(value);
+        if (!EqualityComparer<T>.Default.Equals(previous, GetValue(property)))
+        {
+            var previousDepth = _templateValueDepth;
+            _templateValueDepth = 0;
+            try { ApplyValueChange(property); }
+            finally { _templateValueDepth = previousDepth; }
+        }
+    }
+
+    /// <summary>Routes normal CLR setters into the template layer, preserving their validation and coercion.</summary>
+    public TemplateValueScope BeginTemplateValues()
+    {
+        UiThreadGuard.AssertUiThread(this, nameof(BeginTemplateValues));
+        var previousDepth = _templateValueDepth;
+        _templateValueDepth++;
+        return new TemplateValueScope(this, previousDepth);
+    }
+
+    public struct TemplateValueScope : IDisposable
+    {
+        private Element? _owner;
+        private readonly int _previousDepth;
+
+        internal TemplateValueScope(Element owner, int previousDepth)
+        {
+            _owner = owner;
+            _previousDepth = previousDepth;
+        }
+
+        public void Dispose()
+        {
+            if (_owner is not { } owner) return;
+            owner._templateValueDepth = _previousDepth;
+            _owner = null;
+        }
     }
 
     /// <summary>
@@ -381,28 +443,48 @@ public abstract class Element
     public IReadOnlyList<string> Classes
     {
         get => _classes ?? Array.Empty<string>();
-        set
+        set => ApplyClasses(value);
+    }
+
+    public void ApplyClasses(IReadOnlyList<string>? names)
+    {
+        var next = names ?? Array.Empty<string>();
+        if ((_localClasses ?? Array.Empty<string>()).SequenceEqual(next)) return;
+        _localClasses = next.Count == 0 ? null : next.ToArray();
+        RebuildClasses();
+    }
+
+    public void ApplyTemplateClasses(IReadOnlyList<string>? names)
+    {
+        var next = names ?? Array.Empty<string>();
+        if ((_templateClasses ?? Array.Empty<string>()).SequenceEqual(next)) return;
+        _templateClasses = next.Count == 0 ? null : next.ToArray();
+        RebuildClasses();
+    }
+
+    private void RebuildClasses()
+    {
+        var next = (_templateClasses ?? Array.Empty<string>()).Concat(_localClasses ?? Array.Empty<string>()).ToArray();
+        if ((_classes ?? Array.Empty<string>()).SequenceEqual(next)) return;
+        _classes = next.Length == 0 ? null : next;
+        if (Styling.Provider is null)
         {
-            var next = value ?? Array.Empty<string>();
-            if (_classes is not null && _classes.SequenceEqual(next))
-                return;
-            _classes = next.Count == 0 ? null : next.ToArray();
-            if (Styling.Provider is null)
-            {
-                if (!Styling.PendingClasses.Any(p => ReferenceEquals(p.Element, this)))
-                    Styling.PendingClasses.Add((this, _classes ?? Array.Empty<string>()));
-                return;
-            }
-            ReapplyStyles();
+            var index = Styling.PendingClasses.FindIndex(p => ReferenceEquals(p.Element, this));
+            var entry = (this, _classes ?? Array.Empty<string>());
+            if (index < 0) Styling.PendingClasses.Add(entry);
+            else Styling.PendingClasses[index] = entry;
+            return;
         }
+        ReapplyStyles();
     }
 
     /// <summary>清 class 层并按当前类集重应用（类集变化与伪类状态变化共用）。</summary>
     private void ReapplyStyles()
     {
         var provider = Styling.Provider;
-        if (provider is null || _classes is null) return;
+        if (provider is null) return;
         provider.ClearStyles(this);
+        if (_classes is null) return;
         foreach (var cls in _classes)
             provider.ApplyClass(this, cls);
     }
@@ -477,6 +559,7 @@ public abstract class Element
     /// </summary>
     public void Measure(Size available)
     {
+        EnsureInitialized();
         if (!_needsMeasure && available == _lastMeasureConstraint) return;
         _lastMeasureConstraint = available;
         var margin = Margin;
@@ -748,9 +831,8 @@ public abstract class Element
     }
 
     // ---- 卸载（G4，K33）----
-    // v1 限制「手工移除元素/组件根不释放资源」由本 API 补齐：显式 Unmount 触发子树级
-    // UnmountedEvent（组件根订阅后自 Dispose → 作用域 → 绑定随之解除）；
-    // 直接 Children.Remove 仍不触发（保守原语义，避免误杀重挂载场景）。
+    // 显式卸载触发子树通知并释放真实内容树及其资源；Children.Remove 只摘除，
+    // 保留节点状态以支持移动和重新挂接。
 
     /// <summary>
     /// 卸载子树：先从父级摘除（若仍在树上），再自上而下对子树每个元素触发
@@ -762,6 +844,8 @@ public abstract class Element
     {
         if (_parent is Panel panel)
             panel.Children.Remove(this);
+        else if (_contentOwner is { } owner)
+            owner.DetachContent(this);
         UnmountSubtree();
     }
 
@@ -772,11 +856,20 @@ public abstract class Element
         // OnUnmount/处理器理论上可能改动子树，快照后再递归。
         foreach (var child in VisualChildren.ToArray())
             child.UnmountSubtree();
+        Dispose();
     }
 
     /// <summary>卸载钩子：控件可在此停动画/释放原生资源；此时 Parent 已为 null。</summary>
     protected virtual void OnUnmount()
     {
+    }
+
+    protected override void OnDispose()
+    {
+        Styling.PendingClasses.RemoveAll(p => ReferenceEquals(p.Element, this));
+        _handlers?.Clear();
+        PropertyChanged = null;
+        base.OnDispose();
     }
 
     public override string ToString() => GetType().Name;

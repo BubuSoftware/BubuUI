@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using EclipseUI.Compiler;
+using EclipseUI.Compiler.Metadata;
 using EclipseUI.Compiler.Probe;
 using EclipseUI.LanguageServer.Workspace;
 using Microsoft.CodeAnalysis;
@@ -175,7 +176,7 @@ public sealed class DocumentAnalysis
     /// <summary>
     /// <c>@code</c> 块合成出的成员树（块体原文透传，K21）。重命名扫 <c>@code</c> 内的
     /// 成员引用用：块体在树文本里逐字出现，<c>IndexOf</c> 定位后加 <see cref="Compiler.TextSpan"/>
-    /// 偏移即回映到 .ui。无 <c>@code</c> 时 null。**不在探针编译里**——使用方自行 AddSyntaxTrees。
+    /// 偏移即回映到 .ui。无 <c>@code</c> 时 null；该树已在统一探针编译中。
     /// </summary>
     public SyntaxTree? MemberTree => _memberTree;
 
@@ -236,10 +237,9 @@ public sealed class DocumentAnalysis
     }
 
     /// <summary>
-    /// 表达式探针（design/06 §6.3）：懒建、每文档缓存。基编译 + 同名 code-behind 源码
-    /// （spec/02 §2.2 的 <c>{Name}.cs</c> 文件契约）+ <c>@code</c> 成员合成树 →
-    /// <see cref="ExpressionProbe"/>。code-behind 是**源码**而非程序集——这是 IDE 与
-    /// 编译期探针 Compilation 的唯一结构差异；找不到/解析不了就优雅停用，不抛。
+    /// 表达式探针（design/06 §6.3）：懒建、每文档缓存。项目编译或独立文档的统一符号视图
+    /// 包含根继承、code-behind 与 @code；通过同一个 ExpressionProbe 查询。
+    /// 找不到或解析不了时停用表达式能力，保留语法和目录服务。
     /// </summary>
     public ExpressionProbe? Probe
     {
@@ -260,14 +260,7 @@ public sealed class DocumentAnalysis
         || (_project is not null && _codeBehindPath is not null
             && string.Equals(tree.FilePath, _codeBehindPath, StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>
-    /// 项目 Compilation 已含 code-behind 与 @code 生成树（L3）——调用方<strong>不得</strong>
-    /// 再 <c>AddSyntaxTrees</c>，否则 partial 类成员重复、探针语义全错。
-    /// </summary>
-    public bool CompilationContains(SyntaxTree tree) =>
-        _project is not null && (_baseCompilation?.ContainsSyntaxTree(tree) ?? false);
-
-    /// <summary>当前分析所依附的项目快照；null = legacy dll 目录 / 内存态分析。</summary>
+    /// <summary>当前分析所依附的项目快照；null = 独立程序集目录 / 内存态分析。</summary>
     public ProjectSnapshot? Project => _project;
 
     /// <summary>工作区内的全部项目快照（L6 跨项目源码符号查询用）。</summary>
@@ -275,7 +268,7 @@ public sealed class DocumentAnalysis
 
     /// <summary>
     /// 本 .ui 的生成文档（design/18 §5.2）：项目模式且发射时记下了旁路映射才有；
-    /// legacy dll 目录 / 内存态分析为 null。键按完整路径归一（与 GeneratorHost 同口径）。
+    /// 独立程序集目录 / 内存态分析为 null。键按完整路径归一（与 GeneratorHost 同口径）。
     /// </summary>
     public GeneratedDocument? GeneratedDocument =>
         _project is not null && _documentPath is not null && _documentPath.Length > 0
@@ -332,8 +325,8 @@ public sealed class DocumentAnalysis
             if (_project is not null)
             {
                 var tree = FindProbeTree(compilation, Ast.ClassName, _codeBehindPath);
-                var type = tree is null ? null : FindTypeSymbol(compilation, tree, Ast.ClassName);
-                var namespaceName = type?.ContainingNamespace is { IsGlobalNamespace: false } ns
+                var projectType = tree is null ? null : FindTypeSymbol(compilation, tree, Ast.ClassName);
+                var projectNamespace = projectType?.ContainingNamespace is { IsGlobalNamespace: false } ns
                     ? ns.ToDisplayString()
                     : "";
                 _codeBehindTree = _codeBehindPath is null
@@ -343,44 +336,47 @@ public sealed class DocumentAnalysis
                 // @code 块体在生成树里逐字透传（Emitter.EmitCodeBlock）——用它做 span 回映，
                 // 但绝不把它再次加进编译。
                 _memberTree = FindGeneratedCodeTree(_project.GeneratedTrees, Ast);
-                return new ExpressionProbe(compilation, type, Ast.ClassName, namespaceName,
-                    ImmutableArray<SyntaxTree>.Empty, usings);
+                return new ExpressionProbe(compilation, projectType, Ast.ClassName, projectNamespace, usings);
             }
 
-            // ---- legacy：基编译零源码树，code-behind 与 @code 合成树由探针自己加 ----
-            INamedTypeSymbol? legacyType = null;
-            // spec/02 §2.2：显式 @namespace 优先（无保留值，`global` 也只是普通名字）。否则 @code
-            // 成员树与探针树会拿到与生成器不同的命名空间，partial 合并不上、{expr} 看不到 @code 成员。
-            var legacyNamespace = Ast.Namespace is { Length: > 0 } declaredNs ? declaredNs : "";
+            // 独立文档也使用与编译器相同的根类型符号视图。code-behind 是该输入编译的普通源码，
+            // @code 和根继承只由 WithTemplateTypes 一次性补全，不再另造成员树。
+            INamedTypeSymbol? sourceType = null;
             if (!string.IsNullOrEmpty(_codeBehind))
             {
                 var parseOptions = (_baseCompilation.SyntaxTrees.FirstOrDefault()?.Options as CSharpParseOptions)
                     ?? CSharpParseOptions.Default;
-                var codeBehindTree = CSharpSyntaxTree.ParseText(_codeBehind!, parseOptions);
+                var codeBehindTree = CSharpSyntaxTree.ParseText(_codeBehind!, parseOptions,
+                    path: _codeBehindPath ?? "");
                 _codeBehindTree = codeBehindTree;
                 compilation = _baseCompilation.AddSyntaxTrees(codeBehindTree);
                 var model = compilation.GetSemanticModel(codeBehindTree);
-                foreach (var declaration in codeBehindTree.GetRoot().DescendantNodes().OfType<ClassDeclarationSyntax>())
+                foreach (var sourceDeclaration in codeBehindTree.GetRoot().DescendantNodes().OfType<ClassDeclarationSyntax>())
                 {
-                    if (declaration.Identifier.ValueText != Ast.ClassName) continue;
-                    legacyType = model.GetDeclaredSymbol(declaration);
-                    if (legacyNamespace.Length == 0) legacyNamespace = NamespaceOf(declaration);
+                    if (sourceDeclaration.Identifier.ValueText != Ast.ClassName) continue;
+                    sourceType = model.GetDeclaredSymbol(sourceDeclaration);
                     break;
                 }
             }
 
-            // using 行与成员树和探针树共用（生成器口径）：模板 @using 同时给短名与别名（K31）。
-            var memberBodies = Ast.Nodes.OfType<UiCodeBlock>().Select(static block => block.Code).ToList();
-            var memberTree = ExpressionProbe.BuildMemberTree(
-                memberBodies, legacyType?.Name ?? Ast.ClassName, legacyNamespace,
-                legacyType is null || legacyType.DeclaredAccessibility == Accessibility.Public,
-                usings, compilation);
-            _memberTree = memberTree;
-            var memberTrees = memberTree is null
-                ? ImmutableArray<SyntaxTree>.Empty
-                : ImmutableArray.Create(memberTree);
-
-            return new ExpressionProbe(compilation, legacyType, Ast.ClassName, legacyNamespace, memberTrees, usings);
+            // 编写中的文档可尚未输入 @namespace 或根标签；保留已有 C# 命名空间，缺根时使用
+            // UiObject 作为临时基类。此容错只影响编辑视图，构建期语法诊断仍然保留。
+            var namespaceName = Ast.Namespace ??
+                (sourceType?.ContainingNamespace is { IsGlobalNamespace: false } sourceNamespace
+                    ? sourceNamespace.ToDisplayString() : "");
+            var declaration = UiTemplateScanner.FromFile(Ast.FileName, Text);
+            if (declaration is null) return null;
+            declaration = declaration with
+            {
+                Namespace = namespaceName,
+                RootTag = declaration.RootTag ?? "global::EclipseUI.UiObject",
+            };
+            compilation = UiCatalogFactory.WithTemplateTypes(compilation, new[] { declaration });
+            var metadataName = namespaceName.Length == 0 ? Ast.ClassName : namespaceName + "." + Ast.ClassName;
+            var type = compilation.GetTypeByMetadataName(metadataName);
+            _memberTree = compilation.SyntaxTrees.FirstOrDefault(t =>
+                t.FilePath == declaration.Path + ".catalog.cs" && declaration.CodeBlocks.Count > 0);
+            return new ExpressionProbe(compilation, type, Ast.ClassName, namespaceName, usings);
         }
         catch (Exception)
         {
@@ -424,16 +420,6 @@ public sealed class DocumentAnalysis
             if (blocks.Any(b => text.Contains(b.Code, StringComparison.Ordinal))) return tree;
         }
         return null;
-    }
-
-    private static string NamespaceOf(SyntaxNode node)
-    {
-        for (var parent = node.Parent; parent is not null; parent = parent.Parent)
-        {
-            if (parent is NamespaceDeclarationSyntax named) return named.Name.ToString();
-            if (parent is FileScopedNamespaceDeclarationSyntax scoped) return scoped.Name.ToString();
-        }
-        return "";
     }
 
     /// <summary><c>@using</c> 别名目标归一化为目录键（<c>global::</c> 前缀，无则为原样全名）。</summary>

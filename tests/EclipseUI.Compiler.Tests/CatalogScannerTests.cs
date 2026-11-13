@@ -493,9 +493,8 @@ public class CatalogScannerTests
     private const string ComponentProbe = """
         using EclipseUI;
         namespace Probe;
-        public class CardBox : Component
+        public class CardBox : global::EclipseUI.Elements.StackPanel
         {
-            protected override Element Build() => new StackPanel();
             [UiParameter(Required = true)] public string Title { get; set; } = "";
             [UiParameter] public int Count { get; set; }
             [UiParameter] public Action<int>? CountChanged { get; set; }
@@ -507,11 +506,12 @@ public class CatalogScannerTests
         """;
 
     [Fact]
-    public void Component_IsDiscoveredWithOriginComponent()
+    public void CodeControl_IsDiscoveredByItsElementBaseType()
     {
         var def = Scan(ComponentProbe)
             .Elements.Single(e => e.Tag == "CardBox");
-        Assert.Equal(UiElementOrigin.Component, def.Origin);
+        Assert.True(def.IsEmbeddable);
+        Assert.Equal("global::EclipseUI.Elements.StackPanel", def.BaseTypeDisplayName);
     }
 
     [Fact]
@@ -520,7 +520,7 @@ public class CatalogScannerTests
         var def = Scan(ComponentProbe)
             .Elements.Single(e => e.Tag == "CardBox");
 
-        Assert.Equal(["Count", "CountChanged", "OnDone", "Title"], def.Parameters.Keys.ToArray());
+        Assert.Equal(["Classes", "Count", "CountChanged", "Internal", "IsEnabled", "OnDone", "Title"], def.Parameters.Keys.ToArray());
         Assert.True(def.Parameters["Title"].Required);
         Assert.False(def.Parameters["Count"].Required);
         Assert.True(def.Parameters["OnDone"].IsDelegate);
@@ -528,8 +528,8 @@ public class CatalogScannerTests
         // {P}Changed 只在同名参数存在且为委托时回填
         Assert.Equal("CountChanged", def.Parameters["Count"].ChangedCallbackName);
         Assert.Null(def.Parameters["Title"].ChangedCallbackName);
-        // 普通 CLR 属性不是参数
-        Assert.False(def.Parameters.ContainsKey("Internal"));
+        // 普通 CLR 属性与显式声明共用模板属性表面。
+        Assert.True(def.Parameters.ContainsKey("Internal"));
         // [UiIgnore] 与 [UiParameter] 同时出现 → 忽略优先并记元数据问题（design/14 §14.6.1）
         Assert.False(def.Parameters.ContainsKey("Hidden"));
         Assert.Contains(def.Problems, p => p.Code == UiDiagnostics.ParameterDeclarationInvalid && p.MemberName == "Hidden");
@@ -553,9 +553,9 @@ public class CatalogScannerTests
         var catalog = Scan("""
             using EclipseUI;
             namespace Probe;
-            public class InitBox : Component
+            public class InitBox : global::EclipseUI.Elements.StackPanel
             {
-                protected override Element Build() => new StackPanel();
+                protected override void InitializeUi() { }
                 [UiParameter] public string Title { get; init; } = "";
             }
             """);
@@ -618,6 +618,7 @@ public class CatalogScannerTests
                 Props("ClipToBounds", "Gap", "IsHitTestVisible", "Padding"), inherited),
             ["Button"] = (UiContentModel.Text, "Label",
                 Props("IsHitTestVisible", "Label"), ["OnClick", .. inherited]),
+            ["Window"] = (UiContentModel.Children, "Content", [], []),
             ["CheckBox"] = (UiContentModel.Text, "Label",
                 Props("Checked", "IsHitTestVisible", "Label"), ["OnCheckedChanged", .. inherited]),
         };
@@ -882,7 +883,7 @@ public class CatalogScannerTests
             using System;
             using EclipseUI;
 
-            public partial class Card : Component
+            public partial class Card : global::EclipseUI.Elements.StackPanel
             {
                 [UiParameter(Required = true)] public int Count { get; set; }
                 [UiParameter] public string? Title { get; set; }
@@ -890,7 +891,7 @@ public class CatalogScannerTests
             }
             """);
         var card = Assert.Single(catalog.Elements, e => e.Tag == "Card");
-        Assert.Equal(3, card.Parameters.Count);
+        Assert.Equal(5, card.Parameters.Count);
 
         Assert.True(card.Parameters["Count"].Required);
         Assert.False(card.Parameters["Title"].Required);
@@ -906,7 +907,7 @@ public class CatalogScannerTests
             using System;
             using EclipseUI;
 
-            public partial class Card : Component
+            public partial class Card : global::EclipseUI.Elements.StackPanel
             {
                 [UiParameter] public Action? Closed { get; set; }
                 [UiParameter] public Action<int>? Picked { get; set; }
@@ -926,7 +927,7 @@ public class CatalogScannerTests
             using System;
             using EclipseUI;
 
-            public partial class Card : Component
+            public partial class Card : global::EclipseUI.Elements.StackPanel
             {
                 [UiParameter] public string? Color { get; set; }
                 [UiParameter] public Action<string?>? ColorChanged { get; set; }
@@ -944,7 +945,7 @@ public class CatalogScannerTests
             using System;
             using EclipseUI;
 
-            public partial class Card : Component
+            public partial class Card : global::EclipseUI.Elements.StackPanel
             {
                 [UiParameter] public Func<int>? Compute { get; set; }
                 [UiParameter] public ActionRef? Weird { get; set; }
@@ -965,7 +966,7 @@ public class CatalogScannerTests
             using System;
             using EclipseUI;
 
-            public partial class Card : Component
+            public partial class Card : global::EclipseUI.Elements.StackPanel
             {
                 [UiParameter] public Span<int> Slice { get; set; }
             }
@@ -984,13 +985,13 @@ public class CatalogScannerTests
             using System.Collections.Generic;
             using EclipseUI;
 
-            public partial class Card : Component
+            public partial class Card : global::EclipseUI.Elements.StackPanel
             {
                 [UiParameter]
                 [UiContent]
                 public Element? Body { get; set; }
             }
-            public partial class List : Component
+            public partial class List : global::EclipseUI.Elements.StackPanel
             {
                 [UiParameter]
                 [UiContent]
@@ -1012,7 +1013,7 @@ public class CatalogScannerTests
             using System;
             using EclipseUI;
 
-            public partial class Card : Component
+            public partial class Card : global::EclipseUI.Elements.StackPanel
             {
                 [UiParameter]
                 [UiContent]
@@ -1025,7 +1026,7 @@ public class CatalogScannerTests
     }
 
     [Fact]
-    public void ComponentClassLevelUiContent_IsRejected()
+    public void ControlClassLevelUiContent_UsesDeclaredContentMember()
     {
         var catalog = Scan("""
             using System;
@@ -1033,7 +1034,7 @@ public class CatalogScannerTests
             using EclipseUI;
 
             [UiContent]
-            public partial class Card : Component
+            public partial class Card : global::EclipseUI.Elements.StackPanel
             {
                 [UiParameter]
                 [UiContent]
@@ -1041,8 +1042,9 @@ public class CatalogScannerTests
             }
             """);
         var card = Assert.Single(catalog.Elements, e => e.Tag == "Card");
-        Assert.Contains(card.Problems, p => p.Code == UiDiagnostics.MetadataDeclarationInvalid &&
-            p.Message.Contains("[UiContent]"));
+        Assert.Equal(UiContentModel.Children, card.Content);
+        Assert.Equal("Children", card.ContentTarget);
+        Assert.DoesNotContain(card.Problems, p => p.Message.Contains("on a component type is invalid"));
     }
 
     [Fact]
@@ -1053,7 +1055,7 @@ public class CatalogScannerTests
             using System.Collections.Generic;
             using EclipseUI;
 
-            public partial class Card : Component
+            public partial class Card : global::EclipseUI.Elements.StackPanel
             {
                 [UiParameter]
                 [UiContent]
@@ -1075,7 +1077,7 @@ public class CatalogScannerTests
             using System;
             using EclipseUI;
 
-            public abstract class Base : Component
+            public abstract class Base : global::EclipseUI.Elements.StackPanel
             {
                 [UiParameter] public string? Name { get; set; }
                 [UiParameter] public Action<string?>? NameChanged { get; set; }
@@ -1086,7 +1088,7 @@ public class CatalogScannerTests
             }
             """);
         var card = Assert.Single(catalog.Elements, e => e.Tag == "Card");
-        Assert.Equal(3, card.Parameters.Count);
+        Assert.Equal(5, card.Parameters.Count);
         Assert.True(card.Parameters["Count"].Required);
         Assert.Equal("NameChanged", card.Parameters["Name"].ChangedCallbackName);
     }
@@ -1100,7 +1102,7 @@ public class CatalogScannerTests
             using System.Collections.Generic;
             using EclipseUI;
 
-            public abstract class Base : Component
+            public abstract class Base : global::EclipseUI.Elements.StackPanel
             {
                 [UiSlot("Rows")] public IReadOnlyList<Element> Rows { get; set; } = [];
             }
@@ -1124,7 +1126,7 @@ public class CatalogScannerTests
         var catalog = Scan("""
             using EclipseUI;
 
-            public class Base : Component
+            public class Base : global::EclipseUI.Elements.StackPanel
             {
                 [UiSlot("Header")] public virtual Element? Header { get; set; }
             }
@@ -1147,7 +1149,7 @@ public class CatalogScannerTests
         var catalog = Scan("""
             using EclipseUI;
 
-            public class Base : Component
+            public class Base : global::EclipseUI.Elements.StackPanel
             {
                 [UiSlot("Header")] public virtual Element? Header { get; set; }
             }
@@ -1169,7 +1171,7 @@ public class CatalogScannerTests
         var catalog = Scan("""
             using EclipseUI;
 
-            public class Base : Component
+            public class Base : global::EclipseUI.Elements.StackPanel
             {
                 [UiSlot("Header")] public virtual Element? Header { get; set; }
             }
@@ -1192,7 +1194,7 @@ public class CatalogScannerTests
             using System.Collections.Generic;
             using EclipseUI;
 
-            public partial class Card : Component
+            public partial class Card : global::EclipseUI.Elements.StackPanel
             {
                 [UiSlot("Header")] public {{declaration}} { get; set; }
             }
@@ -1210,7 +1212,7 @@ public class CatalogScannerTests
         var catalog = Scan("""
             using EclipseUI;
 
-            public partial class Card : Component
+            public partial class Card : global::EclipseUI.Elements.StackPanel
             {
                 [UiSlot("Header")] public Element? First { get; set; }
                 [UiSlot("Header")] public Element? Second { get; set; }
@@ -1233,7 +1235,7 @@ public class CatalogScannerTests
         var catalog = Scan($$"""
             using EclipseUI;
 
-            public partial class Card : Component
+            public partial class Card : global::EclipseUI.Elements.StackPanel
             {
                 {{attribute}} public Element? Header { get; set; }
             }
@@ -1251,7 +1253,7 @@ public class CatalogScannerTests
         var catalog = Scan("""
             using EclipseUI;
 
-            public partial class Card : Component
+            public partial class Card : global::EclipseUI.Elements.StackPanel
             {
                 [UiParameter] [UiSlot("Header")] public Element? Header { get; set; }
             }
@@ -1270,7 +1272,7 @@ public class CatalogScannerTests
         var catalog = Scan("""
             using EclipseUI;
 
-            public partial class Card : Component
+            public partial class Card : global::EclipseUI.Elements.StackPanel
             {
                 [UiIgnore] [UiSlot("Header")] public Element? Header { get; set; }
             }

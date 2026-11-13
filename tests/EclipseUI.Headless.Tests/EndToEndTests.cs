@@ -9,14 +9,14 @@ namespace EclipseUI.Headless.Tests;
 
 public class CounterEndToEndTests
 {
-    private static (Counter Component, HeadlessRoot Root, TextBlock Text, CheckBox CheckBox) Mount()
+    private static (Counter Control, HeadlessRoot Root, TextBlock Text, CheckBox CheckBox) Mount()
     {
         var component = new Counter();
         var root = new HeadlessRoot(component);
         root.UpdateLayout();
         return (component, root,
-            component.Root.Descendants<TextBlock>().Single(),
-            component.Root.Descendants<CheckBox>().Single());
+            component.Descendants<TextBlock>().Single(),
+            component.Descendants<CheckBox>().Single());
     }
 
     [Fact]
@@ -195,7 +195,7 @@ public class TaskListEndToEndTests
         component.Invalidate();
         root.UpdateLayout();
 
-        var panel = Assert.IsType<StackPanel>(root.Content);
+        var panel = Assert.IsAssignableFrom<StackPanel>(root.Content);
         Assert.Equal(4, panel.Gap, 5);
         var items = root.Content.Descendants<ListBoxItem>().ToList();
         Assert.Equal(3, items.Count);
@@ -218,7 +218,7 @@ public class TaskListEndToEndTests
         component.Invalidate();
         root.UpdateLayout();
 
-        var panel = Assert.IsType<StackPanel>(root.Content);
+        var panel = Assert.IsAssignableFrom<StackPanel>(root.Content);
         var header = panel.Children.OfType<TextBlock>().Single();
         Assert.Equal(header.DesiredSize.Height, panel.DesiredSize.Height, 5);
     }

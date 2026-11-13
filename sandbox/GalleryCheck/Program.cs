@@ -77,13 +77,12 @@ if (harfBuzz is not null) TextMeasurer.Current = harfBuzz;
 var theme = lightTheme ? ElementTheme.Light : new ElementTheme();
 Styling.Provider = StyleRegistry.Instance; // S-B：装配 Class 样式（类名直配 setter 序列）
 StyleBootstrap.Apply(StyleRegistry.Instance); // E1：app.eustyle 编译产物（生成的 Define 序列）
-// design/20 P2：主窗口 = MainWindow.ui 窗口模板——场景构建、挂载与 Content/RootComponent
-// 接线收敛为 CreateWindow() 一步；验证壳直接消费窗口描述与 Ref 锚点字段。
+// MainWindow.ui 直接生成 Window 派生类；先初始化，再读取内容与 Ref 锚点。
 var mainWindow = new MainWindow();
-var windowDescription = mainWindow.CreateWindow();
+mainWindow.EnsureInitialized();
 GalleryApp.WireInteractions(mainWindow); // 应用级接线（注册伪类/读回订阅/条目工厂/启用开关）
-var galleryRoot = windowDescription.RootComponent!;
-var gallery = windowDescription.Content!;
+var galleryRoot = mainWindow;
+var gallery = mainWindow.Content!;
 var counter = mainWindow.CounterView;
 var taskList = mainWindow.TaskListView;
 var addTaskButton = mainWindow.AddButton;
@@ -110,7 +109,7 @@ using (galleryRoot)
         TextPainter = textPainter,
         MaxFramesPerSecond = maxFps,
         AlwaysRender = alwaysRender,
-    }, galleryRoot);
+    }, uiRoot: galleryRoot);
 
 // S-A 主题令牌化：--light 起始浅色；Toggle theme 按钮换 token 表 → 段缓存失效 → 整帧重绘。
 var dark = !lightTheme;

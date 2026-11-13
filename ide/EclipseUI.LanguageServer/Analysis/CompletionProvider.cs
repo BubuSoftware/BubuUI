@@ -20,7 +20,7 @@ public static class CompletionProvider
 
         return context.Kind switch
         {
-            CursorKind.TagName => Tags(analysis, catalog, replacement),
+            CursorKind.TagName => Tags(analysis, catalog, context, replacement),
             CursorKind.EndTagName => ClosingTags(context, replacement),
             CursorKind.AttributeName => Attributes(analysis, catalog, context, replacement),
             CursorKind.AttributeValue => Values(analysis, catalog, context, replacement),
@@ -142,7 +142,7 @@ public static class CompletionProvider
 
     // ---- 标签 ----
 
-    private static UiCompletionList Tags(DocumentAnalysis analysis, UiCatalog catalog, TextSpan replacement)
+    private static UiCompletionList Tags(DocumentAnalysis analysis, UiCatalog catalog, CursorContext context, TextSpan replacement)
     {
         var items = new List<UiCompletionItem>();
 
@@ -151,6 +151,8 @@ public static class CompletionProvider
         var aliases = new HashSet<string>(StringComparer.Ordinal);
         foreach (var (alias, target) in analysis.Aliases.OrderBy(static a => a.Key, StringComparer.Ordinal))
         {
+            if (target is not null && context.OpenTags.Count > 0 &&
+                catalog.FindByTypeDisplayName(target) is { IsEmbeddable: false }) continue;
             if (!aliases.Add(alias)) continue;
             var detail = target is null ? "alias · unresolved target" : "alias → " + TypeNames.Short(target);
             items.Add(new UiCompletionItem(alias, UiCompletionKind.Tag, detail,
@@ -159,6 +161,7 @@ public static class CompletionProvider
 
         foreach (var element in catalog.Elements.OrderBy(static e => e.Tag, StringComparer.Ordinal))
         {
+            if (context.OpenTags.Count > 0 && !element.IsEmbeddable) continue;
             // 别名覆盖了同名标签：解析走 Aliases（ResolveVisible 优先），补全也只列一次。
             if (!aliases.Add(element.Tag)) continue;
 
@@ -167,7 +170,7 @@ public static class CompletionProvider
             // 与解析共用 IsNamespaceVisible，避免「补全说要加 using、加上又不用」。
             var imported = analysis.IsNamespaceVisible(ns);
 
-            var detail = element.Origin == UiElementOrigin.Component ? "component" : "control";
+            var detail = element.IsEmbeddable ? "control" : "UI object";
             detail += element.Content switch
             {
                 UiContentModel.Children => " · children",
@@ -286,7 +289,7 @@ public static class CompletionProvider
 
         // 组件的双向通道只有参数（{P}Changed 回调，spec/02 §4.4.3）：它身上就算有 StyledProperty
         // 属性也不是绑定目标（分析器报「not a component parameter」），所以不列。
-        if (element.Origin != UiElementOrigin.Component)
+
         {
             foreach (var property in element.Properties.Values.OrderBy(static p => p.Name, StringComparer.Ordinal))
             {
@@ -466,7 +469,7 @@ public static class CompletionProvider
         var lines = new List<string>
         {
             $"`{TypeNames.Short(element.ClrTypeDisplayName)}`",
-            element.Origin == UiElementOrigin.Component ? "component" : "control",
+            element.IsEmbeddable ? "control" : "UI object",
             $"properties: {element.Properties.Count} · events: {element.Events.Count}" +
             (element.Parameters.Count > 0 ? $" · parameters: {element.Parameters.Count}" : ""),
         };

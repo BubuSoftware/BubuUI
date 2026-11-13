@@ -45,14 +45,37 @@ public sealed class BlockScope
             _renderActions[i]();
     }
 
-    /// <summary>逆序释放作用域内资源；根元素由元素树/块持有，不在这里 Dispose。</summary>
+    /// <summary>逆序释放作用域内资源与根实例；控件资源随真实内容树释放。</summary>
     internal void DisposeResources()
     {
+        List<Exception>? failures = null;
         for (int i = _disposables.Count - 1; i >= 0; i--)
-            _disposables[i].Dispose();
+        {
+            try { _disposables[i].Dispose(); }
+            catch (Exception error) { (failures ??= new()).Add(error); }
+        }
+        foreach (var root in _roots.AsEnumerable().Reverse())
+        {
+            try { root.Dispose(); }
+            catch (Exception error) { (failures ??= new()).Add(error); }
+        }
         _disposables.Clear();
         _renderActions.Clear();
         _roots.Clear();
+        if (failures is not null) throw new AggregateException("Block scope cleanup failed.", failures);
+    }
+
+    internal void Abort(Exception original)
+    {
+        try { DisposeResources(); }
+        catch (Exception cleanup)
+        {
+            var failures = new List<Exception> { original };
+            if (cleanup is AggregateException aggregate)
+                failures.AddRange(aggregate.Flatten().InnerExceptions);
+            else failures.Add(cleanup);
+            throw new AggregateException("Block construction and cleanup failed.", failures);
+        }
     }
 }
 
@@ -77,7 +100,6 @@ public sealed class ConditionalBlock : StackPanelBase, IDisposable
     private Action<BlockScope>? _defaultBuilder;
     private BlockScope? _scope;
     private int _activeIndex = -1;
-    private bool _disposed;
 
     public void SetCondition(Func<bool> condition) => _condition = condition;
 
@@ -96,7 +118,7 @@ public sealed class ConditionalBlock : StackPanelBase, IDisposable
 
     public void Refresh()
     {
-        if (_disposed) return;
+        if (IsDisposed) return;
 
         int active;
         if (_branches.Count > 0)
@@ -141,8 +163,8 @@ public sealed class ConditionalBlock : StackPanelBase, IDisposable
 
     private void Rebuild()
     {
-        DisposeScope();
-        Children.Clear();
+        try { DisposeScope(); }
+        finally { Children.Clear(); }
         Action<BlockScope>? builder;
         if (_branches.Count > 0)
             builder = _activeIndex < 0
@@ -157,9 +179,9 @@ public sealed class ConditionalBlock : StackPanelBase, IDisposable
         {
             builder(scope);
         }
-        catch
+        catch (Exception error)
         {
-            scope.DisposeResources();
+            scope.Abort(error);
             throw;
         }
 
@@ -170,16 +192,19 @@ public sealed class ConditionalBlock : StackPanelBase, IDisposable
 
     private void DisposeScope()
     {
-        _scope?.DisposeResources();
+        var scope = _scope;
         _scope = null;
+        scope?.DisposeResources();
     }
 
-    public void Dispose()
+    protected override void OnDispose()
     {
-        if (_disposed) return;
-        _disposed = true;
-        DisposeScope();
-        Children.Clear();
+        try { DisposeScope(); }
+        finally
+        {
+            Children.Clear();
+            base.OnDispose();
+        }
     }
 }
 
@@ -203,7 +228,6 @@ public sealed class SwitchBlock<T> : StackPanelBase, IDisposable
     private Action<BlockScope>? _defaultBuilder;
     private BlockScope? _scope;
     private int _activeIndex = -1;
-    private bool _disposed;
 
     public void SetSelector(Func<T> selector) => _selector = selector;
 
@@ -219,7 +243,7 @@ public sealed class SwitchBlock<T> : StackPanelBase, IDisposable
 
     public void Refresh()
     {
-        if (_disposed || _selector is null) return;
+        if (IsDisposed || _selector is null) return;
 
         var value = _selector();
         int active = -1;
@@ -255,8 +279,8 @@ public sealed class SwitchBlock<T> : StackPanelBase, IDisposable
 
     private void Rebuild()
     {
-        DisposeScope();
-        Children.Clear();
+        try { DisposeScope(); }
+        finally { Children.Clear(); }
         var builder = _activeIndex < 0
             ? null
             : _activeIndex == _cases.Count ? _defaultBuilder : _cases[_activeIndex].Builder;
@@ -267,9 +291,9 @@ public sealed class SwitchBlock<T> : StackPanelBase, IDisposable
         {
             builder(scope);
         }
-        catch
+        catch (Exception error)
         {
-            scope.DisposeResources();
+            scope.Abort(error);
             throw;
         }
 
@@ -280,16 +304,19 @@ public sealed class SwitchBlock<T> : StackPanelBase, IDisposable
 
     private void DisposeScope()
     {
-        _scope?.DisposeResources();
+        var scope = _scope;
         _scope = null;
+        scope?.DisposeResources();
     }
 
-    public void Dispose()
+    protected override void OnDispose()
     {
-        if (_disposed) return;
-        _disposed = true;
-        DisposeScope();
-        Children.Clear();
+        try { DisposeScope(); }
+        finally
+        {
+            Children.Clear();
+            base.OnDispose();
+        }
     }
 }
 
@@ -326,7 +353,6 @@ public sealed class ForEachBlock<T> : StackPanelBase, IDisposable
     private Func<T, object?>? _keySelector;
     private Action<T, BlockScope>? _template;
     private readonly List<Entry> _entries = new();
-    private bool _disposed;
 
     public void SetItems(Func<IEnumerable<T>?> itemsGetter) => _itemsGetter = itemsGetter;
 
@@ -336,7 +362,7 @@ public sealed class ForEachBlock<T> : StackPanelBase, IDisposable
 
     public void Refresh()
     {
-        if (_disposed || _itemsGetter is null || _template is null) return;
+        if (IsDisposed || _itemsGetter is null || _template is null) return;
 
         var source = _itemsGetter();
         var items = source is null ? new List<T>() : source.ToList();
@@ -350,33 +376,58 @@ public sealed class ForEachBlock<T> : StackPanelBase, IDisposable
         }
 
         var next = new List<Entry>(items.Count);
-        foreach (var item in items)
+        var created = new List<Entry>();
+        var retained = new HashSet<Entry>();
+        try
         {
-            var key = KeyOf(item);
-            if (freeByKey.TryGetValue(key, out var queue) && queue.Count > 0)
+            foreach (var item in items)
             {
-                var entry = queue.Dequeue();
-                if (ItemEquals(entry.Item, item))
+                var key = KeyOf(item);
+                if (freeByKey.TryGetValue(key, out var queue) && queue.Count > 0)
                 {
-                    entry.Scope.RunRenderActions();
-                    next.Add(entry);
-                    continue;
+                    var entry = queue.Dequeue();
+                    if (ItemEquals(entry.Item, item))
+                    {
+                        entry.Scope.RunRenderActions();
+                        next.Add(entry);
+                        retained.Add(entry);
+                        continue;
+                    }
                 }
-
-                // 同 Key 不同 item：旧闭包捕获的 item 已失效，必须重建
-                entry.Scope.DisposeResources();
+                var fresh = CreateEntry(item, key);
+                created.Add(fresh);
+                next.Add(fresh);
             }
-
-            next.Add(CreateEntry(item, key));
+        }
+        catch (Exception original)
+        {
+            List<Exception>? failures = null;
+            for (var i = created.Count - 1; i >= 0; i--)
+            {
+                try { created[i].Scope.DisposeResources(); }
+                catch (Exception cleanup) { (failures ??= new()).Add(cleanup); }
+            }
+            if (failures is not null)
+            {
+                failures.Insert(0, original);
+                throw new AggregateException("List construction and cleanup failed.", failures);
+            }
+            throw;
         }
 
-        foreach (var queue in freeByKey.Values)
-            foreach (var leftover in queue)
-                leftover.Scope.DisposeResources();
-
+        var retired = _entries.Where(entry => !retained.Contains(entry)).ToArray();
         _entries.Clear();
         _entries.AddRange(next);
-        UpdateChildren();
+        List<Exception>? retirementFailures = null;
+        try { UpdateChildren(); }
+        catch (Exception error) { (retirementFailures ??= new()).Add(error); }
+        for (var i = retired.Length - 1; i >= 0; i--)
+        {
+            try { retired[i].Scope.DisposeResources(); }
+            catch (Exception error) { (retirementFailures ??= new()).Add(error); }
+        }
+        if (retirementFailures is not null)
+            throw new AggregateException("List update and cleanup failed.", retirementFailures);
     }
 
     private Entry CreateEntry(T item, object key)
@@ -386,9 +437,9 @@ public sealed class ForEachBlock<T> : StackPanelBase, IDisposable
         {
             _template!(item, scope);
         }
-        catch
+        catch (Exception error)
         {
-            scope.DisposeResources();
+            scope.Abort(error);
             throw;
         }
 
@@ -443,13 +494,24 @@ public sealed class ForEachBlock<T> : StackPanelBase, IDisposable
                 Children.Add(root);
     }
 
-    public void Dispose()
+    protected override void OnDispose()
     {
-        if (_disposed) return;
-        _disposed = true;
-        foreach (var entry in _entries)
-            entry.Scope.DisposeResources();
+        var entries = _entries.ToArray();
         _entries.Clear();
-        Children.Clear();
+        try
+        {
+            List<Exception>? failures = null;
+            for (var i = entries.Length - 1; i >= 0; i--)
+            {
+                try { entries[i].Scope.DisposeResources(); }
+                catch (Exception error) { (failures ??= new()).Add(error); }
+            }
+            if (failures is not null) throw new AggregateException("List scope cleanup failed.", failures);
+        }
+        finally
+        {
+            Children.Clear();
+            base.OnDispose();
+        }
     }
 }

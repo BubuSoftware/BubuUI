@@ -84,7 +84,7 @@ public sealed record TextLineSegment(TextRun Run, string Text, double FontSize, 
 public sealed record TextLayoutLine(double Y, double Height, IReadOnlyList<TextLineSegment> Segments);
 
 [UiContent(UiContentKind.TextRuns)]
-public sealed class TextBlock : Panel, ITextContentHost
+public class TextBlock : Panel, ITextContentHost
 {
     public static readonly StyledProperty<double> FontSizeProperty =
         StyledProperty<double>.Register<TextBlock>("FontSize", 14d,

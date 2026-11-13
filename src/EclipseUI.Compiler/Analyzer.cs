@@ -37,30 +37,17 @@ public static class TemplateAnalyzer
 
         // 具名插槽宿主（spec/02 §4.12.5）：自身模板中的 <ContentSlot> 按 code-behind 类的
         // [UiSlot] 属性解析。生成器/探针调用带 ownSlots（code-behind 符号扫描，权威——code-behind
-        // 类在源码里不派生 Component，目录不会有它的 def）；缺省时按目录显示名与 .ui 文件名
+        // 类型符号由模板根继承关系补齐）；缺省时按目录显示名与 .ui 文件名
         // 的短名匹配（Samples.TaskList ↔ TaskList，面向无符号的静态前端）。
         var own = ownSlots is not null
-            ? new OwnComponent(ownTypeDisplay ?? doc.ClassName, ownSlots)
-            : OwnComponentFromCatalog(doc, catalog);
+            ? new OwnTemplate(ownTypeDisplay ?? doc.ClassName, ownSlots)
+            : OwnTemplateFromCatalog(doc, catalog);
         var placed = new HashSet<string>(StringComparer.Ordinal);
         foreach (var host in Nodes(doc.Nodes).OfType<UiContentSlotNode>())
             ValidateContentSlot(host, own, doc, diags, placed);
 
-        // design/20：根节点是保留的 <Window> 且目录有模板根类型 → 窗口分支（属性 = WindowRoot
-        // def 的 [UiParameter] 面，内容 = 恰一子元素）。WindowRoot 为 null（未引用 Runtime）时
-        // 不走分支，<Window> 落回普通解析 → EUI001。
-        var firstElement = doc.Nodes.OfType<UiElement>().FirstOrDefault();
-        var windowRoot = firstElement is { Tag: "Window" } && catalog.WindowRoot is not null
-            ? firstElement
-            : null;
-
         foreach (var node in doc.Nodes)
         {
-            if (ReferenceEquals(node, windowRoot))
-            {
-                VisitWindowRoot(windowRoot, catalog, diags, scope, styleClasses, localStyleClasses);
-                continue;
-            }
             Visit(node, Ctx.Root, catalog, diags, allowKey: false, scope, styleClasses, localStyleClasses);
         }
     }
@@ -115,7 +102,7 @@ public static class TemplateAnalyzer
                 aliases[alias] = null;
                 diags.Add(UiDiagnostics.Error(UiDiagnostics.UsingAliasInvalid,
                     $"alias '{alias}' targets '{directive.AliasTarget}', which is not a UI element or component " +
-                    "exposed to templates; check the full type name (the type must derive Element/Component)",
+                    "exposed to templates; check the full type name (the type must derive UiObject)",
                     directive.NamespaceSpan));
                 continue;
             }
@@ -198,7 +185,14 @@ public static class TemplateAnalyzer
                     ? new UiTagResolution(UiTagResolutionKind.AliasUnresolved, null, null, null)
                     : new UiTagResolution(UiTagResolutionKind.Found, def, null, null);
             }
-            return catalog.Resolve(tag, _imports, _enclosing);
+            return catalog.Resolve(tag, _imports.Concat(new[] { "EclipseUI" }).ToArray(), _enclosing);
+        }
+
+        public UiTagResolution ResolveRoot(UiCatalog catalog, string tag)
+        {
+            var resolved = Resolve(catalog, tag);
+            if (resolved.Kind != UiTagResolutionKind.NotFound) return resolved;
+            return catalog.Resolve(tag, _imports.Concat(new[] { "EclipseUI" }).ToArray(), _enclosing);
         }
     }
 
@@ -231,20 +225,20 @@ public static class TemplateAnalyzer
     }
 
     /// <summary>自身组件（生成器传入符号权威表，或静态前端按目录短名匹配）。</summary>
-    private sealed record OwnComponent(string DisplayName, IReadOnlyDictionary<string, UiSlotDef> Slots);
+    private sealed record OwnTemplate(string DisplayName, IReadOnlyDictionary<string, UiSlotDef> Slots);
 
-    private static OwnComponent? OwnComponentFromCatalog(UiDocument doc, UiCatalog catalog)
+    private static OwnTemplate? OwnTemplateFromCatalog(UiDocument doc, UiCatalog catalog)
     {
-        OwnComponent? match = null;
+        OwnTemplate? match = null;
         var count = 0;
         foreach (var def in catalog.Elements)
         {
-            if (def.Origin != UiElementOrigin.Component) continue;
+            if (!def.IsTemplate) continue;
             var display = def.ClrTypeDisplayName;
             if (display != doc.ClassName &&
                 !display.EndsWith("." + doc.ClassName, StringComparison.Ordinal)) continue;
             count++;
-            match ??= new OwnComponent(def.ClrTypeDisplayName, def.Slots);
+            match ??= new OwnTemplate(def.ClrTypeDisplayName, def.Slots);
         }
         return count == 1 ? match : null;
     }
@@ -254,7 +248,7 @@ public static class TemplateAnalyzer
     /// 带内容 / 自身插槽未知 / 同名重复放置。全部通过才置 <see cref="UiContentSlotNode.ResolvedSlot"/>
     /// （生成侧按它内联拼接）。
     /// </summary>
-    private static void ValidateContentSlot(UiContentSlotNode host, OwnComponent? own, UiDocument doc,
+    private static void ValidateContentSlot(UiContentSlotNode host, OwnTemplate? own, UiDocument doc,
         List<UiDiagnostic> diags, HashSet<string> placed)
     {
         UiAttribute? nameAttr = null;
@@ -359,7 +353,7 @@ public static class TemplateAnalyzer
         }
 
         // 槽填充只挂在组件标签上（spec/01 §4.15）；控件容器内的 <Slot> 是位置错误
-        if (def.Origin != UiElementOrigin.Component)
+        if (def.Slots.Count == 0)
         {
             diags.Add(UiDiagnostics.Error(UiDiagnostics.SlotInvalid,
                 "named slot fills are only allowed as direct children of a component tag", fill.Span));
@@ -439,6 +433,10 @@ public static class TemplateAnalyzer
                     VisitBlock(ifNode.ConditionSpan, ifNode.ElseChildren, ctx, catalog, diags, allowKeyRoot: false, scope, styleClasses, localStyleClasses);
                 break;
             case UiForeach foreachNode:
+                if (foreachNode.VarName.StartsWith("__eui", StringComparison.Ordinal))
+                    diags.Add(UiDiagnostics.Error(UiDiagnostics.CodeBehindConflict,
+                        $"@foreach item '{foreachNode.VarName}' uses the reserved '__eui' prefix; choose another item name",
+                        foreachNode.CollectionSpan));
                 VisitBlock(foreachNode.CollectionSpan, foreachNode.Children, ctx, catalog, diags, allowKeyRoot: true, scope, styleClasses, localStyleClasses);
                 break;
             case UiSwitch switchNode:
@@ -669,161 +667,12 @@ public static class TemplateAnalyzer
             ? clrTypeDisplayName.Substring("global::".Length)
             : clrTypeDisplayName;
 
-    /// <summary>
-    /// design/20：窗口模板根（<c>&lt;Window&gt;</c>，Analyze 检测到 catalog.WindowRoot 时进入）。
-    /// 属性 = <see cref="UiCatalog.WindowRoot"/> def 的 [UiParameter] 面（字面量经
-    /// <see cref="UiLiterals"/> 转换、表达式交探针 EUI049，与组件参数同口径）；Class/Style/Key/
-    /// Ref/附加属性/@bind/旧语法一律 EUI062。内容必须是恰好一个子元素（EUI061），该子元素按
-    /// 模板根继续访问——组件根亦可，生成侧与普通组件根同语义（Track/Mount/Root）。
-    /// </summary>
-    private static void VisitWindowRoot(UiElement window, UiCatalog catalog, List<UiDiagnostic> diags,
-        TagScope scope, IReadOnlyCollection<string>? styleClasses,
-        IReadOnlyDictionary<string, string>? localStyleClasses)
-    {
-        var def = catalog.WindowRoot!;
-        window.ResolvedDef = def;
-        var attrSeen = new HashSet<string>(StringComparer.Ordinal);
-
-        foreach (var attr in window.Attributes)
-        {
-            if (!attrSeen.Add(attr.Name))
-            {
-                diags.Add(UiDiagnostics.Error(UiDiagnostics.DuplicateAttribute,
-                    $"'{attr.Name}' is assigned more than once on '{window.Tag}'", attr.NameSpan));
-                continue;
-            }
-            if (attr.IsLegacy)
-            {
-                diags.Add(UiDiagnostics.Error(UiDiagnostics.LegacySyntaxRemoved,
-                    attr.BindForm == UiBindForm.LegacyTwoWay
-                        ? $"'{attr.Name}:bind' has been removed; write @bind-{attr.Name}={{expression}}"
-                        : $"'{attr.Name}:value' has been removed; write {attr.Name}=... (a literal) or @bind-{attr.Name}={{expression}}",
-                    attr.NameSpan));
-                continue;
-            }
-            if (attr.IsBind || attr.Name is "Class" or "Style" or "Key" or "Ref" || attr.Name.IndexOf('.') >= 0)
-            {
-                diags.Add(UiDiagnostics.Error(UiDiagnostics.WindowAttributeInvalid,
-                    $"'{attr.Name}' is not allowed on the <Window> root: only window properties may be set " +
-                    "(the [UiParameter] surface of WindowComponent — Title, Width, Height, …)", attr.NameSpan));
-                continue;
-            }
-
-            if (!def.Parameters.TryGetValue(attr.Name, out var paramDef))
-            {
-                var hint = Suggest.Nearest(attr.Name, def.Parameters.Keys);
-                diags.Add(UiDiagnostics.Error(UiDiagnostics.UnknownProperty,
-                    $"unknown window attribute '{attr.Name}' on '<Window>'" +
-                    (hint is null ? "" : $"; did you mean '{hint}'?"), attr.NameSpan));
-                continue;
-            }
-            attr.ParamDef = paramDef;
-
-            if (attr.Kind == AttrValueKind.Literal)
-            {
-                var parser = catalog.FindLiteralParser(paramDef.TypeShape.CanonicalKey);
-                if (!UiLiterals.HasConverter(paramDef.TypeShape, parser))
-                {
-                    diags.Add(UiDiagnostics.Error(UiDiagnostics.NoLiteralConverter,
-                        $"window attribute '{attr.Name}' has no literal converter for " +
-                        $"'{paramDef.TypeShape.CanonicalKey}'; write an {{expression}} instead", attr.ValueSpan));
-                }
-                else if (UiLiterals.TryConvert(paramDef.TypeShape, attr.Value, parser,
-                             out var converted, out var error))
-                {
-                    attr.ConvertedLiteral = converted;
-                }
-                else
-                {
-                    diags.Add(UiDiagnostics.Error(UiDiagnostics.LiteralFormat,
-                        $"window attribute '{attr.Name}' {error}", attr.ValueSpan));
-                }
-            }
-        }
-
-        // 内容：恰好一个子元素（EUI061）。文本/槽/控制流块/指令都是形态错误——窗口内容
-        // 没有「多个子元素自动包裹」的语义（与「模板恰一根元素」同一哲学，不隐式包裹）。
-        UiElement? content = null;
-        var contentCount = 0;
-        foreach (var child in window.Children)
-        {
-            switch (child)
-            {
-                case UiElement element:
-                    contentCount++;
-                    content ??= element;
-                    break;
-                case UiIf or UiForeach or UiSwitch:
-                    diags.Add(UiDiagnostics.Error(UiDiagnostics.WindowContentInvalid,
-                        "control flow blocks cannot be the window content; wrap the conditional tree in an element",
-                        child.Span));
-                    break;
-                case UiText text:
-                    diags.Add(UiDiagnostics.Error(UiDiagnostics.WindowContentInvalid,
-                        "the <Window> root takes exactly one child element as the window content; text is not allowed here",
-                        text.Span));
-                    break;
-                case UiSlotNode or UiContentSlotNode:
-                    diags.Add(UiDiagnostics.Error(UiDiagnostics.WindowContentInvalid,
-                        child is UiSlotNode
-                            ? "named slot fills are only allowed as direct children of a component tag"
-                            : "'<ContentSlot>' belongs to the component's own template; it cannot be the window content",
-                        child.Span));
-                    break;
-                case UiCodeBlock block:
-                    diags.Add(UiDiagnostics.Error(UiDiagnostics.Syntax,
-                        "'@code' is only allowed at the top level of the document; move it outside the element (K21)",
-                        block.Span));
-                    break;
-                case UiStyleBlock styleBlock:
-                    diags.Add(UiDiagnostics.Error(UiDiagnostics.Syntax,
-                        "'@style' is only allowed at the top level of the document; move it outside the element",
-                        styleBlock.Span));
-                    break;
-                case UiUsingDirective usingDirective:
-                    diags.Add(UiDiagnostics.Error(UiDiagnostics.Syntax,
-                        "'@using' is only allowed at the top level of the document (K22)",
-                        usingDirective.Span));
-                    break;
-            }
-        }
-
-        if (contentCount != 1 || content is null)
-        {
-            diags.Add(UiDiagnostics.Error(UiDiagnostics.WindowContentInvalid,
-                $"the <Window> root must contain exactly one child element (the window content); found {contentCount}",
-                window.TagSpan));
-            return;
-        }
-        Visit(content, Ctx.Root, catalog, diags, allowKey: false, scope, styleClasses, localStyleClasses);
-    }
-
     private static void VisitElement(UiElement element, Ctx ctx, UiCatalog catalog, List<UiDiagnostic> diags,
         bool allowKey, TagScope scope, IReadOnlyCollection<string>? styleClasses,
         IReadOnlyDictionary<string, string>? localStyleClasses)
     {
-        // design/20：非根位置的 <Window>（保留模板根标签）。根位置的 Window 由 Analyze 的窗口
-        // 分支处理（不进 VisitElement）；窗口内容根的嵌套 <Window> 带 Ctx.Root，落回普通解析
-        // 报 EUI001（未引用 Runtime 的编译同理）。
-        if (element.Tag == "Window" && ctx != Ctx.Root)
-        {
-            diags.Add(UiDiagnostics.Error(UiDiagnostics.TemplateRootMisuse,
-                "'Window' is the reserved template-root tag (design/20): it may only appear as the single " +
-                "root element of a template, not as a tag inside another template", element.TagSpan));
-            element.ResolvedDef = null;
-            foreach (var child in element.Children)
-            {
-                // 未知标签下的槽节点仍要报位置/形状错误，不能静默漏报
-                if (child is UiSlotNode or UiContentSlotNode)
-                    diags.Add(UiDiagnostics.Error(UiDiagnostics.SlotInvalid,
-                        "named slot fills are only allowed as direct children of a resolved component tag", child.Span));
-                else
-                    Visit(child, Ctx.Container, catalog, diags, allowKey: false, scope, styleClasses, localStyleClasses);
-            }
-            return;
-        }
-
-        var resolution = scope.Resolve(catalog, element.Tag);
+        var resolution = ctx == Ctx.Root
+            ? scope.ResolveRoot(catalog, element.Tag) : scope.Resolve(catalog, element.Tag);
         if (resolution.Kind != UiTagResolutionKind.Found)
         {
             // K31：别名命中但目标不在目录——EUI048 已在 CollectAliases 报过且是 Error，
@@ -857,12 +706,27 @@ public static class TemplateAnalyzer
 
         var def = resolution.Element!;
         element.ResolvedDef = def;
-        var isComponent = def.Origin == UiElementOrigin.Component;
+        if (ctx == Ctx.Root && !def.CanInherit)
+            diags.Add(UiDiagnostics.Error(UiDiagnostics.TemplateBaseInvalid,
+                $"template root '{def.ClrTypeDisplayName}' is sealed and cannot be used as a generated base type",
+                element.TagSpan));
+        if (ctx != Ctx.Root && !def.IsEmbeddable)
+            diags.Add(UiDiagnostics.Error(UiDiagnostics.TemplateRootMisuse,
+                $"content requires EclipseUI.Element, but '{def.ClrTypeDisplayName}' is not assignable to Element",
+                element.TagSpan));
         var targetWrites = new Dictionary<string, bool>();
         var attrSeen = new Dictionary<string, bool>(StringComparer.Ordinal);
 
         foreach (var attr in element.Attributes)
         {
+            if (!def.IsEmbeddable &&
+                (attr.Name is "Class" or "Style" || attr.Name.Contains('.')))
+            {
+                diags.Add(UiDiagnostics.Error(UiDiagnostics.UnknownProperty,
+                    $"'{attr.Name}' requires an Element target; '{def.ClrTypeDisplayName}' is not an Element",
+                    attr.NameSpan));
+                continue;
+            }
             // EUI025：同一标签重复属性（spec/01 §3.1）。完全重复（同为普值赋值，不含绑定）在此收敛；
             // 名称相同但任一侧是 @bind-P/:bind 的重复仍走目标级 EUI033（S2 行为，spec/01 §3.3）。
             if (attrSeen.TryGetValue(attr.Name, out var seenIsBind))
@@ -984,8 +848,8 @@ public static class TemplateAnalyzer
 
             // 解析按 §14.5.3 分支：控件 = 保留 → 事件 → 属性；组件 = 保留 → 参数
             // （委托参数就是事件，不做 On* 推断；组件不解析 Events，design/14 §14.6.2）。
-            UiEventDef? eventDef = isComponent ? null : def.Events.TryGetValue(attr.Name, out var evt) ? evt : null;
-            UiParameterDef? paramDef = isComponent && def.Parameters.TryGetValue(attr.Name, out var prm) ? prm : null;
+            UiEventDef? eventDef = def.Events.TryGetValue(attr.Name, out var evt) ? evt : null;
+            UiParameterDef? paramDef = def.Parameters.TryGetValue(attr.Name, out var prm) ? prm : null;
             UiPropDef? propDef = null;
             if (eventDef is null && paramDef is null) def.Properties.TryGetValue(attr.Name, out propDef);
 
@@ -1024,7 +888,7 @@ public static class TemplateAnalyzer
                 {
                     diags.Add(UiDiagnostics.Error(UiDiagnostics.UnknownProperty,
                         $"'{attr.Name}' of '{element.Tag}' is not a template " +
-                        $"{(isComponent ? "parameter" : "property")}: it {notExposed}",
+                        $"property: it {notExposed}",
                         attr.NameSpan));
                     continue;
                 }
@@ -1035,7 +899,7 @@ public static class TemplateAnalyzer
                           ?? Suggest.Nearest(attr.Name, def.Parameters.Keys)
                     : Suggest.Nearest(attr.Name, def.Properties.Keys) ?? Suggest.Nearest(attr.Name, def.Events.Keys)
                           ?? Suggest.Nearest(attr.Name, def.Parameters.Keys);
-                var message = (isComponent ? "unknown parameter" : "unknown property") +
+                var message = "unknown property" +
                     $" '{attr.Name}' on '{element.Tag}'" + (hint is null ? "" : $"; did you mean '{hint}'?");
                 diags.Add(UiDiagnostics.Error(UiDiagnostics.UnknownProperty, message, attr.NameSpan));
                 continue;
@@ -1045,14 +909,14 @@ public static class TemplateAnalyzer
             attr.EventDef = eventDef;
             attr.ParamDef = paramDef;
 
-            if (attr.IsBind && isComponent)
+            if (attr.IsBind && paramDef is not null)
             {
                 // 组件 @bind 目标（design/14 §14.6.1 / spec/02 §4.4.3）：[UiParameter] + public setter
                 // + {P}Changed 委托参数；内容/槽/委托/保留参数与无回调参数 → EUI040。
                 if (paramDef is null)
                 {
                     diags.Add(UiDiagnostics.Error(UiDiagnostics.BindTargetInvalid,
-                        $"'{attr.Name}' of '{element.Tag}' is not a component parameter; @bind-{attr.Name} needs a [UiParameter] property",
+                        $"'{attr.Name}' of '{element.Tag}' is not a writable property; @bind-{attr.Name} requires a matching property",
                         attr.NameSpan));
                 }
                 else if (!paramDef.CanWrite || paramDef.IsDelegate || paramDef.IsContent || paramDef.ChangedCallbackName is null)
@@ -1067,9 +931,9 @@ public static class TemplateAnalyzer
                                 ? "; delegate parameters are events, not two-way sources"
                                 : paramDef.ChangedShapeProblem is { } shapeProblem
                                     ? "; " + shapeProblem
-                                    : $"; the component must also declare '[UiParameter] public Action<{paramDef.ClrTypeDisplayName}>? {paramDef.Name}Changed'";
+                                    : $"; declare 'public Action<{paramDef.ClrTypeDisplayName}>? {paramDef.Name}Changed' for write-back";
                     diags.Add(UiDiagnostics.Error(UiDiagnostics.BindTargetInvalid,
-                        $"@bind-{attr.Name} on '{element.Tag}' needs a writable [UiParameter] and a '{paramDef.Name}Changed' delegate parameter{why}",
+                        $"@bind-{attr.Name} on '{element.Tag}' needs a writable property and a '{paramDef.Name}Changed' callback{why}",
                         attr.NameSpan));
                 }
             }
@@ -1154,7 +1018,7 @@ public static class TemplateAnalyzer
         }
 
         // EUI027：必填参数缺失（design/14 §14.6.1；组件按源码目录 Required 标记）
-        if (isComponent)
+        if (def.Parameters.Count > 0)
         {
             foreach (var p in def.Parameters.Values)
             {
@@ -1178,7 +1042,7 @@ public static class TemplateAnalyzer
         // 内容上下文：控件按类级 [UiContent]（def.Content）；组件按 [UiContent] 参数
         // （Element? → 单根；IReadOnlyList<Element> → 多根；无 → None，spec/01 §4.14）。
         Ctx contentCtx;
-        if (isComponent)
+        if (def.Parameters.Values.Any(p => p.IsContent))
         {
             var contentParam = def.Parameters.Values.FirstOrDefault(p => p.IsContent);
             contentCtx = contentParam is null
@@ -1200,9 +1064,13 @@ public static class TemplateAnalyzer
             {
                 UiContentModel.TextRuns => Ctx.TextRuns,
                 UiContentModel.Text => Ctx.Label,
-                UiContentModel.Children => Ctx.Container,
+                UiContentModel.Children => def.ContentIsSingle ? Ctx.ContentSingle : Ctx.Container,
                 _ => Ctx.None,
             };
+            if (def.ContentIsSingle && element.Children.Count(c => c is UiElement or UiIf or UiForeach or UiSwitch) > 1)
+                diags.Add(UiDiagnostics.Error(UiDiagnostics.ContentTargetInvalid,
+                    $"'{element.Tag}.{def.ContentTarget}' accepts a single Element; only one child is allowed",
+                    element.Span));
         }
 
         foreach (var child in element.Children)
@@ -1212,13 +1080,6 @@ public static class TemplateAnalyzer
             if (child is UiSlotNode fill)
             {
                 ValidateSlotFill(element, def, fill, catalog, diags, scope, styleClasses, localStyleClasses);
-                continue;
-            }
-            if (child is UiContentSlotNode && isComponent)
-            {
-                diags.Add(UiDiagnostics.Error(UiDiagnostics.SlotInvalid,
-                    "'<ContentSlot>' belongs to the component's own template, not to a component use; " +
-                    "remove it here", child.Span));
                 continue;
             }
             if (contentCtx == Ctx.None)
@@ -1237,9 +1098,7 @@ public static class TemplateAnalyzer
                     continue;
                 }
 
-                var guidance = isComponent
-                    ? $"mark an Element? or IReadOnlyList<Element> [UiParameter] property of {def.ClrTypeDisplayName} with [UiContent] to accept default content"
-                    : $"add [UiContent] on {def.ClrTypeDisplayName} to accept children";
+                var guidance = $"add [UiContent] on {def.ClrTypeDisplayName} to accept children";
                 diags.Add(UiDiagnostics.Error(UiDiagnostics.TextNotAllowed,
                     $"'{element.Tag}' declares no content model for children; {guidance}", child.Span));
                 continue;

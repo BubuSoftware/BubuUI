@@ -6,11 +6,10 @@ using Xunit;
 namespace EclipseUI.Headless.Tests;
 
 /// <summary>
-/// spec/02 §4.12.6：组件标签上的元素级属性（Class / Style / 附加属性）落到组件根元素上。
+/// .ui 派生控件上的 Class / Style / 附加属性直接作用于控件实例。
 ///
 /// 这组用例走真实编译管线（<c>Fixtures/ComponentTagHost.ui</c> 里的
-/// <c>&lt;ComponentTagTarget Class={…} Grid.Row={…} Style="…" /&gt;</c>），钉的是行为而不只是发射文本：
-/// 组件不是 <see cref="Element"/>（spec/03 §5.3），标签上的这些属性只能在 Mount 之后写到 Root。
+/// <c>&lt;ComponentTagTarget Class={…} Grid.Row={…} Style="…" /&gt;</c>），检查样式和布局的实际行为。
 /// </summary>
 public class ComponentTagElementAttributeTests
 {
@@ -21,7 +20,7 @@ public class ComponentTagElementAttributeTests
         var host = new ComponentTagHost();
         var root = new HeadlessRoot(host);
         root.UpdateLayout();
-        var target = host.Root.Descendants<WrapPanel>().Single();
+        var target = host.Descendants<WrapPanel>().Single();
         return (host, target);
     }
 

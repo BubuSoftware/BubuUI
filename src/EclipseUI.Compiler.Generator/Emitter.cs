@@ -22,9 +22,7 @@ public sealed class Emitter
     {
         public EmitMode Mode { get; init; }
         public string? ScopeVar { get; init; }
-
-        /// <summary>内容模式下接收方组件（TrackContent 目标，spec/02 §4.12.3）。</summary>
-        public string? ContentReceiver { get; init; }
+        public string ConstructionVar { get; init; } = "__euiConstruction";
 
         public bool IsRoot => Mode == EmitMode.Root;
         public bool IsContent => Mode == EmitMode.Content;
@@ -32,10 +30,10 @@ public sealed class Emitter
         public static EmitContext Root() => new() { Mode = EmitMode.Root };
 
         public static EmitContext Block(string scopeVar)
-            => new() { Mode = EmitMode.Block, ScopeVar = scopeVar };
+            => new() { Mode = EmitMode.Block, ScopeVar = scopeVar, ConstructionVar = "__euiConstruction_" + scopeVar };
 
-        public static EmitContext Content(string receiver)
-            => new() { Mode = EmitMode.Content, ContentReceiver = receiver };
+        public static EmitContext Content(EmitContext context)
+            => new() { Mode = EmitMode.Content, ConstructionVar = context.ConstructionVar };
     }
 
     private sealed record FieldDecl(int N, string Prefix, string Type);
@@ -55,10 +53,6 @@ public sealed class Emitter
     }
 
     private readonly UiDocument _doc;
-    /// <summary>design/20：根节点为保留的 &lt;Window&gt; → 窗口模板（生成类派生 WindowComponent）。
-    /// 分析器窗口分支只在 catalog.WindowRoot 就绪时放行，错误路径已在发射前短路，所以这里
-    /// 按根标签判定与分析器口径一致。</summary>
-    private readonly bool _isWindowTemplate;
     private readonly string _accessibility;
     private readonly string _namespace;
     private readonly string _className;
@@ -89,6 +83,7 @@ public sealed class Emitter
     private readonly List<FieldDecl> _fields = new();
     private readonly List<UMethod> _uMethods = new();
     private readonly List<string> _renderCalls = new();
+    private readonly Dictionary<string, string> _contentTargets = new(StringComparer.Ordinal);
     private StringBuilder _out = null!;
     private int _indent;
     private int _varCounter;
@@ -105,7 +100,6 @@ public sealed class Emitter
         StylePropertyCatalog? styleProperties = null)
     {
         _doc = doc;
-        _isWindowTemplate = doc.Nodes.OfType<UiElement>().FirstOrDefault()?.Tag == "Window";
         _accessibility = accessibility;
         _namespace = namespaceName;
         _className = className;
@@ -129,24 +123,17 @@ public sealed class Emitter
         var root = (UiElement)_doc.Nodes.First(n => n is UiElement);
         _out = _body;
         _indent = 2;
+        Line("using var __euiConstruction = new global::EclipseUI.UiConstructionScope();");
+        Line("try");
+        Line("{");
+        _indent++;
         // E1：组件私有样式在 Build 首行幂等注册（类名带组件前缀，树重建重复调用零开销）。
         if (_styleRules.Count > 0)
             Line("__RegisterStyles();");
-        string rootVar;
-        if (_isWindowTemplate)
-        {
-            // design/20：窗口模板——Build() 产出窗口内容（恰一子元素，Analyzer 已校验并短路
-            // 错误路径）。<Window> 的属性在内容构造前赋给本类属性（this.{P} = …），CreateWindow
-            // 读它们组装 Window 描述；动态属性另发缓存字段 + U 推送（守卫 + live 回推）。
-            EmitWindowAttributes(root);
-            var content = root.Children.OfType<UiElement>().First();
-            rootVar = EmitElement(content, parentVar: null, EmitContext.Root());
-        }
-        else
-        {
-            rootVar = EmitElement(root, parentVar: null, EmitContext.Root());
-        }
-        Line($"return {rootVar};");
+        EmitElement(root, parentVar: null, EmitContext.Root(), receiver: "this");
+        Line("__euiConstruction.Complete();");
+        _indent--;
+        EmitConstructionCatch("__euiConstruction");
 
         _out = _sb;
         _indent = 0;
@@ -164,7 +151,7 @@ public sealed class Emitter
             _sb.AppendLine();
         }
         _sb.AppendLine($"{_accessibility} partial class {_className} : " +
-                       (_isWindowTemplate ? "global::EclipseUI.WindowComponent" : "global::EclipseUI.Component"));
+                       root.ResolvedDef!.ClrTypeDisplayName);
         _sb.AppendLine("{");
 
         // K21/K23 ④（D86）：@code 成员按块源码顺序透传（spec/02 §2.3 白名单第五类），
@@ -200,7 +187,7 @@ public sealed class Emitter
             _sb.AppendLine();
         }
 
-        _sb.AppendLine("    protected override global::EclipseUI.Element Build()");
+        _sb.AppendLine("    protected override void InitializeUi()");
         _sb.AppendLine("    {");
         AppendMapped(_sb, _body);
         _sb.AppendLine("    }");
@@ -210,6 +197,7 @@ public sealed class Emitter
             _sb.AppendLine();
             _sb.AppendLine("    protected override void Render()");
             _sb.AppendLine("    {");
+            _sb.AppendLine("        base.Render();");
             foreach (var call in _renderCalls)
                 _sb.Append("        ").AppendLine(call);
             _sb.AppendLine("    }");
@@ -441,9 +429,11 @@ public sealed class Emitter
     private static bool NeedsElementField(UiElement element, EmitContext ctx)
     {
         if (!ctx.IsRoot) return false;
+        if (element.Attributes.Any(attr => attr.ParamDef is { IsDelegate: false, IsContent: false } && attr.IsBind))
+            return true;
         // E2：根级 Class={expr} 走 U{N} 定向更新，与普通动态属性同样需要字段提升。
         var dynamicAttr = element.Attributes.Any(attr =>
-            (attr.PropDef is not null || attr.AttachedDef is not null ||
+            (attr.PropDef is not null || attr.ParamDef is { IsDelegate: false, IsContent: false } || attr.AttachedDef is not null ||
              (attr.Name == "Class" && attr.Kind == AttrValueKind.Expression && attr.ClassNames is null)) &&
             !attr.IsBind &&
             attr.Name != "Key" && attr.Kind == AttrValueKind.Expression);
@@ -462,11 +452,13 @@ public sealed class Emitter
             _fields.Add(new FieldDecl(n, "el", clrType));
             var field = $"__el{n}";
             Line($"{field} = new {clrType}();");
+            Line($"{ctx.ConstructionVar}.Track({field});");
             return field;
         }
 
         var local = $"el{n}";
         Line($"var {local} = new {clrType}();");
+        Line($"{ctx.ConstructionVar}.Track({local});");
         return local;
     }
 
@@ -605,85 +597,25 @@ public sealed class Emitter
     private static string ClassStatement(string target, string names, bool call) =>
         call ? $"{target}({names})" : $"{target}.Classes = {names}";
 
-    /// <summary>
-    /// design/20：窗口根属性发射（&lt;Window&gt; 上的 [UiParameter] 面）。字面量 = build-once
-    /// 赋值（§4.2）；表达式 = Build 时一次性求值 + 缓存字段，live 面（Title/Width/Height）另发
-    /// U 推送进 Render（§4.3.3 同构：相等守卫 → 写基类属性 + Push 助手回推）；帧调节项
-    /// （MaxFramesPerSecond 等）是 WindowHostOptions 固化的创建期一次性量，只发一次性赋值。
-    /// </summary>
-    private void EmitWindowAttributes(UiElement window)
-    {
-        foreach (var attr in window.Attributes)
-        {
-            if (attr.ParamDef is null) continue;        // 未解析名：Analyzer 已报 EUI002
-            if (attr.IsBind) continue;                  // EUI062 已报
-            var p = attr.ParamDef;
-            var span = AttrSpan(attr);
-
-            if (attr.Kind == AttrValueKind.Literal)
-            {
-                if (attr.ConvertedLiteral is null) continue;   // EUI003/EUI023 已报
-                MappedToken(span, $"this.{p.Name} = {attr.ConvertedLiteral};", attr.ConvertedLiteral);
-                continue;
-            }
-
-            var expr = attr.Value.Trim();
-            MappedToken(span, $"this.{p.Name} = ({p.ClrTypeDisplayName})({expr});", expr);
-            if (!IsLiveWindowProperty(p.Name)) continue;
-
-            // live 面：U 推送（Build 首调 + Render 登记）。守卫基准直接用基类属性——Build 的
-            // 一次性赋值已把它初始化为当前值，属性本身就是「上次推送值」，不需要额外缓存字段
-            // （也避开值类型字段与 `= null!` 初始化器的冲突）。
-            EmitWindowPush(p, expr, span);
-        }
-    }
-
-    /// <summary>design/20 的 live 回推面：Title 与客户区尺寸（Width/Height）。帧调节项不随失效循环更新（WindowHostOptions 固化）。</summary>
-    private static bool IsLiveWindowProperty(string name) => name is "Title" or "Width" or "Height";
-
-    /// <summary>
-    /// 窗口属性的动态推送（与组件参数推送 §4.3.3 同构）：相等守卫（基准 = 基类属性的上次值）
-    /// 下写属性并经 Push 助手回推平台。Width/Height 各自守卫但统一
-    /// <c>PushWindowClientSize(Width, Height)</c>——读取当前属性成对下发，两路推送不会发出不一致的尺寸。
-    /// </summary>
-    private void EmitWindowPush(UiParameterDef p, string expression, TextSpan span)
-    {
-        var name = $"U{_fnCounter++}";
-        var sb = new StringBuilder();
-        var savedOut = _out;
-        var savedIndent = _indent;
-        _out = sb;
-        _indent = 2;
-        var type = p.ClrTypeDisplayName;
-        MappedToken(span, $"var v = ({type})({expression});", expression);
-        Line($"if (!global::System.Collections.Generic.EqualityComparer<{type}>.Default.Equals(this.{p.Name}, v))");
-        Line("{");
-        _indent++;
-        Mapped(span, $"this.{p.Name} = v;");
-        switch (p.Name)
-        {
-            case "Title":
-                Mapped(span, "PushWindowTitle(this.Title);");
-                break;
-            default: // "Width" / "Height"（IsLiveWindowProperty 保证）
-                Mapped(span, "PushWindowClientSize(this.Width, this.Height);");
-                break;
-        }
-        _indent--;
-        Line("}");
-        _out = savedOut;
-        _indent = savedIndent;
-        _uMethods.Add(new UMethod(name, sb));
-        Line($"{name}();");
-        _renderCalls.Add($"{name}();");
-    }
-
-    private string EmitElement(UiElement element, string? parentVar, EmitContext ctx)
+    private string EmitElement(UiElement element, string? parentVar, EmitContext ctx, string? receiver = null)
     {
         var def = element.ResolvedDef!;
-        if (def.Origin == UiElementOrigin.Component)
-            return EmitComponent(element, parentVar, ctx);
-        var v = DeclareElement(element, ctx);
+        // The existing instance occupies the root ordinal; child identifiers remain stable.
+        if (receiver is not null) _varCounter++;
+        var v = receiver ?? DeclareElement(element, ctx);
+        if (def.Content == UiContentModel.Children && !def.ContentIsSingle && def.ContentTarget is { } contentTarget)
+            _contentTargets[v] = contentTarget;
+        var contentParameter = def.Parameters.Values.FirstOrDefault(p => p.IsContent);
+        if (receiver is not null)
+        {
+            // Constructor inputs and slots must be available when a code or UI base builds its content.
+            foreach (var input in element.Attributes)
+                if (input.ParamDef is { } parameter)
+                    EmitParameterAttribute(input, parameter, v, ctx);
+            if (contentParameter is not null) EmitContentParameter(element, v, contentParameter, ctx);
+            EmitSlotFills(element, v, ctx);
+            Line("base.InitializeUi();");
+        }
 
         foreach (var attr in element.Attributes)
         {
@@ -702,7 +634,8 @@ public sealed class Emitter
             // E4：塌缩注入的派生类排在解析类名之后（design/17 §2.2 派生类胜）。
             if (attr.Name == "Class")
             {
-                EmitClassAttribute(attr, element, v, ctx, call: false);
+                EmitClassAttribute(attr, element,
+                    v + (receiver is null ? ".ApplyClasses" : ".ApplyTemplateClasses"), ctx, call: true);
                 continue;
             }
 
@@ -710,7 +643,7 @@ public sealed class Emitter
             if (attr.Name == "Style" && attr.StyleSetters is { Count: > 0 } setters)
             {
                 foreach (var (statement, valueSpan) in EustyleGenerator.EmitLocalSetters(setters, v, _styleProperties))
-                    Mapped(valueSpan, statement);
+                    Mapped(valueSpan, receiver is null ? statement : $"using (this.BeginTemplateValues()) {statement}");
                 continue;
             }
 
@@ -722,12 +655,13 @@ public sealed class Emitter
                 {
                     if (attr.ConvertedLiteral is not null)        // EUI003 已报
                         MappedToken(span,
+                            (receiver is null ? "" : "using (this.BeginTemplateValues()) ") +
                             $"{attached.OwnerClrName}.{attached.SetterMethod}({v}, {attr.ConvertedLiteral});",
                             attr.ConvertedLiteral);
                 }
                 else if (attr.Kind == AttrValueKind.Expression)
                 {
-                    EmitAttachedDynamic(attached, v, attr.Value, attr.ValueSpan, ctx);
+                    EmitAttachedDynamic(attached, v, attr.Value, attr.ValueSpan, ctx, templateRoot: receiver is not null);
                 }
                 continue;
             }
@@ -742,6 +676,10 @@ public sealed class Emitter
                     : $"e => {{ {h}(e); Invalidate(); }}";
                 Line($"{v}.AddHandler({evt.DeclaringTypeName}.{evt.FieldName}, {wrapper});");
             }
+            else if (attr.ParamDef is { } parameter)
+            {
+                if (receiver is null) EmitParameterAttribute(attr, parameter, v, ctx);
+            }
             else if (attr.PropDef is null)
             {
                 // 未解析属性：Analyzer 已报 EUI002
@@ -752,20 +690,28 @@ public sealed class Emitter
             }
             else if (attr.Kind == AttrValueKind.Literal)
             {
-                MappedToken(span, $"{v}.{attr.Name} = {attr.ConvertedLiteral};", attr.ConvertedLiteral ?? "");
+                var statement = receiver is null
+                    ? $"{v}.{attr.Name} = {attr.ConvertedLiteral};"
+                    : $"using (this.BeginTemplateValues()) {v}.{attr.Name} = {attr.ConvertedLiteral};";
+                MappedToken(span, statement, attr.ConvertedLiteral ?? "");
             }
             else
             {
-                EmitDynamicUpdate(attr.Value, attr.ValueSpan, ctx, $"{v}.{attr.Name}", interpolate: false);
+                EmitDynamicUpdate(attr.Value, attr.ValueSpan, ctx, $"{v}.{attr.Name}", interpolate: false,
+                    propertyField: receiver is null ? null : $"{attr.PropDef.DeclaringTypeName}.{attr.PropDef.PropertyFieldName}");
             }
         }
 
         // E4：无 Class 属性但被塌缩注入命中的元素——发注入类列表（派生类直配）。
         if (element.InjectedClasses is { Count: > 0 } injected &&
             element.Attributes.All(static a => a.Name != "Class"))
-            Line($"{v}.Classes = {ClassArrayLiteral(injected)};");
+            Line($"{v}." + (receiver is null ? "ApplyClasses" : "ApplyTemplateClasses") + $"({ClassArrayLiteral(injected)});");
 
-        switch (def.Content)
+        if (contentParameter is not null)
+        {
+            if (receiver is null) EmitContentParameter(element, v, contentParameter, ctx);
+        }
+        else switch (def.Content)
         {
             case UiContentModel.TextRuns:
                 EmitTextRuns(element, v, ctx);
@@ -774,224 +720,93 @@ public sealed class Emitter
                 EmitLabel(element, v, def, ctx);
                 break;
             case UiContentModel.Children:
-                foreach (var child in element.Children)
+                if (def.ContentIsSingle)
+                {
+                    var roots = EmitContentRoots(element.Children, ctx);
+                    if (roots.Count > 0) Line($"{v}.{def.ContentTarget} = {roots[0]};");
+                }
+                else foreach (var child in element.Children)
                     EmitContainerChild(child, v, ctx);
                 break;
         }
 
+        if (receiver is null)
+        {
+            EmitSlotFills(element, v, ctx);
+            Line($"{v}.EnsureInitialized();");
+        }
+
         if (parentVar is not null)
-            Line($"{parentVar}.Children.Add({v});");
+            Line($"{ChildCollection(parentVar)}.Add({v});");
         return v;
     }
 
-    /// <summary>
-    /// 组件标签（spec/02 §4.12）：顺序固定 new → 作用域登记 → 参数（源码顺序）→ 内容 →
-    /// 元素级属性（Class/Style/附加属性，作用于 <c>Root</c>，§4.12.6）→ Mount() → 挂父级。
-    /// 参数形态：字面量 §4.2、动态推送 §4.3.3（U{N}/R{N} + EqualityComparer 保护）、
-    /// 委托事件 §4.6.2、@bind 回调+推送 §4.4.3、默认内容 §4.12.3。
-    /// </summary>
-    private string EmitComponent(UiElement element, string? parentVar, EmitContext ctx)
+    private void EmitContentParameter(UiElement element, string target, UiParameterDef parameter, EmitContext ctx)
     {
-        var def = element.ResolvedDef!;
-        var clrType = def.ClrTypeDisplayName;
-
-        // 字段提升：根级存在动态参数（推送 U 捕获组件变量）或 @bind 推送时需要字段；
-        // E2：根级 Class={expr} / 附加属性={expr} 同样走 U 捕获组件变量（写的是 <c>cmp.Root</c>），一并提升。
-        // 委托参数/字面量是 build-once，局部即可；块/内容内一律局部（§4.4.3 规则 5）。
-        bool needsField = ctx.IsRoot && element.Attributes.Any(attr =>
-            (attr.ParamDef is { IsDelegate: false, IsContent: false } && (attr.IsBind ||
-                (!attr.IsBind && attr.Kind == AttrValueKind.Expression))) ||
-            (attr.Name == "Class" && !attr.IsBind && attr.Kind == AttrValueKind.Expression &&
-             attr.ClassNames is null) ||
-            (attr.AttachedDef is not null && !attr.IsBind && attr.Kind == AttrValueKind.Expression));
-        var n = _varCounter++;
-        string v;
-        if (needsField)
-        {
-            _fields.Add(new FieldDecl(n, "cmp", clrType));
-            v = $"__cmp{n}";
-            Line($"{v} = new {clrType}();");
-        }
-        else
-        {
-            v = $"cmp{n}";
-            Line($"var {v} = new {clrType}();");
-        }
-
-        // 作用域登记（§4.12.1 规则 2）：登记在参数/内容之前。
-        if (ctx.IsContent)
-            Line($"{ctx.ContentReceiver}.TrackContent({v});");
-        else if (ctx.IsRoot)
-            Line($"Track({v});");
-        else
-        {
-            Line($"Adopt({v});");
-            Line($"{ctx.ScopeVar}.AddDisposable({v});");
-        }
-
-        // ① 参数与 Ref：必须在 Mount() 之前（Build 读参数）。元素级属性（Class / Style / 附加属性）
-        // 推迟到 Mount() 之后——它们的目标是组件根元素，而不是组件实例（§4.12.6）。
-        foreach (var attr in element.Attributes)
-        {
-            if (attr.Name == "Key") continue; // EUI010 已报
-            if (attr.RefTarget is not null)
-            {
-                // C5：Ref（spec/02 §4.14）——组件按实例赋给 code-behind 字段（design/14 §14.6.4）。
-                MappedToken(AttrSpan(attr), $"{attr.RefTarget} = {v};", attr.RefTarget);
-                continue;
-            }
-            if (attr.AttachedDef is not null || attr.Name is "Class" or "Style") continue;
-
-            var span = AttrSpan(attr);
-            var p = attr.ParamDef;
-            if (p is null) continue;          // 未解析名 EUI002 / 保留语法已报
-            if (p.IsContent) continue;        // P= 写内容参数 EUI021 已报；内容由子节点提供
-
-            if (p.IsDelegate)
-            {
-                // 委托参数 = 事件（§4.6.2）：表达式 → h{N}，包装赋值 + Invalidate() 父组件。
-                if (attr.IsBind || attr.Kind != AttrValueKind.Expression) continue; // EUI004/EUI040 已报
-                var h = $"h{_varCounter++}";
-                MappedToken(span, $"var {h} = ({p.ClrTypeDisplayName})({attr.Value.Trim()});", attr.Value.Trim());
-                var parms = string.Join(", ", Enumerable.Range(0, p.DelegateArity).Select(i => $"a{i}"));
-                var invoke = p.DelegateArity == 0 ? $"{h}()" : $"{h}({parms})";
-                var wrapper = p.DelegateArity == 0
-                    ? $"() => {{ {invoke}; Invalidate(); }}"
-                    : $"{parms} => {{ {invoke}; Invalidate(); }}";
-                Line($"{v}.{p.Name} = {wrapper};");
-            }
-            else if (attr.IsBind && p.ChangedCallbackName is not null)
-            {
-                // §4.4.3：先赋 {P}Changed 回调（build-once），再在源码位置推送 U{N}/R{N}。
-                var expression = attr.Value.Trim();
-                Mapped(span, $"{v}.{p.ChangedCallbackName} = v =>");
-                Line("{");
-                _indent++;
-                Line($"if (!global::System.Collections.Generic.EqualityComparer<{p.ClrTypeDisplayName}>.Default.Equals({expression}, v))");
-                Line("{");
-                _indent++;
-                MappedToken(span, $"{expression} = v;", expression);
-                Line("Invalidate();");
-                _indent--;
-                Line("}");
-                _indent--;
-                Line("};");
-                EmitParamPush(p, v, attr.Value, span, ctx);
-            }
-            else if (!attr.IsBind && attr.Kind == AttrValueKind.Literal)
-            {
-                if (attr.ConvertedLiteral is null) continue; // EUI003 已报
-                MappedToken(span, $"{v}.{p.Name} = {attr.ConvertedLiteral};", attr.ConvertedLiteral);
-            }
-            else if (attr.Kind == AttrValueKind.Expression)
-            {
-                if (ctx.IsContent)
-                {
-                    // 内容内 P={expr} 是 Build 快照（§4.12.3 规则 8）
-                    MappedToken(span, $"{v}.{p.Name} = ({p.ClrTypeDisplayName})({attr.Value.Trim()});",
-                        attr.Value.Trim());
-                    continue;
-                }
-                EmitParamPush(p, v, attr.Value, span, ctx);
-            }
-            // @bind 无回调 / 字面量写委托参数 / :bind 等非法形态：Analyzer 已报，不生成
-        }
-
-        // 默认内容（§4.12.3）：build-once 静态展开到 List<Element>，再单根/多根赋参数。
-        var contentParam = def.Parameters.Values.FirstOrDefault(p => p.IsContent);
-        if (contentParam is not null)
-        {
-            var hasContent = element.Children.Any(c => c is UiElement or UiIf or UiForeach or UiSwitch);
-            var ck = $"content{_varCounter++}";
-            Line($"var {ck} = new global::System.Collections.Generic.List<global::EclipseUI.Element>();");
-            if (hasContent)
-                EmitContentChildren(element.Children, ck, EmitContext.Content(v));
-            var single = $"{ck}.Count == 0 ? null : {ck}[0]";
-            Line($"{v}.{contentParam.Name} = {(contentParam.ContentIsMultiple ? ck : single)};");
-        }
-
-        // 具名插槽填充（§4.12.5）：按填充源码顺序聚合；同槽多次填充（Multiple）拼接进同一列表，
-        // Single 只发射首个（后续填充 Analyzer 已报 EUI022 且 ResolvedSlot 为 null）。
-        var slotFills = element.Children.OfType<UiSlotNode>().Where(f => f.ResolvedSlot is not null).ToList();
-        var emittedSlots = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var fill in slotFills)
-        {
-            var slot = fill.ResolvedSlot!;
-            if (!emittedSlots.Add(slot.Name)) continue;
-            var group = slotFills.Where(f => ReferenceEquals(f.ResolvedSlot, slot)).ToList();
-            var sv = $"slot{_varCounter++}";
-            var slotSpan = fill.NameAttribute!.ValueSpan;
-            Mapped(slotSpan,
-                $"var {sv} = new global::System.Collections.Generic.List<global::EclipseUI.Element>();");
-            foreach (var sibling in group)
-                EmitContentChildren(sibling.Children, sv, EmitContext.Content(v));
-            Mapped(slotSpan,
-                slot.Cardinality == UiSlotCardinality.Single
-                    ? $"{v}.{slot.PropertyName} = {sv}.Count == 0 ? null : {sv}[0];"
-                    : $"{v}.{slot.PropertyName} = {sv};");
-        }
-
-        Line($"{v}.Mount();");
-
-        // ② 元素级属性（§4.12.6）：目标是 cmp.Root，所以要排在 Mount() 之后、挂父级之前。
-        foreach (var attr in element.Attributes)
-        {
-            if (attr.Name == "Key" || attr.RefTarget is not null) continue;
-            if (attr.AttachedDef is null && attr.Name is not ("Class" or "Style")) continue;
-            EmitComponentElementAttribute(attr, element, v, ctx);
-        }
-
-        // E4：无 Class 属性但被塌缩注入命中的组件——注入类同样落在根元素上。
-        if (element.InjectedClasses is { Count: > 0 } cmpInjected &&
-            element.Attributes.All(static a => a.Name != "Class"))
-            Line($"{v}.ApplyClasses({ClassArrayLiteral(cmpInjected)});");
-
-        if (parentVar is not null)
-            Line($"{parentVar}.Children.Add({v}.Root);");
-        return $"{v}.Root";
+        if (!element.Children.Any(c => c is UiElement or UiIf or UiForeach or UiSwitch)) return;
+        var content = NewVar("content");
+        Line($"var {content} = new global::System.Collections.Generic.List<global::EclipseUI.Element>();");
+        EmitContentChildren(element.Children, content, EmitContext.Content(ctx));
+        Line($"{target}.{parameter.Name} = " +
+             (parameter.ContentIsMultiple ? content : $"{content}.Count == 0 ? null : {content}[0]") + ";");
     }
 
-    /// <summary>
-    /// 组件标签上的元素级属性（spec/02 §4.12.6）：Class / Style / 附加属性。三者都写到
-    /// <c>cmp.Root</c>——<c>Component</c> 不派生 <c>Element</c>（spec/03 §5.3），写在组件实例上会得到
-    /// CS1061/CS1503（历史上分析器放行、生成代码编译不过）。因此必须在 <c>Mount()</c> 之后发射
-    /// （Root 那时才存在）。
-    /// </summary>
-    private void EmitComponentElementAttribute(UiAttribute attr, UiElement element, string cmp, EmitContext ctx)
+    private void EmitParameterAttribute(UiAttribute attr, UiParameterDef p, string target, EmitContext ctx)
     {
-        var root = $"{cmp}.Root";
-
-        // G4：附加属性（design/14 §14.5.5）——组件标签上的 Grid.Row 等落到根元素上，
-        // 布局语义即「组件占据的那个格子」。
-        if (attr.AttachedDef is { } attached)
+        if (p.IsContent || attr.Name == "Key") return;
+        var span = AttrSpan(attr);
+        if (p.IsDelegate)
         {
-            if (attr.IsBind) return;                        // EUI040 已报
-            if (attr.Kind == AttrValueKind.Literal)
-            {
-                if (attr.ConvertedLiteral is not null)
-                    MappedToken(AttrSpan(attr),
-                        $"{attached.OwnerClrName}.{attached.SetterMethod}({root}, {attr.ConvertedLiteral});",
-                        attr.ConvertedLiteral);
-            }
-            else if (attr.Kind == AttrValueKind.Expression)
-            {
-                EmitAttachedDynamic(attached, root, attr.Value, attr.ValueSpan, ctx);
-            }
-            return;
+            if (attr.IsBind || attr.Kind != AttrValueKind.Expression) return;
+            var handler = NewVar("h");
+            MappedToken(span, $"var {handler} = ({p.ClrTypeDisplayName})({attr.Value.Trim()});", attr.Value.Trim());
+            var parameters = string.Join(", ", Enumerable.Range(0, p.DelegateArity).Select(i => $"a{i}"));
+            var invocation = $"{handler}({parameters})";
+            var lambda = p.DelegateArity == 0 ? "()" : $"({parameters})";
+            Line($"{target}.{p.Name} = {lambda} => {{ {invocation}; Invalidate(); }};");
         }
-
-        // E2/E4：样式类与局部样式覆盖同样作用于根元素；Class 经 ApplyClasses 与组件自身
-        // 在根上声明的类合并（外部类在后 = 冲突时外部胜）。
-        if (attr.Name == "Class")
+        else if (attr.IsBind && p.ChangedCallbackName is not null)
         {
-            EmitClassAttribute(attr, element, $"{cmp}.ApplyClasses", ctx, call: true);
-            return;
+            var expression = attr.Value.Trim();
+            Mapped(span, $"{target}.{p.ChangedCallbackName} = value =>");
+            Line("{");
+            _indent++;
+            Line($"if (!global::System.Collections.Generic.EqualityComparer<{p.ClrTypeDisplayName}>.Default.Equals({expression}, value))");
+            Line("{");
+            _indent++;
+            MappedToken(span, $"{expression} = value;", expression);
+            Line("Invalidate();");
+            _indent--;
+            Line("}");
+            _indent--;
+            Line("};");
+            EmitParamPush(p, target, attr.Value, span, ctx);
         }
-
-        if (attr.StyleSetters is { Count: > 0 } setters)
+        else if (attr.Kind == AttrValueKind.Literal)
         {
-            foreach (var (statement, valueSpan) in EustyleGenerator.EmitLocalSetters(setters, root, _styleProperties))
-                Mapped(valueSpan, statement);
+            if (attr.ConvertedLiteral is not null)
+                MappedToken(span, $"{target}.{p.Name} = {attr.ConvertedLiteral};", attr.ConvertedLiteral);
+        }
+        else if (ctx.IsContent)
+            MappedToken(span, $"{target}.{p.Name} = ({p.ClrTypeDisplayName})({attr.Value.Trim()});", attr.Value.Trim());
+        else EmitParamPush(p, target, attr.Value, span, ctx);
+    }
+
+    private void EmitSlotFills(UiElement element, string target, EmitContext ctx)
+    {
+        var fills = element.Children.OfType<UiSlotNode>().Where(f => f.ResolvedSlot is not null).ToList();
+        var emitted = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var fill in fills)
+        {
+            var slot = fill.ResolvedSlot!;
+            if (!emitted.Add(slot.Name)) continue;
+            var content = NewVar("slot");
+            Mapped(fill.NameAttribute!.ValueSpan,
+                $"var {content} = new global::System.Collections.Generic.List<global::EclipseUI.Element>();");
+            foreach (var part in fills.Where(f => ReferenceEquals(f.ResolvedSlot, slot)))
+                EmitContentChildren(part.Children, content, EmitContext.Content(ctx));
+            Mapped(fill.NameAttribute.ValueSpan, $"{target}.{slot.PropertyName} = " +
+                (slot.Cardinality == UiSlotCardinality.Multiple ? content : $"{content}.Count == 0 ? null : {content}[0]") + ";");
         }
     }
 
@@ -1161,7 +976,7 @@ public sealed class Emitter
             Mapped(span, $"if ({slot.PropertyName} is {{ }} {s})");
             Line("{");
             _indent++;
-            Mapped(span, $"{parentVar}.Children.Add({s});");
+            Mapped(span, $"{ChildCollection(parentVar)}.Add({s});");
             _indent--;
             Line("}");
         }
@@ -1170,7 +985,7 @@ public sealed class Emitter
             Mapped(span, $"foreach (var {s} in {slot.PropertyName})");
             Line("{");
             _indent++;
-            Mapped(span, $"{parentVar}.Children.Add({s});");
+            Mapped(span, $"{ChildCollection(parentVar)}.Add({s});");
             _indent--;
             Line("}");
         }
@@ -1203,6 +1018,9 @@ public sealed class Emitter
         Line($"{ctx.ScopeVar}.AddDisposable({local});");
         BlockRefresh(local, ctx);
     }
+
+    private string ChildCollection(string parent) =>
+        parent + "." + (_contentTargets.TryGetValue(parent, out var target) ? target : "Children");
 
     private void EmitContainerChild(UiNode child, string parentVar, EmitContext ctx)
     {
@@ -1325,13 +1143,14 @@ public sealed class Emitter
     /// （<paramref name="call"/>，组件标签的 <c>Class={expr}</c> 走 <c>ApplyClasses</c>）。
     /// </summary>
     private void EmitDynamicUpdate(string expression, TextSpan span, EmitContext ctx,
-        string target, bool interpolate, bool call = false)
+        string target, bool interpolate, bool call = false, string? propertyField = null)
     {
         var trimmed = expression.Trim();
         // 插值文本 $\"{(expr)}\" 的表达式前缀是 $ \" { ( 共 4 个字符。
         var body = interpolate ? $"$\"{{({trimmed})}}\"" : trimmed;
         var bodyOffset = interpolate ? 4 : 0;
-        var prefix = call ? $"{target}(" : $"{target} = ";
+        var prefix = propertyField is not null ? $"using (this.BeginTemplateValues()) {target} = " :
+            call ? $"{target}(" : $"{target} = ";
         var suffix = call ? ")" : "";
         var statement = $"{prefix}{body}{suffix}";
 
@@ -1353,10 +1172,11 @@ public sealed class Emitter
     /// 即调用前缀，供 #line 列映射。内容上下文仍是 build-once 快照。
     /// </summary>
     private void EmitAttachedDynamic(UiAttachedPropDef attached, string v,
-        string expression, TextSpan span, EmitContext ctx)
+        string expression, TextSpan span, EmitContext ctx, bool templateRoot = false)
     {
         var trimmed = expression.Trim();
-        var prefix = $"{attached.OwnerClrName}.{attached.SetterMethod}({v}, ";
+        var prefix = (templateRoot ? "using (this.BeginTemplateValues()) " : "") +
+            $"{attached.OwnerClrName}.{attached.SetterMethod}({v}, ";
         var statement = $"{prefix}{trimmed})";
 
         if (ctx.IsContent)
@@ -1387,8 +1207,10 @@ public sealed class Emitter
             Line($"var {v} = new global::EclipseUI.ConditionalBlock();");
         }
 
+        Line($"{ctx.ConstructionVar}.Track({v});");
+
         if (parentVar is not null)
-            Line($"{parentVar}.Children.Add({v});");
+            Line($"{ChildCollection(parentVar)}.Add({v});");
 
         if (!node.HasElseChain)
         {
@@ -1437,9 +1259,7 @@ public sealed class Emitter
             MappedToken(conditionSpan, $"{contentCall}(() => {trimmed}, {scopeVar} =>", trimmed);
             Line("{");
             _indent++;
-            var roots = EmitContentRoots(children, blockCtx);
-            foreach (var contentRoot in roots)
-                Line($"{scopeVar}.AddRoot({contentRoot});");
+            EmitBlockRoots(children, blockCtx);
             _indent--;
             Line("});");
             return;
@@ -1453,9 +1273,7 @@ public sealed class Emitter
         Line($"{contentCall}({scope} =>");
         Line("{");
         _indent++;
-        var contentRoots = EmitContentRoots(children, branchCtx);
-        foreach (var contentRoot in contentRoots)
-            Line($"{scope}.AddRoot({contentRoot});");
+        EmitBlockRoots(children, branchCtx);
         _indent--;
         Line("});");
     }
@@ -1468,9 +1286,7 @@ public sealed class Emitter
         Line($"{call}({scopeVar} =>");
         Line("{");
         _indent++;
-        var roots = EmitContentRoots(children, blockCtx);
-        foreach (var contentRoot in roots)
-            Line($"{scopeVar}.AddRoot({contentRoot});");
+        EmitBlockRoots(children, blockCtx);
         _indent--;
         Line("});");
     }
@@ -1493,8 +1309,10 @@ public sealed class Emitter
             Line($"var {v} = new global::EclipseUI.ForEachBlock<{fqItem}>();");
         }
 
+        Line($"{ctx.ConstructionVar}.Track({v});");
+
         if (parentVar is not null)
-            Line($"{parentVar}.Children.Add({v});");
+            Line($"{ChildCollection(parentVar)}.Add({v});");
 
         MappedToken(node.CollectionSpan, $"{v}.SetItems(() => {node.Collection.Trim()});",
             node.Collection.Trim());
@@ -1515,9 +1333,7 @@ public sealed class Emitter
         Line($"{v}.SetTemplate(({fqItem} {itemVar}, global::EclipseUI.BlockScope {scopeVar}) =>");
         Line("{");
         _indent++;
-        var roots = EmitContentRoots(node.Children, blockCtx);
-        foreach (var contentRoot in roots)
-            Line($"{scopeVar}.AddRoot({contentRoot});");
+        EmitBlockRoots(node.Children, blockCtx);
         _indent--;
         Line("});");
 
@@ -1562,8 +1378,10 @@ public sealed class Emitter
             Line($"var {v} = new global::EclipseUI.SwitchBlock<{t}>();");
         }
 
+        Line($"{ctx.ConstructionVar}.Track({v});");
+
         if (parentVar is not null)
-            Line($"{parentVar}.Children.Add({v});");
+            Line($"{ChildCollection(parentVar)}.Add({v});");
 
         MappedToken(node.ValueSpan, $"{v}.SetSelector(() => {node.Value.Trim()});", node.Value.Trim());
 
@@ -1579,9 +1397,7 @@ public sealed class Emitter
             MappedToken(section.LabelSpan, $"{v}.AddCase({section.Label}, {scopeVar} =>", section.Label);
             Line("{");
             _indent++;
-            var roots = EmitContentRoots(section.Children, blockCtx);
-            foreach (var contentRoot in roots)
-                Line($"{scopeVar}.AddRoot({contentRoot});");
+            EmitBlockRoots(section.Children, blockCtx);
             _indent--;
             Line("});");
         }
@@ -1599,6 +1415,32 @@ public sealed class Emitter
         }
 
         return v;
+    }
+
+    private void EmitBlockRoots(List<UiNode> children, EmitContext ctx)
+    {
+        Line($"using var {ctx.ConstructionVar} = new global::EclipseUI.UiConstructionScope();");
+        Line("try");
+        Line("{");
+        _indent++;
+        var roots = EmitContentRoots(children, ctx);
+        foreach (var contentRoot in roots)
+            Line($"{ctx.ScopeVar}.AddRoot({contentRoot});");
+        Line($"{ctx.ConstructionVar}.Complete();");
+        _indent--;
+        EmitConstructionCatch(ctx.ConstructionVar);
+    }
+
+    private void EmitConstructionCatch(string scope)
+    {
+        Line("}");
+        Line("catch (global::System.Exception __euiConstructionError)");
+        Line("{");
+        _indent++;
+        Line($"{scope}.Abort(__euiConstructionError);");
+        Line("throw;");
+        _indent--;
+        Line("}");
     }
 
     private List<string> EmitContentRoots(List<UiNode> children, EmitContext ctx)

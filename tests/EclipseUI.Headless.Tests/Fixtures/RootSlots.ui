@@ -1,0 +1,6 @@
+@namespace EclipseUI.Headless.Tests
+@using EclipseUI.Elements
+
+<RootSlotCard>
+    <Slot Name="Header"><TextBlock>header from ui</TextBlock></Slot>
+</RootSlotCard>

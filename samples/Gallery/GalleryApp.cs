@@ -20,9 +20,10 @@ public sealed class GalleryApp : Application
         var options = Services.GetRequiredService<GalleryLaunchOptions>();
 
         var mainWindow = new MainWindow { W = options.Width, H = options.Height };
-        var window = mainWindow.CreateWindow();
+        mainWindow.EnsureInitialized();
+        var window = mainWindow;
 
-        // CLI 帧循环/调试旋钮：窗口描述是纯数据（D101），材料化前可自由补写。
+        // CLI 帧循环/调试旋钮：在平台创建窗口之前设置。
         window.MaxFramesPerSecond = options.MaxFps;
         window.AlwaysRender = options.AlwaysRender;
         window.MaxTicks = options.Frames;

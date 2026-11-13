@@ -866,7 +866,7 @@ public sealed class LanguageServerHost
     private static SymbolKindDto ToSymbolKind(UiSymbolKind kind) => kind switch
     {
         UiSymbolKind.Control => SymbolKindDto.Class,
-        UiSymbolKind.Component => SymbolKindDto.Object,
+        UiSymbolKind.UiObject => SymbolKindDto.Object,
         UiSymbolKind.Block => SymbolKindDto.Module,
         _ => SymbolKindDto.Module,
     };

@@ -391,10 +391,10 @@ public sealed class ProjectWorkspace
 
         var generated = GeneratorHost.Run(compilation, additional, parseOptions, evaluation.RootNamespace);
         // spec/02 §2.7：目录与编译器同源——输入编译 + .ui 声明清单。
-        // 此前这里建在生成后编译上（看得见 .g.cs 里的 `: Component`），而真正跑构建的生成器
+        // 此前这里建在生成后编译上（看得见 .g.cs 里的 `: global::EclipseUI.Elements.StackPanel`），而真正跑构建的生成器
         // 看不见自己的产物，于是同一个标签「编辑器里绿、dotnet build 报 EUI001」。
         // 清单来自 AdditionalFiles，与生成器读的 AdditionalTexts 是同一批文件、同一份提取器。
-        var catalog = UiCatalogFactory.Build(compilation, UiComponentScanner.FromFiles(additional));
+        var catalog = UiCatalogFactory.Build(compilation, UiTemplateScanner.FromFiles(additional));
         var diagnostics = MapDiagnostics(evaluation, generated.Diagnostics, generated.Compilation);
 
         _log?.Invoke($"project '{evaluation.AssemblyName}': {trees.Count} trees, " +

@@ -5,29 +5,22 @@ using Xunit;
 
 namespace EclipseUI.Ide.Tests;
 
-/// <summary>镜像真实 server 条件的临时诊断（打包目录 Runtime.dll + 空工作区）。</summary>
+/// <summary>镜像发布后的 server：仅从当前 Runtime.dll 元数据建目录，无项目源码。</summary>
 public class MirrorDecompileTests
 {
     [Fact]
-    public void Decompile_WithBundledServerRuntime()
+    public void Decompile_WithCurrentServerRuntimeMetadata()
     {
-        // repo root = tests bin 的上溯（EclipseUI.Ide.Tests/bin/Debug/net10.0 → repo）
-        var dir = AppContext.BaseDirectory;
-        string? repo = null;
-        for (var cur = new DirectoryInfo(dir); cur is not null; cur = cur.Parent)
-        {
-            if (Directory.Exists(Path.Combine(cur.FullName, "ide", "vscode", "server"))) { repo = cur.FullName; break; }
-        }
-        Assert.False(repo is null, "repo layout not found");
-
-        var serverDir = Path.Combine(repo!, "ide", "vscode", "server");
+        // Test the currently built runtime, rather than an ignored, possibly stale local publish.
         var provider = new CatalogProvider(new CatalogOptions
         {
-            RuntimePath = Path.Combine(serverDir, "EclipseUI.Runtime.dll"),
+            RuntimePath = typeof(UiObject).Assembly.Location,
             IncludeSiblingAssemblies = false,
         });
         var catalog = provider.Catalog;
-        Assert.True(catalog.Elements.Count > 0, "bundled catalog is empty");
+        Assert.True(catalog.Elements.Count > 0, "runtime catalog is empty");
+        var compilation = Assert.IsType<Microsoft.CodeAnalysis.CSharp.CSharpCompilation>(provider.Compilation);
+        Assert.Null(compilation.GetTypeByMetadataName("EclipseUI.Component"));
 
         var analysis = DocumentAnalysis.Create(
             "<TextBlock />", "ProbeDoc.ui", catalog, provider.Compilation, null);

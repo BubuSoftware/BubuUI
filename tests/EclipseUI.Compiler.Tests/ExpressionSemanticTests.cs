@@ -21,7 +21,7 @@ public class ExpressionSemanticTests
     private const string CodeBehind = """
         using EclipseUI;
 
-        public partial class Probe : Component
+        public partial class Probe : global::EclipseUI.Elements.StackPanel
         {
             public int count;
             public string name = "";
@@ -51,7 +51,7 @@ public class ExpressionSemanticTests
             .Split(System.IO.Path.PathSeparator)
             .Select(path => (MetadataReference)MetadataReference.CreateFromFile(path))
             .ToList();
-        references.Add(MetadataReference.CreateFromFile(typeof(global::EclipseUI.Component).Assembly.Location));
+        references.Add(MetadataReference.CreateFromFile(typeof(global::EclipseUI.UiObject).Assembly.Location));
 
         var fixture = NamespaceDeclarationFixture.Prepare(UiPath, CodeBehind);
 

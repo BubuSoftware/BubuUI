@@ -95,7 +95,6 @@ internal static class TestHost
         element = new UiElementDef(
             "Box",
             "global::Probe.Box",
-            UiElementOrigin.Control,
             UiContentModel.Children,
             null,
             new Dictionary<string, UiPropDef>(StringComparer.Ordinal) { ["Align"] = property },

@@ -130,7 +130,7 @@ public static class DefinitionProvider
             b => offset >= b.CodeSpan.Start && offset <= b.CodeSpan.Start + b.CodeSpan.Length);
         if (block is null) return null;
 
-        // design/18 §5.2：项目模式走统一映射（发射时记录）；legacy 合成树仍按块体原文定位。
+        // design/18 §5.2：项目模式走统一映射（发射时记录）；符号视图按块体原文定位。
         int bodyStart;
         if (analysis.GeneratedDocument is { } generated && ReferenceEquals(generated.Tree, memberTree))
         {
@@ -145,10 +145,8 @@ public static class DefinitionProvider
         var treeOffset = bodyStart + (offset - block.CodeSpan.Start);
 
         // 项目模式下 @code 生成树已在项目 Compilation 里（L3），重复 AddSyntaxTrees 会让
-        // partial 类成员翻倍；legacy 模式才需要把合成成员树加进派生编译。
-        var augmented = analysis.CompilationContains(memberTree)
-            ? probe.Compilation
-            : probe.Compilation.AddSyntaxTrees(memberTree);
+        // partial 类成员翻倍；独立文档同样已将成员树放进统一编译，不再重复添加。
+        var augmented = probe.Compilation;
         var model = augmented.GetSemanticModel(memberTree);
 
         var token = memberTree.GetRoot().FindToken(treeOffset);
@@ -558,7 +556,7 @@ public static class DefinitionProvider
 
         // L6（§6.9.3）：项目 Compilation 的符号查询是标签跳转的唯一事实源——
         // GetTypeByMetadataName → Locations.FirstOrDefault(IsInSource) → 真实源码文件。
-        // 正则扫文本（同名取第一个会跳错命名空间）只在没有项目 Compilation 的 legacy 路径保留。
+        // 正则扫文本（同名取第一个会跳错命名空间）只在没有项目 Compilation 的独立文档路径保留。
         if (analysis.Project is not null && compilation is not null)
         {
             var symbol = FindTypeSymbol(compilation, displayName);

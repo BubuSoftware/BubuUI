@@ -3,7 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace EclipseUI;
 
 /// <summary>
-/// 主题对象标记（D101）：让 Runtime 层的窗口描述/构建器能表达「默认主题」而不认识具体
+/// 主题对象标记：让 Runtime 层的窗口对象/构建器能表达「默认主题」而不认识具体
 /// 主题类型（<c>ElementTheme</c> 在 Rendering——依赖方向 Rendering→Runtime，不可反向）。
 /// </summary>
 public interface IHostTheme
@@ -49,7 +49,7 @@ internal sealed class EmptyServiceProvider : IServiceProvider
 
 /// <summary>
 /// 应用基类（D101，Avalonia 式启动形态）：子类在 <see cref="OnFrameworkInitializationCompleted"/>
-/// 里创建 <see cref="MainWindow"/>（描述式 <see cref="Window"/>），平台生命周期负责把它材料化成
+/// 里创建 <see cref="MainWindow"/>（<see cref="Window"/> 实例），平台生命周期负责为它创建
 /// 真实窗口 + 帧循环。依赖注入经 <see cref="Services"/>（Microsoft.Extensions.DependencyInjection）。
 /// </summary>
 public abstract class Application
@@ -57,7 +57,7 @@ public abstract class Application
     /// <summary>应用容器；<see cref="AppBuilder.Build"/> 前为空实现。</summary>
     public IServiceProvider Services { get; internal set; } = EmptyServiceProvider.Instance;
 
-    /// <summary>主窗口描述；子类在 <see cref="OnFrameworkInitializationCompleted"/> 里设置。</summary>
+    /// <summary>主窗口对象；子类在 <see cref="OnFrameworkInitializationCompleted"/> 里设置。</summary>
     public Window? MainWindow { get; set; }
 
     /// <summary>构建期默认主题（<see cref="AppBuilder.UseTheme"/>，传 <c>ElementTheme.Dark/Light</c> 等即可）；窗口未显式指定时生效。</summary>

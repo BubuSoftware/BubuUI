@@ -123,7 +123,7 @@ public class AppBuilderTests
 
         Assert.Equal(string.Empty, window.Title);
         Assert.Null(window.Content);
-        Assert.Null(window.RootComponent);
+        Assert.IsAssignableFrom<UiObject>(window);
         Assert.Null(window.Theme);
         Assert.Equal(0, window.MaxFramesPerSecond);   // 交给 vsync / GPU 队列
         Assert.False(window.AlwaysRender);
@@ -150,8 +150,7 @@ public class AppBuilderTests
             Assert.Equal(options.Width, window.Width);
             Assert.Equal(options.Height, window.Height);
             Assert.NotNull(window.Content);
-            Assert.NotNull(window.RootComponent);
-            Assert.True(window.RootComponent.IsMounted);
+            Assert.NotNull(Assert.IsType<MainWindow>(window).CounterView);
             Assert.Same(ElementTheme.Dark, app.DefaultTheme);
             Assert.Same(StyleRegistry.Instance, Styling.Provider);
         }

@@ -13,8 +13,8 @@ namespace EclipseUI.Compiler.Tests;
 
 /// <summary>
 /// <c>@bind-P</c> 的目标必须「支持绑定」（spec/01 §4.5）：
-/// 控件 = 具名 <c>{P}Property</c> 的公开可写属性；组件 = 可写且有 <c>{P}Changed</c> 的
-/// <c>[UiParameter]</c>。本文件盯的是**不可绑目标**的报法：
+/// 公开可写属性通过具名 <c>{P}Property</c> 或同类型 <c>{P}Changed</c> 回调支持双向绑定。
+/// 普通 CLR setter 可用于单向赋值，不要求声明 <c>[UiParameter]</c>。本文件盯的是不可绑目标的报法：
 /// 名字存在 → EUI040 带原因；名字不存在 → 仍 EUI002。两者混为一谈会让人去改拼写。
 /// </summary>
 public class BindTargetTests
@@ -24,18 +24,18 @@ public class BindTargetTests
     private const string Controls =
         "public partial class Probe { public bool flag; public string text = \"\"; }";
 
-    private const string WithComponent = """
+    private const string WithControl = """
         using System;
         using EclipseUI;
 
         public partial class Probe { public bool flag; public string text = ""; }
 
-        public class Card : Component
+        public class Card : global::EclipseUI.Elements.StackPanel
         {
             public string Plain { get; set; } = "";
-            [UiParameter] public string? Title { get; set; }
-            [UiParameter] public string? Color { get; set; }
-            [UiParameter] public Action<string?>? ColorChanged { get; set; }
+            public string? Title { get; set; }
+            public string? Color { get; set; }
+            public Action<string?>? ColorChanged { get; set; }
         }
         """;
 
@@ -100,9 +100,9 @@ public class BindTargetTests
     }
 
     [Fact]
-    public void ComponentParameterWithChanged_IsAccepted()
+    public void PlainPropertyWithChanged_IsAccepted()
     {
-        var result = Run(Ui("@bind-Color={text}", "Card"), WithComponent);
+        var result = Run(Ui("@bind-Color={text}", "Card"), WithControl);
 
         Assert.Empty(result.Diagnostics);
         Assert.Contains("ColorChanged", result.GeneratedSources.Single().SourceText.ToString());
@@ -120,7 +120,7 @@ public class BindTargetTests
         const string codeBehind = """
             public partial class Probe { public int count; }
 
-            public class Counter : global::EclipseUI.Component
+            public class Counter : global::EclipseUI.Elements.StackPanel
             {
                 [global::EclipseUI.UiParameter] public int Count { get; set; }
                 [global::EclipseUI.UiParameter] public global::System.Action? CountChanged { get; set; }
@@ -144,7 +144,7 @@ public class BindTargetTests
         const string codeBehind = """
             public partial class Probe { public int count; }
 
-            public class Counter : global::EclipseUI.Component
+            public class Counter : global::EclipseUI.Elements.StackPanel
             {
                 [global::EclipseUI.UiParameter] public int Count { get; set; }
                 [global::EclipseUI.UiParameter] public global::System.Action<string?>? CountChanged { get; set; }
@@ -170,7 +170,7 @@ public class BindTargetTests
         const string codeBehind = """
             public partial class Probe { public int count; }
 
-            public class Counter : global::EclipseUI.Component
+            public class Counter : global::EclipseUI.Elements.StackPanel
             {
                 [global::EclipseUI.UiParameter] public int Count { get; set; }
                 [global::EclipseUI.UiParameter] public global::System.Action? CountChanged { get; set; }
@@ -195,13 +195,13 @@ public class BindTargetTests
     // ---- 名字存在但不可绑：EUI040 + 原因 ----
 
     [Theory]
-    // 有 public get/set 但没有 {P}Property（IsEnabled 是普通 CLR 属性）
-    [InlineData("IsEnabled", "IsEnabledProperty")]
+    // 普通 CLR setter 可赋值；缺少 Changed 回调时仍不可双向绑定。
+    [InlineData("IsEnabled", "IsEnabledChanged")]
     // 只有 getter（Parent）/ internal setter（IsHovered）
     [InlineData("Parent", "no public setter")]
     [InlineData("IsHovered", "no public setter")]
     // 有 public get/set 但没有 StyledProperty 字段
-    [InlineData("Classes", "ClassesProperty")]
+    [InlineData("Classes", "ClassesChanged")]
     public void ExistingButUnbindableProperty_ReportsEui040WithReason(string name, string reason)
     {
         var result = Run(Ui($"@bind-{name}={{flag}}"));
@@ -209,7 +209,7 @@ public class BindTargetTests
         Assert.Empty(result.GeneratedSources);
         var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI040");
         Assert.Contains($"@bind-{name}", diag.GetMessage());
-        Assert.Contains($"'{name}'", diag.GetMessage());
+        Assert.Contains(name, diag.GetMessage());
         Assert.Contains(reason, diag.GetMessage());
         Assert.DoesNotContain(result.Diagnostics, d => d.Id == "EUI002");
     }
@@ -224,14 +224,14 @@ public class BindTargetTests
     }
 
     [Fact]
-    public void ComponentMemberThatIsNotAUiParameter_ReportsEui040()
+    public void PlainPropertyWithoutChanged_ReportsEui040()
     {
-        var result = Run(Ui("@bind-Plain={text}", "Card"), WithComponent);
+        var result = Run(Ui("@bind-Plain={text}", "Card"), WithControl);
 
         Assert.Empty(result.GeneratedSources);
         var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI040");
-        Assert.Contains("'Plain'", diag.GetMessage());
-        Assert.Contains("[UiParameter]", diag.GetMessage());
+        Assert.Contains("@bind-Plain", diag.GetMessage());
+        Assert.Contains("PlainChanged", diag.GetMessage());
         Assert.DoesNotContain(result.Diagnostics, d => d.Id == "EUI002");
     }
 
@@ -251,7 +251,7 @@ public class BindTargetTests
     [Fact]
     public void UnknownComponentMember_StillReportsEui002()
     {
-        var result = Run(Ui("@bind-Nope={text}", "Card"), WithComponent);
+        var result = Run(Ui("@bind-Nope={text}", "Card"), WithControl);
 
         Assert.DoesNotContain(result.Diagnostics, d => d.Id == "EUI040");
         Assert.Contains(result.Diagnostics, d => d.Id == "EUI002");
@@ -260,7 +260,6 @@ public class BindTargetTests
     // ---- 赋值（非 @bind）也受益于同一份「不可绑」表 ----
 
     [Theory]
-    [InlineData("IsEnabled=\"true\"", "no 'IsEnabledProperty'")]
     [InlineData("Parent=\"x\"", "read-only")]
     public void AssigningToKnownButUnexposedProperty_ExplainsWhyInsteadOfTypoHint(string attribute, string reason)
     {
@@ -281,6 +280,24 @@ public class BindTargetTests
         Assert.Contains("did you mean 'Label'", diag.GetMessage());
     }
 
+    [Fact]
+    public void AssigningToPlainPublicSetter_IsAccepted()
+    {
+        var result = Run(Ui("IsEnabled=\"false\""));
+
+        Assert.Empty(result.Diagnostics);
+        Assert.Contains(".IsEnabled = false;", result.GeneratedSources.Single().SourceText.ToString());
+    }
+
+    [Fact]
+    public void AssigningToUnannotatedControlProperty_IsAccepted()
+    {
+        var result = Run(Ui("Plain=\"value\"", "Card"), WithControl);
+
+        Assert.Empty(result.Diagnostics);
+        Assert.Contains(".Plain = \"value\";", result.GeneratedSources.Single().SourceText.ToString());
+    }
+
     // ---- 目录本身：可绑表与非可绑表互补 ----
 
     [Fact]
@@ -292,7 +309,9 @@ public class BindTargetTests
         Assert.Null(button.BindRejection("Label"));
         Assert.DoesNotContain("Label", button.NonBindableProperties.Keys);
 
-        Assert.Contains("IsEnabledProperty", button.BindRejection("IsEnabled")!);
+        Assert.True(button.Parameters["IsEnabled"].CanWrite);
+        Assert.Null(button.Parameters["IsEnabled"].ChangedCallbackName);
+        Assert.Null(button.BindRejection("IsEnabled"));
         Assert.Contains("no public setter", button.BindRejection("Parent")!);
         // 事件有专门的分支，不该混进「属性但不可绑」表
         Assert.Null(button.BindRejection("OnClick"));

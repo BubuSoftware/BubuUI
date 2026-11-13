@@ -15,13 +15,13 @@ namespace EclipseUI;
 ///
 /// 用法：宿主在 UI 线程调用 <see cref="Install"/>（<c>using</c> 包裹帧循环），
 /// 每个 tick 在消息泵之后调用 <see cref="Drain"/>，返回值 &gt; 0 时由宿主触发一次
-/// <see cref="Component.InvalidateSubtree"/>。装配/还原与排空都由宿主负责，本类不持有元素树。
+/// <see cref="UiObject.InvalidateSubtree"/>。装配/还原与排空都由宿主负责，本类不持有元素树。
 /// </summary>
 public sealed class UiSynchronizationContext : SynchronizationContext
 {
     private readonly object _gate = new();
     private readonly Queue<WorkItem> _queue = new();
-    private Element? _boundRoot;
+    private UiObject? _boundRoot;
 
     /// <summary>在安装线程上创建；<see cref="UiThreadId"/> 即该线程。</summary>
     public UiSynchronizationContext()
@@ -140,8 +140,8 @@ public sealed class UiSynchronizationContext : SynchronizationContext
     public void AttachTo(Element root)
     {
         ArgumentNullException.ThrowIfNull(root);
-        _boundRoot = root;
-        root.BindUiContext(this);
+        _boundRoot = root.SchedulingRoot;
+        _boundRoot.BindUiContext(this);
     }
 
     private void Detach()
@@ -206,7 +206,7 @@ public sealed class UiThreadViolationException : InvalidOperationException
 public static class UiThreadGuard
 {
     [Conditional("DEBUG")]
-    public static void AssertUiThread(Element? element, string operation)
+    public static void AssertUiThread(UiObject? element, string operation)
     {
         var context = element?.FindUiContext();
         if (context is null || context.IsUiThread)

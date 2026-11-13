@@ -66,8 +66,7 @@ static int RunOffscreen(AppBuilder builder, GalleryLaunchOptions options)
                        ?? Path.Combine(Environment.CurrentDirectory, "out", "gallery-cpu.png");
         GallerySnapshot.SavePng(root, size, 1.0, null, shotPath, theme, textPainter);
 
-        if (window.RootComponent is IDisposable rootComponent)
-            rootComponent.Dispose();
+        window.Dispose();
         return 0;
     }
     finally

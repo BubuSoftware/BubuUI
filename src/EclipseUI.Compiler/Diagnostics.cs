@@ -115,10 +115,7 @@ public static class UiDiagnostics
     public const string NamespaceMissing = "EUI055";
     public const string NamespaceMismatch = "EUI056";
 
-    // spec/02 §2.7：@code 里的 [UiParameter]/[UiSlot]/[UiContent] 只在本模板内可见——
-    // 目录建在输入编译上（生成器读不到自己的产物），其他模板看不到这些参数。Warning 不短路：
-    // 模板自身仍然合法，只是「对外 API」这件事没发生。要暴露参数请写同名 .cs。
-    public const string ParameterInCodeBlock = "EUI057";
+    // EUI057 retired: @code declarations use the same symbol view as code-behind.
 
     // E6（design/19 §4/§7/§8，样式属性自定义化）：[UiStyleProperty] 标注字段的声明问题
     // （类型非 StyledProperty<T> 闭包 / T 含泛型形参 / 字段非 public static readonly /
@@ -127,15 +124,9 @@ public static class UiDiagnostics
     public const string StylePropertyDeclarationInvalid = "EUI058";
     public const string StylePropertyNameConflict = "EUI059";
 
-    // design/20（窗口模板）：根节点为 <Window> 的 .ui 编译为 WindowComponent 子类
-    // （「根标签决定基类」，[UiTemplateRoot] 标记）。EUI060 = 模板根类型被误用为组件标签
-    // （目录 HiddenTag 通道 + 非根位置 <Window> 拦截）；EUI061 = 窗口内容不是恰好一个子元素；
-    // EUI062 = <Window> 根上的非法属性形态（Class/Style/Key/Ref/附加属性/@bind）；
-    // EUI063 = code-behind 基类与窗口模板不一致（双向）。
+    // 内容成员要求 Element，而实际类型不能赋给 Element。
     public const string TemplateRootMisuse = "EUI060";
-    public const string WindowContentInvalid = "EUI061";
-    public const string WindowAttributeInvalid = "EUI062";
-    public const string WindowCodeBehindMismatch = "EUI063";
+    public const string TemplateBaseInvalid = "EUI064";
 
     // 语法诊断
     public const string Syntax = "EUI100";

@@ -39,7 +39,7 @@ internal static class NamespaceDeclarationFixture
 
         // 目标类在全局命名空间：整个包进合成命名空间。文本里已有命名空间声明时不动——
         // 外层再套一层会改变 `namespace Alt.Controls { … }` 这类内联块的语义。
-        if (codeBehind is null || !TryParse(codeBehind, out var root)) 
+        if (codeBehind is null || !TryParse(codeBehind, out var root))
             return new UiFixture(path, codeBehind ?? "", SyntheticNamespace);
         if (root!.DescendantNodes().OfType<BaseNamespaceDeclarationSyntax>().Any())
             return new UiFixture(path, codeBehind, SyntheticNamespace);

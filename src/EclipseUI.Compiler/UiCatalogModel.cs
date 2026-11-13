@@ -4,9 +4,6 @@ using System.Linq;
 
 namespace EclipseUI.Compiler;
 
-/// <summary>标签的来历：控件（<c>Element</c> 派生）还是组件（<c>Component</c> 派生）。属性解析顺序按此分支（design/14 §14.5.3）。</summary>
-public enum UiElementOrigin { Control, Component }
-
 /// <summary>插槽基数（G4 实现，形状先冻结）。</summary>
 public enum UiSlotCardinality { Single, Multiple }
 
@@ -185,46 +182,28 @@ public sealed record UiHiddenTag(
     string Reason);
 
 /// <summary>
-/// 第二组件来源（spec/02 §2.3）：一个 <c>.ui</c> 文件声明的组件。
-/// <para>
-/// 目录是纯符号扫描，而生成器读不到自己的产物（<c>*.g.cs</c>），所以「这个标签是组件」
-/// 在输入编译里只可能有两种证据：code-behind 的基类，或者这个清单。清单由调用方喂入——
-/// 生成器从 <c>AdditionalTextsProvider</c>、IDE 项目系统从 <c>AdditionalFiles</c> 取，
-/// 两边都是「项目里的 .ui 文件」，因此同源。
-/// </para>
-/// <para>
-/// <paramref name="Namespace"/> 是模板 <c>@namespace</c> 的声明值（缺失时为 null，此时不按
-/// 命名空间过滤——缺声明本身由 EUI055 报，不在这里重复）。
-/// </para>
-/// <para>
-/// K34（D112）：<paramref name="CodeBlocks"/> 携带 <c>@code</c> 块体原文与其在 .ui 中的绝对
-/// span——纯 .ui 组件（无同名类型）的模板特性（[UiParameter]/[UiSlot]/[UiContent]）由目录
-/// 侧做**语法级**提取，使 <c>.ui</c> 不依赖 <c>.cs</c> 也能声明对外表面。值相等口径：只有
-/// <c>@code</c> 内容变化才使清单值变化，改模板标记正文不破坏增量缓存命中（design/14 §14.10.3）。
-/// </para>
+/// 一个 .ui 文件声明的生成类型；根标签、命名空间、imports 和 @code 共同构成其符号视图。
 /// </summary>
-public sealed record UiComponentDeclaration(string Tag, string? Namespace)
+public sealed record UiTemplateDeclaration(string Tag, string? Namespace)
 {
+    /// <summary>The declared root type is the generated class's base type.</summary>
+    public string? RootTag { get; init; }
+
+    /// <summary>Namespace imports and aliases used to resolve the root and code members.</summary>
+    public IReadOnlyList<string> Usings { get; init; } = Array.Empty<string>();
     /// <summary>.ui 文件路径（目录侧声明问题的 <see cref="UiSourceLocation"/> 载体）。</summary>
     public string Path { get; init; } = "";
 
     /// <summary>根层 <c>@code</c> 块（文档顺序）；无 <c>@code</c> 时为空。</summary>
     public IReadOnlyList<UiCodeBlockText> CodeBlocks { get; init; } = Array.Empty<UiCodeBlockText>();
 
-    /// <summary>
-    /// design/20：根节点是保留的 <c>&lt;Window&gt;</c> → 窗口模板。退出「可组合组件」表面
-    /// （目录侧注册为 HiddenTag，EUI060），生成类派生 <c>WindowComponent</c>。
-    /// 进值相等：根标签从控件改为 Window 是对外表面的实质变化（目录形状随之变化），
-    /// 模板正文其余部分的编辑仍不破坏增量缓存命中。
-    /// </summary>
-    public bool IsWindowRoot { get; init; }
-
-    public bool Equals(UiComponentDeclaration? other) =>
+    public bool Equals(UiTemplateDeclaration? other) =>
         other is not null
         && Tag == other.Tag
         && Namespace == other.Namespace
         && Path == other.Path
-        && IsWindowRoot == other.IsWindowRoot
+        && RootTag == other.RootTag
+        && CatalogValueEq.Sequence(Usings, other.Usings)
         && CatalogValueEq.Sequence(CodeBlocks, other.CodeBlocks);
 
     public override int GetHashCode()
@@ -232,7 +211,8 @@ public sealed record UiComponentDeclaration(string Tag, string? Namespace)
         var hash = CatalogValueEq.Add(CatalogValueEq.Start, Tag);
         hash = CatalogValueEq.Add(hash, Namespace ?? "");
         hash = CatalogValueEq.Add(hash, Path);
-        hash = CatalogValueEq.Add(hash, IsWindowRoot);
+        hash = CatalogValueEq.Add(hash, RootTag);
+        hash = CatalogValueEq.AddSequence(hash, Usings);
         return CatalogValueEq.AddSequence(hash, CodeBlocks);
     }
 }
@@ -262,7 +242,6 @@ public sealed record UiCodeBlockText(
 public sealed record UiElementDef(
     string Tag,
     string ClrTypeDisplayName,
-    UiElementOrigin Origin,
     UiContentModel Content,
     string? ContentTarget,
     IReadOnlyDictionary<string, UiPropDef> Properties,
@@ -272,6 +251,12 @@ public sealed record UiElementDef(
     IReadOnlyList<UiMetadataProblem> Problems,
     bool IsFromReferencedAssembly = false)
 {
+    /// <summary>Only Element-derived objects can occupy element content positions.</summary>
+    public bool IsEmbeddable { get; init; } = true;
+    public bool CanInherit { get; init; } = true;
+    public bool IsTemplate { get; init; }
+    public bool ContentIsSingle { get; init; }
+    public string? BaseTypeDisplayName { get; init; }
     /// <summary>
     /// 类型上**存在但不能作为 <c>@bind-</c> 目标**的公开成员名 → 原因短语（spec/01 §4.5）。
     /// 与 <see cref="Properties"/> 互补：可样式属性在这里不会出现，出现的一定是「名字认得、绑定不行」，
@@ -293,7 +278,11 @@ public sealed record UiElementDef(
         if (ReferenceEquals(this, other)) return true;
         return Tag == other.Tag
             && ClrTypeDisplayName == other.ClrTypeDisplayName
-            && Origin == other.Origin
+            && IsEmbeddable == other.IsEmbeddable
+            && CanInherit == other.CanInherit
+            && IsTemplate == other.IsTemplate
+            && ContentIsSingle == other.ContentIsSingle
+            && BaseTypeDisplayName == other.BaseTypeDisplayName
             && Content == other.Content
             && ContentTarget == other.ContentTarget
             && IsFromReferencedAssembly == other.IsFromReferencedAssembly
@@ -310,7 +299,11 @@ public sealed record UiElementDef(
         var hash = CatalogValueEq.Start;
         hash = CatalogValueEq.Add(hash, Tag);
         hash = CatalogValueEq.Add(hash, ClrTypeDisplayName);
-        hash = CatalogValueEq.Add(hash, (int)Origin);
+        hash = CatalogValueEq.Add(hash, IsEmbeddable);
+        hash = CatalogValueEq.Add(hash, CanInherit);
+        hash = CatalogValueEq.Add(hash, IsTemplate);
+        hash = CatalogValueEq.Add(hash, ContentIsSingle);
+        hash = CatalogValueEq.Add(hash, BaseTypeDisplayName);
         hash = CatalogValueEq.Add(hash, (int)Content);
         hash = CatalogValueEq.Add(hash, ContentTarget);
         hash = CatalogValueEq.Add(hash, IsFromReferencedAssembly);
@@ -347,8 +340,7 @@ public sealed class UiCatalog : IEquatable<UiCatalog>
         IEnumerable<UiMetadataProblem> problems,
         IEnumerable<UiAttachedPropDef>? attachedProperties = null,
         StylePropertyCatalog? styleProperties = null,
-        IEnumerable<UiLiteralParserDef>? literalParsers = null,
-        UiElementDef? windowRoot = null)
+        IEnumerable<UiLiteralParserDef>? literalParsers = null)
     {
         _byTag = elements
             .GroupBy(e => e.Tag, StringComparer.Ordinal)
@@ -403,19 +395,10 @@ public sealed class UiCatalog : IEquatable<UiCatalog>
         // 编译期派生的可样式属性表面（design/17 §4.3）：与标签表面同一次符号扫描产出，
         // 随 UiCatalog 一起走增量缓存；缺省空目录仅供无符号语境的静态前端。
         StyleProperties = styleProperties ?? StylePropertyCatalog.Empty;
-        // design/20：模板根类型 def（未引用 Runtime 的编译为 null——根 <Window> 回落 EUI001）。
-        WindowRoot = windowRoot;
     }
 
     /// <summary>可样式属性目录（StyleBuilder setter + StyledProperty 字段派生，单一来源）。</summary>
     public StylePropertyCatalog StyleProperties { get; }
-
-    /// <summary>
-    /// design/20：模板根类型的 def（P1 = <c>WindowComponent</c> 的 [UiParameter] 面）。独立槽位、
-    /// 不进 <see cref="Elements"/>/<c>_byTag</c>——它不能按普通标签解析（非根位置 EUI060），只在
-    /// 分析器窗口分支作属性解析依据。未引用 Runtime 的编译为 null（根 &lt;Window&gt; 回落 EUI001）。
-    /// </summary>
-    public UiElementDef? WindowRoot { get; }
 
     public IReadOnlyList<UiElementDef> Elements { get; }
 
@@ -543,8 +526,7 @@ public sealed class UiCatalog : IEquatable<UiCatalog>
         && CatalogValueEq.Sequence(Problems, other.Problems)
         && CatalogValueEq.Sequence(AttachedProperties, other.AttachedProperties)
         && CatalogValueEq.Sequence(LiteralParsers, other.LiteralParsers)
-        && StyleProperties.Equals(other.StyleProperties)
-        && (WindowRoot is null ? other.WindowRoot is null : WindowRoot.Equals(other.WindowRoot));
+        && StyleProperties.Equals(other.StyleProperties);
 
     public override bool Equals(object? obj) => Equals(obj as UiCatalog);
 
@@ -557,7 +539,7 @@ public sealed class UiCatalog : IEquatable<UiCatalog>
         hash = CatalogValueEq.AddSequence(hash, AttachedProperties);
         hash = CatalogValueEq.AddSequence(hash, LiteralParsers);
         hash = CatalogValueEq.Add(hash, StyleProperties);
-        return CatalogValueEq.Add(hash, WindowRoot);
+        return hash;
     }
 }
 

@@ -12,7 +12,7 @@ public class S1RootDynamicTests
         var probe = new S1Probe();
         var root = new HeadlessRoot(probe);
         root.UpdateLayout();
-        var panel = Assert.IsType<StackPanel>(root.Content);
+        var panel = Assert.IsAssignableFrom<StackPanel>(root.Content);
         var text = panel.Descendants<TextBlock>().Single();
         return (probe, root, panel, text);
     }

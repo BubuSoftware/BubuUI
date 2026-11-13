@@ -31,6 +31,45 @@ public class CompletionTests
     }
 
     [Fact]
+    public void NonEmbeddableTypes_AreCompletedOnlyInRootPositions()
+    {
+        var shell = CardIn("App") with
+        {
+            Tag = "Shell",
+            ClrTypeDisplayName = "global::App.Shell",
+            IsEmbeddable = false,
+        };
+        var catalog = new UiCatalog(new[] { CardIn("App"), shell },
+            Array.Empty<UiHiddenTag>(), Array.Empty<UiMetadataProblem>());
+
+        var (root, rootOffset) = TestHost.Analyze("@namespace App\n<|", catalog: catalog);
+        Assert.Contains(CompletionProvider.Complete(root, catalog, rootOffset).Items, i => i.Label == "Shell");
+
+        var (child, childOffset) = TestHost.Analyze("@namespace App\n<Card><|", catalog: catalog);
+        var childItems = CompletionProvider.Complete(child, catalog, childOffset).Items;
+        Assert.Contains(childItems, i => i.Label == "Card");
+        Assert.DoesNotContain(childItems, i => i.Label == "Shell");
+    }
+
+    [Fact]
+    public void AliasesOfNonEmbeddableTypes_AreFilteredFromChildPositions()
+    {
+        var shell = CardIn("App") with
+        {
+            Tag = "Shell",
+            ClrTypeDisplayName = "global::App.Shell",
+            IsEmbeddable = false,
+        };
+        var catalog = new UiCatalog(new[] { CardIn("App"), shell },
+            Array.Empty<UiHiddenTag>(), Array.Empty<UiMetadataProblem>());
+        var (analysis, offset) = TestHost.Analyze(
+            "@namespace App\n@using Alias = App.Shell\n<Card><|", catalog: catalog);
+
+        Assert.DoesNotContain(CompletionProvider.Complete(analysis, catalog, offset).Items,
+            i => i.Label is "Shell" or "Alias");
+    }
+
+    [Fact]
     public void Tags_HintAtTheMissingUsing()
     {
         var (service, uri, offset) = TestHost.Open("<|");
@@ -74,7 +113,6 @@ public class CompletionTests
     private static UiElementDef CardIn(string ns) => new(
         "Card",
         "global::" + ns + ".Card",
-        UiElementOrigin.Control,
         UiContentModel.Children,
         null,
         new Dictionary<string, UiPropDef>(StringComparer.Ordinal),

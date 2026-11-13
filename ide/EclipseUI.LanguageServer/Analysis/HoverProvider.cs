@@ -164,7 +164,7 @@ public static class HoverProvider
         {
             $"**{element.Tag}** — `{TypeNames.Short(element.ClrTypeDisplayName)}`",
             "",
-            (element.Origin == UiElementOrigin.Component ? "component" : "control") + content,
+            (element.IsEmbeddable ? "control" : "UI object") + content,
         };
 
         if (element.Slots.Count > 0)

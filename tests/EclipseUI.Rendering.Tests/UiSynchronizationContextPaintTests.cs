@@ -17,7 +17,7 @@ public class UiSynchronizationContextPaintTests
 {
     private static readonly Size Surface = new(360, 240);
 
-    private sealed class AsyncTextComponent : Component
+    private sealed class AsyncTextComponent : global::EclipseUI.Elements.StackPanel
     {
         private TextRun _run = null!;
         private readonly TextBlock _output = new();
@@ -25,15 +25,13 @@ public class UiSynchronizationContextPaintTests
         public int Value;
         public Button Trigger { get; private set; } = null!;
 
-        protected override Element Build()
+        protected override void InitializeUi()
         {
-            var panel = new StackPanel();
             _run = _output.AddRun("0");
-            panel.Children.Add(_output);
+            Children.Add(_output);
             Trigger = new Button { Label = "go" };
             Trigger.AddHandler(Button.ClickEvent, () => { Load(); Invalidate(); });
-            panel.Children.Add(Trigger);
-            return panel;
+            Children.Add(Trigger);
         }
 
         protected override void Render() => _run.Text = Value.ToString();
@@ -55,21 +53,21 @@ public class UiSynchronizationContextPaintTests
         var painter = new ElementPainter(textPainter: recorder);
 
         host.UpdateLayout();
-        _ = painter.Build(component.Root, Surface);
+        _ = painter.Build(component, Surface);
         Assert.Contains("0", recorder.Painted);
 
         // tick N：点击 → 包装 Invalidate 渲染旧状态；retained 段不该出现 "5"。
         component.Trigger.Click();
         host.UpdateLayout();
         recorder.Painted.Clear();
-        _ = painter.Build(component.Root, Surface);
+        _ = painter.Build(component, Surface);
         Assert.DoesNotContain("5", recorder.Painted);
 
         // tick N+1：drain → 整体失效 → Render 写新文字 → TextBlock 段重建。
         Assert.Equal(1, ui.Drain());
         host.UpdateLayout();
         recorder.Painted.Clear();
-        _ = painter.Build(component.Root, Surface);
+        _ = painter.Build(component, Surface);
         Assert.Contains("5", recorder.Painted);
     }
 

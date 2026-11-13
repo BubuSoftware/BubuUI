@@ -35,23 +35,23 @@ public sealed class TemplateGenerator : IIncrementalGenerator
             .Where(static file => Path.GetExtension(file.Path) is ".ui")
             .Select(static (file, ct) => new UiFileInput(file.Path, file.GetText(ct)?.ToString() ?? ""));
 
-        // spec/02 §2.7「第二组件来源」：每个 .ui 文件本身就是一条组件声明——标签 = 文件名，
+        // spec/02 §2.7模板类型声明：每个 .ui 文件本身就是一条组件声明——标签 = 文件名，
         // 命名空间 = 该文件声明的 @namespace。目录建在输入编译上、看不到自己的产物（.g.cs），
         // 这份清单就是「.ui 也是组件来源」的唯一凭据，同时消掉 IDE（生成后编译）与编译器
         // （输入编译）之间的目录分叉。
         // 清单只有 (Tag, @namespace) 两项：改模板正文不改变目录值，下游仍按值命中缓存
         // （§14.10.3）。清单本身也逐项比，文件增删或 @namespace 改动才让目录重建。
-        var templateComponents = context.AdditionalTextsProvider
+        var templateTypes = context.AdditionalTextsProvider
             .Where(static file => Path.GetExtension(file.Path) is ".ui")
-            .Select(static (file, ct) => UiComponentScanner.FromFile(
+            .Select(static (file, ct) => UiTemplateScanner.FromFile(
                 file.Path, file.GetText(ct)?.ToString() ?? ""))
             .Collect()
-            .Select(static (declarations, _) => UiComponentDeclarations.Build(declarations))
-            .WithTrackingName("TemplateComponents");
+            .Select(static (declarations, _) => UiTemplateDeclarations.Build(declarations))
+            .WithTrackingName("TemplateTypes");
 
         // 模板表面每轮从符号重建（design/14 §14.10.3：派生目录是唯一事实源，不允许手写缓存）。
         // UiCatalog 逐字段实现结构相等，所以控件 API 没变时下游仍按值命中缓存、不重生成代码。
-        var catalogProvider = templateComponents
+        var catalogProvider = templateTypes
             .Combine(context.CompilationProvider)
             .Select(static (pair, _) => UiCatalogFactory.Build(pair.Right, pair.Left.Items))
             .WithTrackingName("TemplateCatalog");
@@ -76,12 +76,13 @@ public sealed class TemplateGenerator : IIncrementalGenerator
                 provider.GlobalOptions.TryGetValue("build_property.rootnamespace", out var value)
                     ? value ?? "" : "");
         var perFile = uiFiles.Combine(catalogProvider).Combine(context.CompilationProvider)
-            .Combine(rootNamespace)
+            .Combine(rootNamespace).Combine(templateTypes)
             .Select(static (pair, _) => (
-                Input: pair.Left.Left.Left,
-                Catalog: pair.Left.Left.Right,
-                RootNamespace: pair.Right,
-                Facts: ExtractFacts(pair.Left.Left.Left, pair.Left.Left.Right, pair.Left.Right, pair.Right)))
+                Input: pair.Left.Left.Left.Left,
+                Catalog: pair.Left.Left.Left.Right,
+                RootNamespace: pair.Left.Right,
+                Facts: ExtractFacts(pair.Left.Left.Left.Left, pair.Left.Left.Left.Right,
+                    pair.Left.Left.Right, pair.Left.Right, pair.Right.Items)))
             // 命名节点让逐文件生成在 TrackedSteps 里可独立观测：D74 ② 的目录级诊断出口
             // 是第二个 SourceOutput，不能把所有 "SourceOutput" 混成一组断言（§14.10.3）。
             .WithTrackingName("PerFileGeneration");
@@ -121,7 +122,7 @@ public sealed class TemplateGenerator : IIncrementalGenerator
             data.Left.Right, data.Right.StyleProperties));
 
         // E2（design/17 §5）：全局样式类名目录——.eustyle 的类名 + 各 .ui 的 @style 块类名
-        // （组件前缀 {Component}__）。产出是值相等 record，combine 进逐文件管道供
+        // （组件前缀 {TypeName}__）。产出是值相等 record，combine 进逐文件管道供
         // Class="…" 编译期校验（EUI031 转正）。目录管道不报诊断——解析错误由各自主管道
         // 报告（.eustyle → ExecuteStylesheet，@style → ExecuteFile），此处按「有错即空」处理。
         var styleClasses = context.AdditionalTextsProvider
@@ -140,7 +141,7 @@ public sealed class TemplateGenerator : IIncrementalGenerator
     }
 
     private static UiFileFacts ExtractFacts(UiFileInput input, UiCatalog catalog, Compilation compilation,
-        string rootNamespace)
+        string rootNamespace, IReadOnlyList<UiTemplateDeclaration> declarations)
     {
         var className = Path.GetFileNameWithoutExtension(input.Path);
         var validName = SyntaxFacts.IsValidIdentifier(className);
@@ -152,10 +153,10 @@ public sealed class TemplateGenerator : IIncrementalGenerator
         var doc = FrontEnd.Parse(input.Text, input.Path, parseDiags);
         var usings = CollectUsingLines(doc.Nodes);
         var codeBlocks = doc.Nodes.OfType<UiCodeBlock>().ToList();
+        FrontEnd.Analyze(doc, catalog, new List<UiDiagnostic>());
+        var rootDef = doc.Nodes.OfType<UiElement>().FirstOrDefault()?.ResolvedDef;
 
         var type = validName ? FindCodeBehind(compilation, className) : null;
-        // design/20：本文件是否窗口模板（根标签为保留的 <Window>）——决定 code-behind 基类口径。
-        var isWindowTemplate = doc.Nodes.OfType<UiElement>().FirstOrDefault()?.Tag == "Window";
         if (validName && type is not null)
         {
             if (type.ContainingType is not null)
@@ -201,18 +202,20 @@ public sealed class TemplateGenerator : IIncrementalGenerator
         // D57/EUI045（spec/02 §10）：code-behind 与生成成员/基类成员冲突。
         // design/20：基类口径按窗口/普通模板分流（EUI063）。
         if (type is not null)
-            ProbeCodeBehindConflicts(type, codeBehindDiags, isWindowTemplate);
+            ProbeCodeBehindConflicts(type, codeBehindDiags, rootDef?.ClrTypeDisplayName, compilation);
 
-        // K25：EUI045 扩展到 @code 成员——撞生成保留名（Build/Render/U{N}/R{N}/__el{N}/…）
+        // K25：EUI045 扩展到 @code 成员——撞生成保留名（InitializeUi/Render/U{N}/R{N}/__el{N}/…）
         // 报在 .ui 的 @code 块内成员位置。@code ↔ 同名 .cs 的冲突由 C# partial 规则兜底，不在这里报。
-        // K34（D112）：EUI057 收窄——只有同名 .cs 存在时，@code 里的模板特性才到不了目录
-        // （目录符号扫描只看 .cs 半边）；纯 .ui 组件的 @code 特性由目录语法级提取，是对外表面。
+        // @code 与 code-behind 统一进入符号视图，均可声明对外属性和插槽。
         if (codeBlocks.Count > 0)
-            ProbeCodeMemberConflicts(codeBlocks, type is not null, codeBehindDiags);
+            ProbeCodeMemberConflicts(codeBlocks, codeBehindDiags);
 
         // 自身组件（spec/02 §4.12.5）：code-behind 符号直接派生插槽表——目录里没有
-        // code-behind 类的 def（基类由生成注入，源码不派生 Component），这是唯一权威来源。
-        var own = ResolveOwnComponent(type, compilation);
+        // 根类型和 @code 成员在生成前补入同一符号视图，供目录与探针共同使用。
+        var symbolCompilation = UiCatalogFactory.WithTemplateTypes(compilation, declarations);
+        var symbolType = declaredNamespace is not null
+            ? symbolCompilation.GetTypeByMetadataName(declaredNamespace + "." + className) : type;
+        var own = ResolveOwnTemplate(symbolType, symbolCompilation);
         var slots = own is null
             ? ImmutableArray<UiSlotDef>.Empty
             : own.Value.Slots.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => kv.Value).ToImmutableArray();
@@ -229,14 +232,13 @@ public sealed class TemplateGenerator : IIncrementalGenerator
         var effectiveNamespace = declaredNamespace
             ?? (type is null ? SanitizeNamespace(rootNamespace) : NamespaceName(type));
         var accessibility = type is null ? "public" : AccessibilityOf(type);
-        var memberTrees = BuildCodeMemberTrees(codeBlocks, type, className, effectiveNamespace, usings, compilation);
-        var probe = new ExpressionProbe(compilation, type, className, effectiveNamespace, memberTrees, usings);
+        var probe = new ExpressionProbe(symbolCompilation, symbolType, className, effectiveNamespace, usings);
         var probeDiags = new List<UiDiagnostic>();
         var switchTypes = new List<SwitchTypeFact>();
         var classKinds = new List<ClassKindFact>();
-        if (type is not null || codeBlocks.Count > 0)
+        if (symbolType is not null || codeBlocks.Count > 0)
         {
-            var itemTypes = ProbeSemantics(doc, probe, compilation, probeDiags, switchTypes, classKinds)
+            var itemTypes = ProbeSemantics(doc, probe, symbolCompilation, probeDiags, switchTypes, classKinds)
                 .Select(kv => new ItemTypeFact(kv.Key.CollectionSpan.Start, kv.Value))
                 .OrderBy(fact => fact.SpanStart)
                 .ToImmutableArray();
@@ -273,28 +275,16 @@ public sealed class TemplateGenerator : IIncrementalGenerator
     /// （字段/属性/方法/嵌套类型声明的标识符），撞保留名报在 .ui 的成员 span；
     /// 内容粒度的其余校验（语句合法性、与 .cs 的重复）由探针 Compilation 与 C# 兜底。
     ///
-    /// spec/02 §2.7 / K34（D112）：EUI057 只在**同名 .cs 存在**时报——那时目录符号扫描只看
-    /// .cs 半边，@code 里的 [UiParameter]/[UiSlot]/[UiContent] 到不了别的模板。纯 .ui 组件
-    /// 的 @code 特性由目录语法级提取（<c>UiCatalogFactory.CollectTemplateCodeMembers</c>），
-    /// 是正式的对外表面，不再警告。
+    /// @code 属性和 code-behind 使用同一符号视图，不区分声明来源。
     /// </summary>
-    private static void ProbeCodeMemberConflicts(IReadOnlyList<UiCodeBlock> blocks, bool hasCodeBehind,
+    private static void ProbeCodeMemberConflicts(IReadOnlyList<UiCodeBlock> blocks,
         List<UiDiagnostic> diags)
     {
-        // 合成前缀 "class __EuiProbe\n{\n" 的长度：成员/特性 span 减去它即块体内偏移。
-        const int prefixLength = 20;
         foreach (var block in blocks)
         {
-            var container = CSharpSyntaxTree.ParseText("class __EuiProbe\n{\n" + block.Code + "\n}")
-                .GetCompilationUnitRoot().DescendantNodes().OfType<TypeDeclarationSyntax>().First();
-
-            if (hasCodeBehind)
-                foreach (var member in container.Members)
-                    ProbeTemplateOnlyAttribute(member, block, prefixLength, diags);
-
             foreach (var (name, nameOffset, nameLength) in ExtractMemberNames(block.Code))
             {
-                string? reason = name is "Build" or "Render"
+                string? reason = name is "InitializeUi" or "Render"
                     ? $"@code must not declare '{name}()'; the generator emits it"
                     : IsGeneratedMemberName(name)
                         ? $"@code member '{name}' collides with a generated member name"
@@ -302,33 +292,6 @@ public sealed class TemplateGenerator : IIncrementalGenerator
                 if (reason is null) continue;
                 var span = new UiSpan(block.CodeSpan.Start + nameOffset, nameLength);
                 diags.Add(UiDiagnostics.Error(UiDiagnostics.CodeBehindConflict, reason, span));
-            }
-        }
-    }
-
-    /// <summary>
-    /// spec/02 §2.7：`@code` 里的模板元数据特性只在本模板内部可见。目录由输入编译构建，
-    /// 生成产物里的成员对它不可见，所以别的模板用 <c>&lt;This P="…" /&gt;</c> 会得到 EUI002。
-    /// 不报会让用户以为参数声明成功了——这是「想要对外参数就写 .cs」的唯一原因。
-    /// </summary>
-    private static void ProbeTemplateOnlyAttribute(MemberDeclarationSyntax member, UiCodeBlock block,
-        int prefixLength, List<UiDiagnostic> diags)
-    {
-        foreach (var list in member.AttributeLists)
-        {
-            foreach (var attribute in list.Attributes)
-            {
-                var name = attribute.Name.ToString();
-                var shortName = name.Substring(name.LastIndexOf('.') + 1);
-                if (shortName is not ("UiParameter" or "UiSlot" or "UiContent")) continue;
-                var span = attribute.Name.GetLocation().SourceSpan;
-                var offset = span.Start - prefixLength;
-                if (offset < 0 || offset + span.Length > block.Code.Length) continue;
-                diags.Add(UiDiagnostics.Warning(UiDiagnostics.ParameterInCodeBlock,
-                    $"[{shortName}] in @code is visible only inside this template; the catalog is built " +
-                    "from the input compilation, so other templates cannot see it — declare it in the " +
-                    "matching .cs file to expose it (spec/02 §2.7)",
-                    new UiSpan(block.CodeSpan.Start + offset, span.Length)));
             }
         }
     }
@@ -370,27 +333,6 @@ public sealed class TemplateGenerator : IIncrementalGenerator
             if (offset < 0 || offset + csSpan.Value.Length > code.Length) continue;
             yield return (name!, offset, csSpan.Value.Length);
         }
-    }
-
-    /// <summary>
-    /// R1/K21：把全部 @code 块合成一棵 partial 类语法树（含模板 @using 的 using 行），
-    /// 供探针 Compilation 注入——保证后置块成员对前置表达式同样可见。
-    /// 命名空间由调用方给定（code-behind 的命名空间，或单文件形态的项目根命名空间）。
-    /// </summary>
-    private static ImmutableArray<SyntaxTree> BuildCodeMemberTrees(
-        IReadOnlyList<UiCodeBlock> blocks, INamedTypeSymbol? type, string className,
-        string namespaceName, ImmutableArray<string> usings, Compilation compilation)
-    {
-        // 探针核心已抽到 EclipseUI.Compiler.Probe（LSP 与生成器共享同一实现，design/06 §6.3）；
-        // 这里只做 AST → 纯字符串的适配。
-        if (blocks.Count == 0) return ImmutableArray<SyntaxTree>.Empty;
-        var tree = ExpressionProbe.BuildMemberTree(
-            blocks.Select(static block => block.Code).ToList(),
-            type?.Name ?? className,
-            namespaceName,
-            type is null || type.DeclaredAccessibility == Accessibility.Public,
-            usings, compilation);
-        return tree is null ? ImmutableArray<SyntaxTree>.Empty : ImmutableArray.Create(tree);
     }
 
     private static void ExecuteFile(SourceProductionContext spc, UiFileInput input,
@@ -485,9 +427,10 @@ public sealed class TemplateGenerator : IIncrementalGenerator
         foreach (var diag in diags)
         {
             Report(spc, input.Path, sourceText, diag);
-            // EUI045 只报冲突，不阻止生成器输出（spec/02 §10：生成器不改名、仍按本文生成，
-            // 错误诊断本身已阻断构建）。其它错误诊断维持「不输出」的既有口径。
-            if (diag.IsError && diag.Code != UiDiagnostics.CodeBehindConflict) hasErrors = true;
+            // Source member conflicts retain generated code for C# diagnostics. Structural errors
+            // (including a foreach variable using generated names) must prevent invalid output.
+            if (diag.IsError && (diag.Code != UiDiagnostics.CodeBehindConflict ||
+                                 !facts.CodeBehindDiags.Contains(diag))) hasErrors = true;
         }
         if (hasErrors) return;
 
@@ -501,7 +444,7 @@ public sealed class TemplateGenerator : IIncrementalGenerator
             TemplateAnalyzer.CollectUsingLines(doc.Nodes),
             doc.Nodes.OfType<UiCodeBlock>().ToList(),
             styleRules,
-            // E5：本文件 @style 块的 @states 声明——Build 首行的 __RegisterStyles 先注册状态位
+            // E5：本文件 @style 块的 @states 声明——InitializeUi 首行的 __RegisterStyles 先注册状态位
             localStates,
             // design/17 §4.3：Style= 内联发射的目标字段来自同一份符号派生目录
             catalog.StyleProperties).Emit();
@@ -515,7 +458,7 @@ public sealed class TemplateGenerator : IIncrementalGenerator
 
     /// <summary>
     /// E2/E4/E5：单文件的样式来源提取——.eustyle 取塌缩后的全部类名（根 + 派生）与注入规则；
-    /// .ui 只取 @style 块（类名加 <c>{Component}__</c> 前缀——塌缩派生名与注入规则同前缀化，
+    /// .ui 只取 @style 块（类名加 <c>{TypeName}__</c> 前缀——塌缩派生名与注入规则同前缀化，
     /// 嵌套类约束按本块裸名先解析）。诊断丢弃（各自主管道报告），任一解析 Error 则该文件
     /// 产出空集——主管道 Error 已短路生成，半成品目录没有意义。
     /// E5：<paramref name="externalStates"/> 是全局 @states 目录（跨文件注册名引用的兜底校验）。
@@ -901,31 +844,28 @@ public sealed class TemplateGenerator : IIncrementalGenerator
     /// <summary>
     /// D57/EUI045（spec/02 §10）：code-behind 与生成成员冲突。生成器不改名、仍按契约输出；
     /// 诊断落在 code-behind 的源声明，错误诊断本身阻断构建。
-    /// 触发：Build/Render 声明、生成成员保留名、非法基类、隐藏生成代码依赖成员。
-    /// design/20：基类口径按模板形态分流——窗口模板（根 = &lt;Window&gt;）允许省略或
-    /// 恰好 <c>WindowComponent</c>（EUI063），普通模板维持「省略或恰好 Component」（EUI045）；
-    /// 反向（普通模板的 code-behind 派生 WindowComponent）同样 EUI063。
+    /// 触发：InitializeUi/Render 声明、生成成员保留名、非法基类、隐藏生成代码依赖成员。
+    /// 显式基类必须与根标签解析得到的 CLR 类型一致。
     /// </summary>
-    private static void ProbeCodeBehindConflicts(INamedTypeSymbol type, List<UiDiagnostic> diags, bool windowTemplate)
+    private static void ProbeCodeBehindConflicts(INamedTypeSymbol type, List<UiDiagnostic> diags,
+        string? rootTypeDisplay, Compilation compilation)
     {
         foreach (var member in type.GetMembers())
         {
             var name = member.Name;
             string? reason = null;
             if (member is IMethodSymbol { MethodKind: MethodKind.Ordinary } &&
-                name is "Build" or "Render" or "__RegisterStyles")
+                name is "InitializeUi" or "Render" or "__RegisterStyles")
                 reason = $"code-behind must not declare '{name}()'; the generator emits it";
             else if (IsGeneratedMemberName(name))
                 reason = $"member '{name}' collides with a generated member name";
             else if (GeneratedDependencyNames.Contains(name))
-                reason = $"member '{name}' hides a Component member used by generated code";
+                reason = $"member '{name}' hides a UiObject member used by generated code";
             if (reason is not null)
                 diags.Add(Conflict(reason, member.Locations.FirstOrDefault(static l => l.IsInSource)));
         }
 
-        // design/20：基类一致性按模板形态分流（语法循环覆盖该类型的全部 partial 声明位）。
-        // 窗口模板：省略或恰好 WindowComponent（生成器发 ': WindowComponent'）；普通模板：
-        // 省略或恰好 Component。窗口基类出现在普通模板 → EUI063 定向（不落 EUI045 的通用文案）。
+        // 验证全部 partial 声明上的显式基类。
         foreach (var reference in type.DeclaringSyntaxReferences)
         {
             if (reference.GetSyntax() is not TypeDeclarationSyntax declaration || declaration.BaseList is null)
@@ -933,48 +873,33 @@ public sealed class TemplateGenerator : IIncrementalGenerator
             foreach (var baseType in declaration.BaseList.Types)
             {
                 var text = baseType.Type.ToString();
-                if (windowTemplate)
+                if (rootTypeDisplay is not null)
                 {
-                    if (!IsWindowComponentBase(text))
-                        diags.Add(SourceConflict(UiDiagnostics.WindowCodeBehindMismatch,
-                            $"window template '{type.Name}' derives '{text}'; the code-behind of a <Window> " +
-                            "template must omit the base (the generator emits ': WindowComponent') or declare " +
-                            "exactly WindowComponent (design/20)",
+                    var model = compilation.GetSemanticModel(baseType.SyntaxTree);
+                    var explicitType = model.GetTypeInfo(baseType.Type).Type;
+                    if (explicitType?.TypeKind == TypeKind.Interface) continue;
+                    var expected = rootTypeDisplay.Replace("global::", "");
+                    var actual = explicitType?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
+                        .Replace("global::", "");
+                    if (!string.Equals(actual, expected, StringComparison.Ordinal))
+                        diags.Add(Conflict($"code-behind base '{text}' must match the root type '{rootTypeDisplay}'",
                             baseType.GetLocation()));
                 }
-                else if (IsWindowComponentBase(text))
-                {
-                    diags.Add(SourceConflict(UiDiagnostics.WindowCodeBehindMismatch,
-                        $"code-behind class '{type.Name}' derives '{text}'; window base classes are only valid " +
-                        "for templates whose root element is <Window> (design/20)",
-                        baseType.GetLocation()));
-                }
-                else if (!IsComponentBase(text))
-                {
-                    diags.Add(Conflict(
-                        $"code-behind base '{text}' must be omitted or exactly Component",
-                        baseType.GetLocation()));
-                }
+
             }
         }
     }
 
     private static readonly HashSet<string> GeneratedDependencyNames = new(StringComparer.Ordinal)
     {
-        "Invalidate", "Mount", "Track", "TrackContent", "AddDisposable",
+        "Invalidate", "EnsureInitialized", "Track", "ProcessInvalidations",
     };
 
-    private static bool IsComponentBase(string text) => text is
-        "Component" or "EclipseUI.Component" or "global::EclipseUI.Component";
-
-    /// <summary>design/20：窗口模板 code-behind 的合法基类写法（省略 = 由生成侧声明）。</summary>
-    private static bool IsWindowComponentBase(string text) => text is
-        "WindowComponent" or "EclipseUI.WindowComponent" or "global::EclipseUI.WindowComponent";
-
-    /// <summary>__el{N}/__cmp{N}/__blk{N}/__run{N}/__bind{N}/__eui*/U{N}/R{N} 是生成成员保留名。</summary>
+    /// <summary>__el{N}/__blk{N}/__run{N}/__bind{N}/__eui*/U{N}/R{N} 是生成成员保留名。</summary>
     private static bool IsGeneratedMemberName(string name)
     {
-        string[] prefixes = { "__el", "__cmp", "__blk", "__run", "__bind", "__eui", "U", "R" };
+        if (name.StartsWith("__eui", StringComparison.Ordinal)) return true;
+        string[] prefixes = { "__el", "__blk", "__run", "__bind", "__eui", "U", "R" };
         foreach (var prefix in prefixes)
             if (name.StartsWith(prefix, StringComparison.Ordinal) &&
                 name.Length > prefix.Length &&
@@ -1007,7 +932,7 @@ public sealed class TemplateGenerator : IIncrementalGenerator
     /// 类型只接受 <c>Element?</c>（单根）与 <c>IReadOnlyList&lt;Element&gt;</c>（多根），
     /// 其余不进表（声明期问题归目录 EUI021 族）。
     /// </summary>
-    private static (string DisplayName, IReadOnlyDictionary<string, UiSlotDef> Slots)? ResolveOwnComponent(
+    private static (string DisplayName, IReadOnlyDictionary<string, UiSlotDef> Slots)? ResolveOwnTemplate(
         INamedTypeSymbol? type, Compilation compilation)
     {
         if (type is null) return null;
@@ -1129,7 +1054,7 @@ public sealed class TemplateGenerator : IIncrementalGenerator
                         }
                         break;
                     case UiSlotNode fill:
-                        // 插槽填充的内容是组件 Build 的一部分：@foreach item 推断与 @bind 校验
+                        // 插槽填充的内容是初始化内容的一部分：@foreach item 推断与 @bind 校验
                         // 必须穿透（EUI007/EUI037 与内容上下文同口径）
                         Walk(fill.Children, scope);
                         break;
@@ -1457,20 +1382,20 @@ internal sealed record ItemTypeFact(int SpanStart, string Type);
 internal sealed record SwitchTypeFact(int SpanStart, string Type);
 
 /// <summary>
-/// spec/02 §2.7：项目里全部 <c>.ui</c> 文件构成的组件声明清单（「第二组件来源」）。
+/// spec/02 §2.7：项目里全部 <c>.ui</c> 文件构成的组件声明清单（模板类型声明）。
 /// 逐元素值相等——清单只随文件增删或 <c>@namespace</c> 改动变化，改模板正文不会让目录重建
 /// （design/14 §14.10.3）；排序让文件枚举顺序不参与比较。
 /// </summary>
-internal sealed record UiComponentDeclarations(ImmutableArray<UiComponentDeclaration> Items)
+internal sealed record UiTemplateDeclarations(ImmutableArray<UiTemplateDeclaration> Items)
 {
-    public static UiComponentDeclarations Build(ImmutableArray<UiComponentDeclaration?> declarations) => new(
+    public static UiTemplateDeclarations Build(ImmutableArray<UiTemplateDeclaration?> declarations) => new(
         declarations.Where(static d => d is not null)
             .Select(static d => d!)
             .OrderBy(static d => d.Tag, StringComparer.Ordinal)
             .ThenBy(static d => d.Namespace ?? "", StringComparer.Ordinal)
             .ToImmutableArray());
 
-    public bool Equals(UiComponentDeclarations? other) =>
+    public bool Equals(UiTemplateDeclarations? other) =>
         other is not null && Items.SequenceEqual(other.Items);
 
     public override int GetHashCode()

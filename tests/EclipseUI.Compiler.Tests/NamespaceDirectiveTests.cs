@@ -39,7 +39,7 @@ public class NamespaceDirectiveTests
             .Split(System.IO.Path.PathSeparator)
             .Select(path => (MetadataReference)MetadataReference.CreateFromFile(path))
             .ToList();
-        references.Add(MetadataReference.CreateFromFile(typeof(Component).Assembly.Location));
+        references.Add(MetadataReference.CreateFromFile(typeof(UiObject).Assembly.Location));
 
         var compilation = CSharpCompilation.Create(
             "NamespaceProbe",

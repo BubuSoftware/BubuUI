@@ -112,13 +112,10 @@ public static class EmbeddedCSharpService
                 ?? CSharpParseOptions.Default;
             var tree = CSharpSyntaxTree.ParseText(
                 Microsoft.CodeAnalysis.Text.SourceText.From(text), parseOptions, "<eclipseui-l8>");
-            var extra = new List<SyntaxTree> { tree };
-            if (analysis.MemberTree is { } member && !probe.Compilation.ContainsSyntaxTree(member))
-                extra.Add(member);
             return new Projection
             {
                 Tree = tree,
-                Compilation = probe.Compilation.AddSyntaxTrees(extra),
+                Compilation = probe.Compilation.AddSyntaxTrees(tree),
                 BodyStart = bodyStart,
                 BodyLength = expression.Length,
             };
@@ -140,7 +137,7 @@ public static class EmbeddedCSharpService
         if (block is null) return null;
         try
         {
-            // design/18 §5.2：项目模式走统一映射（发射时记录）；legacy 合成树仍按块体原文定位。
+            // design/18 §5.2：项目模式走统一映射（发射时记录）；符号视图按块体原文定位。
             var bodyStart = -1;
             if (analysis.GeneratedDocument is { } generated && ReferenceEquals(generated.Tree, memberTree))
             {
@@ -152,9 +149,7 @@ public static class EmbeddedCSharpService
                 bodyStart = memberTree.ToString().IndexOf(block.Code, StringComparison.Ordinal);
             }
             if (bodyStart < 0) return null;
-            var compilation = analysis.CompilationContains(memberTree)
-                ? probe.Compilation
-                : probe.Compilation.AddSyntaxTrees(memberTree);
+            var compilation = probe.Compilation;
             return new Projection
             {
                 Tree = memberTree,
@@ -294,7 +289,7 @@ public static class EmbeddedCSharpService
     /// <summary>
     /// 只着色 <c>{expr}</c> 与 <c>@code</c> 区间（模板表面仍归 TextMate）。每个区间各自投影一次，
     /// token 的树内偏移按 BodyStart 回映到 .ui；同位置重叠 token 丢弃而不是猜（R6）。
-    /// legacy / 无生成文档时的路径；项目模式优先走 <see cref="SemanticTokensAsync"/>。
+    /// 独立文档 / 无生成文档时的路径；项目模式优先走 <see cref="SemanticTokensAsync"/>。
     /// </summary>
     public static IReadOnlyList<UiSemanticToken> SemanticTokens(DocumentAnalysis analysis)
     {

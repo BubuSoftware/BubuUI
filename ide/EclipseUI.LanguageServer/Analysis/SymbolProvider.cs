@@ -32,9 +32,7 @@ public static class SymbolProvider
                 foreach (var child in element.Children) Add(child, children, catalog, analysis);
 
                 var detail = def is null ? "unknown tag" : TypeNames.Bare(def.ClrTypeDisplayName);
-                var kind = def?.Origin == UiElementOrigin.Component
-                    ? UiSymbolKind.Component
-                    : UiSymbolKind.Control;
+                var kind = def is { IsEmbeddable: false } ? UiSymbolKind.UiObject : UiSymbolKind.Control;
 
                 into.Add(new UiSymbol(element.Tag, detail, kind,
                     Extend(analysis.Text, element.TagSpan, "</" + element.Tag, children),

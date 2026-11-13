@@ -7,7 +7,7 @@ namespace EclipseUI.Ide.Tests;
 
 /// <summary>
 /// design/18 阶段 1：<c>@code</c> 块内的悬停与重命名（design/06 §6.9.10 第 4、5 条）。
-/// 三层：内存态（legacy 回映）→ 磁盘 code-behind（成员路径）→ 项目模式（统一映射服务回映）。
+/// 三层：内存态（独立符号视图回映）→ 磁盘 code-behind（成员路径）→ 项目模式（统一映射服务回映）。
 /// 生成文本/#line 不变由 Compiler.Tests golden 钉住，这里只验证 IDE 行为。
 /// </summary>
 public class CodeBlockIntellisenseTests

@@ -64,15 +64,13 @@ public class C4ComponentTests
             ["Items"] = Content("Items", "global::System.Collections.Generic.IReadOnlyList<global::EclipseUI.Element>", multiple: true),
         };
         var card = new UiElementDef(
-            "ProbeCard", "global::Probe.Card", UiElementOrigin.Component,
-            UiContentModel.None, null,
+            "ProbeCard", "global::Probe.Card", UiContentModel.None, null,
             new Dictionary<string, UiPropDef>(StringComparer.Ordinal),
             new Dictionary<string, UiEventDef>(StringComparer.Ordinal),
             cardParameters,
             new Dictionary<string, UiSlotDef>(StringComparer.Ordinal), []);
         var list = new UiElementDef(
-            "ProbeList", "global::Probe.List", UiElementOrigin.Component,
-            UiContentModel.None, null,
+            "ProbeList", "global::Probe.List", UiContentModel.None, null,
             new Dictionary<string, UiPropDef>(StringComparer.Ordinal),
             new Dictionary<string, UiEventDef>(StringComparer.Ordinal),
             listParameters,
@@ -99,7 +97,7 @@ public class C4ComponentTests
         var (_, diags) = ParseAnalyze(catalog, "@using Probe\n" + """<ProbeCard Count="42" Ttile="x" />""");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.UnknownProperty, diag.Code);
-        Assert.Contains("unknown parameter", diag.Message);
+        Assert.Contains("unknown property", diag.Message);
         Assert.Contains("Title", diag.Message);
     }
 

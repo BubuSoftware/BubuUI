@@ -110,8 +110,7 @@ public class G4AttachedPropertyTests
     {
         // 组件标签也是 Element：附加属性同样解析（design/14 §14.5.3 组件分支）。
         var built = UiTestCatalogs.BuiltIn();
-        var card = new UiElementDef("Card", "global::Probe.Card", UiElementOrigin.Component,
-            UiContentModel.None, null,
+        var card = new UiElementDef("Card", "global::Probe.Card", UiContentModel.None, null,
             new Dictionary<string, UiPropDef>(StringComparer.Ordinal),
             new Dictionary<string, UiEventDef>(StringComparer.Ordinal),
             new Dictionary<string, UiParameterDef>(StringComparer.Ordinal),
@@ -149,8 +148,8 @@ public class G4AttachedPropertyTests
         var root = new HeadlessRoot(probe);
         root.UpdateLayout();
 
-        var button = probe.Root.Descendants<Button>().Single();
-        var checkbox = probe.Root.Descendants<CheckBox>().Single();
+        var button = probe.Descendants<Button>().Single();
+        var checkbox = probe.Descendants<CheckBox>().Single();
 
         Assert.Equal(1, Grid.GetRow(button));      // 字面量
         Assert.Equal(2, Grid.GetColumn(button));   // 表达式 {extraCol}
@@ -167,7 +166,7 @@ public class G4AttachedPropertyTests
         var root = new HeadlessRoot(probe) { AvailableSize = new Size(1280, 800) };
         root.UpdateLayout();
 
-        var cell = probe.Root.Descendants<TextBlock>().Single();
+        var cell = probe.Descendants<TextBlock>().Single();
         // 列 "*,2*"：内宽 1280 按 1:2 → 1280/3 与 1280×2/3
         Assert.Equal(1280d / 3, cell.FinalRect.X, 3);
         Assert.Equal(1280d * 2 / 3, cell.FinalRect.Width, 3);

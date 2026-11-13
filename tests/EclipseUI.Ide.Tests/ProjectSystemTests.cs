@@ -331,7 +331,7 @@ public class ProjectSystemTests
 
     /// <summary>
     /// spec/02 §2.7：目录必须「与编译器同源」。用真实仓库钉这一条——
-    /// 输入编译（无 .g.cs）+ <c>.ui</c> 声明清单 与 生成后编译（能看见 <c>: Component</c> 基类）
+    /// 输入编译（无 .g.cs）+ <c>.ui</c> 声明清单 与生成后编译（能看见根类型基类）
     /// 必须给出同一份标签表。两者一偏离，就是「编辑器绿、<c>dotnet build</c> 红」。
     /// </summary>
     [Fact]
@@ -344,23 +344,20 @@ public class ProjectSystemTests
         var files = snapshot.Evaluation.AdditionalFiles
             .Where(path => path.EndsWith(".ui", StringComparison.Ordinal))
             .Select(path => (Path: path, Text: File.ReadAllText(path)));
-        var fromInput = UiCatalogFactory.Build(input, UiComponentScanner.FromFiles(files));
+        var fromInput = UiCatalogFactory.Build(input, UiTemplateScanner.FromFiles(files));
         var fromOutput = UiCatalogFactory.Build(snapshot.Compilation);
 
         var expected = fromOutput.Elements
-            .Select(e => $"{e.Tag}:{e.Origin}").OrderBy(s => s, StringComparer.Ordinal).ToList();
+            .Select(e => $"{e.Tag}:{e.ClrTypeDisplayName}").OrderBy(s => s, StringComparer.Ordinal).ToList();
         var actual = fromInput.Elements
-            .Select(e => $"{e.Tag}:{e.Origin}").OrderBy(s => s, StringComparer.Ordinal).ToList();
+            .Select(e => $"{e.Tag}:{e.ClrTypeDisplayName}").OrderBy(s => s, StringComparer.Ordinal).ToList();
 
         Assert.NotEmpty(expected);
         Assert.Equal(expected, actual);
 
-        // 快照里的目录就是「输入编译 + 清单」那一份（不是生成后的），组件身份来自 .ui 本身。
-        // 四个 Gallery 组件都没有同名 .cs（spec/02 §2.7 的活样例），所以这四条同时钉住了
-        // 「纯 .ui 也能当标签用」——它们此前只靠生成后编译里的 `: Component` 才进目录。
+        // .ui 与源码声明的控件共享目录类型，生成前后都从根类型获得相同的控件能力。
         foreach (var tag in new[] { "Counter", "Prefs", "Showcase", "TaskList" })
-            Assert.Equal(UiElementOrigin.Component,
-                snapshot.Catalog.Elements.Single(e => e.Tag == tag).Origin);
+            Assert.True(snapshot.Catalog.Elements.Single(e => e.Tag == tag).IsEmbeddable);
     }
 
     /// <summary>

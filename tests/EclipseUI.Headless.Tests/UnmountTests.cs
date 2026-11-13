@@ -16,21 +16,19 @@ namespace EclipseUI.Headless.Tests;
 /// </summary>
 public class UnmountTests
 {
-    private sealed class ProbeComponent : Component
+    private sealed class ProbeComponent : global::EclipseUI.Elements.StackPanel
     {
         public bool Source;
 
-        protected override Element Build()
+        protected override void InitializeUi()
         {
-            var panel = new StackPanel();
             var check = new CheckBox();
-            panel.Children.Add(check);
+            Children.Add(check);
             Track(UiBinding.TwoWay<bool>(
                 check, CheckBox.CheckedProperty,
                 () => check.Checked, v => check.Checked = v,
                 () => Source, v => Source = v,
                 Invalidate));
-            return panel;
         }
     }
 
@@ -104,25 +102,25 @@ public class UnmountTests
     public void Unmount_ComponentRoot_DisposesComponent()
     {
         var component = new ProbeComponent();
-        component.Mount();
+        component.EnsureInitialized();
 
-        component.Root.Unmount();
+        component.Unmount();
 
         Assert.True(component.IsDisposed);
-        Assert.False(component.IsMounted);
+        Assert.True(component.IsInitialized);
     }
 
     [Fact]
     public void Unmount_ComponentRoot_ReleasesBindingSubscription()
     {
         var component = new ProbeComponent();
-        component.Mount();
-        var check = component.Root.Descendants<CheckBox>().Single();
+        component.EnsureInitialized();
+        var check = component.Descendants<CheckBox>().Single();
 
         check.Toggle(); // 绑定生效：回写 Source
         Assert.True(component.Source);
 
-        component.Root.Unmount();
+        component.Unmount();
         Assert.True(component.IsDisposed);
 
         check.Toggle(); // 绑定已随 Dispose 解除：Checked 自由翻转但不回写 Source，也不抛
@@ -134,25 +132,21 @@ public class UnmountTests
     public void Unmount_NestedTrackedComponents_DisposesAll()
     {
         var parent = new ParentProbe();
-        parent.Mount();
+        parent.EnsureInitialized();
 
-        parent.Root.Unmount();
+        parent.Unmount();
 
         Assert.True(parent.IsDisposed);
         Assert.True(parent.Child.IsDisposed);
     }
 
-    private sealed class ParentProbe : Component
+    private sealed class ParentProbe : global::EclipseUI.Elements.StackPanel
     {
         public ProbeComponent Child = new();
 
-        protected override Element Build()
+        protected override void InitializeUi()
         {
-            Child.Mount();
-            Track(Child);
-            var panel = new StackPanel();
-            panel.Children.Add(Child.Root);
-            return panel;
+            Children.Add(Child);
         }
     }
 
@@ -162,11 +156,11 @@ public class UnmountTests
     public void Remove_WithoutUnmount_DoesNotDisposeComponent()
     {
         var component = new ProbeComponent();
-        component.Mount();
+        component.EnsureInitialized();
         var host = new StackPanel();
-        host.Children.Add(component.Root);
+        host.Children.Add(component);
 
-        host.Children.Remove(component.Root);
+        host.Children.Remove(component);
 
         Assert.False(component.IsDisposed); // 手工摘除仍不触发释放（K33 保守口径）
     }
@@ -177,12 +171,12 @@ public class UnmountTests
     public void FocusInsideUnmountedSubtree_IsPrunedOnNextLayout()
     {
         var component = new ProbeComponent();
-        component.Mount();
+        component.EnsureInitialized();
         var root = new HeadlessRoot(component);
         root.UpdateLayout();
 
         var button = new Button();
-        Assert.IsType<StackPanel>(component.Root).Children.Add(button);
+        component.Children.Add(button);
         root.UpdateLayout();
         Assert.True(root.Focus.Focus(button));
         Assert.Same(button, root.Focus.Focused);

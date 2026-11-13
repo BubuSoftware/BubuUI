@@ -208,7 +208,7 @@ public sealed class UiCodeBlock : UiNode
 /// <summary>
 /// <c>@style { … }</c>（E1，design/17 §4.8）：文档顶层的组件样式块，块体为 Eustyle 样式表
 /// 源码（与 .eustyle 文件同语法，<see cref="Eustyle"/> 解析）。类名编译期加组件前缀
-/// （<c>{Component}__{class}</c>）注册进全局 <c>StyleRegistry</c>——作用域由命名隔离实现，
+/// （<c>{TypeName}__{class}</c>）注册进全局 <c>StyleRegistry</c>——作用域由命名隔离实现，
 /// 运行时零新机制；本文件 <c>Class="…"</c> 的解析顺序（先块内后全局目录）随 E2 落地。
 /// </summary>
 public sealed class UiStyleBlock : UiNode

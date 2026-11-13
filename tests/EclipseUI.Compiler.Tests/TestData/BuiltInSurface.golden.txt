@@ -1,8 +1,8 @@
 # EclipseUI 内置模板表面（design/14 §14.11.1）。
 # 由 CatalogScannerTests.Surface_MatchesGoldenSnapshotFile 生成/比对；控件 API 变化时必须连同变更记录一起更新。
-# 标签 9 / 属性项 122 / 事件项 74 / 附加属性项 2
+# 标签 10 / 属性项 122 / 事件项 74 / 附加属性项 2
 
-[Button] global::EclipseUI.Elements.Button origin=Control content=Text:Label
+[Button] global::EclipseUI.Elements.Button content=Text:Label
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
@@ -23,8 +23,10 @@
     event  OnPointerPressed PointerPressed declared=global::EclipseUI.Element field=PointerPressedEvent
     event  OnPointerReleased PointerReleased declared=global::EclipseUI.Element field=PointerReleasedEvent
     event  OnPointerWheelChanged PointerWheelChanged declared=global::EclipseUI.Element field=PointerWheelChangedEvent
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
+    param  IsEnabled global::System.Boolean required=False delegate=False
 
-[CheckBox] global::EclipseUI.Elements.CheckBox origin=Control content=Text:Label
+[CheckBox] global::EclipseUI.Elements.CheckBox content=Text:Label
     prop   Checked bool declared=global::EclipseUI.Elements.CheckBox field=CheckedProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
@@ -46,8 +48,10 @@
     event  OnPointerPressed PointerPressed declared=global::EclipseUI.Element field=PointerPressedEvent
     event  OnPointerReleased PointerReleased declared=global::EclipseUI.Element field=PointerReleasedEvent
     event  OnPointerWheelChanged PointerWheelChanged declared=global::EclipseUI.Element field=PointerWheelChangedEvent
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
+    param  IsEnabled global::System.Boolean required=False delegate=False
 
-[Grid] global::EclipseUI.Elements.Grid origin=Control content=Children:Children
+[Grid] global::EclipseUI.Elements.Grid content=Children:Children
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
     prop   ColumnDefinitions string declared=global::EclipseUI.Elements.Grid field=ColumnDefinitionsProperty writable=True
     prop   Gap double declared=global::EclipseUI.Elements.Grid field=GapProperty writable=True
@@ -71,8 +75,10 @@
     event  OnPointerPressed PointerPressed declared=global::EclipseUI.Element field=PointerPressedEvent
     event  OnPointerReleased PointerReleased declared=global::EclipseUI.Element field=PointerReleasedEvent
     event  OnPointerWheelChanged PointerWheelChanged declared=global::EclipseUI.Element field=PointerWheelChangedEvent
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
+    param  IsEnabled global::System.Boolean required=False delegate=False
 
-[ListBoxItem] global::EclipseUI.Elements.ListBoxItem origin=Control content=Children:Children
+[ListBoxItem] global::EclipseUI.Elements.ListBoxItem content=Children:Children
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
     prop   Gap double declared=global::EclipseUI.Elements.StackPanelBase field=GapProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
@@ -94,8 +100,10 @@
     event  OnPointerPressed PointerPressed declared=global::EclipseUI.Element field=PointerPressedEvent
     event  OnPointerReleased PointerReleased declared=global::EclipseUI.Element field=PointerReleasedEvent
     event  OnPointerWheelChanged PointerWheelChanged declared=global::EclipseUI.Element field=PointerWheelChangedEvent
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
+    param  IsEnabled global::System.Boolean required=False delegate=False
 
-[ScrollViewer] global::EclipseUI.Elements.ScrollViewer origin=Control content=Children:Children
+[ScrollViewer] global::EclipseUI.Elements.ScrollViewer content=Children:Children
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
@@ -120,8 +128,10 @@
     event  OnPointerPressed PointerPressed declared=global::EclipseUI.Element field=PointerPressedEvent
     event  OnPointerReleased PointerReleased declared=global::EclipseUI.Element field=PointerReleasedEvent
     event  OnPointerWheelChanged PointerWheelChanged declared=global::EclipseUI.Element field=PointerWheelChangedEvent
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
+    param  IsEnabled global::System.Boolean required=False delegate=False
 
-[StackPanel] global::EclipseUI.Elements.StackPanel origin=Control content=Children:Children
+[StackPanel] global::EclipseUI.Elements.StackPanel content=Children:Children
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
     prop   Gap double declared=global::EclipseUI.Elements.StackPanelBase field=GapProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
@@ -143,8 +153,10 @@
     event  OnPointerPressed PointerPressed declared=global::EclipseUI.Element field=PointerPressedEvent
     event  OnPointerReleased PointerReleased declared=global::EclipseUI.Element field=PointerReleasedEvent
     event  OnPointerWheelChanged PointerWheelChanged declared=global::EclipseUI.Element field=PointerWheelChangedEvent
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
+    param  IsEnabled global::System.Boolean required=False delegate=False
 
-[TextBlock] global::EclipseUI.Elements.TextBlock origin=Control content=TextRuns
+[TextBlock] global::EclipseUI.Elements.TextBlock content=TextRuns
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
     prop   FontSize double declared=global::EclipseUI.Elements.TextBlock field=FontSizeProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
@@ -167,8 +179,10 @@
     event  OnPointerPressed PointerPressed declared=global::EclipseUI.Element field=PointerPressedEvent
     event  OnPointerReleased PointerReleased declared=global::EclipseUI.Element field=PointerReleasedEvent
     event  OnPointerWheelChanged PointerWheelChanged declared=global::EclipseUI.Element field=PointerWheelChangedEvent
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
+    param  IsEnabled global::System.Boolean required=False delegate=False
 
-[VirtualizingStackPanel] global::EclipseUI.Elements.VirtualizingStackPanel origin=Control content=Children:Children
+[VirtualizingStackPanel] global::EclipseUI.Elements.VirtualizingStackPanel content=Children:Children
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
     prop   Gap double declared=global::EclipseUI.Elements.VirtualizingStackPanel field=GapProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
@@ -191,8 +205,22 @@
     event  OnPointerPressed PointerPressed declared=global::EclipseUI.Element field=PointerPressedEvent
     event  OnPointerReleased PointerReleased declared=global::EclipseUI.Element field=PointerReleasedEvent
     event  OnPointerWheelChanged PointerWheelChanged declared=global::EclipseUI.Element field=PointerWheelChangedEvent
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
+    param  IsEnabled global::System.Boolean required=False delegate=False
+    param  ItemFactory global::System.Func<global::System.Int32, global::EclipseUI.Element> required=False delegate=False
 
-[WrapPanel] global::EclipseUI.Elements.WrapPanel origin=Control content=Children:Children
+[Window] global::EclipseUI.Window content=Children:Content
+    param  AlwaysRender global::System.Boolean required=False delegate=False
+    param  CloseOnEscape global::System.Boolean required=False delegate=False
+    param  Height global::System.Double required=False delegate=False
+    param  IdleSleepMilliseconds global::System.Int32 required=False delegate=False
+    param  MaxFramesPerSecond global::System.Int32 required=False delegate=False
+    param  MaxTicks global::System.Int32? required=False delegate=False
+    param  Theme global::EclipseUI.IHostTheme required=False delegate=False
+    param  Title global::System.String required=False delegate=False
+    param  Width global::System.Double required=False delegate=False
+
+[WrapPanel] global::EclipseUI.Elements.WrapPanel content=Children:Children
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
     prop   Gap double declared=global::EclipseUI.Elements.WrapPanel field=GapProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
@@ -215,12 +243,13 @@
     event  OnPointerPressed PointerPressed declared=global::EclipseUI.Element field=PointerPressedEvent
     event  OnPointerReleased PointerReleased declared=global::EclipseUI.Element field=PointerReleasedEvent
     event  OnPointerWheelChanged PointerWheelChanged declared=global::EclipseUI.Element field=PointerWheelChangedEvent
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
+    param  IsEnabled global::System.Boolean required=False delegate=False
 
 [attached] Grid.Column int declared=global::EclipseUI.Elements.Grid setter=SetColumn
 [attached] Grid.Row int declared=global::EclipseUI.Elements.Grid setter=SetRow
 
-[hidden] Component global::EclipseUI.Component EUI017 the type is abstract
 [hidden] Element global::EclipseUI.Element EUI017 the type is abstract
 [hidden] Panel global::EclipseUI.Elements.Panel EUI017 the type is abstract
 [hidden] StackPanelBase global::EclipseUI.Elements.StackPanelBase EUI017 the type is abstract
-[hidden] WindowComponent global::EclipseUI.WindowComponent EUI060 'WindowComponent' is a template-root type ([UiTemplateRoot], design/20); it cannot be used as a component tag inside another template — instantiate it from application code instead (window templates: new MyWindow().CreateWindow())
+[hidden] UiObject global::EclipseUI.UiObject EUI017 the type is abstract

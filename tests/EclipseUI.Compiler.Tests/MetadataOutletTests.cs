@@ -47,7 +47,7 @@ public class MetadataOutletTests
             .Split(Path.PathSeparator)
             .Select(path => (MetadataReference)MetadataReference.CreateFromFile(path))
             .ToList();
-        references.Add(MetadataReference.CreateFromFile(typeof(Component).Assembly.Location));
+        references.Add(MetadataReference.CreateFromFile(typeof(UiObject).Assembly.Location));
         if (referencedLibrary is not null)
             references.Add(MetadataReference.CreateFromFile(referencedLibrary));
         // 带 path 的语法树：声明处诊断必须能定位到具体的 C# 行列。
@@ -155,10 +155,9 @@ public string Key { get => ""; set { } }
 using EclipseUI;
 using EclipseUI.Elements;
 public partial class Probe { }
-public sealed class BadCard : Component
+public sealed class BadCard : global::EclipseUI.Elements.StackPanel
 {
 [UiParameter] public int Count { get; }
-protected override Element Build() => throw new System.NotImplementedException();
 }
 """;
 

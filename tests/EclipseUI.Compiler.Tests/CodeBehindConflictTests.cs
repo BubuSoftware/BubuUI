@@ -39,7 +39,7 @@ public class CodeBehindConflictTests
             .Split(System.IO.Path.PathSeparator)
             .Select(path => (MetadataReference)MetadataReference.CreateFromFile(path))
             .ToList();
-        references.Add(MetadataReference.CreateFromFile(typeof(Component).Assembly.Location));
+        references.Add(MetadataReference.CreateFromFile(typeof(UiObject).Assembly.Location));
 
         var fixture = NamespaceDeclarationFixture.Prepare(UiPath, codeBehind);
 
@@ -61,9 +61,8 @@ public class CodeBehindConflictTests
 
     [Theory]
     [InlineData("public partial class Probe { }")]
-    [InlineData("public partial class Probe : global::EclipseUI.Component { }")]
-    [InlineData("public partial class Probe : EclipseUI.Component { }")]
-    [InlineData("public partial class Probe : Component { }")]
+    [InlineData("public partial class Probe : global::EclipseUI.Elements.StackPanel { }")]
+    [InlineData("public partial class Probe : EclipseUI.Elements.StackPanel { }")]
     public void NoConflict_ProducesNoDiagnostics(string codeBehind)
     {
         var result = Run(codeBehind);
@@ -73,7 +72,7 @@ public class CodeBehindConflictTests
     }
 
     [Theory]
-    [InlineData("Build")]
+    [InlineData("InitializeUi")]
     [InlineData("Render")]
     public void BuildOrRenderDeclaration_ReportsEui045(string name)
     {
@@ -87,7 +86,6 @@ public class CodeBehindConflictTests
 
     [Theory]
     [InlineData("__el0")]
-    [InlineData("__cmp1")]
     [InlineData("__blk2")]
     [InlineData("__run3")]
     [InlineData("__bind4")]
@@ -104,10 +102,8 @@ public class CodeBehindConflictTests
 
     [Theory]
     [InlineData("Invalidate")]
-    [InlineData("Mount")]
+    [InlineData("EnsureInitialized")]
     [InlineData("Track")]
-    [InlineData("TrackContent")]
-    [InlineData("AddDisposable")]
     public void HiddenComponentDependency_ReportsEui045(string name)
     {
         var result = Run($"public partial class Probe {{ public void {name}() {{ }} }}");
@@ -121,7 +117,7 @@ public class CodeBehindConflictTests
     public void NonComponentBase_ReportsEui045()
     {
         const string codeBehind = """
-            public class SomeBase : EclipseUI.Component { }
+            public class SomeBase : EclipseUI.Elements.StackPanel { }
             public partial class Probe : SomeBase { }
             """;
 
@@ -138,7 +134,7 @@ public class CodeBehindConflictTests
         const string codeBehind = """
             public partial class Probe
             {
-                private void Build() { }
+                private void InitializeUi() { }
             }
             """;
 
@@ -156,7 +152,7 @@ public class CodeBehindConflictTests
         const string codeBehind = """
             public partial class Probe
             {
-                private void Build() { }
+                private void InitializeUi() { }
                 public int __el0 = 0;
             }
             """;
@@ -170,7 +166,7 @@ public class CodeBehindConflictTests
     [Fact]
     public void OtherErrorsStillSuppressGeneratedSource()
     {
-        var result = Run("public partial class Probe { private void Build() { } }", "@using EclipseUI.Elements\n<UnknownTag />");
+        var result = Run("public partial class Probe { private void InitializeUi() { } }", "@using EclipseUI.Elements\n<UnknownTag />");
 
         Assert.Contains(result.Diagnostics, d => d.Id == "EUI001");
         Assert.Contains(result.Diagnostics, d => d.Id == "EUI045");
@@ -186,7 +182,7 @@ public class CodeBehindConflictTests
             "EUI041", "EUI042", "EUI044",
         };
 
-        var result = Run("public partial class Probe { private void Build() { } }");
+        var result = Run("public partial class Probe { private void InitializeUi() { } }");
 
         Assert.Contains(result.Diagnostics, d => d.Id == "EUI045");
         Assert.DoesNotContain(result.Diagnostics, d => deprecated.Contains(d.Id));

@@ -68,7 +68,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
     private readonly Win32Window _window;
     private readonly ISurfacePresenter _presenter;
     private readonly Element _root;
-    private readonly Component? _rootComponent;
+    private readonly UiObject _uiRoot;
     private readonly WindowHostOptions _options;
     private readonly ElementPainter _painter;
     private bool _disposed;
@@ -78,12 +78,14 @@ public sealed class WindowHost : IDisposable, IWindowHost
         ISurfacePresenter presenter,
         Element root,
         WindowHostOptions? options = null,
-        Component? rootComponent = null)
+        UiObject? uiRoot = null)
     {
         _window = window ?? throw new ArgumentNullException(nameof(window));
         _presenter = presenter ?? throw new ArgumentNullException(nameof(presenter));
         _root = root ?? throw new ArgumentNullException(nameof(root));
-        _rootComponent = rootComponent;
+        _uiRoot = uiRoot ?? root.SchedulingRoot;
+        _uiRoot.EnsureInitialized();
+        root.EnsureInitialized();
         _options = options ?? new WindowHostOptions();
 
         _painter = new ElementPainter(_options.Theme, _options.TextPainter);
@@ -179,10 +181,12 @@ public sealed class WindowHost : IDisposable, IWindowHost
 
             // tick 顺序：PumpMessages → Drain →（自动失效）→ ProcessInvalidations → 布局 → present。
             // drain 按快照批执行，回调里新 Post 的续体下一 tick 再跑；只要跑过回调就按批
-            // 整体失效挂载子树一次（Component.Invalidate 不级联，根级 Render 是空实现）。
+            // 整体失效当前 UI 子树一次，续体可能修改任意后代的普通 CLR 状态。
             // 放在最小化分支之前：最小化时也不能把后台续体饿死。
             if (uiScope.Context.Drain() > 0)
-                _rootComponent?.InvalidateSubtree();
+            {
+                _uiRoot.InvalidateSubtree();
+            }
 
             var size = _window.LogicalClientSize;
             if (size.IsEmpty)
@@ -196,7 +200,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
 
             // 卸载/摘除后焦点元素可能已离树：布局前修剪（G4/K33）。
             Input.Focus.ClearFocusIfDetached();
-            _rootComponent?.ProcessInvalidations();
+            _uiRoot.ProcessInvalidations();
             _root.Measure(size);
             _root.Arrange(new Rect(Point.Zero, size));
 

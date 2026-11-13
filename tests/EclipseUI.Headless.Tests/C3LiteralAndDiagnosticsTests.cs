@@ -32,8 +32,7 @@ public class C3LiteralAndDiagnosticsTests
         UiPropDef P(string name, UiTypeShape shape) => new(
             name, "global::Probe.Things", "global::Probe.Things", name + "Property", true, shape);
         var probe = new UiElementDef(
-            "Probe", "global::Probe.Things", UiElementOrigin.Control,
-            UiContentModel.None, null,
+            "Probe", "global::Probe.Things", UiContentModel.None, null,
             new Dictionary<string, UiPropDef>(StringComparer.Ordinal)
             {
                 ["Rate"] = P("Rate", new UiTypeShape(UiTypeShapeKind.Primitive, "float", [])),

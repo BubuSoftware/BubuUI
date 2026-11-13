@@ -23,7 +23,7 @@ public class UiSynchronizationContextTests
 {
     private static readonly TimeSpan PostTimeout = TimeSpan.FromSeconds(5);
 
-    private sealed class AsyncComponent : Component
+    private sealed class AsyncComponent : global::EclipseUI.Elements.StackPanel
     {
         private TextRun _run = null!;
 
@@ -39,16 +39,14 @@ public class UiSynchronizationContextTests
 
         public AsyncComponent() => Handler = HandleYield;
 
-        protected override Element Build()
+        protected override void InitializeUi()
         {
-            var panel = new StackPanel();
             _run = Output.AddRun("0");
-            panel.Children.Add(Output);
+            Children.Add(Output);
             Trigger = new Button { Label = "go" };
             // 生成器事件包装形态：h(); Invalidate(); —— 本节刻意不改它。
             Trigger.AddHandler(Button.ClickEvent, () => { Handler(); Invalidate(); });
-            panel.Children.Add(Trigger);
-            return panel;
+            Children.Add(Trigger);
         }
 
         protected override void Render()
@@ -89,26 +87,21 @@ public class UiSynchronizationContextTests
         private static void ThrowCore() => throw new InvalidOperationException("handler-boom");
     }
 
-    private sealed class CountingComponent : Component
+    private sealed class CountingComponent : global::EclipseUI.Elements.StackPanel
     {
         public int RenderCount { get; private set; }
-        protected override Element Build() => new StackPanel();
         protected override void Render() => RenderCount++;
     }
 
-    /// <summary>块内子组件是 Adopt + BlockScope.AddDisposable，不进 _tracked。</summary>
-    private sealed class ParentWithBlockChild : Component
+    /// <summary>子控件只需进入真实内容树，即可参与子树更新。</summary>
+    private sealed class ParentWithBlockChild : global::EclipseUI.Elements.StackPanel
     {
         public readonly CountingComponent Child = new();
         public int RenderCount { get; private set; }
 
-        protected override Element Build()
+        protected override void InitializeUi()
         {
-            var panel = new StackPanel();
-            Adopt(Child);
-            Child.Mount();
-            panel.Children.Add(Child.Root);
-            return panel;
+            Children.Add(Child);
         }
 
         protected override void Render() => RenderCount++;
@@ -117,7 +110,7 @@ public class UiSynchronizationContextTests
     private static bool WaitForPost(UiSynchronizationContext context)
         => SpinWait.SpinUntil(() => context.PendingCount > 0, PostTimeout);
 
-    /// <summary>真生成模板（不是手写 Component）的端到端：事件包装由生成器发射。</summary>
+    /// <summary>真生成模板（不是手写控件）的端到端：事件包装由生成器发射。</summary>
     [Fact]
     public void GeneratedTemplate_AsyncVoidHandler_ReturnsToUiThreadAndRepaints()
     {
@@ -290,11 +283,12 @@ public class UiSynchronizationContextTests
         var host = new HeadlessRoot(component);
         using var ui = host.InstallSynchronizationContext();
 
-        var error = Task.Run(() =>
+        // A dedicated worker prevents a blocking wait from inlining the task onto the UI thread.
+        var error = Task.Factory.StartNew(() =>
         {
             try { component.Run.Text = "off-thread"; return (Exception?)null; }
             catch (Exception ex) { return ex; }
-        }).GetAwaiter().GetResult();
+        }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default).GetAwaiter().GetResult();
 
         var violation = Assert.IsType<UiThreadViolationException>(error);
         Assert.Equal(ui.Context.UiThreadId, violation.ExpectedThreadId);
@@ -335,7 +329,7 @@ public class UiSynchronizationContextTests
         host.UpdateLayout();
 
         Assert.Equal(1, parent.RenderCount);
-        Assert.Equal(1, parent.Child.RenderCount); // Adopt 但没 Track 的块内组件不能漏
+        Assert.Equal(1, parent.Child.RenderCount); // 内容树内的子控件不能漏
 
         Assert.Equal(0, ui.Drain());
         host.UpdateLayout();
@@ -404,11 +398,11 @@ public class UiSynchronizationContextTests
         Assert.Same(context, SynchronizationContext.Current);
         Assert.Equal(Environment.CurrentManagedThreadId, context.UiThreadId);
 
-        var error = Task.Run(() =>
+        var error = Task.Factory.StartNew(() =>
         {
             try { context.Drain(); return (Exception?)null; }
             catch (Exception ex) { return ex; }
-        }).GetAwaiter().GetResult();
+        }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default).GetAwaiter().GetResult();
         Assert.IsType<InvalidOperationException>(error);
 
         scope.Dispose();
@@ -425,11 +419,11 @@ public class UiSynchronizationContextTests
         var scope = UiSynchronizationContext.Install(root);
         Assert.Same(scope.Context, SynchronizationContext.Current);
 
-        Exception? OffThreadWrite() => Task.Run(() =>
+        Exception? OffThreadWrite() => Task.Factory.StartNew(() =>
         {
             try { child.Label = "y"; return (Exception?)null; }
             catch (Exception ex) { return ex; }
-        }).GetAwaiter().GetResult();
+        }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default).GetAwaiter().GetResult();
 
 #if DEBUG
         // 绑定到根元素后，子元素的 SetValue 也受线程亲和守卫覆盖（沿父链查找）。

@@ -38,6 +38,7 @@ internal sealed class ClassicDesktopLifetime : IApplicationLifetime
         var window = app.MainWindow
             ?? throw new InvalidOperationException(
                 "Application.MainWindow was not set. Create it in OnFrameworkInitializationCompleted().");
+        window.EnsureInitialized();
         var content = window.Content
             ?? throw new InvalidOperationException("Window.Content was not set.");
 
@@ -50,11 +51,7 @@ internal sealed class ClassicDesktopLifetime : IApplicationLifetime
         var height = window.Height > 0 ? (int)window.Height : 640;
 
         using var win = new Win32Window(window.Title, width, height);
-
-        // design/20：窗口模板（RootComponent 是 WindowComponent）材料化后安装动态属性回推通道
-        // ——生成代码的 U 推送经它落到实际窗口（SetTitle/SetClientSize）；手工路径不受影响。
-        if (window.RootComponent is WindowComponent windowComponent)
-            windowComponent.LiveUpdater = new Win32WindowLiveUpdater(win);
+        window.LiveUpdater = new Win32WindowLiveUpdater(win);
 
         using var presenter = surfaceFactory.Create(
             win.Handle, Math.Max(win.ClientWidth, 1), Math.Max(win.ClientHeight, 1));
@@ -73,7 +70,7 @@ internal sealed class ClassicDesktopLifetime : IApplicationLifetime
             AlwaysRender = window.AlwaysRender,
             CloseOnEscape = window.CloseOnEscape,
             IdleSleepMilliseconds = window.IdleSleepMilliseconds,
-        }, window.RootComponent);
+        }, window);
         app.Host = host; // 主题按钮等运行期宿主动作经 Application.SetTheme 接线
 
         host.FrameTicked += (_, e) =>
@@ -82,7 +79,14 @@ internal sealed class ClassicDesktopLifetime : IApplicationLifetime
                 Console.WriteLine($"first frame: {presenter.Width}x{presenter.Height} px, {content.Descendants().Count()} elements");
         };
 
-        var rendered = host.Run(window.MaxTicks);
+        int rendered;
+        try { rendered = host.Run(window.MaxTicks); }
+        finally
+        {
+            app.Host = null;
+            window.LiveUpdater = null;
+            window.Dispose();
+        }
 
         Console.WriteLine($"ticks={host.Ticks} rendered={rendered} skipped={host.SkippedFrames} " +
                           $"logical={win.LogicalClientSize.Width:F0}x{win.LogicalClientSize.Height:F0} scale={win.ScaleFactor:F2}");

@@ -1,16 +1,8 @@
 # 01 · 模板语法规范
 
-> 状态：v2 定稿（2026-10-29），对应 **v4 失效重算模型**。
-> 本文是 `.ui` 模板语言的**规范正本**，定义词法、句法、语义、字面量与诊断触发点。
-> 取代 [design/03](../design/03-template-engine.md) §3.1–§3.5 的规范地位；03 保留 v3 偏差台账（D1–D41）、
-> v4 台账（§3.5.4）与历史记录。
->
-> 关联：
-> [03 反应式与绑定契约](./03-reactivity-and-binding.md)（失效、渲染、块刷新、双向绑定）、
-> [02 生成代码契约](./02-generated-code-contract.md)（生成文本形态）、
-> [design/14](../design/14-control-template-contract.md)（控件/组件元数据）、
-> [design/05](../design/05-layout-rendering-input.md)（布局/渲染/输入）。
-> [design/15](../design/15-state-and-reactivity.md) 的 v3 状态契约已降为历史记录，不再作为实现依据。
+> 状态：统一根类型版，2026-11-13。本文是当前 .ui 语言规范。
+> 生成代码见 [02](./02-generated-code-contract.md)，更新与绑定见 [03](./03-reactivity-and-binding.md)，元数据见 [04](./04-ui-type-metadata.md)。
+> ui 与 C# 使用相同类型模型；根标签决定基类，内容成员类型决定嵌入能力。
 
 ## 0. 文档约定
 
@@ -18,22 +10,15 @@
 
 | 本文定义 | 本文不定义（去哪看） |
 |---|---|
-| `.ui` 词法、EBNF、元素/属性/文本/指令句法 | 控件如何声明标签、属性、事件、内容模型（design/14） |
-| 属性值形态、求值时机（Build/渲染/块刷新）、诊断触发点 | 组件失效、渲染队列、块刷新、双向绑定的运行时语义（spec/03） |
+| `.ui` 词法、EBNF、元素/属性/文本/指令句法 | 控件如何声明标签、属性、事件、内容模型（spec/04） |
+| 属性值形态、求值时机（初始化/更新/块刷新）、诊断触发点 | 组件失效、渲染队列、块刷新、双向绑定的运行时语义（spec/03） |
 | 表达式作用域、`@if`/`@foreach`/`Key` 的可见语义 | 布局、渲染、hit test（design/05） |
 | 字面量到 C# 的编译期转换 | 生成代码的精确文本与作用域（spec/02） |
 | 语法项实现状态与阶段 | `StyledProperty`/`RoutedEvent` 的运行时实现（design/04） |
 
 ### 0.2 权威关系
 
-1. **语法以本文为准**。词法、句法、诊断触发点在本文定义；design/03 只保留偏差台账与历史修订。
-2. **反应式语义引用 spec/03**。本文 §4.3–§4.14 与 spec/03 §2–§10 必须逐条一致；冲突时按 spec/03 修订本文。
-3. **生成代码以 spec/02 为准**。design/03 §3.6 与 design/14 §14.8 的示例不再作为实现依据。
-4. **控件/组件元数据以 design/14 为准**。本文只规定模板侧如何使用标签、属性、事件与内容模型；
-   其中旧的"可观察参数/`Signal<T>` 参数/`EUI044`"条款由 spec/03 取代。
-5. **偏差只允许出现在台账**。实现与本文的差异必须登记在 design/03 §3.5.3（v3 历史 D1–D41）、
-   §3.5.4（v4 台账）与 spec/02 §12；台账之外的差异视为实现缺陷。
-   不允许"文档写一套、代码静默另一套"。
+语法以本文为准，生成形态以 spec/02 为准，更新/绑定/资源以 spec/03 为准，类型声明以 spec/04 为准。design 保留架构说明和实施报告；历史快照仅供追溯，不是另一套可执行契约。行为变化先更新规范和验收，再修改实现。
 
 ### 0.3 规范用语
 
@@ -59,29 +44,14 @@
 
 ## 1. 语言模型
 
-### 1.1 一个文件 = 一个类 = 一个根元素
+### 1.1 一个文件 = 一个类 = 一个根类型
 
-- 一个 `.ui` 文件只包含一个文档：注释、空白、顶层 `@namespace`/`@using`/`@code` 指令节点与**恰好一个根元素**（§1.5）。
-- 文件名（去扩展名）必须是合法 C# 标识符，并作为生成类名；否则 `EUI013`。
-- code-behind **不是必需的**（spec/02 §2.7「第二组件来源」）：`.ui` 自己就是组件来源，
-  没有同名 `.cs`、也没有 `@code` 的纯展示组件合法。存在 code-behind 时必须是同名**顶层 `partial` 类**：
-  嵌套 → `EUI015`；非 `partial` → `EUI011`。`EUI005`（缺少 code-behind）已随之**停用**。
-- 生成部分提供 `partial class {Name} : global::EclipseUI.Component`、
-  `protected override Element Build()`，以及（模板含动态内容时的）`protected override void Render()`；
-  code-behind 可以省略基类，或**原样重复** `: Component`
-  （其余基类，包括 `Component` 的派生类，一律 `EUI045`，见 spec/02 §10.1）；
-  code-behind 不得声明 `Build()`/`Render()` 或与生成字段同名的成员（`EUI045`）。
-- 根元素必须是元素标签（控件或组件标签）；根层出现文本或 `@if`/`@foreach` → `EUI006`；根元素数量不为 1 → `EUI012`。
-- **窗口模板（design/20，✅ P1 已实现（2026-11-13/D117））**：根元素标签为保留的 `Window`
-  （保留模板根标签，无需 `@using` 可见）时，该文件是**窗口模板**：生成类派生
-  `global::EclipseUI.WindowComponent`（「根标签决定基类」，`[UiTemplateRoot]` 标记的组件型
-  根类型；控件根不走派生语义，spec/03 §5.3）。标签属性 = `WindowComponent` 的 `[UiParameter]`
-  面（`Title`/`Width`/`Height`/`Theme`/`MaxFramesPerSecond`/`AlwaysRender`/`CloseOnEscape`/
-  `IdleSleepMilliseconds`；`Theme` 仅 `{表达式}` 形式）；内容必须是**恰好一个子元素**（0/多个/
-  文本/块/槽/指令 → `EUI061`）；`Class`/`Style`/`Key`/`Ref`/附加属性/`@bind-` → `EUI062`；
-  非根位置 `<Window>` 与「窗口模板被其他模板当标签用」→ `EUI060`（窗口模板退出可组合表面）。
-  窗口描述由 `CreateWindow()` 一次性产出（spec/02 §2）；动态属性 live 面（Title/尺寸）见
-  spec/02 §4.1.3。
+- 每个 .ui 有且仅有一个根标签；文件名为生成类名，必须为合法 C# 标识符（EUI013）。
+- @namespace 必填；可无 code-behind 和 @code。有 code-behind 时要求同名顶层 partial 类，命名空间一致。
+- 生成类直接继承根标签解析到的 CLR 类型，InitializeUi 初始化 this。显式 code-behind 基类必须匹配根类型；初始化/更新保留名冲突报 EUI045。
+- 根类型可为任何合法可继承 UiObject 派生类型；sealed 与根继承环报 EUI064。根层文本/结构块不代替根标签。
+- Window 与普通类型共用解析、属性和内容规则。Window 非 Element，不能赋给 Element 内容（EUI060）；它的 Content 是允许为空或接收一个元素/动态块的单项成员。
+- 生成过程不额外创建根包装对象。Ref、样式及附加属性指向实际控件实例。
 
 ### 1.2 code-behind 与状态
 
@@ -108,36 +78,18 @@
 模板不是"字符串拼 UI"的外壳，而是编译单元：每个动态位置在编译期已知目标元素、目标属性与首次求值顺序；
 运行期按**组件渲染**重算，不按路径/信号订阅。
 
-### 1.4 冻结线
+### 1.4 当前约束
 
-以下决定已冻结，后续只能增量扩展，不得改义：
-
-1. **一个 `.ui` = 一个类 = 一个根元素**；文件名即类名；code-behind 是唯一状态载体。
-   **K23 ④ 修订（✅ S6 已实现（2026-11-08））**：状态载体扩为同名 `.cs` partial 与模板内 `@code` 成员，
-   二者合并进同一个 partial 类；根元素仍恰好一个。见 §1.5 / D86。
-2. **模板作者只写普通类型**：字段/自动属性/普通类；不要求 `[UiState]`、`Signal<T>`、INPC/INCC；
-   `Signal<T>` 仅作为遗留类型使用，模板必须显式写 `.Value`。
-3. **反应式单位是组件渲染**：`Invalidate()` → `Render()` 重算该组件的动态表达式；
-   不存在按路径/按信号的定向订阅。
-4. **`P={expr}` 每次渲染重算**：控件属性直接赋值（属性引擎相等短路）；组件参数带相等保护地推送并失效子组件；
-   不做依赖分析，不因方法调用/索引器/lambda 退化。
-5. **文本 `{expr}` 每次渲染重算**：`Text` 模型重设整段字符串；`TextRuns` 模型只重设动态 run 的 `Text`。
-6. **`@bind-P={expr}` 是双向绑定**：源必须是可写左值（字段/属性）；控件目标走 `UiBinding`，
-   组件目标要求 `{P}Changed` 回调；初始方向源 → 目标；目标变化回写源并失效。
-7. **结构变化只由块处理**：`@if` 切换分支时销毁/重建该分支；`@foreach` 每次刷新重新枚举集合并按 Key 复用；
-   不存在通用元素 diff。**K23 ③ 扩展（✅ S6 已实现（2026-11-08））**：`else`/`else if`/`@switch` 的多分支选择
-   同样由块协调器承担，仍是销毁/重建 + Keyed 复用，不引入元素 diff。见 §1.5 / D87。
-8. **Keyed 复用条件是 Key 相等且 item 身份相等**：引用类型按引用，值类型按值；同 Key 不同 item 重建条目。
-9. **事件处理器 build-once**：控件事件与组件委托参数在 Build 时注册，不在每次渲染重新生成；
-   处理器完成后自动 `Invalidate()` 所属组件（组件委托参数失效父组件）。
-10. **非 UI 事件的变化必须显式 `Invalidate()`**：后台线程、定时器、`await` 续体、直接修改集合/对象，均不自动刷新。
-11. **大小写敏感，不做别名；表达式就是 C# 表达式；不兼容 XAML**。
-    v3 的 `[UiState]`/`[UiObservable]`/`UiWatch`/`IUiObservable`/依赖分析不再是模板契约。
-12. **未实现的语法必须显式保留并报诊断**（`EUI031`/`EUI029`/`EUI030`；插槽错误用 `EUI022`），
-    不得落进"未知属性/未知标签"的兜底。**K23 ③（✅ S6 已实现（2026-11-08））**：`EUI008` 随 `@switch` 转实现而停用，
-    停用码保持停用（§8 规则 4）。
-
-任何违反冻结线的语法提案，必须先在本文登记状态与诊断，再改代码；不接受"先生效、后补文档"。
+1. 每个 .ui 对应一个类和一个根类型，状态成员可写在 @code 或同名 partial .cs 中。
+2. 根标签初始化当前实例；Window 非 Element，由内容类型限制嵌入，不设专用标签分支。
+3. 状态是普通 CLR 类型；Invalidate/Render 重算编译期已知动态槽，没有依赖追踪。
+4. 单向赋值及绑定按成员能力选择，ui/C# 来源不改变行为。
+5. 结构变化由 if/foreach/switch 协调器处理；Key相等且item身份相同才复用。
+6. 事件与void委托在初始化时安装，处理后自动使所属对象失效。
+7. 普通外部状态变化显式失效；安装UI同步上下文后，宿主按批排空续体并整体失效真实子树。
+8. Class/Style/附加属性作用于实际Element；根默认值与调用方local值有明确优先级。
+9. 标识符大小写敏感，using alias可消歧；表达式沿用C#语义，错误映射原文件。
+10. 构建/块/树资源必须有确定释放路径；不保留独立组件包装及兼容机制。
 
 ### 1.5 语法对齐（K23，✅ S6 已实现）
 
@@ -151,7 +103,7 @@
 | `@namespace Dotted.Name` | **必填**，只能一次、只能在顶层；生成文件的命名空间**只由它决定**，不再跟随 code-behind 或 `RootNamespace` 隐式推导。缺失 → `EUI055`；与同名 code-behind 的命名空间不一致 → `EUI056`（都是 Error，短路产物）。**没有保留值**：`global` 只是普通名字，处于全局命名空间的 code-behind 无法匹配任何声明，按 `EUI056` 报告并提示把它搬进命名空间。分号 / 缺值 / 非法名 / 重复 / 非顶层 → `EUI100` | 2026-11-11 拍板 | — |
 | `@using Ns` | 指令，多条、位置不限；生成文件保留普通 `using Ns;`；标签只在导入命名空间内解析，**内置控件（`EclipseUI.Elements`）无豁免**；未导入 → `EUI001` + 缺失 `@using` 建议。**例外（K33，2026-11-11）**：`@namespace` 声明的命名空间及其外层链**隐式可见**，不需要 `@using`，且优先于 `@using`（内层命中即独占，不报 `EUI016`） | K22 + K33 | D85 ✅ / D111 ✅ |
 | `@using Alias = Ns.Type` | 别名（K31）：生成 `using Alias = global::Ns.Type;` 供 `@code`/表达式使用；**同时**让 `<Alias/>` 在本模板内解析为该类型，且优先于目录 tag。目标须是目录里的已知元素/组件，否则 `EUI048`。别名**不进**命名空间可见性集合 | K31 | — |
-| `@code { ... }` | 顶层类成员（字段/属性/方法），可多个块、位置不限、书写顺序不影响可见性；与同名 `.cs` partial **并存**，两者皆可省略（`EUI005` 已停用，spec/02 §2.7）。**K34（D112，2026-11-11）**：无同名 `.cs` 的纯 `.ui` 组件，其 `@code` 里的 `[UiParameter]`/`[UiSlot]`/`[UiContent]` 由目录**语法级提取**为对外表面（`.ui` 不依赖 `.cs` 也能声明参数/插槽/内容）；有同名 `.cs` 时这些特性仍只在本模板内可见 → `EUI057`（Warning） | K21 + K23 ④ + K34 | D86 ✅ / D112 ✅ |
+| `@code { ... }` | 顶层类成员，可多个块、位置不限，与同名.cs partial并存；目录从合并符号视图读取所有成员，不再有语法近似表面或跨模板可见性限制 | K35/K36 | 已实现 |
 | `else` / `else if` | **不带 `@`**，紧接前一分支 `}`；生成侧为多分支 `ConditionalBlock` | K23 ③ | D87 ✅ |
 | `@switch (...) { case ...: break; default: ... break; }` | 每个 `case`/`default` 独立分支（无贯穿）；`break;` 必须单独成行；空 section 必须显式写 `break;`（K30）；生成侧 `SwitchBlock<T>` | K23 ③ + K29/K30 | D87 ✅ |
 | `@* ... *@` | 编译器丢弃的注释；未闭合报 `EUI100`；`<!-- -->` **永久保留为等价合法注释**（K26，双注释并存、不设弃用期），两种注释未闭合统一 `EUI100` | K23 / K26 | D88 ✅ |
@@ -391,24 +343,32 @@ string        ::= '"' raw-char* '"'
 |---|---|---|
 | 文档恰好一个根元素 | `EUI012` | ✅ |
 | 根层不允许文本或控制流块（`@code`/`@using`/注释除外） | `EUI006` | ✅ |
-| 开始/结束标签同名且大小写一致 | `EUI100` | ✅ |
-| 属性必须有 `=` 和值 | `EUI100` | ✅ |
+| 开始/结束标签同名且大小写一致 | `EUI064` | 根类型不可继承或根继承环 | 根标签/声明 | Error | 已实现 |
+| `EUI100` | ✅ |
+| 属性必须有 `=` 和值 | `EUI064` | 根类型不可继承或根继承环 | 根标签/声明 | Error | 已实现 |
+| `EUI100` | ✅ |
 | 同一元素重复属性 | `EUI025` | ✅ C3（纯普值同名重复；任一侧是绑定的同名重叠仍 `EUI033`，见 §3.3） |
 | `@if`/`@foreach`/`@switch` 只能出现在 `Children` 内容模型内 | `EUI006` | ✅ |
 | 块内容只允许元素与嵌套块，不允许裸文本 | `EUI006` | ✅ |
-| `@switch` 非空 section 缺 `break;` | `EUI100` | ✅ S6 |
-| `@switch` 空 section 未写 `break;`（多标签形态） | `EUI100` | ✅ S6（K30） |
-| `@switch` 重复 `default` | `EUI100` | ✅ S6 |
+| `@switch` 非空 section 缺 `break;` | `EUI064` | 根类型不可继承或根继承环 | 根标签/声明 | Error | 已实现 |
+| `EUI100` | ✅ S6 |
+| `@switch` 空 section 未写 `break;`（多标签形态） | `EUI064` | 根类型不可继承或根继承环 | 根标签/声明 | Error | 已实现 |
+| `EUI100` | ✅ S6（K30） |
+| `@switch` 重复 `default` | `EUI064` | 根类型不可继承或根继承环 | 根标签/声明 | Error | 已实现 |
+| `EUI100` | ✅ S6 |
 | `@switch` case 标签非常量形态 | `EUI047` | ✅ S6（常量性由探针判定） |
-| `@switch` 嵌套块内写 `break` | `EUI100` | ✅ S6 |
+| `@switch` 嵌套块内写 `break` | `EUI064` | 根类型不可继承或根继承环 | 根标签/声明 | Error | 已实现 |
+| `EUI100` | ✅ S6 |
 | `Key` 只能出现在 `@foreach` item 模板的第一个元素根上 | `EUI010` | ✅ |
-| `@foreach` 必须写 `var 名字 in ...` | `EUI100` | ✅ |
+| `@foreach` 必须写 `var 名字 in ...` | `EUI064` | 根类型不可继承或根继承环 | 根标签/声明 | Error | 已实现 |
+| `EUI100` | ✅ |
 | `@bind-P` 的值不是 `{expr}` | `EUI037` | ✅ S3 |
 | `@bind-P` 目标非法（不可写/无属性字段/事件/保留/内容/组件缺 `PChanged`） | `EUI040` | ✅ S3+C4（控件 ✅ S3；组件 ✅ C4）；名字**存在**但不可绑时消息附原因（§4.5） |
 | `@bind-P` 源非法（非可写左值/类型不符） | `EUI037` | ✅ S3 |
 | `@bind-P` 与同名属性/`:bind`/`:value` 重复 | `EUI033` | ✅ S2（完全重复属性仍 `EUI025`，C3） |
 | `Key={}` 空表达式 | `EUI010` | ✅ S2 |
-| 注释不写在标签内部 | `EUI100` | ✅ |
+| 注释不写在标签内部 | `EUI064` | 根类型不可继承或根继承环 | 根标签/声明 | Error | 已实现 |
+| `EUI100` | ✅ |
 
 ### 3.3 内容模型的句法后果
 
@@ -428,13 +388,13 @@ string        ::= '"' raw-char* '"'
 
 | 位置 | 可见名字 | 求值时机 |
 |---|---|---|
-| 根元素/根属性/根文本 | code-behind 实例成员（`this` 隐式）、同命名空间类型、全限定类型 | Build 首次；每次组件 `Render` 重算 |
+| 根元素/根属性/根文本 | code-behind 实例成员（`this` 隐式）、同命名空间类型、全限定类型 | 初始化首次；每次所属对象 `Render` 重算 |
 | `@if` 内容 | 同上；不能声明局部变量 | 分支构造时首次；分支存活期间每次所属作用域刷新重跑 |
-| `@if` 条件 | 同上 | Build 首次；每次块刷新重算 |
+| `@if` 条件 | 同上 | 初始化首次；每次块刷新重算 |
 | `@foreach` 集合 | 同上 | 每次块刷新重新求值并枚举 |
 | `@foreach` item | item 变量 + 外层 item 变量（嵌套）+ code-behind 实例成员 | 条目构造时首次；复用条目每次刷新重跑 |
 | `Key={expr}` | item 变量 + code-behind 实例成员 | 每次枚举每个 item 求值 |
-| 控件事件/组件委托参数 | 同上 | Build 一次（build-once） |
+| 控件事件/void委托属性 | 同上 | 初始化一次（build-once） |
 
 - 模板本身不声明局部变量、方法、类型参数；类成员写在 code-behind `.cs` partial 或根层 `@code` 块（K23 ④，✅ S6）。
   `@code` 成员与 code-behind 成员在同一条生成链上一视同仁（`EUI045` 只拦与生成保留名冲突的成员），
@@ -445,119 +405,47 @@ string        ::= '"' raw-char* '"'
 
 ### 4.2 标签与属性解析
 
-解析顺序按目录项的 `Origin` 分支（design/14 §14.5.3）：
+所有 ui/C# 类型通过同一符号目录解析，按成员能力处理：保留属性 → 路由事件 → StyledProperty/普通可写 CLR 属性 → 声明的附加属性 → 未知。
 
-| Origin | 普通属性 | `@bind-P` |
-|---|---|---|
-| 控件（`Element` 派生） | 保留属性（`Key`/`Ref`/`Class`/`Style`）→ 事件（`On{Event}`）→ 属性表 → 附加属性（G4）→ 未知 | 目标必须是属性表内的 public 可写属性 + `{Name}Property`；事件/保留/附加属性/只读/无 `{P}Property`/`[UiIgnore]` → `EUI040`（名字存在时带原因） |
-| 组件（`Component` 派生，或由同名 `.ui` 声明） | 保留属性 → 参数表（委托参数就是事件，不做 `On*` 推断）→ 未知 | 目标必须是 `[UiParameter]` 且 public setter 的参数，并且组件声明了 `{P}Changed`（`Action<T>`）参数；否则 `EUI040`（非参数的公开成员同样带原因） |
-
-- **组件的两种来源**（spec/02 §2.7）：code-behind 基类链命中 `Component`，或者存在**同名且同命名空间**
-  的 `.ui` 声明。后者允许 `.ui` 单独成组件、无需 code-behind；显式派生了其他类的类型仍按继承链判定。
-  **K34（D112）**：纯 `.ui` 组件的参数表来自 `@code` 模板特性的语法级提取（`[UiParameter]`/
-  `[UiSlot]`/`[UiContent]`），与 `.cs` 来源的组件同表面、同诊断（`EUI040`/`EUI002` 口径一致）；
-  有同名 `.cs` 时仍以 `.cs` 符号为准，`@code` 特性只对本模板可见（`EUI057` 警告）。
-- 标签必须解析到目录中的已知控件/组件；未知 → `EUI001`；冲突 → `EUI016`；
-  不可用 → `EUI017`/`EUI018`/`EUI030`。
-- 属性名大小写敏感；未知 → `EUI002`，并给最近名建议（Levenshtein ≤ 3，最多 3 个候选）。
-  若名字命中一个**存在但未进入模板表面**的公开成员（只读、无 public setter、`init`/`required`、
-  没有 `{Name}Property`、`[UiIgnore]`、组件上不是 `[UiParameter]`），改为说明原因、不给拼写建议
-  （如 `'IsEnabled' of 'Button' is not a template property: it is not backed by a StyledProperty
-  (there is no 'IsEnabledProperty' field)`）；`@bind-` 版本见 §4.5（`EUI040`）。
-- 事件属性只对控件按 `On{EventName}` 解析；组件的 `OnClose` 若存在同名委托参数，按参数处理，
-  不按事件字段处理。
-- `@bind-P` 的 `P` 按上表解析；解析失败先报 `EUI002`（未知属性），解析成功但不可绑报 `EUI040`。
-- `P:bind` / `P:value` 属已移除的旧语法（K27）：一旦出现即报 `EUI046` Error，不再解析目标、不做语义映射；
-  `EUI043` 停用并保持停用（§4.6、§6.2）。
-- 事件/属性同名的元数据冲突由 design/14 §14.4.2 的 `EUI026` 拦截。
-- 保留属性优先于控件同名属性；控件不得声明 `Key`/`Ref`/`Class`/`Style` 同名属性。
-- **组件标签上的 `Class`/`Style`/附加属性**（`Ref` 除外）作用于组件的**根元素**而不是组件实例——
-  组件不是 `Element`（spec/03 §5.3），生成形态见 spec/02 §4.12.6。分析器侧解析规则与控件相同
-  （`Class` 查样式目录、`Style` 只收声明序列、附加属性查目录），差异只在发射目标。
-- 控件的内容模型目标若是普通可写属性（如 `Button.Label`），可作为 `@bind-P` 目标；
-  但同一元素不得再有文本内容（`EUI033`）。组件的 `[UiContent]`/`[UiSlot]` 参数是 build-once，
-  不可作为 `@bind-P` 目标（`EUI040`）。
-- 参数是否为可观察类型/partial **不参与**解析：所有合法参数都可读写（spec/03 §10.1）。
+- 名字大小写敏感。标签遵循命名空间和 alias 查找；未知 EUI001、冲突 EUI016、不可用类型报告确定原因。
+- 普通 public getter/setter 属性可赋值，无需 UiParameter。UiParameter 可声明 Required；内容和具名槽由 UiContent/UiSlot 描述。
+- StyledProperty 赋值由属性引擎相等短路；plain CLR 属性相等保护下写 setter 并使目标失效。
+- 路由事件按 OnEvent 解析；void 委托属性按真实签名包装；非 void 委托为普通值属性。
+- 绑定按 StyledProperty 或匹配 PChanged 能力选择，不按控件来源分类。只读、内容、槽、事件及保留属性不可绑定。
+- Class/Style/附加属性要求 Element 目标；Ref 赋实际实例；非 Element 内容宿主仍可用普通属性和内容成员。
+- 默认内容/槽是初始化快照，先赋值再初始化目标。目录和诊断的完整规则见 spec/04。
 
 ### 4.3 赋值形态总表
 
-| 写法 | 求值 | 反应式 | 运行时机制 | 约束/诊断 | 状态 |
-|---|---|---|---|---|---|
-| `P="literal"` | Build 一次 | 否 | 编译期转换 + 属性赋值 | `EUI003`/`EUI023` | ✅（§5.2 全表，C3） |
-| `P={expr}` | Build + 每次渲染 | 是（组件级） | 控件属性直接写（相等短路）；组件参数相等保护 + 子 `Invalidate()` | 目标可写；不做依赖分析 | S1/S4（当前一次性，D23）；组件推送形态 ✅ C4 |
-| `@bind-P={expr}` | Build + 双向 | 是 | 控件 `UiBinding`；组件 `PChanged` + 参数推送 | 源可写左值；目标可写；组件需 `PChanged` | ✅ S3（控件）/ S4+C4（组件） |
-| `P:bind={expr}` | — | — | — | 已移除（K27），`EUI046` Error | 停用（`EUI043` 不复用） |
-| `P:value={expr}` | — | — | — | 已移除（K27），`EUI046` Error | 停用（`EUI043` 不复用） |
-| `OnE={expr}` | Build 时 `AddHandler` | 否 | 处理器后自动 `Invalidate()` | `Action` / `Action<RoutedEventArgs>` | ✅（控件）/ C4 组件 |
-| `Key={expr}` | 每次枚举 | 身份 | Keyed 复用 | 第一个元素根；条目身份 | ✅（基础）/ S2（v4 复用） |
-| `Ref={ident}` | Build 时赋给字段 | 否 | 编译期字段赋值 | 简单标识符、字段可写（生成器探针校验） | ✅ C5（非标识符/语义非法 `EUI029`） |
-| `Class`/`Style` | — | — | — | — | G4 / 保留 `EUI031` |
+| 写法 | 求值与行为 |
+|---|---|
+| P="literal" | 初始化一次，编译期转换 |
+| P={expr} | 初始化和后续 Render 重算；内容参数内部为构建快照 |
+| @bind-P={expr} | 首次源到目标，后续双向；目标须具备绑定能力 |
+| OnE={handler} / void 委托属性 | 初始化安装一次；处理后使所属对象失效 |
+| Key={expr} | foreach 枚举时计算条目身份 |
+| Ref={field} | 初始化时赋实际实例；必须可写字段 |
+| Class="a b" / Class={expr} | 初始及动态类集；模板类和使用点类合并 |
+| Style="P: value;" | 静态内联 setter；表达式形式拒绝 |
+| P:bind / P:value | 已移除，EUI046 |
 
 ### 4.4 单向赋值 `P={expr}`
 
-- `P={expr}` 是**普通赋值**，依赖组件渲染：Build 首次求值；之后每次所属组件 `Render()` 重算并重新赋值。
-- 没有依赖分析：表达式可以包含方法调用、索引器、lambda、LINQ、`await` 之外的一切 C# 表达式；
-  不会因为"不可观察"降级或报警。表达式必须无副作用（spec/03 §4.5）。
-- 目标：
-  - **控件属性**：必须可写并存在 `{Name}Property`；写入走公开 CLR setter
-    （`Element.SetValue` 内部相等短路/失效，R3/R7）；不可写/缺失 → `EUI019`（已进入目录的属性）
-    或 `EUI002`（未暴露）；`@bind` 目标非法 → `EUI040`。
-  - **组件参数**：必须 `[UiParameter]` + public setter。每次渲染求值后：
-    - 先转型到参数声明类型；
-    - 用 `EqualityComparer<T>.Default` 比较当前参数值；
-    - 不同才写公开 setter 并调用子组件 `Invalidate()`；相同则不赋值、不失效。
-  - **静态/动态统一**：`P="literal"` 也走公开 setter，但只在 Build 一次。
-- 首次推送发生在子组件 `Mount()` 之前；此时 `Invalidate()` 是 no-op，参数已就位（spec/03 §5.2）。
-- 组件参数没有 diff、不重建组件；子组件 `Render` 重算自己的动态表达式。
-- 参数为委托类型时按"组件事件"处理（§4.13），build-once，不参与渲染重算。
-- `P={expr}` 与文本内容同时指向同一 `Text` 目标 → `EUI033`（同一目标重复赋值），
-  不生成两套写入；`P=` 与 `@bind-P` 同时用于同一目标 → `EUI033`。
-- 字面量转换在编译期完成（R2）；第三方转换器因 R1 不支持（§5.2）。
+初始化首次求值，之后在所属对象 Render 重算。StyledProperty 写公开 setter 并由属性系统短路；普通属性转换至目标类型、相等保护后写入并使目标 Invalidate。静态字面量只初始化一次。
+
+参数与回调在目标 EnsureInitialized 前就位；根输入参数在 base.InitializeUi 前就位。Render 不重建静态对象。void 委托是事件式输入，只在初始化安装；表达式不进行依赖追踪，也不要求可观察路径。
+
+同一目标同时出现 P 和 @bind-P，或文本与对应字符串属性重复写入，报 EUI033。表达式应无副作用；C# 类型错误经原文件映射报告。
 
 ### 4.5 双向绑定 `@bind-P={expr}`
 
-- 语法见 §2.3/§3.1；值必须是 `{expression}`，字面量 → `EUI037`。
-- 目标 `P`：
-  - 控件：public 可写属性 + `{Name}Property`；不得是事件/保留属性；
-  - 组件：`[UiParameter]` + public setter + 声明 `{P}Changed`（`Action<T>`：恰好一个参数，且与 `P` 同一类型，
-    可空标注忽略——形状在扫描期按符号判定，`Action`/`Action<其它类型>` 都算「没有回调」）；
-  - `[UiContent]`/`[UiSlot]` 参数、委托参数、保留属性、其它 → `EUI040`。
-- **`P` 必须落在「支持绑定」的成员上，两种失败要分开报**：
-  - 名字在类型上**不存在** → `EUI002`（拼写问题，附最近名建议）；
-  - 名字**存在但不可绑**（只读 / 无 public setter / `init`+`required` / 没有 `{P}Property`
-    / `[UiIgnore]` / 组件上不是 `[UiParameter]` …）→ `EUI040`，消息带**具体原因**
-    （如 `'IsEnabled' is not backed by a StyledProperty (there is no 'IsEnabledProperty' field)`）。
-  两条提示的动作完全不同（改拼写 vs 换目标或补声明），所以不能混成一条。
-  同一个「不可绑」表也用于普通赋值：`P=` 命中它时仍是 `EUI002`，但文案改为说明原因、不给拼写建议（§4.2）。
-- 补全只列「支持绑定」的成员（`@bind-` 之后）：控件是属性表内的可写属性，组件是带**形状正确的**
-  `{P}Changed` 的非内容/非委托参数；不可绑的名字不进候选，由诊断负责解释。
-- 源 `expr` 必须是**可写左值**（spec/03 §8.1）：
-  1. 字段、可写属性（含 `private`/`internal` setter，生成代码在同一 partial 类内）；
-  2. 允许：`this.Count`、`Vm.Name`、`t.Done`（`t` 为引用类型 item）、`_state.Enabled`（`_state` 是字段）；
-  3. 不允许（`EUI037`）：
-     - 方法调用、索引器、`?.`、`??`、强制转换、`new`、lambda；
-     - 静态成员、常量、只读字段、`init` setter；
-     - 类型与目标属性不一致（忽略可空注解）；
-     - 中间段是**属性返回的 struct**（`Vm.State.Enabled = v` 是 CS1612）；中间段是 struct 时必须是字段；
-     - `@foreach` 的**值类型 item** 的成员（迭代变量只读）。
-  4. 静态无法判定的左值问题由 C# 经 `#line` 报错；能静态判定的必须报 `EUI037`。
-- 初始方向：**源值胜出**（Build 时目标被源初始化）；随后每次所属作用域刷新都源 → 目标。
-- 控件目标生成 `UiBinding.TwoWay`（spec/03 §8.2、spec/02 §4.4）：
-  - 构造时写目标、订阅 `element.PropertyChanged`；
-  - `Refresh()` 源 → 目标，相等短路；
-  - 目标变化且非同步写入时回写源并 `Invalidate()` 所属组件；
-  - `_syncing` 防回环；`Dispose` 解除订阅。
-- 组件目标不使用 `UiBinding`，而是"父推送 + 子回调"（spec/03 §8.3）：
-  - 父在 Build 赋 `cmp.PChanged = v => { if (!Equals(source, v)) { source = v; Invalidate(); } };`
-  - 父调用推送方法把源写给参数（相等保护 + 子 `Invalidate()`）；每次父渲染再推送；
-  - 子组件在内部动作中修改参数后调用 `PChanged?.Invoke(newValue)` 并 `Invalidate()` 自己；
-    不得在 `Render()` 中无条件调用回调。
-- 两侧写入都必须通过公开/可见 setter/属性引擎；**不得**用 `SetValue/GetValue` 绕过属性引擎（R3/R7）。
-- 目标属性与源解析到同一成员/同一对象时视为自绑，`EUI037`；
-  静态无法判定时不报，运行时 `_syncing`/相等保护防回环。
-- item 模板内：源可以 rooted at item，也可以 rooted at 组件状态；条目重建时旧绑定 Dispose、新绑定重建。
-- **组件内容体内不得出现 `@bind`**（`EUI040`）：内容 build-once，没有渲染动作作用域；
-  需要内容随状态变化时，把组件标签放进父模板的 `@if`/`@foreach`，或让内容自身是独立组件。
+目标按成员能力选择：可写StyledProperty生成UiBinding；普通可写属性要求PChanged回调（返回void、一个与P同类型参数）。内容、槽、事件、保留属性、附加属性不能绑定。未知名字EUI002，存在但能力不够EUI040。
+
+源必须为类型匹配的可写左值：字段、可写属性、引用item的成员。方法调用、索引器、条件访问、只读/静态成员、值item成员以及属性返回struct的中间写入报EUI037；自绑定同样拒绝。不可静态判定的问题交C#经源映射报告。
+
+首次方向源到目标；StyledProperty绑定订阅变更并用同步守卫防回环，普通属性绑定先安装回调再相等保护推送。目标动作改变值后回写源并失效声明绑定的对象。重复目标写入报EUI033。
+
+初始化快照内容内部不建立双向绑定（EUI040），需要动态状态的内容应自身实现为独立ui/C#控件。完整运行时规则见spec/03 §8。
 
 ### 4.6 旧语法 `:bind` / `:value`（已移除，K27）
 
@@ -578,26 +466,12 @@ string        ::= '"' raw-char* '"'
 
 ### 4.8 生命周期与资源
 
-| 位置 | 生成/归属 | 何时释放 |
-|---|---|---|
-| 根级 `UiBinding` | `__bind{N}` 字段 + `Track(...)` | 组件 `Dispose()` |
-| 根级 `@if`/`@foreach` 块 | `__blk{N}` 字段 + `Track(...)` | 组件 `Dispose()` |
-| 块内容/条目内的绑定、子块、子组件 | `BlockScope.Disposables` | 分支切换/条目重建/条目移除/块 `Dispose()` |
-| 组件实例（根级） | `Track(cmp)`（= `Adopt` + 登记释放） | 组件 `Dispose()` |
-| 组件实例（块/条目内） | `Adopt(cmp)` + `Disposables.Add(cmp)` | 条目/分支释放 |
-| 事件处理器 | 不产生资源 | 元素生命周期（build-once） |
-
-- 模板不写 `Subscribe`/`Dispose`；作用域由生成代码负责（R8）。
-- `Build()` 构造元素、赋值、注册事件、构造绑定与块；`Render()` 只调用 `U{N}()`/`Refresh()`，
-  **不得**构造新元素、注册事件、安装绑定、调用 `Mount()`。
-- `@if` 分支重建会销毁旧内容（元素重新构造），控件的构造/setter 必须可重复执行且无副作用
-  （design/14 §14.4.5）。
-- `@foreach` 条目复用/重建规则见 §4.12：同 Key 同 item 复用；同 Key 不同 item 重建并释放旧 scope。
-- `ForEachBlock.Dispose` 必须释放仍存在条目的 `BlockScope.Disposables`（修复 D18/D27）；
-  `ConditionalBlock.Dispose` 释放当前分支作用域；整块卸载不得泄漏条目资源。
-- 生成代码不得把资源存静态字段/单例/`ConditionalWeakTable`（R6/R8）；
-  每个绑定/块/组件可追踪到唯一所有者。
-- 没有订阅表：v4 的资源是绑定、块、组件与事件处理器，不存在 `UiWatch`/`UiSubscription`。
+- EnsureInitialized 幂等构造静态内容与首次动态值；Render 只刷新动态槽、绑定与块。
+- 普通子控件归实际内容树，根/块绑定资源分别登记到 UiObject.Track/BlockScope。
+- 短命构建作用域在失败时清理尚未挂接对象，成功后不保留第二套子项表。
+- Children.Remove/Clear 只摘除，允许重挂；Unmount 负责摘除、通知并释放。Dispose 幂等，按子树和资源逆序完成清理。
+- if 分支变化、foreach 身份变化/条目移除及块释放都会清理旧作用域与根实例。
+- 不存在独立组件生命周期、挂载 API 或根转发。详见 spec/03。
 
 ### 4.9 文本与内容模型
 
@@ -612,7 +486,7 @@ string        ::= '"' raw-char* '"'
 
 文本语义：
 
-- 静态文本在 Build 时赋值：`Text` 模型合并所有静态段为一条字符串；
+- 静态文本在 初始化时赋值：`Text` 模型合并所有静态段为一条字符串；
   `TextRuns` 模型把**连续静态段**合并为一个 `TextRun`（空段不生成），与 spec/02 §4.8.1 一致。
 - 含 `{expr}` 的文本是**动态文本**，随所属作用域渲染重算：
   - `Text`：一个文本节点生成**一个完整插值串**，每次渲染重设整个目标值；
@@ -635,7 +509,7 @@ string        ::= '"' raw-char* '"'
   `else`/`else if` 不带 `@`（K23 ③ / D87，✅ S6），由多分支 `ConditionalBlock` 承担。
   条件必须是 C# `bool` 表达式；非 `bool` 由 C# 通过 `#line` 报类型错误，没有专门的模板诊断。
   孤立 `else`（前面不是 `@if` 块）不参与续接，落成普通文本 → `EUI006`；`EUI009` 只留给其它未识别指令。
-- 首次求值在 Build 时；之后每次所属作用域渲染通过 `ConditionalBlock.Refresh()` 重新求值。
+- 首次求值在 初始化时；之后每次所属作用域渲染通过 `ConditionalBlock.Refresh()` 重新求值。
   条件可包含方法调用/索引器/LINQ；没有"条件依赖"分析，也不需要。
 - 条件在两次渲染间不变：分支内容保留，重跑分支的渲染动作（`BlockScope.RenderActions`）。
 - 条件翻转：销毁旧分支（释放其作用域），构造新分支；新分支构造时完成首次求值。
@@ -727,7 +601,7 @@ string        ::= '"' raw-char* '"'
     静默、交回生成代码经 `#line` 由 C# 报错（spec/02 §2.4 规则 8 不重复报告）；判定口径见
     spec/02 §4.6.1 规则 7。两个委托类型的选择仍按表达式**语法形态**判定——tokenizer 切片
     （2026-11-05）用 Roslyn 解析替代正则。
-  - **build-once**：Build 时 `el.AddHandler({Event}, 包装);`，不在渲染时重新注册。
+  - **build-once**：初始化时 `el.AddHandler({Event}, 包装);`，不在渲染时重新注册。
   - 处理器表达式先转为委托局部 `h{N}`（类型为匹配到的 `Action`/`Action<RoutedEventArgs>`），
     包装在用户处理器**同步返回后**调用所属组件 `Invalidate()`：
     `var h0 = (Action)(() => AddTask()); el.AddHandler(Button.ClickEvent, () => { h0(); Invalidate(); });`。
@@ -746,51 +620,15 @@ string        ::= '"' raw-char* '"'
   必须显式 `Invalidate()`（spec/03 §9.3）。
 - 事件名区分大小写；`Onclick` 是未知属性。
 
-### 4.14 组件
+### 4.14 可复用 UI 类型
 
-组件是 `.ui` + code-behind 生成的 `Component` 子类；标签规则与控件相同（design/14 §14.4.1），
-但属性来自参数而非 StyledProperty。
+可复用类型可以用 C#、.ui 或二者的 partial 组合编写。文件根类型决定继承关系，类型本身决定属性、事件、内容与嵌入能力。
 
-- 参数必须标 `[UiParameter]`，`public`、有 `public` setter（`init` 不允许）；
-  必填写 `[UiParameter(Required = true)]`。缺失必填 → `EUI027`；
-  `required`/`init`/无 setter → `EUI028`。
-- 参数类型任意，但必须是合法泛型实参：不得是 `ref struct`/指针/`Span<T>`
-  （生成代码用 `EqualityComparer<T>` 做相等保护）；否则 `EUI028`。
-- 参数是**普通属性**：不要求 `[UiState]`、不要求 partial、不要求可观察；
-  父渲染推送 + 子组件 `Invalidate()`，子组件重算自己的动态表达式（§4.4）。
-- 双向参数：组件为目标参数 `P` 声明 `[UiParameter] public Action<T>? PChanged { get; set; }`；
-  `@bind-P` 依赖该回调（§4.5）；缺失/类型不符 → `EUI040`。
-- 构造顺序（冻结；精确文本见 spec/02 §4.12）：
+子标签构造顺序：new → 构建临时登记 → 属性/回调/Ref → 默认内容与具名槽 → EnsureInitialized → 加入声明的内容成员。
 
-```text
-new cmp0
-→ 作用域登记（Track / Adopt + Disposables.Add / receiver.TrackContent）
-→ 参数（源码顺序：静态赋值、动态推送 U{N}()、事件/@bind 回调混合）
-→ 默认内容（若有）
-→ cmp0.Mount()
-→ parent.Children.Add(cmp0.Root)
-```
+根标签初始化当前实例：普通输入/内容参数/槽先就位 → 基类初始化 → 本层模板默认属性与结构。StyledProperty 根默认值写 template 层，调用方 local 覆盖；类集内部在前、外部在后。
 
-- 作用域登记在参数/内容之前：参数 setter、内容构建或 `Mount()` 失败时，父作用域仍可释放组件。
-- 参数/回调必须在 `Mount()` 之前完成：子组件首次 `Build()` 读取参数。
-- `Mount()` 幂等；`Dispose()` 幂等；组件实例由调用方作用域释放，组件内资源随实例释放。
-- 参数没有 diff：Build 只跑一次；参数推送只改属性并失效子组件，不重建组件模板。
-- 子组件内部修改参数不自动通知父；需要向上同步时使用 `PChanged`（§4.5）。
-  父未使用 `@bind` 时，子对参数的修改只在子内部生效；下次父渲染会推送父源值覆盖。
-- 默认内容（C4 已落地，2026-11-05）按 `[UiContent]` 参数处理；具名插槽（C6 已落地，2026-11-05，
-  §4.15）。内容/插槽 build-once，不可观察，不随父渲染重算。
-- 组件内容（`[UiContent]`）的额外规则（spec/02 §4.12.3）：
-  - 内容参数类型只接受 `IReadOnlyList<Element>`（多根）或 `Element?`（单根）；其他类型 → `EUI021`；
-  - 内容中的 `@if`/`@foreach` 生成普通 C# `if`/`foreach`，在 Build 时按当前值展开一次，不参与失效重算；
-  - 内容中的 `{expr}`/`P={expr}` 是 Build 时快照，不生成 `U`/`R`；
-  - 内容**体内**不得出现 `@bind` → `EUI040`；`Key` → `EUI010`；裸文本 → `EUI006`；
-  - 内容中的子组件由接收方 `TrackContent` 登记，随接收方释放；不得 `Track` 到模板父组件；
-  - 需要内容随父状态变化时，把组件标签放进父模板的 `@if`/`@foreach`，或让内容自身是独立组件。
-- 组件标签不继承控件的 StyledProperty 表面；`Padding` 等控件属性不会自动成为组件参数。
-- 组件自身状态只对子模板可见；父不能通过标签访问。
-- 组件不做路由事件（design/14 §14.6.2）；需要跨组件冒泡时，组件把内部根元素的
-  `RoutedEvent` 转成参数回调。
-- 组件为文档根时：`Track(cmp)` → `Mount()` → `return cmp.Root;`，不挂父级。
+公开可写属性可直接使用；UiParameter(Required=true) 可声明必填（EUI027），UiContent/UiSlot 声明单/多项内容。绑定回调、插槽和资源规则对 ui 与 C# 完全相同，见 spec/03、spec/04。
 
 ### 4.15 保留属性与保留语法
 
@@ -870,7 +708,7 @@ new cmp0
 </StackPanel>
 ```
 
-- **目标是目录里的已知元素/组件**（派生 `Element`/`Component`、可见性合规）。不是 → `EUI048`，
+- **目标是目录里的已知元素/组件**（派生 `UiObject`、可见性合规）。不是 → `EUI048`，
   span 指向目标类型名；使用点不再叠加「未知标签」，同一处只有一条错。
 - **别名绕过命名空间可见性**：目标所在命名空间不必 `@using`。这正是它解决重名的机制——
   `@using A` + `@using B` 都导入时同名 tag 是 `EUI016`，别名则是模板内的显式选择。
@@ -993,25 +831,24 @@ new cmp0
 | `EUI042` | **停用**：v3 item `@bind` 禁止组件级源；v4 允许 | — | — | — |
 | `EUI043` | **停用**：旧语法 `:bind`/`:value` 弃用告警；K27 起旧语法移除，改由 `EUI046` 报错 | — | — | — |
 | `EUI044` | **停用**：v3 非可观察组件参数不刷新；v4 所有参数推送 + `Invalidate()` | — | — | — |
-| `EUI045` | code-behind 与生成代码冲突（声明 `Build()`/`Render()`、基类不是省略/原样 `Component`、与生成/基类成员同名造成隐藏/歧义，包括隐藏 `Invalidate`）；K25 起扩到 `@code` 成员撞生成保留名 | code-behind / `@code` 成员声明 | Error | ✅ 2026-11-08（D57/D80，`CodeBehindConflictTests` 23 例；实现口径见 spec/02 §10） |
+| `EUI045` | code-behind 基类与根类型不匹配，或成员与生成保留名冲突 | C#/ui 声明 | Error | 已实现 |
 | `EUI046` | 旧绑定语法 `P:bind` / `P:value` 已移除（K27），提示改写为 `@bind-P` / `P=` | 属性名 | Error | ✅ S6（2026-11-08） |
 | `EUI047` | `@switch` 的 case 标签不是编译期常量（K29 ②）：语法层拒绝非常量形态，常量性由探针判定 | case 标签 | Error | ✅ S6（2026-11-08） |
 | `EUI048` | `@using` 别名不合法（K31）：目标不是目录里的已知元素/组件、同一模板重复声明、与已导入命名空间同名 | 指令 / 目标类型名 | Error | ✅ K31（2026-11-09） |
-| `EUI057` | `@code` 里声明 `[UiParameter]`/`[UiSlot]`/`[UiContent]` **且存在同名 `.cs`**：目录符号扫描只看 `.cs` 半边，这些特性到不了其他模板（spec/02 §2.7）；要对外暴露就把声明挪进 `.cs`。**无 `.cs` 的纯 `.ui` 组件不报**——`@code` 特性由目录语法级提取为对外表面（K34/D112） | `@code` 特性名 | Warning | ✅ 2026-11-11（K34 收窄） |
-| `EUI060` | 模板根类型被误用为组件（design/20）：窗口模板（根 = `<Window>` 的 `.ui`）或任何 `[UiTemplateRoot]` 标记类型的子类，被其他模板当标签使用（`<MainWindow/>`，目录 HiddenTag 通道给定向原因）；以及 `<Window>` 出现在非根位置（保留模板根标签只能作模板的单根元素） | 标签名 | Error | ✅ P1（2026-11-13，D117） |
-| `EUI061` | 窗口模板的内容不是恰好一个子元素（design/20）：0 个/多个子元素、文本、`@if`/`@foreach`/`@switch` 块、`<Slot>`/`<ContentSlot>`、块内指令——窗口内容没有「多子元素自动包裹」语义（与模板恰一根元素同一哲学） | `<Window>` 标签 / 内容位置 | Error | ✅ P1（2026-11-13，D117） |
-| `EUI062` | `<Window>` 根上的非法属性形态（design/20）：`Class`/`Style`/`Key`/`Ref`/附加属性（`Owner.Prop`）/`@bind-`——窗口没有自己的根元素可承接组件根的元素级属性语义；窗口属性 = `WindowComponent` 的 `[UiParameter]` 面，未知属性仍走 `EUI002`（带建议）、无转换器的字面量走 `EUI023` | 属性名 | Error | ✅ P1（2026-11-13，D117） |
-| `EUI063` | code-behind 基类与窗口模板不一致（design/20，双向）：窗口文件的 code-behind 声明了非 `WindowComponent` 基类（生成侧发 `: WindowComponent`，省略基类合法）；或普通模板的 code-behind 派生 `WindowComponent`（生成侧发 `: Component`，partial 合并会撞 CS0263） | code-behind 基类声明 | Error | ✅ P1（2026-11-13，D117） |
+| `EUI057` | 旧目录不支持跨模板@code成员的告警，统一符号扫描后停用 | — | — | 停用 |
+| `EUI060` | 非 Element 类型不能赋给元素内容成员 | 标签 | Error | 已实现 |
+| `EUI061`–`EUI063` | 旧窗口专用码，停用且不复用 | — | — | 停用 |
+| `EUI064` | 根类型不可继承或根继承环 | 根标签/声明 | Error | 已实现 |
 | `EUI100` | 纯语法错误（标签不匹配、属性缺值、未闭合注释、未闭合 `@code`、`@{}`、（`@switch`）空 section / 缺 `break;`、非法 `@bind-` 形态等） | 语法位置 | Error | ✅ |
 
 停用码的纪律：
 
-- 分析器/生成器不得再发出 `EUI005`/`EUI014`/`EUI032`/`EUI034`–`EUI036`/`EUI038`–`EUI039`/`EUI041`–`EUI043`/`EUI044`；
+- 分析器/生成器不得再发出 `EUI005`/`EUI014`/`EUI032`/`EUI034`–`EUI036`/`EUI038`–`EUI039`/`EUI041`–`EUI043`/`EUI044`/`EUI057`/`EUI061`–`EUI063`；
   测试必须断言零出现。
 - 停用码保持"停用"，不复用编号；不得用它们表达新语义。
 - 新增诊断从 `EUI046` 起：`EUI048`（K31 `@using` 别名）、`EUI050`–`EUI054`（样式表，design/17 §5）、
-  `EUI055`/`EUI056`（`@namespace` 契约，spec/02 §2.2）、`EUI057`（`@code` 里的模板元数据特性，spec/02 §2.7）、
-  `EUI060`–`EUI063`（窗口模板，design/20，spec/02 §2/§4.1.3）。
+  `EUI055`/`EUI056`（`@namespace` 契约，spec/02 §2.2）、`EUI057` 已停用；
+  `EUI060`（内容类型不匹配）与 `EUI064`（根不可继承/继承环）；旧窗口专用码 `EUI061`–`EUI063` 已停用。
 
 ### 6.3 建议算法
 
@@ -1041,7 +878,7 @@ new cmp0
 | **S6 语法对齐** | G3 之后 / G4 之前（K23 ⑦）；阶段 P0–P6 见 design/16；出口标准 = D85–D88 关闭 + 样例/golden 迁移 + 全量测试绿（2026-11-08 达成：用例 497 → 548，新增 `S6SyntaxTests` 26 / `ExpressionCaptureTests` 13 / `SwitchBlock` 运行时 6 / 生成器契约 6，全部通过；唯一红为既有像素 golden `PixelGoldens_MatchBaseline`，与 S6 无关） |
 | **K31** | **✅ 已实现（2026-11-09）**：`@using Alias = Ns.Type` 一体两用——生成 `using Alias = global::Ns.Type;`（服务 `@code`/表达式）并把 `<Alias/>` 解析为该类型（优先于目录 tag，绕过命名空间可见性）。`EUI048` 覆盖目标缺失/重复/撞命名空间；词法层把 `@using static`、`(...)`、尾分号、泛型、`A.B =` 从误导性的 `EUI006` 改为专属 `EUI100`。回归见 `UsingAliasTests` 15 例 + 生成器契约 4 例 |
 | ✅ 当前可用 | 元素/自闭合；属性字面量（string/bool/double/int 及 C3 扩展类型）；控件 `On*` 事件；`Text`/`TextRuns`/`Children` 文本与内容；`@if`/`else if`/`@switch`/`@foreach` 与 `Key`；`@using`、`@using Alias = Ns.Type`、`@code`、`@* *@` 与 `<!-- -->`；控件与组件 `@bind-P`（含 item 源）；组件标签（参数/委托事件/必填/默认内容）、`Ref={field}`、具名插槽 `<Slot>`/`<ContentSlot>`；空白规范化；code-behind 诊断 |
-| **S1** ✅ | `Component.Invalidate/ProcessInvalidations/Render/ShouldRender`；失效队列与合并；生成字段与 `U{N}`；根级 `P=`/文本重算；控件事件自动失效（2026-10-30 通过） |
+| **S1** ✅ | `UiObject.Invalidate/ProcessInvalidations/Render/ShouldRender`；失效队列与合并；生成字段与 `U{N}`；根级 `P=`/文本重算；控件事件自动失效（2026-10-30 通过） |
 | **S2** ✅ | 块 v4：`BlockScope.RenderActions`；`@if` 分支刷新；`@foreach` 任意 `IEnumerable<T>`、null=空、Keyed 复用；嵌套块；`EUI007`/`EUI010`/`EUI033`（文本 + 显式目标）（2026-10-30 通过） |
 | **S3** ✅ | `UiBinding` v4；控件 `@bind`；item 绑定；`EUI033`（`P=` 与绑定冲突）/`EUI037`/`EUI040` —— 控件侧已落地（2026-11-02）；组件 `PChanged` 与组件绑定目标/回调随 C4 落地（2026-11-05，D54/D56 关闭）；旧语法 `EUI043` 随 K27 停用、改报 `EUI046` |
 | **S4** | 组件所有权/深度排序；参数推送与相等保护；异步/后台失效；`ShouldRender` |
@@ -1122,7 +959,7 @@ using EclipseUI;
 
 namespace Examples;
 
-public partial class TodoList : Component
+public partial class TodoList
 {
     public List<TodoItem> Tasks { get; } = new()
     {
@@ -1154,15 +991,15 @@ public partial class TodoList : Component
 | `Key={t.Id}` | 条目身份；Key 相等且 item 引用相等才复用 | §4.12 |
 | `@bind-Checked={t.Done}` | item 可写属性双向；回写 item 并失效组件 | §4.5 / §4.11 |
 | `{t.Title}` | item 文本；复用条目每次刷新重跑 | §4.12 |
-| `OnClick={() => AddTask()}` | Build 时 `AddHandler`；处理器后自动 `Invalidate()` | §4.13 |
+| `OnClick={() => AddTask()}` | 初始化时 `AddHandler`；处理器后自动 `Invalidate()` | §4.13 |
 
 `Tasks.Add` 发生在 `OnClick` 处理器内，处理器返回后自动失效，因此列表与计数会在同一帧更新；
-若在后台线程或 `await` 之后添加任务，必须显式调用 `Invalidate()`。
+后台线程修改普通状态后应显式投递UI任务并失效；安装UI同步上下文时，await续体经宿主批量排空自动失效。
 
 ### A.5 生成代码
 
 精确生成文本、变量编号、字段提升与 `#line` 见
-[spec/02 附录 A](./02-generated-code-contract.md)。
+[spec/02 §4](./02-generated-code-contract.md)。
 本文件只规定输入语义；不在两处维护同一份生成文本。
 
 ## 附录 B：语法速查
@@ -1172,7 +1009,7 @@ public partial class TodoList : Component
 | 写法 | 含义 |
 |---|---|
 | `P="literal"` | 编译期字面量 |
-| `P={expr}` | 每次组件渲染重算的赋值 |
+| `P={expr}` | 每次所属对象更新重算的赋值 |
 | `@bind-P={expr}` | 双向绑定（源必须是可写左值） |
 | `P:bind={expr}` | 已移除（K27，`EUI046`） |
 | `P:value={expr}` | 已移除（K27，`EUI046`） |
@@ -1203,6 +1040,5 @@ public partial class TodoList : Component
 | `@bind` 源必须是可观察路径 | 任意可写左值 | `EUI037` 收窄 |
 | 组件可观察 partial 参数 | 普通参数 + `{P}Changed` 回调 | `EUI040` |
 | `UiBinding` v3 订阅签名 | v4 `UiBinding.TwoWay(..., invalidate)` | spec/03 §8.2 |
-| `Bind.TwoWay(...)` 手写 | `UiBinding.TwoWay(...)` | 旧重载保留但标 Obsolete |
 | `EUI036`/`EUI038`/`EUI041`/`EUI044` Warning | 无 | 停用 |
 | `EUI014`/`EUI039`/`EUI042` Error | 无 | 停用 |

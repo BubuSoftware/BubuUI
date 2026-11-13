@@ -3,7 +3,7 @@ using System;
 namespace EclipseUI.Elements;
 
 [UiContent(UiContentKind.Text, Target = nameof(Label))]
-public sealed class Button : Element
+public class Button : Element
 {
     public static readonly RoutedEvent ClickEvent = new RoutedEvent("Click", RoutingStrategy.Bubble);
 
@@ -55,7 +55,7 @@ public sealed class Button : Element
 }
 
 [UiContent(UiContentKind.Text, Target = nameof(Label))]
-public sealed class CheckBox : Element
+public class CheckBox : Element
 {
     public static readonly RoutedEvent CheckedChangedEvent = new RoutedEvent("CheckedChanged", RoutingStrategy.Bubble);
 

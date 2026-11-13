@@ -282,10 +282,10 @@ public class EustyleTests
         var references = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!)
             .Split(Path.PathSeparator)
             .Select(path => (MetadataReference)MetadataReference.CreateFromFile(path))
-            .Append(MetadataReference.CreateFromFile(typeof(EclipseUI.Component).Assembly.Location))
+            .Append(MetadataReference.CreateFromFile(typeof(EclipseUI.UiObject).Assembly.Location))
             // design/17 §4.3：样式属性目录由符号扫描得出，探针编译必须引用渲染程序集
             .Append(MetadataReference.CreateFromFile(Path.Combine(
-                Path.GetDirectoryName(typeof(EclipseUI.Component).Assembly.Location)!,
+                Path.GetDirectoryName(typeof(EclipseUI.UiObject).Assembly.Location)!,
                 "EclipseUI.Rendering.dll")))
             .ToList();
         var compilation = CSharpCompilation.Create(
@@ -530,7 +530,7 @@ public class EustyleTests
         var code = SourceOf(result, hint => hint.Contains("Probe."));
         AssertGeneratedCodeParses(code);
 
-        Assert.Contains("el1.Classes = new global::System.String[] { \"card\", \"primary\" };", code);
+        Assert.Contains("el1.ApplyClasses(new global::System.String[] { \"card\", \"primary\" });", code);
         Assert.Contains("el1.SetValue(global::EclipseUI.Rendering.Visual.CornerRadiusProperty, 18);", code);
         Assert.Contains("el1.SetValue(global::EclipseUI.Elements.Panel.PaddingProperty, 8);", code);
     }
@@ -591,7 +591,7 @@ public class EustyleTests
 
         var code = SourceOf(result, hint => hint.Contains("Probe."));
         // §4.8�?解析序：本文�?@style 类按注册名（组件前缀）发�?
-        Assert.Contains("el1.Classes = new global::System.String[] { \"Probe__demo\" };", code);
+        Assert.Contains("el1.ApplyClasses(new global::System.String[] { \"Probe__demo\" });", code);
         Assert.Contains("Define(\"Probe__demo\"", code); // 注册侧同�?
     }
 
@@ -611,7 +611,7 @@ public class EustyleTests
         Assert.Empty(result.Diagnostics);
         var code = SourceOf(result, hint => hint.Contains("Probe."));
         AssertGeneratedCodeParses(code);
-        Assert.Contains(".Classes = kind.Split(new[] { ' ', '\\t', '\\r', '\\n' }, global::System.StringSplitOptions.RemoveEmptyEntries);", code);
+        Assert.Contains(".ApplyClasses(kind.Split(new[] { ' ', '\\t', '\\r', '\\n' }, global::System.StringSplitOptions.RemoveEmptyEntries));", code);
         Assert.Contains("private void U0()", code); // 根级动�?�?U 方法 + Render 登记
         Assert.Contains("protected override void Render()", code);
     }
@@ -900,9 +900,10 @@ public class EustyleTests
         AssertGeneratedCodeParses(code);
 
         // �?Class 属性的按钮：只发注入类列表
-        Assert.Contains("el1.Classes = new global::System.String[] { \"panel__button\" };", code);
+        Assert.Contains("this.ApplyTemplateClasses(new global::System.String[] { \"panel\" });", code);
+        Assert.Contains("el1.ApplyClasses(new global::System.String[] { \"panel__button\" });", code);
         // 已有类名的按钮：注入排在解析类名之后（design/17 §2.2 派生类胜�?
-        Assert.Contains("el2.Classes = new global::System.String[] { \"primary\", \"panel__button\" };", code);
+        Assert.Contains("el2.ApplyClasses(new global::System.String[] { \"primary\", \"panel__button\" });", code);
     }
 
     [Fact]
@@ -925,7 +926,7 @@ public class EustyleTests
         Assert.Null(result.Exception);
         Assert.Empty(result.Diagnostics);
         var code = SourceOf(result, hint => hint.Contains("Probe."));
-        Assert.Contains(".Classes = new global::System.String[] { \"panel__button\" };", code);
+        Assert.Contains(".ApplyClasses(new global::System.String[] { \"panel__button\" });", code);
     }
 
     [Fact]
@@ -947,7 +948,7 @@ public class EustyleTests
         Assert.Empty(result.Diagnostics);
         var code = SourceOf(result, hint => hint.Contains("Probe."));
         Assert.DoesNotContain("\"panel__button\"", code);
-        Assert.Contains(".Classes = kind.Split(", code);
+        Assert.Contains(".ApplyClasses(kind.Split(", code);
     }
 
     [Fact]
@@ -990,7 +991,7 @@ public class EustyleTests
 
         var code = SourceOf(result, hint => hint.Contains("Probe."));
         AssertGeneratedCodeParses(code);
-        Assert.Contains("el1.Classes = new global::System.String[] { \"Probe__panel__button\" };", code);
+        Assert.Contains("el1.ApplyClasses(new global::System.String[] { \"Probe__panel__button\" });", code);
         Assert.Contains("Define(\"Probe__panel__button\"", code);
     }
 

@@ -13,6 +13,52 @@ namespace EclipseUI.Ide.Tests;
 /// </summary>
 public class ExpressionProbeTests
 {
+    [Fact]
+    public void StandaloneTemplate_InheritsTheRootTypeInItsUnifiedSymbolView()
+    {
+        var (analysis, offset) = TestHost.Analyze("""
+            @namespace Demo
+            @using EclipseUI.Elements
+            <StackPanel Gap={Wid|}/>
+            """);
+        var probe = Assert.IsType<ExpressionProbe>(analysis.Probe);
+
+        Assert.Equal("EclipseUI.Elements.StackPanel", probe.ThisType!.BaseType!.ToDisplayString());
+        Assert.Equal("double", probe.InferType("Width", Array.Empty<(ITypeSymbol Type, string Name)>())!.ToDisplayString());
+        Assert.Contains(CompletionProvider.Complete(analysis, TestHost.Catalog, offset).Items,
+            item => item.Label == "Width");
+    }
+
+    [Fact]
+    public void StandaloneTemplate_CodeAndInheritedMembersShareOneCompilation()
+    {
+        var (analysis, offset) = TestHost.Analyze("""
+            @namespace Demo
+            <CodePanel Gap={total}/>
+            @code { public int total = 4; public string Describe() => Caption; }
+            """, """
+            namespace Demo;
+            public class CodePanel : EclipseUI.Elements.StackPanel
+            {
+                public string Caption { get; set; } = "from base";
+            }
+            public partial class ProbeDoc { }
+            """);
+        var probe = Assert.IsType<ExpressionProbe>(analysis.Probe);
+        var members = Assert.IsAssignableFrom<SyntaxTree>(analysis.MemberTree);
+
+        Assert.True(probe.Compilation.ContainsSyntaxTree(members));
+        Assert.Equal("Demo.CodePanel", probe.ThisType!.BaseType!.ToDisplayString());
+        Assert.Equal("int", probe.InferType("total", Array.Empty<(ITypeSymbol Type, string Name)>())!.ToDisplayString());
+        Assert.Equal("string", probe.InferType("Describe()", Array.Empty<(ITypeSymbol Type, string Name)>())!.ToDisplayString());
+        var member = Assert.Single(probe.ThisType.GetMembers("total"));
+        var span = member.Locations.Single().SourceSpan;
+        Assert.True(analysis.TryMapMemberSpanToUi(new TextSpan(span.Start, span.Length), out var original));
+        Assert.Equal("total", analysis.Text.Substring(original.Start, original.Length));
+        Assert.Single(probe.Compilation.SyntaxTrees,
+            t => t.FilePath.EndsWith(".catalog.cs", StringComparison.Ordinal));
+    }
+
     /// <summary>与 spec/02 §2.2 同形态的 code-behind：partial 类 + 字段/属性/方法/嵌套类型。</summary>
     private const string CodeBehind = """
         #nullable enable
@@ -686,8 +732,7 @@ public class ExpressionProbeTests
     public void Definition_TagNameNavigatesToWorkspaceSource()
     {
         var element = new UiElementDef(
-            "Widget", "global::Probe.Widget", UiElementOrigin.Control,
-            UiContentModel.Children, null,
+            "Widget", "global::Probe.Widget", UiContentModel.Children, null,
             new Dictionary<string, UiPropDef>(StringComparer.Ordinal),
             new Dictionary<string, UiEventDef>(StringComparer.Ordinal),
             new Dictionary<string, UiParameterDef>(StringComparer.Ordinal),

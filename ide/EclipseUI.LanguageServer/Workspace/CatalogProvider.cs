@@ -13,7 +13,7 @@ public sealed class CatalogOptions
     /// <summary>显式的 <c>EclipseUI.Runtime.dll</c> 或其所在目录。</summary>
     public string? RuntimePath { get; init; }
 
-    /// <summary>额外程序集（用户自己编译出的 app.dll）：其中派生自 Element/Component 的类型会成为标签。</summary>
+    /// <summary>额外程序集（用户自己编译出的 app.dll）：其中派生自 UiObject 的类型会成为标签。</summary>
     public IReadOnlyList<string> Assemblies { get; init; } = Array.Empty<string>();
 
     /// <summary>探测器起点：工作区根目录（用于无显式路径时向上/向下找仓库内构建产物）。</summary>
@@ -112,7 +112,7 @@ public sealed class CatalogProvider
             }
         }
 
-        // 共享框架：目录扫描要通过 Roslyn 解析 Element/Component/StyledProperty 等元数据。
+        // 共享框架：目录扫描要通过 Roslyn 解析 UiObject/StyledProperty 等元数据。
         foreach (var path in TrustedPlatformAssemblies()) Add(path);
 
         if (RuntimePath is null)
@@ -132,7 +132,7 @@ public sealed class CatalogProvider
         var rendering = FindRenderingAssembly(RuntimePath);
         if (rendering is not null) Add(rendering);
 
-        // 应用自己的输出目录：用户组件（Element/Component 派生）就在这里。
+        // 应用自己的输出目录：用户组件（UiObject 派生）就在这里。
         var runtimeDirectory = Path.GetDirectoryName(RuntimePath)!;
 
         foreach (var assembly in _options.Assemblies) Add(assembly);

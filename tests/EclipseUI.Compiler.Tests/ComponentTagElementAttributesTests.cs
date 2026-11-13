@@ -11,12 +11,8 @@ using Xunit;
 namespace EclipseUI.Compiler.Tests;
 
 /// <summary>
-/// spec/02 §4.12.6：组件标签上的元素级属性（Class / Style / 附加属性）作用于 <c>cmp.Root</c>。
-///
-/// 这组用例的起因是实测缺陷：组件的 <c>Class=</c> 曾生成 <c>cmp0.Classes = …</c>（CS1061）、
-/// <c>Grid.Row=</c> 曾生成 <c>Grid.SetRow(cmp0, 1)</c>（CS1503）——分析器放行、生成代码编译不过。
-/// 根因是「组件实例是 Element」这个前提：<c>Component</c> 不派生 <c>Element</c>（spec/03 §5.3），
-/// 所以这些属性只能在 <c>Mount()</c> 之后写到组件的根元素上。
+/// K35：模板生成对象本身就是控件，类集、局部样式和附加属性直接作用于该实例。
+/// 同时检查输出项目确实可以编译，防止目录放行而生成类型不兼容。
 /// </summary>
 public class ComponentTagElementAttributesTests
 {
@@ -26,7 +22,7 @@ public class ComponentTagElementAttributesTests
             .Split(System.IO.Path.PathSeparator)
             .Select(path => (MetadataReference)MetadataReference.CreateFromFile(path))
             .ToList();
-        references.Add(MetadataReference.CreateFromFile(typeof(Component).Assembly.Location));
+        references.Add(MetadataReference.CreateFromFile(typeof(UiObject).Assembly.Location));
         // Style= 的值走样式属性目录（StyleBuilder/StyledProperty 符号），探针编译必须看得见渲染程序集。
         references.Add(MetadataReference.CreateFromFile(typeof(EclipseUI.Rendering.StyleRegistry).Assembly.Location));
         return CSharpCompilation.Create(
@@ -128,14 +124,15 @@ public class ComponentTagElementAttributesTests
         AssertContains(".ApplyClasses(new global::System.String[] { \"Host__wide\" });", host);
         AssertDoesNotContain(".Classes = new global::System.String[] { \"Host__wide\" }", host);
         // 附加属性：目标同样是根元素。
-        AssertContains("global::EclipseUI.Elements.Grid.SetRow(cmp1.Root, 1);", host);
+        AssertContains("global::EclipseUI.Elements.Grid.SetRow(el1, 1);", host);
         // Style=：local 层写根元素。
-        AssertContains("cmp1.Root.SetValue(", host);
+        AssertContains("el1.SetValue(", host);
+        AssertDoesNotContain(".Root", host);
         AssertCompiles(output);
     }
 
     [Fact]
-    public void ElementLevelAttributes_AreEmittedAfterMount()
+    public void ElementLevelAttributes_AreEmittedBeforeInitializationAndAttachment()
     {
         // 顺序是根因的一半：Root 由 Mount() 里的 Build() 产生，发射点必须在那之后、
         // 挂父级之前（§5.1 冻结顺序）。
@@ -151,10 +148,11 @@ public class ComponentTagElementAttributesTests
         var (result, _) = RunProject(HostCodeBehind, ("Card.ui", CardUi), ("Host.ui", hostUi));
         var host = GeneratedSource(result, "Host");
 
-        var mount = host.IndexOf(".Mount();", StringComparison.Ordinal);
-        var attached = host.IndexOf(".Root, 1);", StringComparison.Ordinal);
-        Assert.True(mount >= 0 && attached > mount,
-            "attached property must be emitted after Mount(); source:\n" + host);
+        var initialize = host.IndexOf("el1.EnsureInitialized();", StringComparison.Ordinal);
+        var attached = host.IndexOf("Grid.SetRow(el1, 1);", StringComparison.Ordinal);
+        var add = host.IndexOf("this.Children.Add(el1);", StringComparison.Ordinal);
+        Assert.True(attached >= 0 && initialize > attached && add > initialize,
+            "caller properties must be set before initialization and attachment; source:\n" + host);
     }
 
     [Fact]
@@ -178,9 +176,10 @@ public class ComponentTagElementAttributesTests
         Assert.Empty(Errors(output));
         var host = GeneratedSource(result, "Host");
 
-        AssertContains("__cmp0", host);                        // 字段提升（U 方法读字段）
-        AssertContains("__cmp0.ApplyClasses(", host);
-        AssertContains("__cmp0.Root,", host);
+        AssertContains("partial class Host : global::Gallery.Card", host);
+        AssertContains("this.ApplyTemplateClasses(", host);
+        AssertContains("Grid.SetRow(this,", host);
+        AssertDoesNotContain("__cmp", host);
         AssertCompiles(output);
     }
 
@@ -208,7 +207,8 @@ public class ComponentTagElementAttributesTests
         Assert.Empty(Errors(output));
         var host = GeneratedSource(result, "Host");
         AssertContains(".ApplyClasses(", host);
-        AssertContains(".Root, 2);", host);
+        AssertContains("Grid.SetRow(", host);
+        AssertDoesNotContain(".Root", host);
         AssertCompiles(output);
     }
 

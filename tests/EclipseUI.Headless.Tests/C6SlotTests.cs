@@ -48,8 +48,7 @@ public class C6SlotTests
     {
         var built = UiTestCatalogs.BuiltIn();
         var card = new UiElementDef(
-            "ProbeCard", "global::Probe.Card", UiElementOrigin.Component,
-            UiContentModel.None, null,
+            "ProbeCard", "global::Probe.Card", UiContentModel.None, null,
             new Dictionary<string, UiPropDef>(StringComparer.Ordinal),
             new Dictionary<string, UiEventDef>(StringComparer.Ordinal),
             new Dictionary<string, UiParameterDef>(StringComparer.Ordinal)
@@ -64,10 +63,9 @@ public class C6SlotTests
             {
                 ["Header"] = Slot("Header", "Header", ElementOptT, UiSlotCardinality.Single),
                 ["Rows"] = Slot("Rows", "Rows", ElementListT, UiSlotCardinality.Multiple),
-            }, []);
+            }, []) { IsTemplate = true };
         var self = new UiElementDef(
-            "ProbeSelfHost", "global::Probe.Test", UiElementOrigin.Component,
-            UiContentModel.None, null,
+            "ProbeSelfHost", "global::Probe.Test", UiContentModel.None, null,
             new Dictionary<string, UiPropDef>(StringComparer.Ordinal),
             new Dictionary<string, UiEventDef>(StringComparer.Ordinal),
             new Dictionary<string, UiParameterDef>(StringComparer.Ordinal),
@@ -75,7 +73,7 @@ public class C6SlotTests
             {
                 ["Header"] = Slot("Header", "Header", ElementOptT, UiSlotCardinality.Single),
                 ["Rows"] = Slot("Rows", "Rows", ElementListT, UiSlotCardinality.Multiple),
-            }, []);
+            }, []) { IsTemplate = true };
         return new UiCatalog(
             built.Elements.Append(card).Append(self).ToArray(), built.HiddenTags, built.Problems,
             built.AttachedProperties);
@@ -86,8 +84,7 @@ public class C6SlotTests
         // catalogWithoutSelf：移除与 doc.ClassName 短名匹配的 def——ContentSlot 无法解析自身插槽。
         var built = UiTestCatalogs.BuiltIn();
         var orphan = new UiElementDef(
-            "ProbeCard", "global::Probe.Card", UiElementOrigin.Component,
-            UiContentModel.None, null,
+            "ProbeCard", "global::Probe.Card", UiContentModel.None, null,
             new Dictionary<string, UiPropDef>(StringComparer.Ordinal),
             new Dictionary<string, UiEventDef>(StringComparer.Ordinal),
             new Dictionary<string, UiParameterDef>(StringComparer.Ordinal)

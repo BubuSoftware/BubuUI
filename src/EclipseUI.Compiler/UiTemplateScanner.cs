@@ -6,23 +6,23 @@ using System.Linq;
 namespace EclipseUI.Compiler;
 
 /// <summary>
-/// spec/02 §2.7「第二组件来源」：从 <c>.ui</c> 文件提取组件声明清单。
+/// 从 .ui 文件提取根类型、命名空间、imports 和 @code，供生成前符号视图使用。
 ///
 /// 生成器（<c>AdditionalTextsProvider</c>）与 IDE 项目系统（<c>AdditionalFiles</c>）共用这一份
 /// 实现——两侧喂给 <see cref="Metadata.UiCatalogFactory.Build"/> 的清单必须逐字节同源，
 /// 否则同一个标签会在编辑器里绿、在 <c>dotnet build</c> 里 EUI001。这正是这个类型存在的理由。
 ///
-/// 读 <c>@namespace</c> 一条指令 + 根层 <c>@code</code> 块（K34/D112：目录侧语法级提取模板
+/// 读 <c>@namespace</c> 一条指令 + 根层 <c>@code</code> 块（K34/D112：生成前符号视图合并模板
 /// 特性用）。诊断一律丢弃——解析错误由各主管道报告，这里只负责「这条声明叫什么、在哪个
 /// 命名空间、<c>@code</code> 里写了什么」。
 /// </summary>
-public static class UiComponentScanner
+public static class UiTemplateScanner
 {
     /// <summary>
     /// 单个文件 → 一条组件声明；文件名不是合法标识符时返回 null（EUI013 由发射阶段报，
     /// 目录里留半条指向不存在类型的脏声明没有意义）。
     /// </summary>
-    public static UiComponentDeclaration? FromFile(string path, string text)
+    public static UiTemplateDeclaration? FromFile(string path, string text)
     {
         var tag = Path.GetFileNameWithoutExtension(path);
         if (!IsUsableName(tag)) return null;
@@ -37,22 +37,19 @@ public static class UiComponentScanner
             blocks.Add(new UiCodeBlockText(block.Code, block.CodeSpan.Start, block.CodeSpan.Length,
                 line, character));
         }
-        return new UiComponentDeclaration(tag, doc.Namespace)
+        return new UiTemplateDeclaration(tag, doc.Namespace)
         {
             Path = path,
             CodeBlocks = blocks,
-            // design/20：根节点是保留的 <Window> → 窗口模板（退出「可组合组件」表面，目录侧
-            // HiddenTag/EUI060；生成类派生 WindowComponent）。FrontEnd.Parse 在上面已全量执行，
-            // 这里读根标签零额外成本。P1 只有一个模板根类型；出现第二个 [UiTemplateRoot] 类型时
-            // 这里改为按根类型表判定。
-            IsWindowRoot = doc.Nodes.OfType<UiElement>().FirstOrDefault()?.Tag == "Window",
+            RootTag = doc.Nodes.OfType<UiElement>().FirstOrDefault()?.Tag,
+            Usings = TemplateAnalyzer.CollectUsingLines(doc.Nodes),
         };
     }
 
     /// <summary>项目文件清单 → 声明清单（不含 .ui 的项直接跳过）。</summary>
-    public static IReadOnlyList<UiComponentDeclaration> FromFiles(IEnumerable<(string Path, string Text)> files)
+    public static IReadOnlyList<UiTemplateDeclaration> FromFiles(IEnumerable<(string Path, string Text)> files)
     {
-        var result = new List<UiComponentDeclaration>();
+        var result = new List<UiTemplateDeclaration>();
         foreach (var (path, text) in files)
         {
             if (!string.Equals(Path.GetExtension(path), ".ui", StringComparison.OrdinalIgnoreCase)) continue;

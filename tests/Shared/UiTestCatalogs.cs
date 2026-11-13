@@ -83,7 +83,7 @@ public static class UiTestCatalogs
 
         foreach (var element in catalog.Elements.OrderBy(e => e.Tag, StringComparer.Ordinal))
         {
-            lines.Add($"[{element.Tag}] {element.ClrTypeDisplayName} origin={element.Origin} " +
+            lines.Add($"[{element.Tag}] {element.ClrTypeDisplayName} " +
                 $"content={element.Content}{(element.ContentTarget is null ? "" : $":{element.ContentTarget}")}");
             foreach (var property in element.Properties.OrderBy(p => p.Key, StringComparer.Ordinal))
                 lines.Add($"    prop   {property.Key} {property.Value.TypeShape.CanonicalKey} " +

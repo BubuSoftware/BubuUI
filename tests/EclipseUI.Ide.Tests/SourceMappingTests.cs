@@ -146,7 +146,7 @@ public class SourceMappingTests
             .Split(Path.PathSeparator)
             .Select(path => (MetadataReference)MetadataReference.CreateFromFile(path))
             .ToList();
-        references.Add(MetadataReference.CreateFromFile(typeof(global::EclipseUI.Component).Assembly.Location));
+        references.Add(MetadataReference.CreateFromFile(typeof(global::EclipseUI.UiObject).Assembly.Location));
         var compilation = CSharpCompilation.Create("MappingProbe",
             Array.Empty<SyntaxTree>(), references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
@@ -247,7 +247,7 @@ public class SourceMappingTests
         var result = Run(ComprehensiveUi);
         Assert.True(result.GeneratedDocuments.TryGetValue(UiPath, out var document));
         var text = document!.Tree.ToString();
-        var build = text.IndexOf("protected override global::EclipseUI.Element Build()", StringComparison.Ordinal);
+        var build = text.IndexOf("protected override void InitializeUi()", StringComparison.Ordinal);
         Assert.True(build >= 0);
         Assert.False(document.Mappings.TryMapToOriginal(new TextSpan(build, 8), out _));
         var track = text.IndexOf("Track(", StringComparison.Ordinal);

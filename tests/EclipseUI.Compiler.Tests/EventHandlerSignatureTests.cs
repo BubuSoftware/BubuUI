@@ -35,11 +35,15 @@ public class EventHandlerSignatureTests
         using System;
         using EclipseUI;
 
-        public partial class Probe : Component
+        public partial class Probe
         {
             public int gap = 4;
             public void Close() { }
             private void HandleInt(int n) { }
+        }
+
+        public class DelegateCard : global::EclipseUI.Elements.StackPanel
+        {
             [UiParameter(Required = true)] public int Count { get; set; }
             [UiParameter] public Action? Closed { get; set; }
         }
@@ -66,7 +70,7 @@ public class EventHandlerSignatureTests
             .Split(System.IO.Path.PathSeparator)
             .Select(path => (MetadataReference)MetadataReference.CreateFromFile(path))
             .ToList();
-        references.Add(MetadataReference.CreateFromFile(typeof(global::EclipseUI.Component).Assembly.Location));
+        references.Add(MetadataReference.CreateFromFile(typeof(global::EclipseUI.UiObject).Assembly.Location));
 
         var fixture = NamespaceDeclarationFixture.Prepare(UiPath, codeBehind);
 
@@ -119,7 +123,7 @@ public class EventHandlerSignatureTests
     [Fact]
     public void ComponentDelegateParameter_WrongSignature_ReportsEUI024()
     {
-        var result = Run("@using EclipseUI.Elements\n<Probe Count={gap} Closed={HandleInt} />", ComponentFixtures);
+        var result = Run("@using EclipseUI.Elements\n<StackPanel><DelegateCard Count={gap} Closed={HandleInt} /></StackPanel>", ComponentFixtures);
 
         var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI024");
         Assert.Contains("System.Action", diag.GetMessage());
@@ -140,7 +144,7 @@ public class EventHandlerSignatureTests
     [Fact]
     public void ComponentDelegateParameter_CorrectSignature_GeneratesHandlerLocal()
     {
-        var result = Run("@using EclipseUI.Elements\n<Probe Count={gap} Closed={Close} />", ComponentFixtures);
+        var result = Run("@using EclipseUI.Elements\n<StackPanel><DelegateCard Count={gap} Closed={Close} /></StackPanel>", ComponentFixtures);
 
         Assert.DoesNotContain(result.Diagnostics, d => d.Id == "EUI024");
         Assert.Contains("(global::System.Action)", Generated(result));
@@ -196,7 +200,7 @@ public class EventHandlerSignatureTests
             .Split(System.IO.Path.PathSeparator)
             .Select(path => (MetadataReference)MetadataReference.CreateFromFile(path))
             .ToList();
-        references.Add(MetadataReference.CreateFromFile(typeof(global::EclipseUI.Component).Assembly.Location));
+        references.Add(MetadataReference.CreateFromFile(typeof(global::EclipseUI.UiObject).Assembly.Location));
         references.Add(MetadataReference.CreateFromFile(lib));
         var compilation = CSharpCompilation.Create("TemplateProbe",
             new[] { CSharpSyntaxTree.ParseText(ControlCodeBehind, path: "Probe.cs") }, references,
@@ -252,7 +256,7 @@ public class EventHandlerSignatureTests
             .Split(System.IO.Path.PathSeparator)
             .Select(path => (MetadataReference)MetadataReference.CreateFromFile(path))
             .ToList();
-        references.Add(MetadataReference.CreateFromFile(typeof(global::EclipseUI.Component).Assembly.Location));
+        references.Add(MetadataReference.CreateFromFile(typeof(global::EclipseUI.UiObject).Assembly.Location));
         var compilation = CSharpCompilation.Create(name,
             new[] { CSharpSyntaxTree.ParseText(source) }, references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));

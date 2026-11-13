@@ -108,8 +108,8 @@ public enum UiSymbolKind
     /// <summary><c>Element</c> 派生：标签是控件。</summary>
     Control,
 
-    /// <summary><c>Component</c> 派生：标签是组件。</summary>
-    Component,
+    /// <summary>不参与控件布局树的 UI 对象。</summary>
+    UiObject,
 
     /// <summary><c>@if</c>/<c>@foreach</c>/<c>@switch</c> 块。</summary>
     Block,
