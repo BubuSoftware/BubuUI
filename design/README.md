@@ -14,6 +14,7 @@
 | [09 · 开发计划](./09-development-plan.md) | 总体路线；最新统一工作见21 |
 | [17 · 样式](./17-style-system.md) | Class、主题、样式编译 |
 | [19 · 自定义样式属性](./19-custom-style-properties.md) | 元数据扩展与值语法 |
+| [23 · 可扩展样式系统](./23-extensible-style-system.md) | 下一版设计提案：作者语法、选择器范围、复杂类型转换、IDE 候选及运行机制；尚未实施 |
 | [20 · 窗口根类型](./20-window-template-root.md) | 通过一般类型与内容规则实现窗口 |
 | [21 · UI/C#统一](./21-root-type-unification.md) | 实施切片、旧层删除、验证结果 |
 | [验证报告](./reports/root-type-unification-2026-11-13.md) | 构建、测试、Gallery及既有像素基线证据 |
