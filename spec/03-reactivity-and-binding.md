@@ -9,6 +9,37 @@
 
 `Invalidate()` 使当前对象下一轮执行 Render；父对象更新普通子属性时，生成代码在相等保护后写 setter 并使目标失效。StyledProperty 写入由属性元数据标记布局/绘制脏状态。动态表达式不得依赖求值次数或包含修改树的副作用。
 
+### 1.1 显式状态修改入口
+
+UiObject 为 ui 生成类型与纯 C# 类型提供三种便利写法：
+
+```csharp
+UpdateState(() =>
+{
+    count++;
+    message = "updated";
+});
+
+using (BeginStateUpdate())
+{
+    count++;
+    message = "updated";
+}
+
+await UpdateStateAsync(async () =>
+{
+    var result = await LoadAsync();
+    message = result;
+});
+```
+
+- `UpdateState(Action)` 在回调退出时通过 finally 调用当前对象的 Invalidate；异步回调使用 `UpdateStateAsync(Func<Task>)`，等待其 Task 完成后再通知，不能把 async void 回调传给同步入口。
+- `BeginStateUpdate()` 返回实现 IDisposable 的 `UiObject.StateUpdateScope`；using 块、using 声明、提前 return 和异常退出均在 Dispose 时通知。重复 Dispose 不再通知。
+- 回调失败或取消时仍通知，因为普通 CLR 状态可能已经部分修改；原异常和取消状态继续传播，不回滚状态。
+- 只安排宿主下一轮更新，不同步执行 Render，不进行相等比较或自动观察。嵌套作用域与回调沿用现有失效队列去重；每个作用域独立在结束时通知，不阻止作用域内手动排空或 await 期间的其它更新。
+- 不触发隐式初始化；未初始化或已释放对象的通知仍遵循 Invalidate 的 no-op 规则。
+- 回调在调用线程开始执行，不自动派发到 UI 线程；await 沿用当前同步上下文和既有 UI 线程规则。这些入口只通知当前对象；其它对象的状态由各自的状态入口或 Invalidate 通知。
+
 ## 2. 初始化
 
 EnsureInitialized 是幂等入口，在对象初始化器/标签输入赋值之后执行。InitializeUi 创建静态内容并完成首次动态求值；初始化不再额外调用一次 Render。

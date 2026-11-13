@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace EclipseUI;
 
@@ -298,6 +300,43 @@ public abstract class UiObject : IDisposable
     {
         if (_disposed || !_initialized) return;
         EnqueueInvalidation();
+    }
+
+    /// <summary>
+    /// Runs a synchronous state change on the calling thread and invalidates on exit,
+    /// including an exceptional exit. Rendering remains deferred to the host's update queue.
+    /// </summary>
+    public void UpdateState(Action update)
+    {
+        ArgumentNullException.ThrowIfNull(update);
+        try { update(); }
+        finally { Invalidate(); }
+    }
+
+    /// <summary>
+    /// Awaits a state change before invalidating, including failure or cancellation.
+    /// Normal await context capture and UI thread rules apply; this does not dispatch work.
+    /// </summary>
+    public async Task UpdateStateAsync(Func<Task> update)
+    {
+        ArgumentNullException.ThrowIfNull(update);
+        try { await update(); }
+        finally { Invalidate(); }
+    }
+
+    /// <summary>
+    /// Invalidates once when the returned scope is disposed. Nested scopes use the normal
+    /// coalescing queue; they do not suspend rendering or provide transactional rollback.
+    /// </summary>
+    public StateUpdateScope BeginStateUpdate() => new(this);
+
+    public sealed class StateUpdateScope : IDisposable
+    {
+        private UiObject? _owner;
+
+        internal StateUpdateScope(UiObject owner) => _owner = owner;
+
+        public void Dispose() => Interlocked.Exchange(ref _owner, null)?.Invalidate();
     }
 
     private UiObject PublishedRoot => System.Threading.Volatile.Read(ref _publishedRoot) ?? this;

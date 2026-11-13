@@ -1,0 +1,47 @@
+@namespace EclipseUI.Headless.Tests
+@using EclipseUI.Elements
+@using System.Threading.Tasks
+
+<StackPanel>
+    <TextBlock>{count}:{message}</TextBlock>
+</StackPanel>
+
+@code {
+    public int count;
+    public string message = "start";
+    public int ContinuationThreadId;
+
+    public void ApplyAction() => UpdateState(() =>
+    {
+        count++;
+        message = "action";
+    });
+
+    public void ApplyScope()
+    {
+        using (BeginStateUpdate())
+        {
+            count++;
+            message = "scope";
+        }
+    }
+
+    public Task ApplyAsync() => UpdateStateAsync(async () =>
+    {
+        await Task.Yield();
+        ContinuationThreadId = System.Environment.CurrentManagedThreadId;
+        count++;
+        message = "async";
+    });
+
+    public async Task ApplyScopeAsync()
+    {
+        using (BeginStateUpdate())
+        {
+            await Task.Yield();
+            ContinuationThreadId = System.Environment.CurrentManagedThreadId;
+            count++;
+            message = "scope-async";
+        }
+    }
+}
