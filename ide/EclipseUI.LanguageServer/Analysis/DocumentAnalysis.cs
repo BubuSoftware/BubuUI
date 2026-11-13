@@ -263,6 +263,9 @@ public sealed class DocumentAnalysis
     /// <summary>当前分析所依附的项目快照；null = 独立程序集目录 / 内存态分析。</summary>
     public ProjectSnapshot? Project => _project;
 
+    /// <summary>The current project/reference symbols, available even while template emission fails.</summary>
+    public Compilation? Compilation => _baseCompilation;
+
     /// <summary>工作区内的全部项目快照（L6 跨项目源码符号查询用）。</summary>
     public ProjectWorkspace? Workspace => _workspace;
 

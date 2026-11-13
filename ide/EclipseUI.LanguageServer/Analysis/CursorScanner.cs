@@ -106,6 +106,9 @@ public sealed record CursorContext
     /// <summary><c>@using |</c>：指令参数（命名空间）时的指令名（如 <c>using</c>）。</summary>
     public string Directive { get; init; } = "";
 
+    /// <summary>The cursor is after the equals sign in an @using alias declaration.</summary>
+    public bool IsUsingAliasTarget { get; init; }
+
     /// <summary>尚未闭合的元素栈（内层在前），用于 <c>&lt;/</c> 补全。</summary>
     public IReadOnlyList<string> OpenTags { get; init; } = Array.Empty<string>();
 
@@ -304,14 +307,40 @@ public static class CursorScanner
                 {
                     int lineEnd = text.IndexOf('\n', i);
                     if (lineEnd < 0) lineEnd = text.Length;
-                    if (offset >= wordEnd && offset <= lineEnd)
+                    if (lineEnd > i && text[lineEnd - 1] == '\r') lineEnd--;
+                    if (offset >= i && offset <= wordEnd)
+                        return new CursorContext
+                        {
+                            Kind = CursorKind.Directive,
+                            Prefix = text.Substring(i, offset - i),
+                            TokenStart = i,
+                            OpenTags = open,
+                        };
+                    if (offset > wordEnd && offset <= lineEnd)
                     {
-                        int argStart = SkipWhitespace(text, wordEnd);
+                        // A blank argument belongs to this line, even when another directive
+                        // or the root element follows. Never skip through the newline.
+                        int argStart = wordEnd;
+                        while (argStart < offset && text[argStart] is ' ' or '\t') argStart++;
+                        bool aliasTarget = false;
+                        if (word == "using")
+                        {
+                            int equals = text.IndexOf('=', argStart, lineEnd - argStart);
+                            if (equals >= 0)
+                            {
+                                // The declaration name itself is not a namespace/type target.
+                                if (offset <= equals) return Plain(open, offset);
+                                aliasTarget = true;
+                                argStart = equals + 1;
+                                while (argStart < offset && text[argStart] is ' ' or '\t') argStart++;
+                            }
+                        }
                         return new CursorContext
                         {
                             Kind = CursorKind.DirectiveArgument,
                             Directive = word,
-                            Prefix = text.Substring(argStart, Math.Max(0, Math.Min(offset, lineEnd) - argStart)),
+                            IsUsingAliasTarget = aliasTarget,
+                            Prefix = text.Substring(argStart, offset - argStart),
                             TokenStart = argStart,
                             OpenTags = open,
                         };

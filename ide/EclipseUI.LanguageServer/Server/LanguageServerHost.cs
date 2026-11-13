@@ -317,11 +317,20 @@ public sealed class LanguageServerHost
 
         foreach (var item in list.Items)
         {
+            var insertion = item.Text;
+            var snippet = item.IsSnippet;
+            if (item.CaretOffset is { } caret && !snippet && _snippetSupport)
+            {
+                caret = Math.Clamp(caret, 0, insertion.Length);
+                insertion = EscapeSnippet(insertion[..caret]) + "$0" + EscapeSnippet(insertion[caret..]);
+                snippet = true;
+            }
+            if (snippet && !_snippetSupport) insertion = PlainSnippet(insertion);
             var entry = new JsonObject
             {
                 ["label"] = item.Label,
                 ["kind"] = (int)ToCompletionKind(item.Kind),
-                ["insertTextFormat"] = item.IsSnippet && _snippetSupport
+                ["insertTextFormat"] = snippet && _snippetSupport
                     ? (int)InsertTextFormat.Snippet
                     : (int)InsertTextFormat.PlainText,
             };
@@ -353,12 +362,23 @@ public sealed class LanguageServerHost
                 entry["textEdit"] = new JsonObject
                 {
                     ["range"] = ToRange(positions, item.Replacement ?? list.Replacement),
-                    ["newText"] = item.Text,
+                    ["newText"] = insertion,
                 };
+                if (item.AdditionalEdits is { Count: > 0 } additional)
+                {
+                    var edits = new JsonArray();
+                    foreach (var edit in additional)
+                        edits.Add(new JsonObject
+                        {
+                            ["range"] = ToRange(positions, edit.Span),
+                            ["newText"] = edit.NewText,
+                        });
+                    entry["additionalTextEdits"] = edits;
+                }
             }
             else
             {
-                entry["insertText"] = item.Text;
+                entry["insertText"] = insertion;
             }
 
             items.Add(entry);
@@ -369,6 +389,19 @@ public sealed class LanguageServerHost
             ["isIncomplete"] = list.IsIncomplete,
             ["items"] = items,
         };
+    }
+
+    private static string EscapeSnippet(string text) => text.Replace("\\", "\\\\", StringComparison.Ordinal)
+        .Replace("$", "\\$", StringComparison.Ordinal).Replace("}", "\\}", StringComparison.Ordinal);
+
+    private static string PlainSnippet(string text)
+    {
+        // Template snippets have ordinary defaults and tab stops; Roslyn edits use plain
+        // text + CaretOffset, so clients without snippet support always receive valid C#.
+        text = System.Text.RegularExpressions.Regex.Replace(text, @"\$\{\d+:([^{}]*)\}", "$1");
+        text = System.Text.RegularExpressions.Regex.Replace(text, @"\$\{?\d+\}?", "");
+        return text.Replace("\\$", "$", StringComparison.Ordinal).Replace("\\}", "}", StringComparison.Ordinal)
+            .Replace("\\\\", "\\", StringComparison.Ordinal);
     }
 
     private JsonNode? Hover(JsonNode? parameters)

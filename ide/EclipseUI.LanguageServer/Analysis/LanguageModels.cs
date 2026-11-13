@@ -47,6 +47,8 @@ public enum UiCompletionKind
 /// Roslyn 补全每项自带编辑范围（<c>item.Span</c> 经映射服务回映），不能共享一个区间。</param>
 /// <param name="Tags">Roslyn 标签（Class/Method/Snippet…）；宿主只把 LSP 支持的
 /// <c>Deprecated</c> 翻成 <c>tags</c>，其余用于派生 <see cref="Kind"/>。</param>
+/// <param name="AdditionalEdits">与主编辑一起应用的原 .ui 坐标编辑，例如 @using 导入。</param>
+/// <param name="CaretOffset">纯文本主编辑中的光标偏移；支持 snippet 的客户端由协议层转换为 $0。</param>
 public sealed record UiCompletionItem(
     string Label,
     UiCompletionKind Kind,
@@ -59,7 +61,9 @@ public sealed record UiCompletionItem(
     string? FilterText = null,
     IReadOnlyList<string>? CommitCharacters = null,
     IReadOnlyList<string>? Tags = null,
-    bool Preselect = false)
+    bool Preselect = false,
+    IReadOnlyList<UiTextEdit>? AdditionalEdits = null,
+    int? CaretOffset = null)
 {
     public string Text => InsertText ?? Label;
 }

@@ -5,7 +5,7 @@ using Microsoft.CodeAnalysis;
 namespace EclipseUI.LanguageServer.Analysis;
 
 /// <summary>
-/// 补全：全部答案来自**模板目录**（编译器同一份符号派生物），不做硬编码清单。
+/// 补全：标签/属性来自模板目录，命名空间与类型来自同一项目的 Roslyn 符号。
 /// 五个位置各一套候选：标签名 / 属性名（含 <c>@bind-</c>）/ 属性值（枚举、bool、样式属性）/
 /// 指令 / C# 表达式（探针投影，design/06 §6.3——与编译期 EUI049 用同一台机器）。
 /// </summary>
@@ -185,7 +185,11 @@ public static class CompletionProvider
                 UiCompletionKind.Tag,
                 detail,
                 DescribeElement(element),
-                SortText: imported ? "0" + element.Tag : "1" + element.Tag));
+                SortText: imported ? "0" + element.Tag : "1" + element.Tag,
+                AdditionalEdits: !imported && ns is not null &&
+                    UiImportService.CreateImportEdit(analysis, ns) is { } import
+                        ? new[] { import }
+                        : null));
         }
 
         return new UiCompletionList(replacement, items);
@@ -443,23 +447,113 @@ public static class CompletionProvider
         DocumentAnalysis analysis, UiCatalog catalog, CursorContext context, TextSpan replacement)
     {
         var items = new List<UiCompletionItem>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var prefix = context.Prefix;
+        var globalPrefix = prefix.StartsWith("global::", StringComparison.Ordinal) ? "global::" : "";
+        var lookupPrefix = prefix[globalPrefix.Length..];
+
+        // Complete the whole qualified target, including its suffix when the cursor is in
+        // the middle. The alias declaration before '=' and an existing System. stay intact.
+        var end = replacement.End;
+        while (end < analysis.Text.Length && IsQualifiedNameCharacter(analysis.Text[end])) end++;
+        replacement = new TextSpan(replacement.Start, end - replacement.Start);
 
         // @namespace 补的是「本模板自己的命名空间」：已声明值 > 项目根命名空间，
         // 排在控件所在命名空间之前（spec/02 §2.2 要求它与 code-behind 一致）。
         var self = analysis.Ast?.Namespace ?? analysis.Project?.Evaluation.RootNamespace;
         if (context.Directive == "namespace" && !string.IsNullOrWhiteSpace(self))
-            items.Add(new UiCompletionItem(self!, UiCompletionKind.Namespace, "this template",
-                "must match the code-behind class namespace", SortText: "0" + self));
+            AddNamespace(self!, "this template", "0");
 
-        items.AddRange(catalog.Elements
-            .Select(e => TypeNames.NamespaceOf(e.ClrTypeDisplayName))
-            .Where(static ns => ns is not null)
-            .Select(static ns => ns!)
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(static ns => ns, StringComparer.Ordinal)
-            .Where(ns => ns != self)
-            .Select(ns => new UiCompletionItem(ns, UiCompletionKind.Namespace, "namespace")));
+        // Namespace directives are a C# surface, so non-control namespaces must come from
+        // the real compilation, even when an unrelated template error prevents emission.
+        var compilation = analysis.Project?.Compilation ?? analysis.Compilation;
+        if (compilation is not null)
+        {
+            foreach (var ns in NamespaceTree(compilation.GlobalNamespace))
+                AddNamespace(ns.ToDisplayString());
+            if (context.IsUsingAliasTarget)
+            {
+                int dot = lookupPrefix.LastIndexOf('.');
+                var containerName = dot < 0 ? "" : lookupPrefix[..dot];
+                var container = FindNamespaceOrType(compilation.GlobalNamespace, containerName);
+                if (container is not null)
+                    AddTypes(container.GetTypeMembers());
+                // A simple alias target may also refer to a type in the template's own
+                // namespace or a namespace already imported by another directive.
+                if (dot < 0)
+                    foreach (var ns in analysis.EnclosingNamespaces.Concat(analysis.Imports).Distinct(StringComparer.Ordinal))
+                        if (FindNamespaceOrType(compilation.GlobalNamespace, ns) is { } visible)
+                            AddTypes(visible.GetTypeMembers(), allowSimplePrefix: true);
+            }
+        }
+        else
+        {
+            // A standalone document can lack a compilation. Keep useful catalog results,
+            // without pretending they are the complete list of C# namespaces.
+            foreach (var ns in catalog.Elements.Select(e => TypeNames.NamespaceOf(e.ClrTypeDisplayName)))
+                if (ns is not null) AddNamespace(ns);
+        }
         return new UiCompletionList(replacement, items);
+
+        void AddNamespace(string ns, string detail = "namespace", string sortPrefix = "1")
+        {
+            // A template alias can only finish at an exposed UI type (EUI048). Namespace
+            // segments remain useful while typing its qualified target, but namespaces
+            // with no possible UI target are not alias candidates.
+            if (context.IsUsingAliasTarget && !catalog.Elements.Any(element =>
+                    TypeNames.NamespaceOf(element.ClrTypeDisplayName) is { } owner
+                    && (owner == ns || owner.StartsWith(ns + ".", StringComparison.Ordinal)))) return;
+            if (!ns.StartsWith(lookupPrefix, StringComparison.OrdinalIgnoreCase) || !seen.Add(ns)) return;
+            var name = globalPrefix + ns;
+            // Plain template namespace directives accept dotted names, unlike C# type
+            // alias targets which may retain global::. Match the typed spelling in the
+            // list, but commit the canonical namespace so accepting repairs the directive.
+            items.Add(new UiCompletionItem(name, UiCompletionKind.Namespace, detail,
+                InsertText: context.IsUsingAliasTarget ? name : ns,
+                SortText: sortPrefix + name, FilterText: name));
+        }
+
+        void AddTypes(IEnumerable<INamedTypeSymbol> types, bool allowSimplePrefix = false)
+        {
+            foreach (var type in types.OrderBy(static t => t.Name, StringComparer.Ordinal))
+            {
+                if (!type.CanBeReferencedByName || !compilation!.IsSymbolAccessibleWithin(type, compilation.Assembly)) continue;
+                var name = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat.WithMiscellaneousOptions(
+                    SymbolDisplayFormat.FullyQualifiedFormat.MiscellaneousOptions & ~SymbolDisplayMiscellaneousOptions.UseSpecialTypes));
+                // Use the compiler's exposure catalog: deriving UiObject alone is not
+                // enough for nested, abstract, generic or explicitly ignored UI types.
+                if (catalog.FindByTypeDisplayName(name) is null) continue;
+                if (name.StartsWith("global::", StringComparison.Ordinal)) name = name[8..];
+                if (!(allowSimplePrefix ? type.Name : name).StartsWith(lookupPrefix, StringComparison.OrdinalIgnoreCase)) continue;
+                name = globalPrefix + name;
+                if (!seen.Add(name)) continue;
+                items.Add(new UiCompletionItem(name, UiCompletionKind.Class, "UI type alias target",
+                    SortText: "0" + name));
+            }
+        }
+    }
+
+    private static bool IsQualifiedNameCharacter(char c) => char.IsLetterOrDigit(c) || c is '_' or '.' or ':' or '@';
+
+    private static IEnumerable<INamespaceSymbol> NamespaceTree(INamespaceSymbol root)
+    {
+        foreach (var ns in root.GetNamespaceMembers().OrderBy(static n => n.Name, StringComparer.Ordinal))
+        {
+            yield return ns;
+            foreach (var nested in NamespaceTree(ns)) yield return nested;
+        }
+    }
+
+    private static INamespaceOrTypeSymbol? FindNamespaceOrType(INamespaceSymbol root, string name)
+    {
+        INamespaceOrTypeSymbol current = root;
+        foreach (var part in name.Split('.', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var member = current.GetMembers(part).OfType<INamespaceOrTypeSymbol>().FirstOrDefault();
+            if (member is null) return null;
+            current = member;
+        }
+        return current;
     }
 
     // ---- 文档文本 ----

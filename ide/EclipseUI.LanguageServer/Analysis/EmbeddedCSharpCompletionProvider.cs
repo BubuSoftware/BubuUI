@@ -13,7 +13,8 @@ namespace EclipseUI.LanguageServer.Analysis;
 ///
 /// 每个候选的编辑区间（<c>item.Span</c> 或 GetChangeAsync 的 TextChange）经统一映射服务
 /// 回映到 .ui；**映不回就丢弃该项**（§8 硬边界）。模板表面（标签/属性/指令）仍归目录，
-/// 这里只服务 C# 岛。legacy（无项目快照/无生成文档）返回空——不另造合成投影补全；
+/// 这里只服务 C# 岛。项目模式通过 EditingCSharpDocument 保留错误模板的有效 @code；
+/// legacy（无项目快照）返回空；
 /// <c>{expr}</c> 的 legacy 探针补全由 <see cref="CompletionProvider"/> 保留。
 /// </summary>
 public static class EmbeddedCSharpCompletionProvider
@@ -22,14 +23,14 @@ public static class EmbeddedCSharpCompletionProvider
         DocumentAnalysis analysis, string uiPath, int offset,
         char? triggerCharacter, CancellationToken cancellationToken)
     {
-        var generated = analysis.GeneratedDocument;
-        var project = analysis.Project;
-        if (generated is null || project is null) return UiCompletionList.Empty;
-        if (!generated.Mappings.TryMapPositionToGenerated(offset, out var generatedOffset))
+        if (await OverrideCompletionProvider.CompleteAsync(analysis, uiPath, offset, cancellationToken)
+                .ConfigureAwait(false) is { } overrides) return overrides;
+        var editing = EditingCSharpDocument.For(analysis, uiPath);
+        if (editing is null) return UiCompletionList.Empty;
+        if (!editing.Mappings.TryMapPositionToGenerated(offset, out var generatedOffset))
             return UiCompletionList.Empty;
 
-        var document = EditorDocumentWorkspace.For(project).GeneratedDocumentFor(uiPath);
-        if (document is null) return UiCompletionList.Empty;
+        var document = editing.Document;
         var service = CompletionService.GetService(document);
         if (service is null) return UiCompletionList.Empty;
 
@@ -44,21 +45,31 @@ public static class EmbeddedCSharpCompletionProvider
             document, generatedOffset, trigger, cancellationToken: cancellationToken).ConfigureAwait(false);
         if (completions is null || completions.ItemsList.Count == 0) return UiCompletionList.Empty;
 
-        var replacement = generated.Mappings.TryMapToOriginal(
+        var replacement = editing.Mappings.TryMapToOriginal(
             new UiSpan(completions.Span.Start, completions.Span.Length), out var mappedDefault)
             ? mappedDefault
             : new UiSpan(offset, 0);
 
         var items = new List<UiCompletionItem>();
+        var model = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
         foreach (var item in completions.ItemsList)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (await ConvertAsync(service, document, completions, item, generated.Mappings, cancellationToken)
+            // Roslyn can return import candidates whose commit only inserts the type's
+            // name: its native editor adds the using separately. Deliver those through
+            // our explicit template-import path so no selectable candidate misses it.
+            if (model is not null && UnimportedTypeCompletionProvider.NeedsImport(item, model, generatedOffset)) continue;
+            if (await ConvertAsync(service, document, completions, item, editing.Mappings, cancellationToken)
                 .ConfigureAwait(false) is { } converted)
                 items.Add(converted);
         }
-        // 建议模式（SuggestionModeItem）= 列表随输入细化，对应 LSP isIncomplete。
-        return new UiCompletionList(replacement, items, completions.SuggestionModeItem is not null);
+        var incomplete = false;
+        if (completions.ItemsList.Any(item => item.Tags.Any(tag => tag is "Class" or "Struct" or "Interface" or "Namespace")))
+        {
+            if (model is not null)
+                items.AddRange(UnimportedTypeCompletionProvider.Complete(analysis, model, generatedOffset, offset, out incomplete));
+        }
+        return new UiCompletionList(replacement, items, incomplete || completions.SuggestionModeItem is not null);
     }
 
     private static async Task<UiCompletionItem?> ConvertAsync(
@@ -67,18 +78,35 @@ public static class EmbeddedCSharpCompletionProvider
     {
         var insertText = item.DisplayText;
         var editSpan = item.Span;
-        var isSnippet = item.Tags.Contains("Snippet");
+        int? caretOffset = null;
+        var additional = new List<UiTextEdit>();
 
         // 复杂编辑（snippet 展开、override 生成、自动补 using 等）的真实文本要问 GetChangeAsync。
-        // 只接受「本文档单处编辑」：多处/跨文档编辑（如补 using 落在生成独有代码区）无法忠实
-        // 回映到 .ui，整项丢弃——不猜。
-        if (item.IsComplexTextEdit || isSnippet)
+        // Every edit must map exactly. Namespace imports are explicit template edits;
+        // override formatting that touches generated trivia is handled by its provider.
+        if (item.IsComplexTextEdit || item.Tags.Contains("Snippet"))
         {
             var change = await service.GetChangeAsync(document, item, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
-            if (change.TextChanges.Length != 1) return null;
-            insertText = change.TextChanges[0].NewText ?? "";
-            editSpan = change.TextChanges[0].Span;
+            if (change.TextChanges.Length == 0) return null;
+            var candidates = change.TextChanges.Where(edit => edit.Span.Contains(item.Span)
+                || edit.Span.IntersectsWith(item.Span)).ToArray();
+            if (candidates.Length != 1) return null;
+            var primary = candidates[0];
+            insertText = primary.NewText ?? "";
+            editSpan = primary.Span;
+            foreach (var extra in change.TextChanges.Where(edit => edit != primary))
+            {
+                if (!mappings.TryMapToOriginal(new UiSpan(extra.Span.Start, extra.Span.Length), out var span)) return null;
+                additional.Add(new UiTextEdit(span, extra.NewText ?? ""));
+            }
+            if (change.NewPosition is { } position)
+            {
+                var deltaBefore = change.TextChanges.Where(edit => edit.Span.Start < primary.Span.Start)
+                    .Sum(edit => (edit.NewText?.Length ?? 0) - edit.Span.Length);
+                var relative = position - primary.Span.Start - deltaBefore;
+                if (relative >= 0 && relative <= insertText.Length) caretOffset = relative;
+            }
         }
 
         if (!mappings.TryMapToOriginal(new UiSpan(editSpan.Start, editSpan.Length), out var uiSpan))
@@ -92,13 +120,14 @@ public static class EmbeddedCSharpCompletionProvider
             Detail: item.InlineDescription is { Length: > 0 } inline ? inline : null,
             Documentation: description?.Text is { Length: > 0 } doc ? doc : null,
             InsertText: insertText,
-            IsSnippet: isSnippet,
             SortText: item.SortText,
             Replacement: uiSpan,
             FilterText: item.FilterText,
             CommitCharacters: CommitCharacters(list.Rules.DefaultCommitCharacters, item.Rules.CommitCharacterRules),
             Tags: item.Tags.IsDefaultOrEmpty ? null : item.Tags,
-            Preselect: item.Rules.MatchPriority == MatchPriority.Preselect);
+            Preselect: item.Rules.MatchPriority == MatchPriority.Preselect,
+            AdditionalEdits: additional.Count == 0 ? null : additional,
+            CaretOffset: caretOffset);
     }
 
     /// <summary>Roslyn 标签 → LSP 类别。按固定优先级取首个命中（符号项通常只有一个类别标签）。</summary>

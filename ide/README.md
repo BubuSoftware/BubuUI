@@ -49,15 +49,15 @@ design/06 §6.9 之后，目录不再是「扫 dll 元数据」，所有能力�
 | `.eustyle` 诊断 | ✅ | `.eustyle` 进 `documentSelector`，`ExecuteStylesheet` 的 EUI050–052 有 LSP 红波浪线 |
 | `@namespace` 契约 | ✅ | 必填；生成器报 EUI055（缺失）/ EUI056（与 code-behind 不一致），经 Tier 2 映回 `.ui`。补全提供 `@namespace` 指令与命名空间候选（自身命名空间排首位） |
 | 无 code-behind 的 `.ui` 组件 | ✅ | 目录把「同名同命名空间的 `.ui`」当组件证据（spec/02 §2.7），`<Tag />` 在编辑器与 `dotnet build` 里一致。K34：`@code` 里的 `[UiParameter]`/`[UiSlot]`/`[UiContent]` 由目录语法级提取为对外表面——补全、`@bind-` 校验与 `dotnet build` 同口径；有同名 `.cs` 时这些特性只对本文件可见（`EUI057` Warning）。`Ref={…}` 指向 `@code` 字段时 F12 落在本文档的字段声明 |
-| 标签补全 | ✅ | 来自项目目录；未 build 的自家控件、`.ui` 派生组件都在；链外命名空间未导入的标 `needs @using`（`@namespace` 链内不需要，K33） |
-| `@using` 别名补全 | ✅ | `@using Alt = Ns.Type` 的 `Alt` 作为标签候选，选中解析到目标类型 |
+| 标签补全 | ✅ | 来自项目目录；未 build 的自家控件、`.ui` 派生组件都在；选择链外未导入类型时，以同一补全项的附加编辑补入去重的 `@using`（`@namespace` 链内不需要，K33） |
+| `@using` 命名空间 / 别名补全 | ✅ | 命名空间候选来自项目 Compilation，不限于 UI 控件命名空间；支持 `System.Col` 等限定前缀与别名目标。`@using Alt = Ns.Type` 的 `Alt` 仍作为标签候选 |
 | 属性 / 事件 / 组件参数 / 附加属性补全 | ✅ | 含 `Grid.Row` 形态；事件带委托签名 |
 | `@bind-` / 属性值 / `@` 指令 / `@using` 命名空间补全 | ✅ | `@bind-` 只列**支持绑定**的目标（控件可写属性；组件带形状正确的 `{P}Changed` 的参数，不含内容/委托/只读）；不可绑的名字由 EUI040 解释。另有枚举成员、`bool`、`Style=` 属性名；`Style="Prop: |"` 值位置按目录形态给候选（enum 列成员表，design/19） |
 | 悬停 / 大纲 | ✅ | 标签 → CLR 类型与内容模型；属性 → 类型；事件 → 处理器签名；`Style` 属性名 → 值形态（enum 列成员） |
 | 表达式补全 / 悬停 | ✅ | `{expr}` 与属性表达式走 Roslyn 投影；候选来自 `ExpressionEnvironment` + code-behind/`@code` 成员 + 接收者类型的实例成员 |
-| `@code` 块内补全 / 悬停 | ⛔ | 只有跳转（`CodeBlockDefinition`）。补全/悬停/重命名的分派键只判 `CursorKind.Expression`，`@code` 落 `default` 返回空——**从未实现**，不是回归。见 [design/06 §6.9.10](../design/06-ide-support.md) |
+| `@code` 块内补全 / 悬停 | ✅ | 补全使用 Roslyn 生成文档，覆盖成员、局部变量、类型、关键字、扩展方法和基础 snippet；悬停与跳转按符号回映。成员声明处的 override 候选来自真实基类，生成器占用的 InitializeUi/Render 不作为作者候选 |
 | 跳转定义 | ✅ | 标签与**属性/事件/参数/附加属性**都走 Roslyn 符号查询，落在成员声明；有源码跳源码（含仓库里以源码编译的框架工程），无源码走成员级反编译（`eui-decompiled:`） |
-| 重命名 | ✅ | F2 改 `@foreach` 变量与 code-behind 类自身成员；改不全的编辑一律拒绝。**仅 `{expr}`**，`@code` 块内不支持 |
+| 重命名 | ✅ | 可从 `{expr}` 或 `@code` 发起；项目模式通过 Roslyn Renamer 修改同项目 `.cs/.ui` 成员引用，`@foreach` 变量保留文档内路径。改不全、映不回或发生冲突时整体拒绝 |
 | signature help | ✅ | `textDocument/signatureHelp`，重载与当前参数位从同一份 Compilation 取 |
 | 语义着色 | ✅ | `textDocument/semanticTokens/full`，只着色 `{expr}` 与 `@code` 区间（模板表面仍归 TextMate）；项目模式走 Roslyn `Classifier` 对生成文档分类再经统一映射回映，legacy 回落探针投影（design/18 §12.12） |
 | 代码操作 | ✅ | `EUI001` 补 `@using`、`EUI002` 最近属性替换、`CS0103` 把缺失成员生成到 `@code` 块（触发点仍是属性表达式，`@code` 块内不产生快速修复）；映不回的编辑丢弃 |
@@ -66,8 +66,8 @@ design/06 §6.9 之后，目录不再是「扫 dll 元数据」，所有能力�
 | `#line` 调试映射 | ⛔ | 生成器侧已有 `#line`，调试器接线未做（design/06 P3） |
 
 第 5 条验收的边界：**只在 `.ui` 内提供与 `.cs` 同档的 C# 能力，不接管 `.cs` 文件**
-（那由 C# Dev Kit / ReSharper 负责）。「同档」目前只在 `{expr}` 一侧成立：`@code` 块缺补全、
-悬停与重命名，逐项对照见 [design/06 §6.9.10](../design/06-ide-support.md)。
+（那由 C# Dev Kit / ReSharper 负责）。`{expr}` 与 `@code` 共用项目语义与源映射；
+支持范围及编辑规则见 [design/18](../design/18-razor-csharp-intellisense.md)，不等同于已经接通全部 C# IDE 功能。
 
 ## 2. VS Code：跑起来
 
@@ -92,8 +92,9 @@ powershell -ExecutionPolicy Bypass -File ide/build.ps1
 文档属于哪个项目完全由求值后的 `AdditionalFiles` 决定；一个文档被多个项目收，诊断逐份都算；
 不属于任何项目的磁盘文档**明确不给目录也不给诊断**（编译时不参与，IDE 不该假装它参与）。
 
-打开的文档用编辑器缓冲区覆盖磁盘，所以未保存的 `.cs` / `.ui` / `.eustyle` 立刻在补全、
-诊断与目录里可见。结构文件变化重求值，其余变化只丢快照。
+服务端支持用编辑器缓冲区覆盖磁盘；`.ui` / `.eustyle` 由客户端正常同步。当前客户端没有额外
+转发 `.cs` 的未保存缓冲区，因此实际 code-behind 更新仍依赖保存后的文件 watcher；服务端的
+缓冲区注入测试不能替代这段客户端接线。结构文件变化重求值，其余变化使快照失效。
 
 **legacy fallback（无 csproj / untitled / 内存态）**：仍是 `UiCatalogFactory.Build(Compilation)`
 从 `EclipseUI.Runtime.dll` 符号派生（不加载程序集），runtime 同目录下引用了 Runtime 的
@@ -218,12 +219,12 @@ lsp4ij → Settings → Languages & Frameworks → Language Servers → `+` User
 - 跳转到只有 dll/元数据、没有源码的控件时 server 返回 `eui-decompiled:` 虚拟文档；
   VS Code 壳注册了 `TextDocumentContentProvider`，Rider 侧尚未接，故这类跳转在 Rider
   上打不开内容（有源码的跳转正常）。这是 P2 的后续片。
-- `@code` 块内的补全/悬停/重命名、`#line` 调试映射仍是 server 侧既有缺口，与 IDE 无关。
+- `@code` 块内补全/悬停/重命名由共享 server 提供；`#line` 调试器接线仍未实现。
 
 ## 5. 测试
 
 ```powershell
-dotnet test tests/EclipseUI.Ide.Tests     # 199 例：五条验收夹具 / 项目系统 / 光标 / 补全 / 悬停 / 跳转 / 重命名 / 反编译 / 大纲 / 诊断 / 协议帧（含 watcher 动态注册）/ 探针投影 / 端到端会话
+dotnet test tests/EclipseUI.Ide.Tests     # 项目系统 / 光标 / 补全 / 悬停 / 跳转 / 重命名 / 反编译 / 诊断 / 协议帧 / C# 源映射与端到端会话
 cd ide/vscode; node test/tokenize.test.js  # grammar：真实 oniguruma 引擎逐 token 断言 scope
 cd ide/vscode; node test/extension.test.js # 客户端壳：documentSelector / watcher / 参数
 cd ide/rider;  node test/plugin.test.js    # Rider 壳静态契约（无需 JDK）：EP / 类名 / grammar / watcher / 启动参数 / wrapper
@@ -247,14 +248,11 @@ grammar 测试值得单说：TextMate 写错不会报错，只会「某个地方
 - **跳转定义**：源码可达（含仓库里以源码编译的框架工程）跳真实文件；只有元数据（dll / NuGet）
   才反编译成 `eui-decompiled:` 只读虚拟文档。反编译文本是重建的 C#，与原始源码不完全一致。
   目录不认识的标签返回 null，不给错位置。
-- **重命名**：只允许 `@foreach` 变量与 code-behind 类自身成员；工作区 `.cs` 超过 500 个文件时
-  拒绝成员改名（宁可少改不错改）。P9 的 `SymbolFinder` 改造未做。
+- **重命名**：项目模式限于同项目源码中的成员、局部变量与参数，不覆盖类型/命名空间、文件名或跨项目改名。独立文档保留保守扫描边界，无法保证完整交付时拒绝。
 - **代码操作 / 格式化**：编辑经偏移回映改写回 `.ui`；映不回的丢弃而不是猜。
-- **`@code` 块内的补全 / 悬停 / 重命名缺失**：三者都只接 `{expr}`（分派键为
-  `CursorKind.Expression`），`@code` 的 `CursorKind.CodeBlock` 落进 `default`。这是从未实现的
-  缺口而非回归，成因与两条修法见 [design/06 §6.9.10](../design/06-ide-support.md)；
-  Razor 的生成文档/映射机制与可借鉴的 P0–P3 路线见
-  [design/18](../design/18-razor-csharp-intellisense.md)。
+- **补全编辑边界**：主替换和附加编辑使用原 `.ui` 坐标；全部编辑必须可完整回映，或有明确的
+  `@using` 指令插入规则。无法精确转换的生成独有编辑不交付。自动导入按文件已有换行符生成且去重，
+  不把 C# `using` 放入 `@code`。机制和验收见 [design/18 §12.15](../design/18-razor-csharp-intellisense.md#1215-补全完整编辑与指令命名空间2026-11-13)。
 - **`#line` 调试映射**未做；语义着色只覆盖内嵌 C# 区间，模板表面仍由 TextMate 着色。
 - **URI 必须按编辑器格式解析**：VS Code 发 `file:///d%3A/repo/x.ui`（盘符冒号编码、盘符小写）。
   这种写法下 .NET 的 `Uri.LocalPath` 返回 `/d:/repo/x.ui`，再经 `GetFullPath` 就永远匹配不到

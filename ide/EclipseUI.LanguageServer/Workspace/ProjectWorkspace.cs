@@ -364,16 +364,28 @@ public sealed class ProjectWorkspace
 
         var references = new List<MetadataReference>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var assemblyNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         void Add(string path)
         {
             if (!File.Exists(path) || !seen.Add(Path.GetFullPath(path))) return;
-            try { references.Add(MetadataReference.CreateFromFile(path)); }
+            try
+            {
+                // A reference assembly and the server's implementation DLL can have the
+                // same simple name at different versions/paths. Referencing both produces
+                // duplicate symbols (notably DI extension methods). Project references
+                // win; the server runtime is only a fallback for missing framework names.
+                var name = System.Reflection.AssemblyName.GetAssemblyName(path).Name;
+                if (name is null || string.Equals(name, evaluation.AssemblyName, StringComparison.OrdinalIgnoreCase)
+                    || assemblyNames.Contains(name)) return;
+                references.Add(MetadataReference.CreateFromFile(path));
+                assemblyNames.Add(name);
+            }
             catch (Exception ex) { notes.Add($"cannot reference '{path}': {ex.Message}"); }
         }
+        foreach (var path in evaluation.References) Add(path);
         var tpa = AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") as string ?? "";
         foreach (var path in tpa.Split(Path.PathSeparator))
             if (path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)) Add(path);
-        foreach (var path in evaluation.References) Add(path);
 
         var nullable = evaluation.Nullable.Trim().ToLowerInvariant() switch
         {

@@ -216,6 +216,266 @@ public class ProtocolTests
         Assert.Equal(4, edit["range"]!["end"]!["character"]!.GetValue<int>());
     }
 
+    [Theory]
+    [InlineData("\n")]
+    [InlineData("\r\n")]
+    public async Task Session_UnimportedTagCompletionReturnsAdditionalImportEdit(string newline)
+    {
+        const string uri = "file:///D:/workspace/ImportCompletion.ui";
+        var text = "@namespace Gallery" + newline + "<But" + newline;
+        var transcript = await RunSession(
+            Request(1, "initialize"),
+            Notification("initialized", new JsonObject()),
+            DidOpen(uri, text),
+            Request(2, "textDocument/completion", Position(uri, 1, 4)));
+
+        var items = transcript.Single(m => m["id"]?.GetValue<int>() == 2)["result"]!["items"]!.AsArray();
+        var button = Assert.Single(items, i => i!["label"]!.GetValue<string>() == "Button")!;
+        var edit = button["textEdit"]!;
+        Assert.Equal("Button", edit["newText"]!.GetValue<string>());
+        Assert.Equal(1, edit["range"]!["start"]!["line"]!.GetValue<int>());
+        Assert.Equal(1, edit["range"]!["start"]!["character"]!.GetValue<int>());
+        Assert.Equal(4, edit["range"]!["end"]!["character"]!.GetValue<int>());
+
+        var import = Assert.Single(button["additionalTextEdits"]!.AsArray())!;
+        Assert.Contains("@using EclipseUI.Elements" + newline, import["newText"]!.GetValue<string>());
+        var applied = ApplyCompletion(text, button);
+        Assert.Contains("<Button" + newline, applied);
+        Assert.Equal(1, applied.Split("@using EclipseUI.Elements", StringSplitOptions.None).Length - 1);
+        if (newline == "\n") Assert.DoesNotContain('\r', applied);
+        else Assert.DoesNotContain('\n', applied.Replace("\r\n", "", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Session_AlreadyImportedTagCompletionDoesNotRepeatUsing()
+    {
+        const string uri = "file:///D:/workspace/ExistingImport.ui";
+        const string text = "@namespace Gallery\n@using EclipseUI.Elements\n<But";
+        var transcript = await RunSession(
+            Request(1, "initialize"),
+            Notification("initialized", new JsonObject()),
+            DidOpen(uri, text),
+            Request(2, "textDocument/completion", Position(uri, 2, 4)));
+
+        var items = transcript.Single(m => m["id"]?.GetValue<int>() == 2)["result"]!["items"]!.AsArray();
+        var button = Assert.Single(items, i => i!["label"]!.GetValue<string>() == "Button")!;
+        Assert.True(button["additionalTextEdits"] is null || button["additionalTextEdits"]!.AsArray().Count == 0);
+        Assert.Equal(text.Replace("<But", "<Button", StringComparison.Ordinal), ApplyCompletion(text, button));
+    }
+
+    [Fact]
+    public async Task Session_UsingCompletionReplacesTheQualifiedPrefix()
+    {
+        const string uri = "file:///D:/workspace/UsingCompletion.ui";
+        const string text = "@namespace Gallery\n@using System.Col";
+        var transcript = await RunSession(
+            Request(1, "initialize"),
+            Notification("initialized", new JsonObject()),
+            DidOpen(uri, text),
+            Request(2, "textDocument/completion", Position(uri, 1, "@using System.Col".Length)));
+
+        var items = transcript.Single(m => m["id"]?.GetValue<int>() == 2)["result"]!["items"]!.AsArray();
+        var collections = Assert.Single(items,
+            i => i!["label"]!.GetValue<string>() == "System.Collections")!;
+        Assert.Equal("@namespace Gallery\n@using System.Collections", ApplyCompletion(text, collections));
+    }
+
+    [Fact]
+    public async Task Session_ClientsWithoutSnippetSupportReceiveTheUsingDefaultAsPlainText()
+    {
+        const string uri = "file:///D:/workspace/PlainDirective.ui";
+        const string text = "@us";
+        var transcript = await RunSession(
+            Request(1, "initialize", new JsonObject
+            {
+                ["capabilities"] = new JsonObject
+                {
+                    ["textDocument"] = new JsonObject
+                    {
+                        ["completion"] = new JsonObject
+                        {
+                            ["completionItem"] = new JsonObject { ["snippetSupport"] = false },
+                        },
+                    },
+                },
+            }),
+            Notification("initialized", new JsonObject()),
+            DidOpen(uri, text),
+            Request(2, "textDocument/completion", Position(uri, 0, text.Length)));
+
+        var items = transcript.Single(m => m["id"]?.GetValue<int>() == 2)["result"]!["items"]!.AsArray();
+        var usingItem = Assert.Single(items, i => i!["label"]!.GetValue<string>() == "@using")!;
+        Assert.Equal(1, usingItem["insertTextFormat"]!.GetValue<int>());
+        Assert.Equal("@using EclipseUI.Elements", ApplyCompletion(text, usingItem));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Session_OverrideCompletionCommitsAValidMemberWithOrWithoutSnippets(bool snippetSupport)
+    {
+        var repository = RepositoryRoot();
+        var path = Path.Combine(repository, "samples", "Gallery", "TaskList.ui");
+        var uri = DocumentStore.PathToUri(path);
+        const string marked = """
+            @namespace Gallery
+            @using EclipseUI.Elements
+            <StackPanel />
+            @code {
+                public System.Collections.Generic.List<TaskItem> tasks = new();
+                public void Add() { }
+                protected override |
+            }
+            """;
+        var offset = marked.IndexOf('|');
+        var text = marked.Remove(offset, 1);
+        var (line, character) = new PositionMap(text).ToPosition(offset);
+        var projects = new ProjectWorkspace(new CatalogOptions { ProbeRoot = repository });
+        projects.ApplyBuffer(uri, text);
+        var catalogs = new CatalogProvider(new CatalogOptions
+        {
+            RuntimePath = Path.Combine(AppContext.BaseDirectory, "EclipseUI.Runtime.dll"),
+            IncludeSiblingAssemblies = false,
+        });
+        var transcript = await RunSessionWithProjects(catalogs, projects,
+            Request(1, "initialize", new JsonObject
+            {
+                ["capabilities"] = new JsonObject
+                {
+                    ["textDocument"] = new JsonObject
+                    {
+                        ["completion"] = new JsonObject
+                        {
+                            ["completionItem"] = new JsonObject { ["snippetSupport"] = snippetSupport },
+                        },
+                    },
+                },
+            }),
+            Notification("initialized", new JsonObject()),
+            DidOpen(uri, text),
+            Request(2, "textDocument/completion", Position(uri, line, character)));
+
+        var items = transcript.Single(message => message["id"]?.GetValue<int>() == 2)["result"]!["items"]!.AsArray();
+        var candidate = Assert.Single(items,
+            item => item!["label"]!.GetValue<string>().StartsWith("OnInitialized(", StringComparison.Ordinal))!;
+        Assert.StartsWith("protected override ", candidate["filterText"]!.GetValue<string>(), StringComparison.Ordinal);
+        Assert.Equal(snippetSupport ? 2 : 1, candidate["insertTextFormat"]!.GetValue<int>());
+        var insertion = candidate["textEdit"]!["newText"]!.GetValue<string>();
+        string plain;
+        if (snippetSupport)
+        {
+            // Interpret the escaped wire text exactly as an LSP snippet client does.
+            var expanded = new StringBuilder();
+            var caret = -1;
+            for (var index = 0; index < insertion.Length; index++)
+            {
+                if (insertion[index] == '\\' && index + 1 < insertion.Length
+                    && insertion[index + 1] is '\\' or '$' or '}')
+                    expanded.Append(insertion[++index]);
+                else if (insertion[index] == '$' && index + 1 < insertion.Length && insertion[index + 1] == '0')
+                {
+                    Assert.Equal(-1, caret);
+                    caret = expanded.Length;
+                    index++;
+                }
+                else expanded.Append(insertion[index]);
+            }
+            plain = expanded.ToString();
+            Assert.InRange(caret, plain.IndexOf('{') + 1, plain.LastIndexOf('}'));
+        }
+        else
+        {
+            plain = insertion;
+            Assert.DoesNotContain("$0", plain);
+            Assert.DoesNotContain("${", plain);
+            Assert.DoesNotContain("\\}", plain);
+        }
+        Assert.Contains("protected override void OnInitialized()", plain);
+        Assert.Contains("base.OnInitialized();", plain);
+        Assert.DoesNotContain("#line", plain);
+        var selected = candidate.DeepClone();
+        selected["textEdit"]!["newText"] = plain;
+        var applied = ApplyCompletion(text, selected);
+        Assert.DoesNotContain("protected override protected override", applied);
+        projects.ApplyBuffer(uri, applied);
+        var snapshot = Assert.Single(projects.ResolveAll(path));
+        var errors = snapshot.Compilation.GetDiagnostics()
+            .Where(diagnostic => diagnostic.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
+            .ToArray();
+        Assert.True(errors.Length == 0, string.Join(Environment.NewLine, errors.Select(error => error.ToString())));
+    }
+
+    [Fact]
+    public async Task Session_CSharpTypeCompletionAddsUsingAndCompilesAfterAllWireEditsAreApplied()
+    {
+        var repository = RepositoryRoot();
+        var path = Path.Combine(repository, "samples", "Gallery", "TaskList.ui");
+        var uri = DocumentStore.PathToUri(path);
+        const string marked = """
+            @namespace Gallery
+            @using EclipseUI.Elements
+            <StackPanel />
+            @code {
+                public System.Collections.Generic.List<TaskItem> tasks = new();
+                public void Add() { }
+                void Create() { StringB| builder = new(); }
+            }
+            """;
+        var offset = marked.IndexOf('|');
+        var text = marked.Remove(offset, 1);
+        var (line, character) = new PositionMap(text).ToPosition(offset);
+        var projects = new ProjectWorkspace(new CatalogOptions { ProbeRoot = repository });
+        projects.ApplyBuffer(uri, text);
+        var catalogs = new CatalogProvider(new CatalogOptions
+        {
+            RuntimePath = Path.Combine(AppContext.BaseDirectory, "EclipseUI.Runtime.dll"),
+            IncludeSiblingAssemblies = false,
+        });
+        var transcript = await RunSessionWithProjects(catalogs, projects,
+            Request(1, "initialize"),
+            Notification("initialized", new JsonObject()),
+            DidOpen(uri, text),
+            Request(2, "textDocument/completion", Position(uri, line, character)));
+
+        var items = transcript.Single(message => message["id"]?.GetValue<int>() == 2)["result"]!["items"]!.AsArray();
+        var matching = items.Where(item => item!["label"]!.GetValue<string>() == "StringBuilder").ToArray();
+        Assert.True(matching.Length == 1, string.Join("\n", matching.Select(item => item!.ToJsonString())));
+        var candidate = matching[0]!;
+        var import = Assert.Single(candidate["additionalTextEdits"]!.AsArray())!;
+        Assert.Contains("@using System.Text", import["newText"]!.GetValue<string>());
+        Assert.Equal("StringBuilder", candidate["textEdit"]!["newText"]!.GetValue<string>());
+        var applied = ApplyCompletion(text, candidate);
+        Assert.Contains("void Create() { StringBuilder builder = new(); }", applied);
+        Assert.Equal(1, applied.Split("@using System.Text", StringSplitOptions.None).Length - 1);
+        projects.ApplyBuffer(uri, applied);
+        var snapshot = Assert.Single(projects.ResolveAll(path));
+        var errors = snapshot.Compilation.GetDiagnostics()
+            .Where(diagnostic => diagnostic.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
+            .ToArray();
+        Assert.True(errors.Length == 0, string.Join(Environment.NewLine, errors.Select(error => error.ToString())));
+    }
+
+    private static string ApplyCompletion(string text, JsonNode item)
+    {
+        var positions = new PositionMap(text);
+        var edits = new List<JsonNode> { item["textEdit"]! };
+        if (item["additionalTextEdits"] is JsonArray additional)
+            edits.AddRange(additional.Select(edit => edit!));
+        var changes = edits.Select(edit =>
+        {
+            var range = edit["range"]!;
+            var start = range["start"]!;
+            var end = range["end"]!;
+            return (
+                Start: positions.ToOffset(start["line"]!.GetValue<int>(), start["character"]!.GetValue<int>()),
+                End: positions.ToOffset(end["line"]!.GetValue<int>(), end["character"]!.GetValue<int>()),
+                Text: edit["newText"]!.GetValue<string>());
+        }).OrderByDescending(edit => edit.Start).ToArray();
+        foreach (var change in changes)
+            text = text.Remove(change.Start, change.End - change.Start).Insert(change.Start, change.Text);
+        return text;
+    }
+
     /// <summary>
     /// 表达式投影端到端（design/06 §6.3）：code-behind 是磁盘上的同名兄弟 .cs
     /// （spec/02 §2.2 文件契约），server 经 LanguageService 读它建探针，
@@ -603,7 +863,11 @@ public class ProtocolTests
             IncludeSiblingAssemblies = false,
         }), messages);
 
-    private static async Task<JsonNode[]> RunSessionWith(CatalogProvider catalogs, params JsonObject[] messages)
+    private static Task<JsonNode[]> RunSessionWith(CatalogProvider catalogs, params JsonObject[] messages) =>
+        RunSessionWithProjects(catalogs, null, messages);
+
+    private static async Task<JsonNode[]> RunSessionWithProjects(CatalogProvider catalogs,
+        ProjectWorkspace? projects, params JsonObject[] messages)
     {
         var input = new MemoryStream();
         var writer = new LspMessageWriter(input);
@@ -611,7 +875,7 @@ public class ProtocolTests
         input.Position = 0;
 
         var output = new MemoryStream();
-        var service = new LanguageService(catalogs, new DocumentStore());
+        var service = new LanguageService(catalogs, new DocumentStore(), projects);
         var connection = new JsonRpcConnection(input, output);
         var host = new LanguageServerHost(connection, service, catalogs);
         connection.RequestHandler = host.HandleRequestAsync;
@@ -631,6 +895,13 @@ public class ProtocolTests
             transcript.Add(message);
         }
         return transcript.ToArray();
+    }
+
+    private static string RepositoryRoot()
+    {
+        for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
+            if (File.Exists(Path.Combine(directory.FullName, "EclipseUI.slnx"))) return directory.FullName;
+        throw new InvalidOperationException("Cannot locate the repository root.");
     }
 
     /// <summary>每次只给一个字节的流：验证头部/体的分片读取不会跳字节。</summary>
