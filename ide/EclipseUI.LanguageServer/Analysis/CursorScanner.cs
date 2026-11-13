@@ -501,7 +501,10 @@ public static class CursorScanner
         {
             int whitespaceStart = j;
             while (j < text.Length && char.IsWhiteSpace(text[j])) j++;
-            if (offset >= whitespaceStart && offset <= j)
+            // VS Ctrl+hover queries the first character of the symbol, even when the
+            // mouse is over its middle. That boundary belongs to the attribute name.
+            bool atAttributeStart = offset == j && j < text.Length && IsAttrChar(text[j]);
+            if (offset >= whitespaceStart && offset <= j && !atAttributeStart)
                 return (j, AttrName(tagName, attribute: "", prefix: "", tokenStart: offset, open), null);
 
             if (j >= text.Length) break;

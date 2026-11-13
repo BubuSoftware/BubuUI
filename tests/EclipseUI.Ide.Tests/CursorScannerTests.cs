@@ -43,6 +43,36 @@ public class CursorScannerTests
         Assert.Equal("<Button ".Length, context.TokenStart);
     }
 
+    [Theory]
+    [InlineData("<Button |Label=\"x\" />", "Label")]
+    [InlineData("<Button |OnClick={() => {}} />", "OnClick")]
+    [InlineData("<Button |Grid.Row=\"1\" />", "Grid.Row")]
+    [InlineData("<CheckBox |@bind-Checked={flag} />", "@bind-Checked")]
+    [InlineData("<Section |Title=\"demo\" />", "Title")]
+    [InlineData("<MainWindow |W=\"800\" />", "W")]
+    [InlineData("<Button Label=\"x\" |Width=\"100\" />", "Width")]
+    [InlineData("<Button\r\n\t |Label=\"x\" />", "Label")]
+    public void AttributeName_AtFirstCharacterResolvesTheWholeName(string marked, string name)
+    {
+        var context = At(marked);
+        Assert.Equal(CursorKind.AttributeName, context.Kind);
+        Assert.Equal(name, context.AttributeName);
+        Assert.Equal(marked.IndexOf('|'), context.TokenStart);
+        Assert.Empty(context.Prefix);
+    }
+
+    [Theory]
+    [InlineData("<Button | Label=\"x\" />")]
+    [InlineData("<Button |")]
+    [InlineData("<Button |/>")]
+    public void AttributeName_InWhitespaceKeepsAnEmptyName(string marked)
+    {
+        var context = At(marked);
+        Assert.Equal(CursorKind.AttributeName, context.Kind);
+        Assert.Empty(context.AttributeName);
+        Assert.Empty(context.Prefix);
+    }
+
     [Fact]
     public void BindAttribute_KeepsThePrefixInTheToken()
     {

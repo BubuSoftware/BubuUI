@@ -103,6 +103,6 @@ dotnet run --project sandbox/ControlNativeCheck
 | samples | Gallery 与桌面入口 |
 | sandbox | 渲染和交互验证壳 |
 | tests | 编译器、无头、IDE、渲染回归 |
-| [ide](./ide/README.md) | VS Code / Rider 与 LSP 工具链 |
+| [ide](./ide/README.md) | Visual Studio / VS Code / Rider 与 LSP 工具链 |
 
 旧版状态日志与原始决策在 [历史快照](./design/history/2026-11-13-before-legacy-removal/README.md)，不作为当前 API 或兼容承诺。

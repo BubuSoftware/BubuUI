@@ -22,5 +22,6 @@
     <Project Path="tests/EclipseUI.Headless.Tests/EclipseUI.Headless.Tests.csproj" />
     <Project Path="tests/EclipseUI.Ide.Tests/EclipseUI.Ide.Tests.csproj" />
     <Project Path="tests/EclipseUI.Rendering.Tests/EclipseUI.Rendering.Tests.csproj" />
+    <Project Path="tests/EclipseUI.VisualStudio.Tests/EclipseUI.VisualStudio.Tests.csproj" />
   </Folder>
 </Solution>

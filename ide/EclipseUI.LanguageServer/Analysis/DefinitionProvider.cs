@@ -517,13 +517,30 @@ public static class DefinitionProvider
     }
 
     /// <summary>
-    /// 源码声明位置 → 落点。生成树（.ui 派生组件）没有真实文件路径，改为跳到对应
-    /// <c>{Component}.ui</c> 起始（与 §6.9.0「有源码跳源码」一致，不给虚拟位置）。
+    /// 源码声明位置 → 落点。生成树中的作者代码按所属模板的映射表回到真实 .ui；
+    /// 生成类声明没有对应的作者 span，回到 <c>{Component}.ui</c> 起始。
     /// </summary>
     private static UiDefinition? FromSourceLocation(DocumentAnalysis analysis, Location location, string name)
     {
         var tree = location.SourceTree;
         if (tree is null) return null;
+        // Component parameters may be declared in another template's @code block.
+        // Its generated tree has no disk file and cannot use the current document's
+        // member mapping. Select the mapping belonging to the declaration's tree.
+        if (analysis.Project is { } project)
+        {
+            foreach (var (uiPath, generated) in project.GeneratedDocuments)
+            {
+                if (!ReferenceEquals(generated.Tree, tree)) continue;
+                if (!generated.Mappings.TryMapToOriginal(NameSpan(location), out var sourceSpan)) break;
+                string? text = null;
+                if (analysis.Workspace is { } workspace && workspace.TryBuffer(uiPath, out var buffer))
+                    text = buffer;
+                else if (File.Exists(uiPath))
+                    text = File.ReadAllText(uiPath);
+                return text is null ? null : new UiDefinition(Path.GetFullPath(uiPath), sourceSpan, name, text);
+            }
+        }
         var path = tree.FilePath;
         if (string.IsNullOrEmpty(path) || !File.Exists(path))
         {

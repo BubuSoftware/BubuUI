@@ -1,6 +1,6 @@
 # EclipseUI IDE 支持（design/06 的落地）
 
-这里放的是 design/06 里那份「**一份共享资产，两个薄壳**」：
+这里放的是 design/06 的共享语言服务与三个 IDE 客户端：
 
 ```
 ide/
@@ -10,11 +10,22 @@ ide/
     Server/                   JSON-RPC 协议层（声明能力、翻译 LSP 模型）
   vscode/                     VS Code 壳：TextMate grammar + 语言配置 + 片段 + 极薄的 LSP 客户端
   rider/                      Rider 壳：lsp4ij 插件（Language/FileType + TextMate bundle + server 启动命令）
+  visualstudio/               Visual Studio 2022 17.14+ / 2026 VSIX：MEF + LSP，内嵌共享 server
   build.ps1                   发布 server 到扩展目录 + 装依赖 + 跑 grammar/两个壳的断言
 ```
 
-Rider 走 lsp4ij 接**同一个** server（见 §4），所以补全/诊断的行为在两个 IDE 里天然一致，
+Rider 走 lsp4ij、Visual Studio 走内置 LSP 客户端接**同一个** server，所以补全/诊断共用实现，
 差别只在壳的接线方式。
+
+## Visual Studio 插件
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ide/visualstudio/build.ps1
+```
+
+产物：`ide/visualstudio/bin/Release/net472/EclipseUI.VisualStudio.vsix`，双击安装并重启 VS。
+VSIX 包含语言服务器及共享高亮语法，本机需 .NET SDK 10+。
+安装、环境变量配置、日志、客户端测试和验证边界见 [Visual Studio 说明](visualstudio/README.md)。
 
 ## 0. 架构：一个项目系统，一份项目 Compilation
 

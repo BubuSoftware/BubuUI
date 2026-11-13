@@ -159,6 +159,65 @@ public class ProjectSystemTests
         AssertSourceFile(tag!, path);
     }
 
+    [Theory]
+    [InlineData("Gap", "<StackPanel Gap=\"8\" />")]
+    [InlineData("Width", "<Button Width=\"100\" />")]
+    [InlineData("Label", "<Button Label=\"demo\" />")]
+    [InlineData("OnClick", "<Button OnClick={() => {}} />")]
+    [InlineData("Grid.Row", "<Button Grid.Row=\"1\" />")]
+    public void AttributeTokenStart_NavigatesToFrameworkMember(string attribute, string markup)
+    {
+        var fixture = Shared.Value;
+        var path = fixture.Gallery("Showcase.ui");
+        var uri = DocumentStore.PathToUri(path);
+        var text = "@namespace Gallery\n@using EclipseUI.Elements\n" + markup;
+        fixture.Service.Documents.Open(uri, text, 1);
+        var offset = text.IndexOf(attribute + "=", StringComparison.Ordinal);
+
+        var hover = fixture.Service.Hover(uri, offset);
+        Assert.NotNull(hover);
+        Assert.Equal(attribute, text.Substring(hover.Span.Start, hover.Span.Length));
+        AssertSourceFile(Assert.IsType<UiDefinition>(fixture.Service.Definition(uri, offset)), path);
+    }
+
+    [Fact]
+    public void ComponentAttribute_NavigatesToOtherTemplatesCodeDeclaration()
+    {
+        var fixture = Shared.Value;
+        var path = fixture.Gallery("MainWindow.ui");
+        var uri = DocumentStore.PathToUri(path);
+        var text = File.ReadAllText(path);
+        fixture.Service.Documents.Open(uri, text, 1);
+        var tagStart = text.IndexOf("<Section Title=", StringComparison.Ordinal);
+        Assert.True(tagStart >= 0);
+        var offset = tagStart + "<Section ".Length;
+
+        // The user's exact case: <Section Title="...">, including VS's token-start query.
+        foreach (var position in new[] { offset, offset + 1 })
+            AssertLandsOn(fixture.Service.Definition(uri, position), fixture.Gallery("Section.ui"), "Title");
+    }
+
+    [Fact]
+    public void ComponentAttribute_UsesUnsavedTargetTemplatesSourceMapping()
+    {
+        var fixture = Create();
+        var target = fixture.Gallery("Section.ui");
+        var targetUri = DocumentStore.PathToUri(target);
+        var targetText = File.ReadAllText(target).Replace("public string Title", "/* unsaved target */ public string Title", StringComparison.Ordinal);
+        fixture.Service.Documents.Open(targetUri, targetText, 2);
+        fixture.Service.ApplyBuffer(targetUri, targetText);
+        var path = fixture.Gallery("MainWindow.ui");
+        var uri = DocumentStore.PathToUri(path);
+        var text = File.ReadAllText(path);
+        fixture.Service.Documents.Open(uri, text, 1);
+        var offset = text.IndexOf("<Section Title=", StringComparison.Ordinal) + "<Section ".Length;
+
+        var definition = fixture.Service.Definition(uri, offset);
+        AssertLandsOn(definition, target, "Title");
+        Assert.Equal(targetText, definition!.Text);
+        Assert.Equal(targetText.IndexOf("public string Title", StringComparison.Ordinal) + "public string ".Length, definition.Span.Start);
+    }
+
     private static void AssertSourceFile(EclipseUI.LanguageServer.Analysis.UiDefinition definition, string sourcePath)
     {
         Assert.False(definition.Uri is null, "definition has no target uri");

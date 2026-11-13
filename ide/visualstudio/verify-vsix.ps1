@@ -1,0 +1,38 @@
+param([Parameter(Mandatory = $true)][string]$Path)
+
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$archive = [IO.Compression.ZipFile]::OpenRead([IO.Path]::GetFullPath($Path))
+try {
+    $entries = @($archive.Entries | ForEach-Object { [Uri]::UnescapeDataString($_.FullName.Replace('\', '/')) })
+    foreach ($required in @(
+        'extension.vsixmanifest', 'EclipseUI.VisualStudio.dll', 'EclipseUI.pkgdef',
+        'Grammars/eclipseui.tmLanguage.json', 'Grammars/eustyle.tmLanguage.json',
+        'Grammars/language-configuration.json',
+        'Grammars/eustyle-language-configuration.json',
+        'server/EclipseUI.LanguageServer.dll', 'server/EclipseUI.LanguageServer.deps.json',
+        'server/EclipseUI.LanguageServer.runtimeconfig.json', 'server/EclipseUI.Runtime.dll',
+        'server/EclipseUI.Rendering.dll', 'server/Microsoft.CodeAnalysis.CSharp.Features.dll'
+    )) {
+        if ($entries -notcontains $required) { throw "Incomplete VSIX: missing $required" }
+    }
+    $hostAssemblies = $entries | Where-Object { $_ -notmatch '/' -and $_ -match '^(Microsoft\.VisualStudio\.|StreamJsonRpc\.|Newtonsoft\.Json\.)' }
+    if ($hostAssemblies) { throw "VS host assemblies must not be bundled: $($hostAssemblies -join ', ')" }
+    $manifestReader = New-Object IO.StreamReader($archive.GetEntry('extension.vsixmanifest').Open())
+    try { [xml]$manifest = $manifestReader.ReadToEnd() } finally { $manifestReader.Dispose() }
+    [xml]$sourceManifest = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'source.extension.vsixmanifest') -Raw -Encoding UTF8
+    foreach ($field in @('Id', 'Version')) {
+        if ($manifest.PackageManifest.Metadata.Identity.$field -cne $sourceManifest.PackageManifest.Metadata.Identity.$field) {
+            throw "Stale VSIX manifest: $field differs from source.extension.vsixmanifest. Rebuild the VSIX."
+        }
+    }
+    foreach ($name in @('eclipseui', 'eustyle')) {
+        $entry = $archive.GetEntry("Grammars/$name.tmLanguage.json")
+        $reader = New-Object IO.StreamReader($entry.Open())
+        try { $packagedGrammar = $reader.ReadToEnd() } finally { $reader.Dispose() }
+        $source = Get-Content -LiteralPath (Join-Path $PSScriptRoot "..\vscode\syntaxes\$name.tmLanguage.json") -Raw -Encoding UTF8
+        if ($packagedGrammar -cne $source) { throw "Packaged $name grammar differs from the shared source." }
+    }
+    Write-Host "VSIX $($manifest.PackageManifest.Metadata.Identity.Version) verified: $($entries.Count) entries, shared grammars and bundled server present." -ForegroundColor Green
+}
+finally { $archive.Dispose() }

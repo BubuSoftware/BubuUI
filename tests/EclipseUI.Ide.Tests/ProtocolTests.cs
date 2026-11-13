@@ -660,6 +660,35 @@ public class ProtocolTests
         Assert.Equal("Button", symbols[0]!["name"]!.GetValue<string>());
     }
 
+    [Theory]
+    [InlineData("Label", "\"demo\"")]
+    [InlineData("Width", "\"100\"")]
+    [InlineData("OnClick", "{() => {}}")]
+    [InlineData("Grid.Row", "\"1\"")]
+    public async Task Session_AttributeStartSupportsCtrlHoverAndDefinition(string attribute, string value)
+    {
+        const string uri = "file:///D:/workspace/AttributeNavigation.ui";
+        var text = "@using EclipseUI.Elements\n<Button " + attribute + "=" + value + " />";
+        var offset = text.IndexOf(attribute + "=", StringComparison.Ordinal);
+        var (line, character) = new PositionMap(text).ToPosition(offset);
+        var transcript = await RunSession(
+            Request(1, "initialize"),
+            DidOpen(uri, text),
+            Request(2, "textDocument/hover", Position(uri, line, character)),
+            Request(3, "textDocument/definition", Position(uri, line, character)));
+
+        var hover = transcript.Single(m => m["id"]?.GetValue<int>() == 2)["result"];
+        Assert.NotNull(hover);
+        Assert.Contains(attribute, hover["contents"]!["value"]!.GetValue<string>());
+        Assert.Equal(character, hover["range"]!["start"]!["character"]!.GetValue<int>());
+        Assert.Equal(character + attribute.Length, hover["range"]!["end"]!["character"]!.GetValue<int>());
+
+        var definition = transcript.Single(m => m["id"]?.GetValue<int>() == 3)["result"];
+        Assert.NotNull(definition);
+        Assert.StartsWith("eui-decompiled:", definition["uri"]!.GetValue<string>());
+        Assert.NotNull(definition["range"]);
+    }
+
     [Fact]
     public async Task Session_UnknownMethodReturnsMethodNotFound()
     {

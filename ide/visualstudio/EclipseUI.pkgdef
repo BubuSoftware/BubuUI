@@ -1,0 +1,10 @@
+[$RootKey$\TextMate\Repositories]
+"EclipseUI"="$PackageFolder$\Grammars"
+
+[$RootKey$\TextMate\LanguageConfiguration\ContentTypeMapping]
+"eclipseui"="$PackageFolder$\Grammars\language-configuration.json"
+"eustyle"="$PackageFolder$\Grammars\eustyle-language-configuration.json"
+
+[$RootKey$\TextMate\LanguageConfiguration\GrammarMapping]
+"source.eclipseui"="$PackageFolder$\Grammars\language-configuration.json"
+"source.eustyle"="$PackageFolder$\Grammars\eustyle-language-configuration.json"
