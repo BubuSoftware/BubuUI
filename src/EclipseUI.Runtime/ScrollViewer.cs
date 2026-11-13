@@ -35,7 +35,7 @@ public enum ScrollBarVisibility
 /// <item>方向开关（design/05 §布局契约）：Horizontal 默认 <see cref="ScrollBarVisibility.Disabled"/>
 ///   （Avalonia 对齐——单列文档式布局不被偶发横向溢出拖出滚动条），需要横滚显式设 Auto；
 ///   Vertical 默认 Auto。</item>
-/// <item>v1 不做：缩略图拖拽命中、键盘滚动（PageUp/Down）、Shift+横滚。</item>
+/// <item>滚动条支持轨道翻页和拖动；PageUp/Down、Ctrl+Home/End 与 Shift+横滚共用偏移钳制。</item>
 /// </list>
 /// </summary>
 public class ScrollViewer : Panel
@@ -63,14 +63,76 @@ public class ScrollViewer : Panel
             ScrollBarVisibility.Auto,
             new PropertyOptions { Invalidate = InvalidateKind.Measure });
 
+    private bool _draggingBar, _dragHorizontal;
+    private double _dragStart, _dragOffset;
+    public bool TryGetScrollBar(Point local, out bool horizontal, out Rect thumb)
+    {
+        foreach (var h in new[] { false, true })
+        {
+            var visibility = h ? HorizontalScrollBarVisibility : VerticalScrollBarVisibility;
+            var scrollable = h ? ScrollableWidth : ScrollableHeight;
+            if (visibility is ScrollBarVisibility.Hidden or ScrollBarVisibility.Disabled || visibility == ScrollBarVisibility.Auto && scrollable <= 0) continue;
+            var length = (h ? FinalRect.Width : FinalRect.Height) - 8;
+            if (length <= 12) continue;
+            var viewport = h ? ViewportWidth : ViewportHeight; var extent = h ? ExtentWidth : ExtentHeight;
+            var size = scrollable <= 0 ? length : Math.Max(6, length * viewport / Math.Max(1, extent));
+            var offset = h ? HorizontalOffset : VerticalOffset;
+            var position = 4 + (length - size) * offset / Math.Max(1, scrollable);
+            thumb = h ? new(position, FinalRect.Height - 10, size, 6) : new(FinalRect.Width - 10, position, 6, size);
+            var track = h ? new Rect(4, FinalRect.Height - 14, length, 14) : new Rect(FinalRect.Width - 14, 4, 14, length);
+            if (track.Contains(local)) { horizontal = h; return true; }
+        }
+        horizontal = false; thumb = default; return false;
+    }
     public ScrollViewer()
     {
+        AddHandler(PointerPressedEvent, e =>
+        {
+            if (e is not PointerEventArgs p || !TryGetScrollBar(PointFromRoot(p.Position), out var h, out var thumb)) return;
+            var local = PointFromRoot(p.Position); var coordinate = h ? local.X : local.Y;
+            _dragHorizontal = h;
+            if (!thumb.Contains(local))
+            {
+                var direction = coordinate < (h ? thumb.X : thumb.Y) ? -1 : 1;
+                if (h) ScrollToHorizontalOffset(HorizontalOffset + direction * ViewportWidth); else ScrollToVerticalOffset(VerticalOffset + direction * ViewportHeight);
+            }
+            else { _draggingBar = true; _dragStart = coordinate; _dragOffset = h ? HorizontalOffset : VerticalOffset; }
+            e.Handled = true;
+        });
+        AddHandler(PointerMovedEvent, e =>
+        {
+            if (!_draggingBar || e is not PointerEventArgs p) return;
+            var local = PointFromRoot(p.Position); var h = _dragHorizontal;
+            var length = (h ? FinalRect.Width : FinalRect.Height) - 8;
+            var thumb = Math.Max(6, length * (h ? ViewportWidth : ViewportHeight) / Math.Max(1, h ? ExtentWidth : ExtentHeight));
+            var offset = _dragOffset + ((h ? local.X : local.Y) - _dragStart) / Math.Max(1, length - thumb) * (h ? ScrollableWidth : ScrollableHeight);
+            if (h) ScrollToHorizontalOffset(offset); else ScrollToVerticalOffset(offset);
+            e.Handled = true;
+        });
+        AddHandler(PointerReleasedEvent, _ => _draggingBar = false);
+        AddHandler(KeyDownEvent, e =>
+        {
+            if (e is not KeyEventArgs k) return;
+            switch (k.Key)
+            {
+                case Key.PageDown: ScrollToVerticalOffset(VerticalOffset + ViewportHeight); break;
+                case Key.PageUp: ScrollToVerticalOffset(VerticalOffset - ViewportHeight); break;
+                case Key.Home when k.Modifiers.HasFlag(KeyModifiers.Control): ScrollToHome(); break;
+                case Key.End when k.Modifiers.HasFlag(KeyModifiers.Control): ScrollToEnd(); break;
+                default: return;
+            }
+            e.Handled = true;
+        });
         // 冒泡路径上的滚轮：命中内容里的子元素，事件一路冒到本容器后消费。
         AddHandler(Element.PointerWheelChangedEvent, (RoutedEventArgs args) =>
         {
             if (args is not WheelEventArgs wheel || args.Handled) return;
             var step = wheel.Delta * WheelScrollPixels;
-            if (ScrollableHeight > 0)
+            if (wheel.Modifiers.HasFlag(KeyModifiers.Shift) && ScrollableWidth > 0)
+            {
+                ScrollToHorizontalOffset(HorizontalOffset - step); args.Handled = true;
+            }
+            else if (ScrollableHeight > 0)
             {
                 ScrollToVerticalOffset(VerticalOffset - step);
                 args.Handled = true;

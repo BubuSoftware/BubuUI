@@ -40,6 +40,18 @@ public abstract class Panel : Element
 /// <summary>垂直堆叠布局（StackPanel 与块协调器共用）。</summary>
 public abstract class StackPanelBase : Panel
 {
+    public static readonly StyledProperty<Orientation> OrientationProperty = StyledProperty<Orientation>.Register<StackPanelBase>("Orientation", Orientation.Vertical, new() { Invalidate = InvalidateKind.Measure });
+    public Orientation Orientation { get => GetValue(OrientationProperty); set => SetValue(OrientationProperty, value); }
+    private bool Horizontal
+    {
+        get
+        {
+            if (!IsLayoutTransparent) return Orientation == Orientation.Horizontal;
+            for (var parent = Parent; parent is not null; parent = parent.Parent)
+                if (!parent.IsLayoutTransparent) return parent is StackPanelBase panel && panel.Horizontal;
+            return false;
+        }
+    }
     public static readonly StyledProperty<double> GapProperty =
         StyledProperty<double>.Register<StackPanelBase>("Gap", 0d,
             new PropertyOptions { Invalidate = InvalidateKind.Measure });
@@ -60,13 +72,13 @@ public abstract class StackPanelBase : Panel
         int count = 0;
         foreach (var child in Children)
         {
-            child.Measure(new Size(inner, double.PositiveInfinity));
+            child.Measure(Horizontal ? new Size(double.PositiveInfinity, Math.Max(0, available.Height - padding * 2)) : new Size(inner, double.PositiveInfinity));
             if (IsSkipped(child)) continue;
-            width = Math.Max(width, child.DesiredSize.Width);
-            height += child.DesiredSize.Height;
+            if (Horizontal) { width += child.DesiredSize.Width; height = Math.Max(height, child.DesiredSize.Height); }
+            else { width = Math.Max(width, child.DesiredSize.Width); height += child.DesiredSize.Height; }
             count++;
         }
-        height += Math.Max(0, count - 1) * gap;
+        if (Horizontal) width += Math.Max(0, count - 1) * gap; else height += Math.Max(0, count - 1) * gap;
         return new Size(width + padding * 2, height + padding * 2);
     }
 
@@ -90,9 +102,10 @@ public abstract class StackPanelBase : Panel
             if (!first) y += gap;
             first = false;
             // DesiredSize 已受横向约束；局部显式尺寸溢出由 Element.Arrange 处理。
-            child.Arrange(new Rect(padding, y,
-                Math.Max(innerWidth, child.DesiredSize.Width), child.DesiredSize.Height));
-            y += child.DesiredSize.Height;
+            child.Arrange(Horizontal
+                ? new Rect(y, padding, child.DesiredSize.Width, Math.Max(0, final.Height - padding * 2))
+                : new Rect(padding, y, Math.Max(innerWidth, child.DesiredSize.Width), child.DesiredSize.Height));
+            y += Horizontal ? child.DesiredSize.Width : child.DesiredSize.Height;
         }
     }
 
@@ -116,15 +129,20 @@ public abstract class StackPanelBase : Panel
 
     /// <summary>空的透明块整体退出布局：不贡献尺寸，也不消耗父容器的间距槽（嵌套空块同样递归为零）。</summary>
     private static bool IsSkipped(Element child) =>
-        child.IsLayoutTransparent && child.DesiredSize.Width == 0 && child.DesiredSize.Height == 0;
+        !child.IsVisible || child is Popup || child.IsLayoutTransparent && child.DesiredSize.Width == 0 && child.DesiredSize.Height == 0;
 }
 
 public class StackPanel : StackPanelBase { }
 
 public class ListBoxItem : StackPanelBase
 {
+    public static readonly StyledProperty<bool> IsSelectedProperty = StyledProperty<bool>.Register<ListBoxItem>("IsSelected", false, new() { Invalidate = InvalidateKind.Render });
+    public bool IsSelected { get => GetValue(IsSelectedProperty); set => SetValue(IsSelectedProperty, value); }
+    public override bool IsFocusable => true;
+    public object? Item { get; internal set; }
+
     /// <summary>列表项默认内边距：行内文字不贴边（样式系统落地前的最小视觉约定）。</summary>
-    public ListBoxItem() => Padding = 8;
+    public ListBoxItem() { Padding = 8; IsTabStop = false; }
 }
 
 /// <summary>流式换行方向。</summary>

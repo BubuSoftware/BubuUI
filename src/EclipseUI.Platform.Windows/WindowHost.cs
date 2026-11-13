@@ -100,6 +100,11 @@ public sealed class WindowHost : IDisposable, IWindowHost
         _window.PointerReleased += OnPointerReleased;
         _window.PointerWheel += OnPointerWheel;
         _window.KeyDown += OnKeyDown;
+        _window.KeyUp += OnKeyUp;
+        _window.CharacterTyped += OnCharacterTyped;
+        _window.TextComposition += OnTextComposition;
+        _window.FocusLost += OnWindowFocusLost;
+        Clipboard.Current = new Win32Clipboard(_window.Handle);
         _window.Closing += OnClosing;
     }
 
@@ -205,6 +210,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
             ? 1000.0 / _options.MaxFramesPerSecond
             : 0;
         var clock = Stopwatch.StartNew();
+        var animationTime = Stopwatch.GetTimestamp();
 
         while (!_disposed && !_uiRoot.IsDisposed && _window.PumpMessages())
         {
@@ -235,6 +241,9 @@ public sealed class WindowHost : IDisposable, IWindowHost
             _uiRoot.ProcessInvalidations();
             if (_disposed || _uiRoot.IsDisposed) break;
             var root = SyncRoot();
+            var animationNow = Stopwatch.GetTimestamp();
+            FrameAnimations.Advance(root, TimeSpan.FromSeconds((animationNow - animationTime) / (double)Stopwatch.Frequency));
+            animationTime = animationNow;
             root.Measure(size);
             root.Arrange(new Rect(Point.Zero, size));
 
@@ -298,16 +307,17 @@ public sealed class WindowHost : IDisposable, IWindowHost
         => Input.PointerMove(e.LogicalPosition);
 
     private void OnPointerPressed(object? sender, Win32PointerEventArgs e)
-        => Input.PointerPress(e.LogicalPosition);
+        => Input.PointerPress(e.LogicalPosition, Win32Window.CurrentModifiers, e.IsRightButton ? PointerButton.Right : PointerButton.Left);
 
     private void OnPointerReleased(object? sender, Win32PointerEventArgs e)
         => Input.PointerRelease(e.LogicalPosition);
 
     private void OnPointerWheel(object? sender, Win32WheelEventArgs e)
-        => Input.PointerWheel(e.LogicalPosition, e.Delta);
+        => Input.PointerWheel(e.LogicalPosition, e.Delta, Win32Window.CurrentModifiers);
 
     private void OnKeyDown(object? sender, Win32KeyEventArgs e)
     {
+        if (e.Key == Key.Escape && Input.TryDismissPopup()) return;
         if (_options.CloseOnEscape && e.Key == Key.Escape)
         {
             _window.Close();
@@ -315,8 +325,26 @@ public sealed class WindowHost : IDisposable, IWindowHost
         }
 
         if (e.Key != Key.None)
-            Input.KeyPress(e.Key);
+            Input.KeyPress(e.Key, Modifiers(e), e.IsRepeat);
     }
+
+    private static KeyModifiers Modifiers(Win32KeyEventArgs e) => (e.Shift ? KeyModifiers.Shift : 0) | (e.Control ? KeyModifiers.Control : 0) | (e.Alt ? KeyModifiers.Alt : 0);
+    private void OnKeyUp(object? sender, Win32KeyEventArgs e) => Input.KeyRelease(e.Key, Modifiers(e));
+    private void OnCharacterTyped(object? sender, Win32TextEventArgs e)
+    {
+        if (Win32Window.CurrentModifiers.HasFlag(KeyModifiers.Control)) return;
+        Input.TextInput(e.Text);
+    }
+    private void OnTextComposition(object? sender, TextCompositionEventArgs e)
+    {
+        if (Input.Focus.Focused is EclipseUI.Elements.TextBox editor)
+        {
+            var rect = editor.CaretRect; var zero = editor.PointFromRoot(Point.Zero);
+            _window.SetImeCaret(new(rect.X - zero.X, rect.Y - zero.Y, rect.Width, rect.Height));
+        }
+        Input.TextComposition(e.Text, e.Stage);
+    }
+    private void OnWindowFocusLost(object? sender, EventArgs e) => Input.Reset();
 
     private void OnClosing(object? sender, EventArgs e) => IsExiting = true;
 
@@ -355,6 +383,10 @@ public sealed class WindowHost : IDisposable, IWindowHost
         _window.PointerReleased -= OnPointerReleased;
         _window.PointerWheel -= OnPointerWheel;
         _window.KeyDown -= OnKeyDown;
+        _window.KeyUp -= OnKeyUp;
+        _window.CharacterTyped -= OnCharacterTyped;
+        _window.TextComposition -= OnTextComposition;
+        _window.FocusLost -= OnWindowFocusLost;
         _window.Closing -= OnClosing;
         List<Exception>? failures = null;
         try { _uiRoot.DetachFromHost(this); }

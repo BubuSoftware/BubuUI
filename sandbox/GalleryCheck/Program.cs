@@ -1,3 +1,4 @@
+using Path = System.IO.Path;
 using System.Collections.Generic;
 using EclipseUI;
 using EclipseUI.Elements;

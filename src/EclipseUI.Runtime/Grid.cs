@@ -52,6 +52,13 @@ public class Grid : Panel
 
     public static void SetColumn(Element element, int value) => ColumnProperty.SetValue(element, value);
 
+    public static readonly AttachedProperty<int> RowSpanProperty = new("RowSpan", typeof(Grid), 1);
+    public static readonly AttachedProperty<int> ColumnSpanProperty = new("ColumnSpan", typeof(Grid), 1);
+    public static int GetRowSpan(Element element) => RowSpanProperty.GetValue(element);
+    public static int GetColumnSpan(Element element) => ColumnSpanProperty.GetValue(element);
+    public static void SetRowSpan(Element element, int value) => RowSpanProperty.SetValue(element, Math.Max(1, value));
+    public static void SetColumnSpan(Element element, int value) => ColumnSpanProperty.SetValue(element, Math.Max(1, value));
+
     public string RowDefinitions
     {
         get => GetValue(RowDefinitionsProperty);
@@ -137,8 +144,8 @@ public class Grid : Panel
             var col = ClampIndex(Grid.GetColumn(child), cols.Length);
             cells.Add(new Cell(child, row, col));
             child.Measure(new Size(
-                cols[col].Type == GridUnitType.Pixel ? cols[col].Value : double.PositiveInfinity,
-                rows[row].Type == GridUnitType.Pixel ? rows[row].Value : double.PositiveInfinity));
+                FixedConstraint(cols, col, GetColumnSpan(child), gap),
+                FixedConstraint(rows, row, GetRowSpan(child), gap)));
         }
 
         // 空透明块（D77）不占格：测量后期望尺寸已确定，此时剔除。
@@ -194,21 +201,32 @@ public class Grid : Panel
             cell.Child.Arrange(new Rect(
                 padding + TrackOffset(colSizes, cell.Col, gap),
                 padding + TrackOffset(rowSizes, cell.Row, gap),
-                colSizes[cell.Col],
-                rowSizes[cell.Row]));
+                SpanSize(colSizes, cell.Col, GetColumnSpan(cell.Child), gap),
+                SpanSize(rowSizes, cell.Row, GetRowSpan(cell.Child), gap)));
         }
     }
 
     private void MeasureCellsAtColumnWidths(List<Cell> cells, TrackDef[] rows)
     {
         foreach (var cell in cells)
-            cell.Child.Measure(new Size(_colSizes[cell.Col],
-                rows[cell.Row].Type == GridUnitType.Pixel ? rows[cell.Row].Value : double.PositiveInfinity));
+            cell.Child.Measure(new Size(SpanSize(_colSizes, cell.Col, GetColumnSpan(cell.Child), Gap),
+                FixedConstraint(rows, cell.Row, GetRowSpan(cell.Child), Gap)));
+    }
+    private static double FixedConstraint(TrackDef[] tracks, int start, int span, double gap)
+    {
+        span = Math.Clamp(span, 1, tracks.Length - start);
+        double size = (span - 1) * gap;
+        for (var i = start; i < start + span; i++)
+        {
+            if (tracks[i].Type != GridUnitType.Pixel) return double.PositiveInfinity;
+            size += tracks[i].Value;
+        }
+        return size;
     }
 
     /// <summary>布局透明的空块整体退出网格：不占格（D77 口径，与 StackPanelBase 一致）。</summary>
     private static bool IsSkipped(Element child) =>
-        child.IsLayoutTransparent && child.DesiredSize.Width == 0 && child.DesiredSize.Height == 0;
+        !child.IsVisible || child is Popup || child.IsLayoutTransparent && child.DesiredSize.Width == 0 && child.DesiredSize.Height == 0;
 
     private static int ClampIndex(int index, int count) => Math.Clamp(index, 0, count - 1);
 
@@ -222,7 +240,17 @@ public class Grid : Panel
             var size = cell.Child.DesiredSize;
             var value = horizontal ? size.Width : size.Height;
             var track = horizontal ? cell.Col : cell.Row;
-            if (value > desired[track]) desired[track] = value;
+            var span = Math.Clamp(horizontal ? GetColumnSpan(cell.Child) : GetRowSpan(cell.Child), 1, tracks.Length - track);
+            if (span == 1) { if (value > desired[track]) desired[track] = value; continue; }
+            double allocated = (span - 1) * Gap; int flexible = 0;
+            for (var i = track; i < track + span; i++)
+            {
+                if (tracks[i].Type == GridUnitType.Pixel) allocated += tracks[i].Value;
+                else { flexible++; allocated += desired[i]; }
+            }
+            if (flexible == 0) continue;
+            var deficit = Math.Max(0, value - allocated) / flexible;
+            for (var i = track; i < track + span; i++) if (tracks[i].Type != GridUnitType.Pixel) desired[i] += deficit;
         }
         return desired;
     }
@@ -277,6 +305,13 @@ public class Grid : Panel
         return sizes;
     }
 
+    private static double SpanSize(double[] sizes, int start, int span, double gap)
+    {
+        span = Math.Clamp(span, 1, sizes.Length - start);
+        double result = (span - 1) * gap;
+        for (var i = start; i < start + span; i++) result += sizes[i];
+        return result;
+    }
     private static double TrackOffset(double[] sizes, int track, double gap)
     {
         double offset = 0;

@@ -8,6 +8,7 @@
 
 | 文档 | 用途 |
 |---|---|
+| [24 · 控件库](./24-control-library.md) | 2026-11-14 控件清单、输入/浮层/绘制扩展、虚拟化及验证 |
 | [04 · 运行时与元素](./04-runtime-and-elements.md) | UiObject、实际内容树、值层和宿主 |
 | [05 · 布局渲染输入](./05-layout-rendering-input.md) | 几何与绘制分工；2026-11-13 布局约束修正已实施，见 [验证报告](./reports/layout-constraints-2026-11-13.md) |
 | [06 · IDE](./06-ide-support.md) | LSP与Roslyn生成文档、语义能力 |

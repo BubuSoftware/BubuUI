@@ -13,22 +13,30 @@ public enum Key
     Right = 39,
     Down = 40,
     Delete = 46,
+    Home = 36, End = 35, PageUp = 33, PageDown = 34,
+    F2 = 113,
     A = 65, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
 }
 
 /// <summary>指针事件。Position 为根坐标系位置（无头宿主即窗口客户区坐标）。</summary>
 public sealed class PointerEventArgs : RoutedEventArgs
 {
-    public PointerEventArgs(RoutedEvent routedEvent, Point position)
-        : base(routedEvent) => Position = position;
+    public PointerEventArgs(RoutedEvent routedEvent, Point position, KeyModifiers modifiers = KeyModifiers.None, PointerButton button = PointerButton.Left)
+        : base(routedEvent) { Position = position; Modifiers = modifiers; Button = button; }
+
+    public KeyModifiers Modifiers { get; }
+    public PointerButton Button { get; }
 
     public Point Position { get; }
 }
 
 public sealed class KeyEventArgs : RoutedEventArgs
 {
-    public KeyEventArgs(RoutedEvent routedEvent, Key key)
-        : base(routedEvent) => Key = key;
+    public KeyEventArgs(RoutedEvent routedEvent, Key key, KeyModifiers modifiers = KeyModifiers.None, bool isRepeat = false)
+        : base(routedEvent) { Key = key; Modifiers = modifiers; IsRepeat = isRepeat; }
+
+    public KeyModifiers Modifiers { get; }
+    public bool IsRepeat { get; }
 
     public Key Key { get; }
 }
@@ -39,14 +47,33 @@ public sealed class KeyEventArgs : RoutedEventArgs
 /// </summary>
 public sealed class WheelEventArgs : RoutedEventArgs
 {
-    public WheelEventArgs(RoutedEvent routedEvent, Point position, double delta)
+    public WheelEventArgs(RoutedEvent routedEvent, Point position, double delta, KeyModifiers modifiers = KeyModifiers.None)
         : base(routedEvent)
     {
         Position = position;
         Delta = delta;
+        Modifiers = modifiers;
     }
 
     public Point Position { get; }
 
     public double Delta { get; }
+    public KeyModifiers Modifiers { get; }
+}
+
+[Flags]
+public enum KeyModifiers { None = 0, Shift = 1, Control = 2, Alt = 4 }
+public enum PointerButton { Left, Right, Middle }
+public enum CompositionStage { Started, Updated, Committed, Cancelled }
+public sealed class TextInputEventArgs : RoutedEventArgs
+{
+    public TextInputEventArgs(string text) : base(Element.TextInputEvent) => Text = text;
+    public string Text { get; }
+}
+public sealed class TextCompositionEventArgs : RoutedEventArgs
+{
+    public TextCompositionEventArgs(string text, CompositionStage stage) : base(Element.TextCompositionEvent)
+    { Text = text; Stage = stage; }
+    public string Text { get; }
+    public CompositionStage Stage { get; }
 }

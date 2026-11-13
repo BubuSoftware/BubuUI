@@ -77,11 +77,11 @@
 | 源生成器 | 🟢 可用 MVP | 组件作者面样例；EUI024 签名匹配 ✅ 2026-11-08/D82（按文件增量 ✅ 2026-11-08、`#line` 列映射 ✅ 2026-11-08/D79、`EUI045` ✅ 2026-11-08/D57、诊断出口 ✅ 2026-11-08/D74 ② 均已落地） |
 | 运行时/属性 | 🟢 可用基础 | ~~属性存储去装箱~~ ✅ D83、~~生命周期 Unmount~~ ✅ K33/D89、~~失效死循环上限~~ ✅ D96（100 次 Render fail-fast）；剩样式优先级、正式性能基准表 |
 | 布局 | 🟡 部分 | WrapPanel / Grid / ScrollViewer / 列表虚拟化 v1 已有实现；2026-11-13 统一测量约束、按方向滚动测量、Grid 按轨道重测、排列尺寸约束及裁剪命中已修正，见 [design/05](./05-layout-rendering-input.md#布局) 与 [验证报告](./reports/layout-constraints-2026-11-13.md)；变高虚拟化、容器复用等仍待后续切片（块布局透明化 ✅ 2026-11-05，D77） |
-| 文本 | 🟡 单行 shaping + **TextBlock 换行（Wrap 贪心断行，✅ 2026-11-13，D116）**已接入 | bidi、fallback、emoji、glyph 缓存、display list 集成（断行随 HarfBuzz 管线重修——naive 词界/字符切分是 v1 口径） |
+| 文本 | 🟡 HarfBuzz shaping、TextBlock Wrap、逐字素字体回退与彩色 emoji 已接入（2026-11-14） | 完整 bidi、Unicode 断行与字体发现；缓存共享字体分段/进距/行盒，验证见 [中文/emoji 报告](./reports/unicode-input-2026-11-14.md) |
 | 输入/焦点 | 🟡 元素路由已通 | 字符输入/IME、滚轮/触摸、Shift+Tab、无障碍 |
 | 渲染/合成器 | 🟡 scene graph + 上屏 + damage v0 + retained 构建层（✅ D93） | 脏区光栅化（上游 scissor API）、合成器、帧预算门槛 |
 | 样式/主题 | 🟡 令牌 + Class 样式 + 主题资源 + 伪类变体 + `:disabled` + **样式表编译器（E1：.eustyle/@style → 生成 Define 调用）**已落（2026-11-09，D98–D104），E2/E4/E5 补齐（D105–D107，2026-11-09/10），**样式属性自定义化（E6：`[UiStyleProperty]` 并集目录 + enum/string 值 + EUI058/059）**已落（2026-11-12，D115） | 资源字典完整形态（S-C 后续）、后代/子代选择器组合、控件模板（S-D）、P2 复用 `[UiLiteralParser]` 的复杂类型样式值、P3 多值语法与 Owner 适用性诊断（design/19） |
-| 控件库 | 🟡 极简 | TextBlock/Button/CheckBox/StackPanel/ListBoxItem 之外的基础控件 |
+| 控件库 | 🟢 基础控件已补齐（2026-11-14） | 当前 42 标签，含输入、选择、浮层、菜单、页签、树、表格、日期、图形和布局；行为与高级能力边界见 [design/24](./24-control-library.md) |
 | IDE | 🔴 未开始 | TextMate、LSP server、VS Code/Rider 壳 |
 | 工具链 | 🔴 基本未开始 | 热重载、断点映射、DevTools、无头测试 SDK |
 | 平台 | 🟡 Win32 宿主已可用 | macOS/Linux、多窗口、设备丢失恢复 |
@@ -497,8 +497,8 @@ CPU 侧部分收敛（2026-11-08/D84）：CPU 像素 golden（`PixelGoldenTests`
   平台先注册、用户 `ConfigureServices` 后注册可覆盖（MEDI 最后注册优先）。主题运行期切换
   经 `Application.SetTheme`（`WindowHost` 实现 `IWindowHost`，生命周期注入 `Application.Host`）。
   `Build()` 与 `Start()` 分离：无头/离屏/测试只装配不运行（画廊 `--cpu/--shot` 走此路径）。
-- 控件集：ListBox、TextBox、ScrollViewer ✅（2026-11-09）、Grid ✅、WrapPanel ✅、Slider 等。
-- `VirtualizingPanel` 与 item 模板的容器复用。—— ✅ **v1 切片（2026-11-09）**：元素级 `VirtualizingStackPanel`（ItemCount + ItemFactory、视口窗口实例化、均匀行高）；容器复用（pooling）、变高行、item 模板编译 RenderUnit 留后续片。
+- 控件集：✅ 2026-11-14 ListBox、TextBox、Slider 等及盘点出的全部基础控件类型已落地；完整目录、交互契约和边界见 [design/24](./24-control-library.md)。
+- `VirtualizingStackPanel`：✅ ItemCount + ItemFactory、视口窗口；✅ 2026-11-14 ItemUpdater 可选容器复用、IsVariableHeight 变高估计、ItemHeightProvider 精确高度与前缀和定位。模板仍使用普通元素工厂，不增加独立 RenderUnit 所有权。
 - 状态与反应式 S4：组件所有权/深度排序、参数推送与相等保护、异步/后台失效、`ShouldRender`（[spec/03 §13.1](../spec/03-reactivity-and-binding.md#131-阶段定义)）。
 - 控件契约 C6：具名插槽 + `ContentSlot` 宿主（✅ 2026-11-05，14 §14.12.6）；
   附加属性 ✅ **首批切片已落地（2026-11-09）**：`AttachedProperty<T>` 弱表存储、`Grid` 静态类载体（Row/Column）、

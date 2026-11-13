@@ -5,16 +5,19 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace EclipseUI.Text.Shaping;
 
-/// <summary>HarfBuzz 文本管线选项（D101）：字体候选路径（按序尝试，第一个可加载者生效）。</summary>
+/// <summary>HarfBuzz 文本管线选项：主字体候选与逐字素字体回退链。</summary>
 public sealed class HarfBuzzTextOptions
 {
-    /// <summary>字体候选路径；全部失败时宿主回落 <see cref="MeasuringTextPainter"/>（只测量）。</summary>
+    /// <summary>主字体候选路径（第一个可加载者生效）；全部失败时宿主回落 <see cref="MeasuringTextPainter"/>（只测量）。</summary>
     public IReadOnlyList<string> FontPaths { get; set; } =
     [
         @"C:\Windows\Fonts\segoeui.ttf",
         @"C:\Windows\Fonts\msyh.ttc",
         @"C:\Windows\Fonts\arial.ttf",
     ];
+
+    /// <summary>Per-text-element fallback chain; empty disables fallback. Loaded fonts are owned by the painter.</summary>
+    public IReadOnlyList<string> FallbackFontPaths { get; set; } = HarfBuzzTextPainter.DefaultFallbackFontPaths;
 }
 
 /// <summary>
@@ -48,7 +51,7 @@ public static class TextAppBuilderExtensions
             services.AddSingleton(shaper);
             services.AddSingleton<ITextPainter>(sp =>
             {
-                var painter = new HarfBuzzTextPainter(sp.GetRequiredService<HarfBuzzTextShaper>());
+                var painter = new HarfBuzzTextPainter(sp.GetRequiredService<HarfBuzzTextShaper>(), options.FallbackFontPaths);
                 TextMeasurer.Current = painter; // 布局与绘制共用同一 shaping 缓存
                 return painter;
             });

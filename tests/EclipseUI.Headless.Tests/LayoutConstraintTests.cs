@@ -88,7 +88,10 @@ public class LayoutConstraintTests
     {
         var box = new Probe(new Size(800, 600))
         {
-            Width = 500, MaxWidth = 120, MaxHeight = 40, Margin = 10,
+            Width = 500,
+            MaxWidth = 120,
+            MaxHeight = 40,
+            Margin = 10,
         };
         box.Measure(new Size(300, 200));
         Assert.Equal(new Size(120, 40), box.Constraint);
@@ -114,7 +117,8 @@ public class LayoutConstraintTests
         var box = new Probe(new Size(800, 600))
         {
             HorizontalAlignment = HorizontalAlignment.Right,
-            VerticalAlignment = VerticalAlignment.Bottom, Margin = 10,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Margin = 10,
         };
         box.Measure(new Size(300, 100));
         box.Arrange(new Rect(0, 0, 200, 80));
@@ -234,7 +238,7 @@ public class LayoutConstraintTests
             root.Measure(new Size(width, 760));
             root.Arrange(new Rect(0, 0, width, 760));
             var sections = root.Descendants().OfType<Section>().ToArray();
-            Assert.Equal(5, sections.Length);
+            Assert.Equal(6, sections.Length);
             Assert.All(sections, section =>
             {
                 Assert.Equal(width - 48, section.FinalRect.Width, 5);

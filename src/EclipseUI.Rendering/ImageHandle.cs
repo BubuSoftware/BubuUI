@@ -10,7 +10,7 @@ public enum PixelFormat
 /// 已解码的图像资源（CPU 侧 RGBA，直通 alpha）。
 /// 后端按引用缓存原生图像；3D 视口的 readback 同样以该类型进入 display list。
 /// </summary>
-public sealed class ImageHandle
+public sealed class ImageHandle : IRasterImage
 {
     public ImageHandle(int width, int height, ReadOnlyMemory<byte> rgba, PixelFormat format = PixelFormat.Rgba8)
     {

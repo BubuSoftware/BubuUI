@@ -10,11 +10,14 @@ namespace EclipseUI;
 public sealed class InputRouter
 {
     private readonly Element _root;
+    private PointerButton _button;
+    private KeyModifiers _modifiers;
 
     public InputRouter(Element root)
     {
         _root = root ?? throw new ArgumentNullException(nameof(root));
         Focus = new FocusManager(root);
+        root._focusManager = Focus;
     }
 
     public FocusManager Focus { get; }
@@ -34,7 +37,7 @@ public sealed class InputRouter
         Captured = null;
         Hovered = null;
         List<Exception>? failures = null;
-        try { if (captured is not null) captured.IsPressed = false; }
+        try { for (var item = captured; item is not null; item = item.Parent) item.IsPressed = false; }
         catch (Exception error) { (failures ??= new()).Add(error); }
         try { if (hovered is not null) hovered.IsHovered = false; }
         catch (Exception error) { (failures ??= new()).Add(error); }
@@ -43,7 +46,15 @@ public sealed class InputRouter
         if (failures is not null) throw new AggregateException("Input reset failed.", failures);
     }
 
-    public Element? HitTest(Point point) => _root.HitTest(point);
+    public Element? HitTest(Point point)
+    {
+        foreach (var popup in OpenPopups().Reverse())
+            if (popup.HitTest(point) is { } hit) return hit;
+        return _root.HitTest(point);
+    }
+    private IEnumerable<Elements.Popup> OpenPopups() => _root.Descendants().OfType<Elements.Popup>()
+        .Where(p => p.IsOpen && p.IsEffectivelyVisible);
+
 
     /// <summary>
     /// 指针按下：捕获命中元素，并把键盘焦点交给最近的可聚焦祖先（平台标准行为）。
@@ -52,12 +63,15 @@ public sealed class InputRouter
     /// 释放时**先路由后清除**（D102：Button 的 Click 门控读 <see cref="Element.IsPressed"/>）。
     /// E3：命中有效禁用元素时整体吞掉——不捕获、不悬停、不聚焦、不路由。
     /// </summary>
-    public void PointerPress(Point point)
+    public void PointerPress(Point point, KeyModifiers modifiers = KeyModifiers.None, PointerButton button = PointerButton.Left)
     {
-        var hit = _root.HitTest(point);
+        foreach (var popup in OpenPopups().Reverse().ToArray())
+            if (!popup.StaysOpen && !popup.ContainsRootPoint(point) && !popup.Descendants().OfType<Elements.Popup>().Any(p => p.IsOpen && p.ContainsRootPoint(point))) popup.Close();
+        var hit = HitTest(point);
         if (hit is not null && !hit.IsEffectiveEnabled)
             return; // :disabled 吞按下
 
+        _button = button; _modifiers = modifiers;
         Captured = hit;
         UpdateHover(Captured);
 
@@ -68,8 +82,14 @@ public sealed class InputRouter
             Focus.Focus(focusable);
 
         if (Captured is null) return;
+        var preview = new PointerEventArgs(Element.PreviewPointerPressedEvent, point, modifiers, button) { Source = Captured };
+        var pressed = Captured;
+        pressed.RaiseEvent(preview);
+        if (preview.Handled || !ReferenceEquals(Captured, pressed) || pressed.IsDisposed || !pressed.IsEffectivelyVisible) { Captured = null; return; }
         Captured.IsPressed = true;
-        Captured.RaiseEvent(new PointerEventArgs(Element.PointerPressedEvent, point) { Source = Captured });
+        for (var ancestor = Captured.Parent; ancestor is not null; ancestor = ancestor.Parent)
+            if (ancestor is Elements.Button or Elements.CheckBox) ancestor.IsPressed = true;
+        Captured.RaiseEvent(new PointerEventArgs(Element.PointerPressedEvent, point, modifiers, button) { Source = Captured });
     }
 
     /// <summary>指针释放：优先路由给捕获元素（先于清 <see cref="Element.IsPressed"/>），随后解除捕获。
@@ -77,23 +97,25 @@ public sealed class InputRouter
     /// 只清按下位、不路由事件——禁用元素的 Released 不产生 Click。</summary>
     public void PointerRelease(Point point)
     {
-        var target = Captured ?? _root.HitTest(point);
+        var target = Captured ?? HitTest(point);
         Captured = null;
         if (target is not null)
         {
-            if (target.IsEffectiveEnabled)
-                target.RaiseEvent(new PointerEventArgs(Element.PointerReleasedEvent, point) { Source = target });
+            if (target.IsEffectiveEnabled && target.IsEffectivelyVisible)
+                target.RaiseEvent(new PointerEventArgs(Element.PointerReleasedEvent, point, _modifiers, _button) { Source = target });
+            for (var ancestor = target.Parent; ancestor is not null; ancestor = ancestor.Parent)
+                if (ancestor is Elements.Button or Elements.CheckBox) ancestor.IsPressed = false;
             target.IsPressed = false; // 事件之后清除：Released handler 内「按下才触发」门控仍成立
         }
-        UpdateHover(_root.HitTest(point)); // 释放后重算悬停（指针可能在按住期间移出）
+        UpdateHover(HitTest(point)); // 释放后重算悬停（指针可能在按住期间移出）
     }
 
     public void PointerMove(Point point)
     {
-        var target = Captured ?? _root.HitTest(point);
+        var target = Captured ?? HitTest(point);
         UpdateHover(target);
         if (target is null || !target.IsEffectiveEnabled) return; // 禁用元素不路由移动事件
-        target.RaiseEvent(new PointerEventArgs(Element.PointerMovedEvent, point) { Source = target });
+        target.RaiseEvent(new PointerEventArgs(Element.PointerMovedEvent, point, _modifiers, _button) { Source = target });
     }
 
     /// <summary>悬停目标变化时翻转 <see cref="Element.IsHovered"/>（同目标 no-op，指针移动零开销）。
@@ -107,31 +129,62 @@ public sealed class InputRouter
         Hovered = target;
         if (old is not null) old.IsHovered = false;
         if (target is not null) target.IsHovered = true;
+        static bool Contains(Element ancestor, Element? child) { for (var e = child; e is not null; e = e.Parent) if (ReferenceEquals(e, ancestor)) return true; return false; }
+        for (var e = old; e is not null; e = e.Parent) if (!Contains(e, target)) e.RaiseEvent(new RoutedEventArgs(Element.PointerExitedEvent));
+        for (var e = target; e is not null; e = e.Parent) if (!Contains(e, old)) e.RaiseEvent(new RoutedEventArgs(Element.PointerEnteredEvent));
     }
 
     /// <summary>
     /// 滚轮：从命中元素起冒泡路由（<see cref="Element.PointerWheelChangedEvent"/>）。
     /// 滚轮不做捕获——命中谁就路由给谁，可滚动容器在冒泡路径上消费。E3：禁用元素吞滚轮。
     /// </summary>
-    public void PointerWheel(Point point, double delta)
+    public void PointerWheel(Point point, double delta, KeyModifiers modifiers = KeyModifiers.None)
     {
-        var target = _root.HitTest(point);
+        var target = HitTest(point);
         if (target is null || !target.IsEffectiveEnabled) return;
-        target.RaiseEvent(new WheelEventArgs(Element.PointerWheelChangedEvent, point, delta) { Source = target });
+        target.RaiseEvent(new WheelEventArgs(Element.PointerWheelChangedEvent, point, delta, modifiers) { Source = target });
     }
 
     /// <summary>按键。Tab 由焦点系统拦截做遍历；其余 KeyDown 从焦点元素（或根）路由。
     /// E3：焦点元素被禁用（中途 <see cref="Element.IsEnabled"/> 翻转）时吞键。</summary>
-    public void KeyPress(Key key)
+    public void KeyPress(Key key, KeyModifiers modifiers = KeyModifiers.None, bool isRepeat = false)
     {
+        if (key == Key.Escape && TryDismissPopup()) return;
+        var target = Focus.Focused ?? _root;
+        if (!target.IsEffectiveEnabled || !target.IsEffectivelyVisible) return;
+        var preview = new KeyEventArgs(Element.PreviewKeyDownEvent, key, modifiers, isRepeat) { Source = target };
+        target.RaiseEvent(preview);
+        if (preview.Handled) return;
+        var args = new KeyEventArgs(Element.KeyDownEvent, key, modifiers, isRepeat) { Source = target };
         if (key == Key.Tab)
         {
-            Focus.MoveNext();
+            if (modifiers.HasFlag(KeyModifiers.Control)) target.RaiseEvent(args);
+            if (!args.Handled) { if (modifiers.HasFlag(KeyModifiers.Shift)) Focus.MovePrevious(); else Focus.MoveNext(); }
             return;
         }
+        target.RaiseEvent(args);
+    }
 
+    public bool TryDismissPopup()
+    {
+        var popup = OpenPopups().LastOrDefault(p => !p.StaysOpen);
+        if (popup is null) return false;
+        popup.Close(); return true;
+    }
+    public void KeyRelease(Key key, KeyModifiers modifiers = KeyModifiers.None)
+    {
         var target = Focus.Focused ?? _root;
-        if (!target.IsEffectiveEnabled) return;
-        target.RaiseEvent(new KeyEventArgs(Element.KeyDownEvent, key) { Source = target });
+        if (target.IsEffectiveEnabled && target.IsEffectivelyVisible)
+            target.RaiseEvent(new KeyEventArgs(Element.KeyUpEvent, key, modifiers));
+    }
+    public void TextInput(string text)
+    {
+        var target = Focus.Focused;
+        if (target is { IsEffectiveEnabled: true, IsEffectivelyVisible: true }) target.RaiseEvent(new TextInputEventArgs(text));
+    }
+    public void TextComposition(string text, CompositionStage stage)
+    {
+        var target = Focus.Focused;
+        if (target is { IsEffectiveEnabled: true, IsEffectivelyVisible: true }) target.RaiseEvent(new TextCompositionEventArgs(text, stage));
     }
 }

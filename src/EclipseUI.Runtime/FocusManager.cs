@@ -17,12 +17,12 @@ public sealed class FocusManager
     public Element? Focused { get; private set; }
 
     public IReadOnlyList<Element> Focusables
-        => _root.Descendants().Where(e => e.IsFocusable && e.IsEffectiveEnabled).ToList();
+        => _root.Descendants().Where(e => e.IsFocusable && e.IsTabStop && e.IsEffectiveEnabled && e.IsEffectivelyVisible).ToList();
 
     public bool Focus(Element? element)
     {
         if (element is null || !element.IsFocusable) return false;
-        if (!element.IsEffectiveEnabled) return false; // E3：禁用元素不接受焦点（含祖先禁用的继承情形）
+        if (!element.IsEffectiveEnabled || !element.IsEffectivelyVisible) return false; // E3：禁用元素不接受焦点（含祖先禁用的继承情形）
         if (ReferenceEquals(Focused, element)) return true;
 
         var old = Focused;
@@ -54,6 +54,7 @@ public sealed class FocusManager
     {
         var focused = Focused;
         if (focused is null) return false;
+        if (!focused.IsEffectiveEnabled || !focused.IsEffectivelyVisible) { ClearFocus(); return true; }
         for (Element? node = focused; node is not null; node = node._parent)
             if (ReferenceEquals(node, _root))
                 return false;
@@ -62,7 +63,11 @@ public sealed class FocusManager
     }
 
     /// <summary>移到下一个可聚焦元素（环形）。Tab 键的默认实现。</summary>
-    public Element? MoveNext()
+    public Element? MovePrevious() => Move(-1);
+
+    public Element? MoveNext() => Move(1);
+
+    private Element? Move(int direction)
     {
         var focusables = Focusables;
         if (focusables.Count == 0) return null;
@@ -75,7 +80,7 @@ public sealed class FocusManager
                 break;
             }
         }
-        var next = focusables[(index + 1) % focusables.Count];
+        var next = focusables[(index < 0 ? (direction > 0 ? 0 : focusables.Count - 1) : (index + direction + focusables.Count) % focusables.Count)];
         Focus(next);
         return next;
     }

@@ -2,7 +2,7 @@ using EclipseUI.Text.Shaping;
 
 namespace Gallery;
 
-/// <summary>字体创建（平台无关）：优先西文字体，回落 CJK；都没有时由调用方降级为只测量。</summary>
+/// <summary>主字体创建：按候选顺序加载；混合文字的中文/emoji 回退由 HarfBuzzTextPainter 按字素处理。</summary>
 public static class TextShaperFactory
 {
     /// <summary>尝试创建 HarfBuzz shaper；失败返回 null（调用方使用 MeasuringTextPainter）。</summary>

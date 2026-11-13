@@ -65,6 +65,7 @@ public sealed class ElementCollection : IReadOnlyList<Element>
         _owner.InvalidateMeasure();
         _owner.InvalidateRender();
         child.AttachToParent(_owner);
+        _owner.OnChildrenChanged();
     }
 
     public bool Remove(Element child)
@@ -82,6 +83,7 @@ public sealed class ElementCollection : IReadOnlyList<Element>
             _owner.InvalidateMeasure();
             _owner.InvalidateRender();
             child.DetachFromTree();
+            _owner.OnChildrenChanged();
             return true;
         }
         return false;
@@ -108,6 +110,7 @@ public sealed class ElementCollection : IReadOnlyList<Element>
             try { child.DetachFromTree(); }
             catch (Exception error) { (failures ??= new()).Add(error); }
         }
+        _owner.OnChildrenChanged();
         if (failures is not null)
             throw new AggregateException("Content removal lifecycle notifications failed.", failures);
     }
@@ -170,6 +173,7 @@ public sealed class ElementCollection : IReadOnlyList<Element>
             try { child.AttachToParent(_owner); }
             catch (Exception error) { (failures ??= new()).Add(error); }
         }
+        _owner.OnChildrenChanged();
         if (failures is not null)
             throw new AggregateException("Content replacement lifecycle notifications failed.", failures);
     }
@@ -204,6 +208,7 @@ public sealed class ElementCollection : IReadOnlyList<Element>
 public abstract class Element : UiObject
 {
     internal Element? _parent;
+    internal FocusManager? _focusManager;
     internal ElementCollection? _parentCollection;
     internal UiObject? _contentOwner;
     private Size _desired;
@@ -233,6 +238,12 @@ public abstract class Element : UiObject
     // 因此块内动态创建的元素无需再登记（design/15 §15.14.3）。
 
     public Element? Parent => _parent;
+    public bool RequestFocus()
+    {
+        var root = this;
+        while (root.Parent is not null) root = root.Parent;
+        return root._focusManager?.Focus(this) ?? false;
+    }
     internal override UiObject? UpdateParent => (UiObject?)_parent ?? _contentOwner;
     protected internal override IEnumerable<UiObject> UiChildren => VisualChildren;
     public Size DesiredSize => _desired;
@@ -250,6 +261,19 @@ public abstract class Element : UiObject
 
     // 输入与焦点路由事件声明在 Element 上（design/14 §14.4.3）：继承是路由事件的语义基础，
     // 放在静态宿主类里不参与目录扫描，模板事件表面就只剩 Button.OnClick。
+
+    public static readonly RoutedEvent PreviewKeyDownEvent = new("PreviewKeyDown", RoutingStrategy.Tunnel);
+    public static readonly RoutedEvent PreviewPointerPressedEvent = new("PreviewPointerPressed", RoutingStrategy.Tunnel);
+    public static readonly RoutedEvent TextInputEvent = new("TextInput", RoutingStrategy.Bubble);
+    public static readonly RoutedEvent TextCompositionEvent = new("TextComposition", RoutingStrategy.Bubble);
+    public static readonly RoutedEvent PointerEnteredEvent = new("PointerEntered", RoutingStrategy.Direct);
+    public static readonly RoutedEvent PointerExitedEvent = new("PointerExited", RoutingStrategy.Direct);
+    public virtual bool UsesDefaultDrawing => true;
+    public virtual void Render(IElementDrawingContext context) { }
+    public static readonly StyledProperty<bool> IsVisibleProperty = StyledProperty<bool>.Register<Element>("IsVisible", true,
+        new PropertyOptions { Invalidate = InvalidateKind.Measure });
+    public bool IsVisible { get => GetValue(IsVisibleProperty); set => SetValue(IsVisibleProperty, value); }
+    public bool IsEffectivelyVisible => IsVisible && (this is not Elements.Popup popup || popup.IsOpen) && (Parent?.IsEffectivelyVisible ?? true);
 
     public static readonly RoutedEvent PointerPressedEvent = new RoutedEvent("PointerPressed", RoutingStrategy.Bubble);
     public static readonly RoutedEvent PointerReleasedEvent = new RoutedEvent("PointerReleased", RoutingStrategy.Bubble);
@@ -647,6 +671,15 @@ public abstract class Element : UiObject
             available.Width < 0 || available.Height < 0)
             throw new ArgumentOutOfRangeException(nameof(available), "Measure constraints must be non-negative or positive infinity.");
         EnsureInitialized();
+        if (!IsVisible || this is Elements.Popup { IsOpen: false })
+        {
+            _desired = _coreDesired = Size.Empty;
+            _lastMeasureConstraint = available;
+            _hasMeasured = true;
+            _needsMeasure = false;
+            _needsArrange = true;
+            return;
+        }
         if (!_needsMeasure && available == _lastMeasureConstraint) return;
         var margin = Margin;
         var inner = margin == 0
@@ -730,6 +763,8 @@ public abstract class Element : UiObject
         if (!double.IsFinite(size.Width) || !double.IsFinite(size.Height) || size.Width < 0 || size.Height < 0)
             throw new InvalidOperationException("Measured sizes must be finite and non-negative.");
     }
+
+    protected internal virtual void OnChildrenChanged() { }
 
     protected internal abstract Size MeasureCore(Size available);
     protected internal abstract void ArrangeCore(Rect final);
@@ -912,6 +947,8 @@ public abstract class Element : UiObject
     }
 
     /// <summary>控件是否可聚焦（Tab 遍历与键盘路由的依据）。</summary>
+    public static readonly StyledProperty<bool> IsTabStopProperty = StyledProperty<bool>.Register<Element>("IsTabStop", true, new() { Invalidate = InvalidateKind.Render });
+    public bool IsTabStop { get => GetValue(IsTabStopProperty); set => SetValue(IsTabStopProperty, value); }
     public virtual bool IsFocusable => false;
 
     /// <summary>
@@ -920,7 +957,7 @@ public abstract class Element : UiObject
     /// </summary>
     public Element? HitTest(Point point)
     {
-        if (!IsHitTestVisible) return null;
+        if (!IsHitTestVisible || !IsEffectivelyVisible) return null;
         var inside = new Rect(default, FinalRect.Size).Contains(PointFromRoot(point));
         // 与绘制相同：仅宿主边界、显式裁剪和滚动视口阻止遍历溢出的子项。
         if (!inside && (Parent is null || this is Panel { ClipToBounds: true } || this is ScrollViewer))
@@ -928,6 +965,7 @@ public abstract class Element : UiObject
         if (this is ScrollViewer viewer &&
             !new Rect(viewer.Padding, viewer.Padding, viewer.ViewportWidth, viewer.ViewportHeight).Contains(PointFromRoot(point)))
             return inside ? this : null;
+        if (this is ScrollViewer bars && bars.TryGetScrollBar(PointFromRoot(point), out _, out _)) return this;
         foreach (var child in VisualChildren.Reverse())
         {
             if (child.HitTest(point) is { } hit)

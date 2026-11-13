@@ -38,9 +38,15 @@ public sealed class AttachedProperty<T>
     {
         ArgumentNullException.ThrowIfNull(element);
         if (_values.TryGetValue(element, out var box))
+        {
+            if (EqualityComparer<T>.Default.Equals(box.Value, value)) return;
             box.Value = value;
+        }
         else
             _values.Add(element, new ValueBox<T>(value));
+        element.InvalidateMeasure();
+        element.Parent?.InvalidateMeasure();
+        element.InvalidateRender();
     }
 
     /// <summary>清除本地值；之后读取回落到 <see cref="DefaultValue"/>。弱表本身无需清理，此方法只供显式复位。</summary>

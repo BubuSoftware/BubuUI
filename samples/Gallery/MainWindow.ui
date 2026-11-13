@@ -86,6 +86,10 @@
                 </Slot>
             </Section>
 
+            <Section Title="6. Control catalog - input, selection, navigation, data, overlays and shapes">
+                <Slot Name="Body"><ControlCatalog /></Slot>
+            </Section>
+
             <TextBlock FontSize="12" TextWrapping="Wrap">EclipseUI - retained segment caching (D93) - scroll to browse the whole gallery</TextBlock>
         </StackPanel>
     </ScrollViewer>

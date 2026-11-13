@@ -1,5 +1,8 @@
+using Path = System.IO.Path;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.Text;
 using EclipseUI.Elements;
 using EclipseUI.Rendering;
 using HarfBuzzSharp;
@@ -26,6 +29,7 @@ public sealed class HarfBuzzTextShaper : ITextShaper, ITextMeasurer, IDisposable
 
     public HarfBuzzTextShaper(string fontPath, int faceIndex = 0)
     {
+        FontPath = Path.GetFullPath(fontPath);
         _blob = Blob.FromFile(fontPath);
         _face = new Face(_blob, faceIndex);
         _font = new Font(_face);
@@ -34,6 +38,24 @@ public sealed class HarfBuzzTextShaper : ITextShaper, ITextMeasurer, IDisposable
 
     /// <summary>供绘制侧使用的字体句柄（与 shaping 同一字体文件/face）。</summary>
     public FontFace Face { get; }
+
+    public string FontPath { get; }
+
+    /// <summary>Tests a complete Unicode text element; joiners and variation selectors are shaping controls.</summary>
+    public bool SupportsTextElement(string text)
+    {
+        lock (_gate)
+        {
+            foreach (var rune in text.EnumerateRunes())
+            {
+                if (rune.Value is 0x200C or 0x200D or >= 0xFE00 and <= 0xFE0F or >= 0xE0100 and <= 0xE01EF ||
+                    Rune.GetUnicodeCategory(rune) is UnicodeCategory.Format or UnicodeCategory.Control)
+                    continue;
+                if (!_font.TryGetGlyph((uint)rune.Value, out var glyph) || glyph == 0) return false;
+            }
+            return true;
+        }
+    }
 
     public ShapedBuffer Shape(string text, double fontSize, TextDirection direction = TextDirection.LeftToRight)
     {

@@ -119,6 +119,9 @@ internal interface IStyleSetter
 }
 
 /// <summary>样式定义构建器：类型安全 setter，记录为命令序列（Define 时求值一次）。</summary>
+[UiStyleOwner(typeof(Visual))]
+[UiStyleOwner(typeof(EclipseUI.Elements.Panel))]
+[UiStyleOwner(typeof(EclipseUI.Elements.TextBlock))]
 public sealed class StyleBuilder
 {
     private readonly List<IStyleSetter> _setters = [];

@@ -312,6 +312,15 @@ public static class StylePropertyCatalogFactory
                     "a StyleBuilder setter needs a matching property field so inline Style= can be emitted");
             return null;
         }
+        var owners = builder.GetAttributes()
+            .Where(a => a.AttributeClass?.ToDisplayString() == "EclipseUI.UiStyleOwnerAttribute")
+            .Select(a => a.ConstructorArguments.Length == 1 ? a.ConstructorArguments[0].Value as INamedTypeSymbol : null)
+            .Where(o => o is not null).ToArray();
+        if (owners.Length > 0)
+        {
+            var owned = candidates.Where(c => owners.Any(o => SymbolEqualityComparer.Default.Equals(o, c.ContainingType))).ToArray();
+            if (owned.Length == 1) return owned[0];
+        }
         if (candidates.Count == 1) return candidates[0];
         // 多候选时未标注者优先：用户带 [UiStyleProperty] 的同名声明是 EUI059 冲突方
         // （用户败、内建胜），它不该让内建字段本身落入「多程序集歧义」而从目录消失。

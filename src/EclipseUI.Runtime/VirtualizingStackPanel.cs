@@ -11,10 +11,10 @@ namespace EclipseUI.Elements;
 /// 测量被约束短路，窗口同步必须挂在排列。
 /// <list type="bullet">
 /// <item>条目来源：<see cref="ItemCount"/> + <see cref="ItemFactory"/>（index → 容器元素）；
-///   数据或工厂变更后调 <see cref="Refresh"/>。容器复用（pooling）留给后续切片——v1 出窗即释放。</item>
+///   数据或工厂变更后调 <see cref="Refresh"/>。提供 ItemUpdater 后回收并重新绑定，否则出窗即释放。</item>
 /// <item>均匀行高：虚拟模式行高取 item 0 容器的测量期望（<see cref="UniformItemHeight"/>）；
-///   变高行与像素精确的 extent 估计留给后续切片。</item>
-/// <item>放在 <see cref="ScrollViewer"/>（或任何有限高度祖先）内即虚拟化；可用高度无限时
+///   IsVariableHeight 启用实测高度估计；ItemHeightProvider 可提供精确高度。</item>
+/// <item>放在有限视口的 <see cref="ScrollViewer"/> 内启用虚拟化；没有滚动祖先时
 ///   退化为全量实例化的纵向堆叠（与 StackPanel 同布局，变高可用）。</item>
 /// <item>滚轮/偏移由外层 <see cref="ScrollViewer"/> 承担；本面板只按窗口摆放容器。</item>
 /// </list>
@@ -43,6 +43,53 @@ public class VirtualizingStackPanel : Panel
 
     /// <summary>条目工厂：index → 容器元素。换实现后调 <see cref="Refresh"/>。</summary>
     public Func<int, Element>? ItemFactory { get; set; }
+    /// <summary>Rebinds a detached recycled container to a new index. Without an updater rows are disposed.</summary>
+    public Action<Element, int>? ItemUpdater { get; set; }
+    public Func<int, double>? ItemHeightProvider { get; set; }
+    public static readonly StyledProperty<bool> IsVariableHeightProperty = StyledProperty<bool>.Register<VirtualizingStackPanel>("IsVariableHeight", false, new() { Invalidate = InvalidateKind.Measure });
+    public bool IsVariableHeight { get => GetValue(IsVariableHeightProperty); set => SetValue(IsVariableHeightProperty, value); }
+    public Element? GetRealizedItem(int index) => _realized.GetValueOrDefault(index);
+    public int RecycledCount => _recycled.Count;
+    private readonly Stack<Element> _recycled = new();
+    private double[] _heights = [], _heightTree = [];
+    private double _heightWidth = double.NaN;
+    private double _heightGap = double.NaN;
+    private bool Variable => IsVariableHeight || ItemHeightProvider is not null;
+    private void PrepareHeights(int count, double width, double gap)
+    {
+        if (_heights.Length == count && _heightWidth == width && _heightGap == gap) return;
+        _heightWidth = width; _heightGap = gap;
+        _heights = new double[count]; _heightTree = new double[count + 1];
+        for (var i = 0; i < count; i++)
+        {
+            var h = ItemHeightProvider?.Invoke(i) ?? _itemHeight;
+            if (!double.IsFinite(h) || h < 0) throw new InvalidOperationException("Item heights must be finite and non-negative.");
+            _heights[i] = Math.Max(.1, h);
+            _heightTree[i + 1] += _heights[i] + gap;
+            var parent = (i + 1) + ((i + 1) & -(i + 1));
+            if (parent <= count) _heightTree[parent] += _heightTree[i + 1];
+        }
+    }
+    private double Prefix(int count)
+    {
+        double sum = 0;
+        for (var i = count; i > 0; i -= i & -i) sum += _heightTree[i];
+        return sum;
+    }
+    private int HeightIndex(double offset)
+    {
+        var lo = 0; var hi = _heights.Length;
+        while (lo < hi) { var mid = (lo + hi) / 2; if (Prefix(mid + 1) <= offset) lo = mid + 1; else hi = mid; }
+        return Math.Min(lo, Math.Max(0, _heights.Length - 1));
+    }
+    private void RecordHeight(int index, double height)
+    {
+        height = Math.Max(.1, height);
+        var delta = height - _heights[index]; if (Math.Abs(delta) < .001) return;
+        _heights[index] = height;
+        for (var i = index + 1; i < _heightTree.Length; i += i & -i) _heightTree[i] += delta;
+        InvalidateMeasure();
+    }
 
     /// <summary>当前已实例化（在可视树中）的容器数——应 ≈ 视口行数 + 2 缓冲，与 ItemCount 无关。</summary>
     public int RealizedCount => _realized.Count;
@@ -61,6 +108,8 @@ public class VirtualizingStackPanel : Panel
         if (IsDisposed) return;
         var retired = new HashSet<Element>(_realized.Values, ReferenceEqualityComparer.Instance);
         if (_probe is not null) retired.Add(_probe);
+        foreach (var row in _recycled) retired.Add(row);
+        _recycled.Clear(); _heights = []; _heightTree = []; _heightWidth = double.NaN;
         _realized.Clear();
         _probe = null;
         _itemHeight = 0;
@@ -109,7 +158,8 @@ public class VirtualizingStackPanel : Panel
         // 窗口同步不在这里做（测量期拿不到本次帧的视口/偏移），统一挂在 ArrangeCore。
         EnsureProbe(count, availW);
         var stride = _itemHeight + gap;
-        var extent = count > 0 ? stride * count - gap : 0;
+        if (Variable) PrepareHeights(count, availW, gap);
+        var extent = count > 0 ? Variable ? Prefix(count) - gap : stride * count - gap : 0;
         return new Size(
             double.IsPositiveInfinity(availW) ? widthOfProbe() + padding * 2 : availW + padding * 2,
             extent + padding * 2);
@@ -144,8 +194,8 @@ public class VirtualizingStackPanel : Panel
         int lo = 0, hi = -1;
         if (count > 0 && stride > 0)
         {
-            lo = Math.Clamp((int)Math.Floor(offset / stride) - 1, 0, count - 1);
-            hi = Math.Clamp((int)Math.Ceiling((offset + viewportH) / stride) + 1, 0, count - 1);
+            lo = Variable ? Math.Max(0, HeightIndex(offset) - 1) : Math.Clamp((int)Math.Floor(offset / stride) - 1, 0, count - 1);
+            hi = Variable ? Math.Min(count - 1, HeightIndex(offset + viewportH) + 2) : Math.Clamp((int)Math.Ceiling((offset + viewportH) / stride) + 1, 0, count - 1);
         }
 
         DiscardWindowExceptRange(lo, hi);
@@ -155,7 +205,8 @@ public class VirtualizingStackPanel : Panel
         {
             var child = GetOrRealize(i);
             child.Measure(new Size(innerW, double.PositiveInfinity));
-            child.Arrange(new Rect(padding, padding + i * stride, innerW, _itemHeight));
+            if (Variable && ItemHeightProvider is null) RecordHeight(i, child.DesiredSize.Height);
+            child.Arrange(new Rect(padding, padding + (Variable ? Prefix(i) : i * stride), innerW, Variable ? _heights[i] : _itemHeight));
         }
     }
 
@@ -209,7 +260,13 @@ public class VirtualizingStackPanel : Panel
 
         if (_realized.TryGetValue(index, out var existing)) return existing;
 
-        var created = ItemFactory!(index);
+        Element created;
+        if (ItemUpdater is not null && _recycled.TryPop(out var recycled))
+        {
+            created = recycled;
+            try { ItemUpdater(created, index); } catch { created.Dispose(); throw; }
+        }
+        else created = ItemFactory!(index);
         _realized[index] = created;
         Children.Add(created);
         return created;
@@ -230,6 +287,7 @@ public class VirtualizingStackPanel : Panel
             try
             {
                 if (index == 0) Children.Remove(child);
+                else if (ItemUpdater is not null && _recycled.Count < 256) { Children.Remove(child); _recycled.Push(child); }
                 else child.Dispose();
             }
             catch (Exception error) { (failures ??= new()).Add(error); }
@@ -245,7 +303,7 @@ public class VirtualizingStackPanel : Panel
         _realized.Clear();
         _itemHeight = 0;
         _probedForCount = -1;
-        try { probe?.Dispose(); }
+        try { DisposeItems(_recycled.Append(probe).OfType<Element>().Distinct(ReferenceEqualityComparer.Instance).Cast<Element>()); _recycled.Clear(); }
         finally { base.OnDispose(); }
     }
 

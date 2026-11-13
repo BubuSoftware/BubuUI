@@ -89,9 +89,10 @@ public sealed class Win32KeyEventArgs : EventArgs
 
 public sealed class Win32TextEventArgs : EventArgs
 {
-    public Win32TextEventArgs(char character) => Character = character;
-
-    public char Character { get; }
+    public Win32TextEventArgs(char character) : this(character.ToString()) { }
+    public Win32TextEventArgs(string text) => Text = text;
+    public string Text { get; }
+    public char Character => Text[0];
 }
 
 /// <summary>
@@ -100,7 +101,7 @@ public sealed class Win32TextEventArgs : EventArgs
 /// 所有坐标为设备像素；<see cref="ScaleFactor"/> 用于换算到设备无关单位。
 /// </summary>
 [SupportedOSPlatform("windows")]
-public sealed class Win32Window : IDisposable
+public sealed partial class Win32Window : IDisposable
 {
     private const string DefaultClassName = "EclipseUI.Win32Window";
 
@@ -407,87 +408,90 @@ public sealed class Win32Window : IDisposable
 
     private nint WindowProc(uint message, nint wParam, nint lParam)
     {
+        // Keep the native candidate UI, while the focused TextBox paints composition text.
+        if (message == 0x0281) return Win32Native.DefWindowProcW(_hwnd, message, wParam, (nint)(lParam.ToInt64() & ~0x80000000L));
+        if (ProcessIme(message, lParam)) return 0;
         switch (message)
         {
             case Win32Native.WM_SIZE:
-            {
-                var previousWidth = ClientWidth;
-                var previousHeight = ClientHeight;
-                var width = LowWord(lParam);
-                var height = HighWord(lParam);
-                ClientWidth = Math.Max(width, 0);
-                ClientHeight = Math.Max(height, 0);
+                {
+                    var previousWidth = ClientWidth;
+                    var previousHeight = ClientHeight;
+                    var width = LowWord(lParam);
+                    var height = HighWord(lParam);
+                    ClientWidth = Math.Max(width, 0);
+                    ClientHeight = Math.Max(height, 0);
 
-                if (ClientWidth != previousWidth || ClientHeight != previousHeight)
-                    Resized?.Invoke(this, new Win32ResizeEventArgs(ClientWidth, ClientHeight, ScaleFactor));
+                    if (ClientWidth != previousWidth || ClientHeight != previousHeight)
+                        Resized?.Invoke(this, new Win32ResizeEventArgs(ClientWidth, ClientHeight, ScaleFactor));
 
-                return 0;
-            }
+                    return 0;
+                }
 
             case Win32Native.WM_DPICHANGED:
-            {
-                var dpi = LowWord(wParam);
-                ScaleFactor = dpi / 96.0;
+                {
+                    var dpi = LowWord(wParam);
+                    ScaleFactor = dpi / 96.0;
 
-                // lParam 指向系统建议的新窗口矩形。
-                var suggested = Marshal.PtrToStructure<Win32Native.RECT>(lParam);
-                Win32Native.SetWindowPos(
-                    _hwnd, nint.Zero,
-                    suggested.Left, suggested.Top,
-                    suggested.Width, suggested.Height,
-                    SWP_NOZORDER | SWP_NOACTIVATE);
+                    // lParam 指向系统建议的新窗口矩形。
+                    var suggested = Marshal.PtrToStructure<Win32Native.RECT>(lParam);
+                    Win32Native.SetWindowPos(
+                        _hwnd, nint.Zero,
+                        suggested.Left, suggested.Top,
+                        suggested.Width, suggested.Height,
+                        SWP_NOZORDER | SWP_NOACTIVATE);
 
-                RefreshClientSize();
-                Resized?.Invoke(this, new Win32ResizeEventArgs(ClientWidth, ClientHeight, ScaleFactor));
-                return 0;
-            }
+                    RefreshClientSize();
+                    Resized?.Invoke(this, new Win32ResizeEventArgs(ClientWidth, ClientHeight, ScaleFactor));
+                    return 0;
+                }
 
             case Win32Native.WM_ERASEBKGND:
                 // 全部由 GPU 覆盖，避免闪烁。
                 return 1;
 
             case Win32Native.WM_PAINT:
-            {
-                var hdc = Win32Native.BeginPaint(_hwnd, out var paint);
-                try
                 {
-                    if (PaintRequested is null)
+                    var hdc = Win32Native.BeginPaint(_hwnd, out var paint);
+                    try
                     {
-                        // 没有处理器时用背景色填充，避免残留旧像素。
-                        FillBackground(hdc, paint.rcPaint);
+                        if (PaintRequested is null)
+                        {
+                            // 没有处理器时用背景色填充，避免残留旧像素。
+                            FillBackground(hdc, paint.rcPaint);
+                        }
+                        else
+                        {
+                            PaintRequested.Invoke(this, EventArgs.Empty);
+                        }
                     }
-                    else
+                    finally
                     {
-                        PaintRequested.Invoke(this, EventArgs.Empty);
+                        Win32Native.EndPaint(_hwnd, ref paint);
                     }
+                    return 0;
                 }
-                finally
-                {
-                    Win32Native.EndPaint(_hwnd, ref paint);
-                }
-                return 0;
-            }
 
             case Win32Native.WM_MOUSEMOVE:
-            {
-                if (InputEnabled)
                 {
-                    var position = PointFromLParam(lParam);
-                    PointerMoved?.Invoke(this, new Win32PointerEventArgs(position, ToLogical(position), false));
-
-                    if (!_trackingLeave)
+                    if (InputEnabled)
                     {
-                        var track = new Win32Native.TRACKMOUSEEVENT
+                        var position = PointFromLParam(lParam);
+                        PointerMoved?.Invoke(this, new Win32PointerEventArgs(position, ToLogical(position), false));
+
+                        if (!_trackingLeave)
                         {
-                            cbSize = (uint)Marshal.SizeOf<Win32Native.TRACKMOUSEEVENT>(),
-                            dwFlags = Win32Native.TME_LEAVE,
-                            hwndTrack = _hwnd,
-                        };
-                        _trackingLeave = Win32Native.TrackMouseEvent(ref track);
+                            var track = new Win32Native.TRACKMOUSEEVENT
+                            {
+                                cbSize = (uint)Marshal.SizeOf<Win32Native.TRACKMOUSEEVENT>(),
+                                dwFlags = Win32Native.TME_LEAVE,
+                                hwndTrack = _hwnd,
+                            };
+                            _trackingLeave = Win32Native.TrackMouseEvent(ref track);
+                        }
                     }
+                    return 0;
                 }
-                return 0;
-            }
 
             case Win32Native.WM_MOUSELEAVE:
                 _trackingLeave = false;
@@ -496,74 +500,73 @@ public sealed class Win32Window : IDisposable
 
             case Win32Native.WM_LBUTTONDOWN:
             case Win32Native.WM_RBUTTONDOWN:
-            {
-                if (InputEnabled)
                 {
-                    Win32Native.SetFocus(_hwnd);
-                    // 捕获指针：拖出窗口后仍能收到移动/释放，控件不会“卡在按下态”。
-                    Win32Native.SetCapture(_hwnd);
-                    var position = PointFromLParam(lParam);
-                    PointerPressed?.Invoke(this, new Win32PointerEventArgs(
-                        position, ToLogical(position), message == Win32Native.WM_RBUTTONDOWN));
+                    if (InputEnabled)
+                    {
+                        Win32Native.SetFocus(_hwnd);
+                        // 捕获指针：拖出窗口后仍能收到移动/释放，控件不会“卡在按下态”。
+                        Win32Native.SetCapture(_hwnd);
+                        var position = PointFromLParam(lParam);
+                        PointerPressed?.Invoke(this, new Win32PointerEventArgs(
+                            position, ToLogical(position), message == Win32Native.WM_RBUTTONDOWN));
+                    }
+                    return 0;
                 }
-                return 0;
-            }
 
             case Win32Native.WM_LBUTTONUP:
             case Win32Native.WM_RBUTTONUP:
-            {
-                if (InputEnabled)
                 {
-                    var position = PointFromLParam(lParam);
-                    Win32Native.ReleaseCapture();
-                    PointerReleased?.Invoke(this, new Win32PointerEventArgs(
-                        position, ToLogical(position), message == Win32Native.WM_RBUTTONUP));
+                    if (InputEnabled)
+                    {
+                        var position = PointFromLParam(lParam);
+                        Win32Native.ReleaseCapture();
+                        PointerReleased?.Invoke(this, new Win32PointerEventArgs(
+                            position, ToLogical(position), message == Win32Native.WM_RBUTTONUP));
+                    }
+                    return 0;
                 }
-                return 0;
-            }
 
             case Win32Native.WM_MOUSEWHEEL:
-            {
-                if (InputEnabled)
                 {
-                    var delta = (short)HighWord(wParam);
-                    // 屏幕坐标 → 客户区坐标
-                    var screen = new Win32Native.POINT(LowWordSigned(lParam), HighWordSigned(lParam));
-                    Win32Native.ScreenToClient(_hwnd, ref screen);
-                    var position = new Point(screen.X, screen.Y);
-                    PointerWheel?.Invoke(this, new Win32WheelEventArgs(position, ToLogical(position), delta));
+                    if (InputEnabled)
+                    {
+                        var delta = (short)HighWord(wParam);
+                        // 屏幕坐标 → 客户区坐标
+                        var screen = new Win32Native.POINT(LowWordSigned(lParam), HighWordSigned(lParam));
+                        Win32Native.ScreenToClient(_hwnd, ref screen);
+                        var position = new Point(screen.X, screen.Y);
+                        PointerWheel?.Invoke(this, new Win32WheelEventArgs(position, ToLogical(position), delta));
+                    }
+                    return 0;
                 }
-                return 0;
-            }
 
             case Win32Native.WM_KEYDOWN:
             case 0x0104 /* WM_SYSKEYDOWN */:
-            {
-                if (InputEnabled)
                 {
-                    var repeat = (lParam & (1 << 30)) != 0;
-                    KeyDown?.Invoke(this, CreateKeyArgs((int)wParam, repeat));
+                    if (InputEnabled)
+                    {
+                        var repeat = (lParam & (1 << 30)) != 0;
+                        KeyDown?.Invoke(this, CreateKeyArgs((int)wParam, repeat));
+                    }
+                    return 0;
                 }
-                return 0;
-            }
 
             case Win32Native.WM_KEYUP:
             case 0x0105 /* WM_SYSKEYUP */:
-            {
-                if (InputEnabled) KeyUp?.Invoke(this, CreateKeyArgs((int)wParam, false));
-                return 0;
-            }
+                {
+                    if (InputEnabled) KeyUp?.Invoke(this, CreateKeyArgs((int)wParam, false));
+                    return 0;
+                }
 
             case Win32Native.WM_CHAR:
-            {
-                if (InputEnabled)
                 {
-                    var code = (int)wParam;
-                    if (code is > 0 and < 0x10000 && !char.IsSurrogate((char)code))
-                        CharacterTyped?.Invoke(this, new Win32TextEventArgs((char)code));
+                    if (InputEnabled)
+                    {
+                        var code = (int)wParam;
+                        if (code is > 0 and < 0x10000) EmitCharacter((char)code);
+                    }
+                    return 0;
                 }
-                return 0;
-            }
 
             case Win32Native.WM_SETFOCUS:
                 Focused?.Invoke(this, EventArgs.Empty);
@@ -641,6 +644,11 @@ public sealed class Win32Window : IDisposable
         0x27 => Key.Right,
         0x28 => Key.Down,
         0x2E => Key.Delete,
+        0x21 => Key.PageUp,
+        0x22 => Key.PageDown,
+        0x23 => Key.End,
+        0x24 => Key.Home,
+        0x71 => Key.F2,
         >= 0x41 and <= 0x5A => (Key)virtualKey,
         _ => Key.None,
     };

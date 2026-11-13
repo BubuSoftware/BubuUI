@@ -2,6 +2,13 @@ using System;
 
 namespace EclipseUI;
 
+/// <summary>Explicit owners for built-in StyleBuilder fields; control fields may reuse common names.</summary>
+[AttributeUsage(AttributeTargets.Class, AllowMultiple = true)]
+public sealed class UiStyleOwnerAttribute(Type owner) : Attribute
+{
+    public Type Owner { get; } = owner;
+}
+
 /// <summary>
 /// 内容模型（控件作者声明，编译器目录按同名枚举消费）。
 /// 数值必须与 <c>EclipseUI.Compiler.UiContentModel</c> 一一对应（design/14 §14.4.4/§14.11.1 有断言）。

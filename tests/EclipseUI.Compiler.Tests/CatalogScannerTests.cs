@@ -74,7 +74,7 @@ public class CatalogScannerTests
                 public static Tone Parse(string s) => default;
             }
             """);
-        var parser = Assert.Single(catalog.LiteralParsers);
+        var parser = Assert.Single(catalog.LiteralParsers, p => p.CanonicalKey == "Probe.Tone");
         Assert.Equal("Probe.Tone", parser.CanonicalKey);
         Assert.Equal("global::Probe.Tone.Parse", parser.ParseCall);
         Assert.Equal("^(A|B)$", parser.Pattern);
@@ -96,7 +96,7 @@ public class CatalogScannerTests
                 public static string Parse(string s) => s;   // 返回类型不是自身 → EUI026
             }
             """);
-        Assert.Empty(catalog.LiteralParsers);
+        Assert.DoesNotContain(catalog.LiteralParsers, p => p.CanonicalKey == "Probe.Tone");
         var problem = Assert.Single(catalog.Problems,
             p => p.DeclaringTypeName.Contains("Probe.Tone"));
         Assert.Equal(UiDiagnostics.MetadataDeclarationInvalid, problem.Code);
@@ -116,7 +116,7 @@ public class CatalogScannerTests
                 public static Tone FromName(string s) => default;
             }
             """);
-        var parser = Assert.Single(catalog.LiteralParsers);
+        var parser = Assert.Single(catalog.LiteralParsers, p => p.CanonicalKey == "Probe.Tone");
         Assert.Equal("global::Probe.Tone.FromName", parser.ParseCall);
     }
 
@@ -581,7 +581,7 @@ public class CatalogScannerTests
     // ---- 快照 ----
 
     /// <summary>
-    /// design/14 §14.11.1 内置表面快照（C2 口径）：9 标签 / 122 属性项 / 74 事件项（10 个不同的事件名）。
+    /// 内置控件目录：完整类型清单和公共输入/布局契约；逐成员形状由 golden 文件约束。
     /// 布局契约 9 属性（design/05 §布局契约）随 Element 基类继承到每个标签。
     /// `Element` 的 7 个输入/焦点事件按 §14.4.3 声明在元素基类上，继承到每个标签；
     /// `Button.OnClick` 与 `CheckBox.CheckedChanged` 声明在具体控件上。
@@ -590,60 +590,21 @@ public class CatalogScannerTests
     [Fact]
     public void BuiltInSurface_MatchesEnumeratedSnapshot()
     {
-        string[] inherited =
-            ["OnGotFocus", "OnKeyDown", "OnKeyUp", "OnLostFocus", "OnPointerMoved", "OnPointerPressed", "OnPointerReleased", "OnPointerWheelChanged"];
-        // 布局契约属性（design/05 §布局契约）：Margin/Width/Height/Min*/Max*/对齐声明在
-        // Element 基类，继承到每个标签——模板与样式可统一声明（宽高 NaN 缺省、对齐 Stretch 缺省）。
-        // 目录按键的 Ordinal 序输出，标签自有属性与契约属性合并后统一排序。
-        string[] layout =
-            ["Height", "HorizontalAlignment", "Margin", "MaxHeight", "MaxWidth", "MinHeight", "MinWidth", "VerticalAlignment", "Width"];
-        string[] Props(params string[] own) =>
-            own.Concat(layout).OrderBy(n => n, StringComparer.Ordinal).ToArray();
-        var expected = new Dictionary<string, (UiContentModel Content, string? Target, string[] Props, string[] Events)>
-        {
-            ["TextBlock"] = (UiContentModel.TextRuns, null,
-                Props("ClipToBounds", "FontSize", "IsHitTestVisible", "Padding", "TextWrapping"), inherited),
-            ["StackPanel"] = (UiContentModel.Children, "Children",
-                Props("ClipToBounds", "Gap", "IsHitTestVisible", "Padding"), inherited),
-            ["WrapPanel"] = (UiContentModel.Children, "Children",
-                Props("ClipToBounds", "Gap", "IsHitTestVisible", "Orientation", "Padding"), inherited),
-            ["ScrollViewer"] = (UiContentModel.Children, "Children",
-                Props("ClipToBounds", "HorizontalOffset", "HorizontalScrollBarVisibility",
-                    "IsHitTestVisible", "Padding", "VerticalOffset", "VerticalScrollBarVisibility"), inherited),
-            ["VirtualizingStackPanel"] = (UiContentModel.Children, "Children",
-                Props("ClipToBounds", "Gap", "IsHitTestVisible", "ItemCount", "Padding"), inherited),
-            ["Grid"] = (UiContentModel.Children, "Children",
-                Props("ClipToBounds", "ColumnDefinitions", "Gap", "IsHitTestVisible", "Padding", "RowDefinitions"), inherited),
-            ["ListBoxItem"] = (UiContentModel.Children, "Children",
-                Props("ClipToBounds", "Gap", "IsHitTestVisible", "Padding"), inherited),
-            ["Button"] = (UiContentModel.Text, "Label",
-                Props("IsHitTestVisible", "Label"), ["OnClick", .. inherited]),
-            ["Window"] = (UiContentModel.Children, "Content", [], []),
-            ["CheckBox"] = (UiContentModel.Text, "Label",
-                Props("Checked", "IsHitTestVisible", "Label"), ["OnCheckedChanged", .. inherited]),
-        };
-
+        string[] tags = ["Border", "Button", "Calendar", "Canvas", "CheckBox", "ComboBox", "ContentControl", "ContextMenu", "DataGrid", "DatePicker", "DockPanel", "Ellipse", "Grid", "Image", "ItemsControl", "Line", "ListBox", "ListBoxItem", "Menu", "MenuItem", "NumericUpDown", "PasswordBox", "Path", "Popup", "ProgressBar", "RadioButton", "Rectangle", "ScrollViewer", "Slider", "StackPanel", "TabControl", "TabItem", "TextBlock", "TextBox", "ToggleButton", "ToggleSwitch", "ToolTip", "TreeView", "TreeViewItem", "VirtualizingStackPanel", "Window", "WrapPanel"];
         var catalog = BuiltIn();
-        Assert.Equal(expected.Keys.OrderBy(k => k, StringComparer.Ordinal),
-            catalog.Elements.Select(e => e.Tag).OrderBy(k => k, StringComparer.Ordinal));
-
+        Assert.Equal(tags.OrderBy(t => t, StringComparer.Ordinal), catalog.Elements.Select(e => e.Tag).OrderBy(t => t, StringComparer.Ordinal));
+        Assert.Empty(catalog.Problems);
         foreach (var element in catalog.Elements)
         {
-            var want = expected[element.Tag];
-            Assert.Equal(want.Content, element.Content);
-            Assert.Equal(want.Target, element.ContentTarget);
-            Assert.Equal(want.Props, element.Properties.Keys.ToArray());
-            Assert.Equal(want.Events, element.Events.Keys.ToArray());
+            Assert.Equal(element.Properties.Keys.OrderBy(k => k, StringComparer.Ordinal), element.Properties.Keys);
+            if (element.Tag == "Window") continue;
+            Assert.Contains("IsVisible", element.Properties.Keys);
+            Assert.Contains("OnTextInput", element.Events.Keys);
+            Assert.Contains("OnTextComposition", element.Events.Keys);
+            Assert.Contains("OnKeyUp", element.Events.Keys);
         }
-
-        Assert.Equal(122, catalog.Elements.Sum(e => e.Properties.Count));
-        Assert.Equal(74, catalog.Elements.Sum(e => e.Events.Count));
-        // 10 个不同的事件名：Element 继承 8 个（含滚轮）+ Button.OnClick + CheckBox.CheckedChanged
-        Assert.Equal(10, catalog.Elements.SelectMany(e => e.Events.Keys).Distinct().Count());
-
-        // G4：附加属性表面（design/14 §14.5.5）——Grid.Row/Grid.Column，宿主不进标签列表。
-        var attached = catalog.AttachedProperties.Select(p => $"{p.OwnerTag}.{p.Name}").ToArray();
-        Assert.Equal(["Grid.Column", "Grid.Row"], attached);
+        var attached = catalog.AttachedProperties.Select(p => $"{p.OwnerTag}.{p.Name}").OrderBy(n => n, StringComparer.Ordinal).ToArray();
+        Assert.Equal(new[] { "Canvas.Left", "Canvas.Top", "DockPanel.Dock", "Grid.Column", "Grid.ColumnSpan", "Grid.Row", "Grid.RowSpan" }, attached);
         var row = catalog.FindAttached("Grid", "Row")!;
         Assert.Equal("global::EclipseUI.Elements.Grid", row.OwnerClrName);
         Assert.Equal("SetRow", row.SetterMethod);

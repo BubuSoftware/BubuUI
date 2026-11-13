@@ -214,8 +214,5 @@ WrapPanel、NoWrap 文本和尺寸对齐的旧断言也已按本契约迁移，G
 
 - 绘制完成即拥有精确 bounds，hit test 是树遍历。
 - 路由事件在元素树上 tunnel/bubble（见 04 运行时）。
-- 7 个输入/焦点事件（PointerPressed/Released/Moved、KeyDown/Up、GotFocus/LostFocus）已按契约 v2（D11）
-  在 C2（2026-11-02）从静态类 `InputEvents` 迁入 `Element`（[Element.cs:118-124](../src/EclipseUI.Runtime/Element.cs#L118)），
-  模板可在任何标签上写 `OnPointerPressed={...}` 这类处理器（连同 `OnClick`/`OnCheckedChanged` 共 9 个事件名）。
-- 焦点系统 + IME 是深水区：文本编辑器需要 selection / undo / IME 组合事件，
-  设计上预留接口，排在里程碑 M4（IME 靠后）。
+- Element 声明 14 个公共输入/焦点事件：PointerPressed/Released/Moved/WheelChanged、KeyDown/Up、GotFocus/LostFocus、PointerEntered/Exited、TextInput/TextComposition、PreviewKeyDown/PreviewPointerPressed。目录通过继承把事件暴露给各元素标签；Click、选择和数值变更等事件由具体控件声明。
+- 2026-11-14：TextBox 的选区、撤销重做、字符/组合输入、KeyUp、修饰键、Shift+Tab 及 Win32 IMM32 桥接已实施。新增 Preview 事件、浮层与绘制扩展；当前契约和验证见 [design/24](./24-control-library.md)。真实输入法候选窗口仍需人工验收。

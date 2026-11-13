@@ -88,10 +88,10 @@ public class G4AttachedPropertyTests
     public void UnknownOwner_IsEUI002_WithoutHint()
     {
         var (_, diags) = ParseAnalyze(UiTestCatalogs.BuiltIn(),
-            "@using EclipseUI.Elements\n<Button DockPanel.Row=\"1\" />");
+            "@using EclipseUI.Elements\n<Button MissingHost.Row=\"1\" />");
         var diag = Assert.Single(diags);
         Assert.Equal(UiDiagnostics.UnknownProperty, diag.Code);
-        Assert.Contains("unknown attached property 'DockPanel.Row'", diag.Message);
+        Assert.Contains("unknown attached property 'MissingHost.Row'", diag.Message);
         Assert.DoesNotContain("did you mean", diag.Message);
     }
 

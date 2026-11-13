@@ -77,7 +77,7 @@ public class PrefsEndToEndTests
     [Fact]
     public void ConditionalBind_RebuildsFromSourceState()
     {
-        var component = new Prefs();
+        var component = new Prefs { showExtra = false };
         var root = new HeadlessRoot(component);
         root.UpdateLayout();
 

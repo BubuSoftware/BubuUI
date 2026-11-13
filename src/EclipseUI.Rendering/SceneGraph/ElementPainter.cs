@@ -34,6 +34,7 @@ public sealed class ElementPainter
 
     private DisplayList _list = null!;
     private DisplayList _paintList = null!;
+    private readonly List<(Elements.Popup Popup, Point Offset)> _popups = new();
     private Element? _focused;
     private int _reusedSegments;
     private int _repaintedSegments;
@@ -100,6 +101,7 @@ public sealed class ElementPainter
         _list = list;
         _paintList = list;
         _focused = focused;
+        _popups.Clear();
         _reusedSegments = 0;
         _repaintedSegments = 0;
 
@@ -114,6 +116,11 @@ public sealed class ElementPainter
             list.Add(new PushClip(new Rect(0, 0, size.Width, size.Height)));
 
         PaintElement(root, Point.Zero, isRoot: true, tracker);
+        for (var i = 0; i < _popups.Count; i++)
+        {
+            var entry = _popups[i];
+            PaintElement(entry.Popup, entry.Offset, false, tracker, overlay: true);
+        }
 
         if (clipSurface) list.Add(new PopClip());
         if (scaled) list.Add(new PopTransform());
@@ -122,8 +129,10 @@ public sealed class ElementPainter
         return list;
     }
 
-    private void PaintElement(Element element, Point offset, bool isRoot, DamageTracker? tracker)
+    private void PaintElement(Element element, Point offset, bool isRoot, DamageTracker? tracker, bool overlay = false)
     {
+        if (!element.IsEffectivelyVisible) return;
+        if (element is Elements.Popup popup && !overlay) { _popups.Add((popup, offset)); return; }
         var final = element.FinalRect;
         var rect = new Rect(offset.X + final.X, offset.Y + final.Y, final.Width, final.Height);
 
@@ -191,25 +200,25 @@ public sealed class ElementPainter
     /// <summary>元素的自身绘制（写入当前段缓冲；子树由 <see cref="PaintElement"/> 递归处理）。</summary>
     private void PaintSelf(Element element, Rect rect, bool focused, bool isRoot)
     {
-        switch (element)
-        {
-            case TextBlock block:
-                PaintTextBlock(block, rect);
-                break;
-            case Button button:
-                PaintButton(button, rect);
-                break;
-            case CheckBox checkBox:
-                PaintCheckBox(checkBox, rect);
-                break;
-        }
+        if (element.UsesDefaultDrawing) switch (element)
+            {
+                case TextBlock block:
+                    PaintTextBlock(block, rect);
+                    break;
+                case Button button:
+                    PaintButton(button, rect);
+                    break;
+                case CheckBox checkBox:
+                    PaintCheckBox(checkBox, rect);
+                    break;
+            }
 
-        if (!isRoot && !element.IsVisualTransparent)
+        if (element.UsesDefaultDrawing && !isRoot && !element.IsVisualTransparent)
         {
             switch (element)
             {
-                case ListBoxItem:
-                    PaintCard(element, rect, _theme.ItemBackground, _theme.ItemBorder, _theme.ItemRadius);
+                case ListBoxItem item:
+                    PaintCard(element, rect, item.IsSelected ? _theme.Accent : _theme.ItemBackground, _theme.ItemBorder, _theme.ItemRadius);
                     break;
                 case ScrollViewer:
                     PaintCard(element, rect, _theme.PanelBackground, _theme.PanelBorder, _theme.PanelRadius);
@@ -220,11 +229,14 @@ public sealed class ElementPainter
             }
         }
 
-        if (focused)
-            PaintFocusRing(element, rect);
+        var context = new ElementDrawingContext(_paintList, rect.Location, _theme, _text,
+            ResolveForeground(element, _theme.Foreground), ResolveBackground(element, _theme.ControlBackground), element.IsEffectiveEnabled);
+        element.Render(context);
+        context.Complete();
+        if (focused) PaintFocusRing(element, rect);
     }
 
-    /// <summary>叠加式滚动条：可滚动方向在视口内缘画拇指（v1 只显示，不做命中拖拽）。
+    /// <summary>叠加式滚动条：可滚动方向在视口内缘画拇指，命中/拖动由 ScrollViewer 处理。
     /// 出条判据走方向开关（design/05 §布局契约）：Auto 按需、Visible 恒显、
     /// Hidden/Disabled 不出条。</summary>
     private void PaintScrollBar(ScrollViewer viewer, Rect rect)
@@ -351,8 +363,9 @@ public sealed class ElementPainter
         // S-B：元素级视觉覆盖（class/inline）优先，null 回落主题令牌；
         // 覆盖色完全接管按下态换色（v1 口径）。S-C：主题资源最先解析。
         var background = ResolveBackground(button, button.IsPressed ? _theme.AccentPressed : _theme.Accent);
-        _paintList.Add(new FillRoundedRect(rect, _theme.ButtonRadius, background));
+        _paintList.Add(new FillRoundedRect(rect, Visual.GetCornerRadius(button) ?? _theme.ButtonRadius, background));
 
+        if (button.Content is not null) return;
         var label = button.Label;
         if (string.IsNullOrEmpty(label) || _text is null) return;
 
@@ -374,7 +387,12 @@ public sealed class ElementPainter
         var boxSize = fontSize * 1.1;
         var box = new Rect(rect.X, rect.Y + (rect.Height - boxSize) / 2, boxSize, boxSize);
 
-        if (checkBox.Checked)
+        if (checkBox.IsIndeterminate)
+        {
+            _paintList.Add(new FillRoundedRect(box, _theme.CheckBoxRadius, ResolveBackground(checkBox, _theme.Accent)));
+            _paintList.Add(new FillRect(new Rect(box.X + boxSize * .2, box.Y + boxSize * .43, boxSize * .6, boxSize * .14), _theme.OnAccent));
+        }
+        else if (checkBox.Checked)
         {
             var checkedBg = ResolveBackground(checkBox,
                 checkBox.IsPressed ? _theme.AccentPressed : _theme.Accent);

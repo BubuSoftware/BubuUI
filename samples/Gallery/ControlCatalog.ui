@@ -1,0 +1,103 @@
+@namespace Gallery
+@using EclipseUI
+@using EclipseUI.Elements
+@using System.Collections.ObjectModel
+
+<StackPanel Gap="12">
+    <TextBlock FontSize="18">Input and values</TextBlock>
+    <TextBox Width="320" Placeholder="Type here; select, copy, paste, undo" @bind-Text={message} />
+    <TextBlock>{message}</TextBlock>
+    <PasswordBox Width="240" Placeholder="Password" />
+    <TextBox Width="320" AcceptsReturn="true">Multiline editor
+Unicode, selection and IME composition</TextBox>
+    <WrapPanel Gap="12">
+        <CheckBox Label="Three states" IsThreeState="true" />
+        <RadioButton GroupName="demo" Label="Choice A" Checked="true" />
+        <RadioButton GroupName="demo" Label="Choice B" />
+        <ToggleButton>Toggle button</ToggleButton>
+        <ToggleSwitch Label="Switch" />
+    </WrapPanel>
+    <Slider Width="240" @bind-Value={level} />
+    <ProgressBar Width="240" Value={level} />
+    <NumericUpDown Width="160" Minimum="0" Maximum="100" Value="25" />
+    <DatePicker SelectedDate={initialDate} />
+
+    <TextBlock FontSize="18">Selection and navigation</TextBlock>
+    <ComboBox Width="240" ItemsSource={choices} />
+    <Grid RowDefinitions="150">
+        <ScrollViewer>
+            <ListBox ItemsSource={choices} SelectionMode="Extended" />
+        </ScrollViewer>
+    </Grid>
+    <TabControl>
+        <TabItem Header="Overview"><TextBlock>Only the selected page participates in focus and painting.</TextBlock></TabItem>
+        <TabItem Header="Details"><TextBox Placeholder="Tab page editor" Width="240" /></TabItem>
+    </TabControl>
+    <TreeView>
+        <TreeViewItem Header="Project" IsExpanded="true">
+            <TreeViewItem Header="Sources" IsExpanded="true"><TreeViewItem Header="Main.ui" /></TreeViewItem>
+            <TreeViewItem Header="Assets" />
+        </TreeViewItem>
+    </TreeView>
+    <DataGrid Width="560" Height="180" Columns={columns} ItemsSource={rows} IsReadOnly="false" />
+
+    <TextBlock FontSize="18">Menus and overlays</TextBlock>
+    <Menu>
+        <MenuItem Label="File">
+            <Slot Name="Submenu">
+                <ContextMenu><MenuItem Label="New" /><MenuItem Label="Open" /><MenuItem Label="Pinned" IsCheckable="true" /></ContextMenu>
+            </Slot>
+        </MenuItem>
+        <MenuItem Label="Edit" />
+    </Menu>
+    <Button Ref={hintTarget}>Hover for a tooltip; right click for context menu</Button>
+    <ToolTip Ref={hint}><Border Padding="8"><TextBlock>ToolTip paints above clipping containers.</TextBlock></Border></ToolTip>
+    <ContextMenu Ref={context}><MenuItem Label="Action" /><MenuItem Label="Enabled" IsCheckable="true" Checked="true" /></ContextMenu>
+
+    <TextBlock FontSize="18">Content, shapes and layout</TextBlock>
+    <Button>
+        <Slot Name="Content"><StackPanel Orientation="Horizontal" Gap="8"><Ellipse Width="16" Height="16" Fill="#45C491" /><TextBlock>Button with arbitrary content</TextBlock></StackPanel></Slot>
+    </Button>
+    <Border Background="#233449" BorderColor="#4F89D8" BorderThickness="2" CornerRadius="10" Padding="12"><TextBlock Style="Foreground: #e9eef8">Single content with border and padding</TextBlock></Border>
+    <WrapPanel Gap="12">
+        <Rectangle Width="48" Height="32" Radius="6" Fill="#4F89D8" />
+        <Ellipse Width="48" Height="32" Fill="#45C491" />
+        <Line X2="48" Y2="32" Stroke="#E9AD54" StrokeThickness="3" />
+        <Path Width="40" Height="36" Data="M2 30 L20 2 L38 30 Z" Fill="#C86E9E" />
+        <Image Width="48" Height="32" Source={checker} />
+    </WrapPanel>
+    <Grid ColumnDefinitions="100,100,100" RowDefinitions="32,32" Gap="4">
+        <Button Grid.ColumnSpan="2">Two columns</Button>
+        <Button Grid.Column="2" Grid.RowSpan="2">Two rows</Button>
+        <Button Grid.Row="1" Grid.ColumnSpan="2">Span + gap</Button>
+    </Grid>
+    <DockPanel Width="320" Height="80">
+        <Button DockPanel.Dock="Left" Width="80">Left</Button>
+        <Button DockPanel.Dock="Top" Height="32">Top</Button>
+        <TextBlock>Remaining space</TextBlock>
+    </DockPanel>
+    <Canvas Width="320" Height="50"><Rectangle Canvas.Left="24" Canvas.Top="8" Width="80" Height="32" Fill="#4F89D8" /></Canvas>
+</StackPanel>
+
+@code {
+    public string message = "Editable text";
+    public double level = 35;
+    public DateTime? initialDate = new DateTime(2026, 11, 14);
+    public string[] choices = { "Alpha", "Beta", "Gamma", "Delta", "Epsilon" };
+    public ObservableCollection<DataGridColumn> columns = new() {
+        new DataGridColumn { Header = "Name", Binding = "Name", Width = "2*" },
+        new DataGridColumn { Header = "Count", Binding = "Count", Width = "*" }
+    };
+    public ObservableCollection<DemoRow> rows = new() {
+        new DemoRow { Name = "Editable A", Count = 10 }, new DemoRow { Name = "Editable B", Count = 2 },
+        new DemoRow { Name = "Editable C", Count = 30 }
+    };
+    public EclipseUI.Rendering.ImageHandle checker = EclipseUI.Rendering.ImageHandle.Checkerboard(48, 32, 8,
+        new EclipseUI.Rendering.Color(79, 137, 216), new EclipseUI.Rendering.Color(69, 196, 145));
+    public Button hintTarget = null!;
+    public ToolTip hint = null!;
+    public ContextMenu context = null!;
+    protected override void OnInitialized() {
+        base.OnInitialized(); hint.Target = hintTarget; context.Target = hintTarget;
+    }
+}
