@@ -177,8 +177,6 @@ internal static class OverrideCompletionProvider
         }
         caret = Normalize(text[..caret]).Length;
         text = Normalize(text);
-        var description = await service.GetDescriptionAsync(document, item, cancellationToken)
-            .ConfigureAwait(false);
         var filterPrefix = "";
         if (mappings.TryMapToOriginal(new UiSpan(item.Span.Start, 0), out var filterStart)
             && filterStart.Start >= replacement.Start)
@@ -187,13 +185,16 @@ internal static class OverrideCompletionProvider
             symbol is IPropertySymbol ? UiCompletionKind.Property
                 : symbol is IEventSymbol ? UiCompletionKind.Event : UiCompletionKind.Method,
             Detail: symbol.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
-            Documentation: description?.Text,
             InsertText: text,
             Replacement: replacement,
             FilterText: filterPrefix + item.FilterText,
             SortText: item.SortText,
             AdditionalEdits: imports.Count == 0 ? null : imports,
-            CaretOffset: caret);
+            CaretOffset: caret)
+        {
+            DocumentationResolver = token => EmbeddedCSharpCompletionProvider.GetDescriptionAsync(
+                service, document, item, token),
+        };
     }
 
     private static IReadOnlyList<UiTextEdit>? ImportEdits(

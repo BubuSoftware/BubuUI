@@ -117,10 +117,27 @@ public class ProtocolTests
 
         Assert.True(capabilities["hoverProvider"]!.GetValue<bool>());
         Assert.True(capabilities["definitionProvider"]!.GetValue<bool>());
+        Assert.True(capabilities["completionProvider"]!["resolveProvider"]!.GetValue<bool>());
         Assert.True(capabilities["documentSymbolProvider"]!.GetValue<bool>());
         Assert.Contains("<", capabilities["completionProvider"]!["triggerCharacters"]!
             .AsArray().Select(n => n!.GetValue<string>()));
         Assert.Equal(1, capabilities["textDocumentSync"]!["change"]!.GetValue<int>()); // Full
+    }
+
+    [Fact]
+    public async Task Session_InitializationDoesNotCompileUnopenedProjects()
+    {
+        var log = new List<string>();
+        var projects = new ProjectWorkspace(new CatalogOptions { ProbeRoot = RepositoryRoot() }, log.Add);
+        var catalogs = new CatalogProvider(new CatalogOptions
+        {
+            RuntimePath = Path.Combine(AppContext.BaseDirectory, "EclipseUI.Runtime.dll"),
+            IncludeSiblingAssemblies = false,
+        });
+        await RunSessionWithProjects(catalogs, projects,
+            Request(1, "initialize"), Notification("initialized", new JsonObject()));
+
+        Assert.DoesNotContain(log, message => message.StartsWith("project '", StringComparison.Ordinal));
     }
 
     [Fact]

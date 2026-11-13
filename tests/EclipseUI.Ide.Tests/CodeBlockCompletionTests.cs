@@ -1,6 +1,9 @@
 using System.Diagnostics;
+using System.Text.Json.Nodes;
 using EclipseUI.Compiler;
 using EclipseUI.LanguageServer.Analysis;
+using EclipseUI.LanguageServer.Protocol;
+using EclipseUI.LanguageServer.Server;
 using EclipseUI.LanguageServer.Workspace;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Completion;
@@ -84,6 +87,27 @@ public class CodeBlockCompletionTests
     }
 
     // ---- §7.2 四项与 .cs 对照 ----
+
+    [Theory]
+    [InlineData("r|", "ready", UiCompletionKind.Field)]
+    [InlineData("rea|", "ready", UiCompletionKind.Field)]
+    [InlineData("Loa|", "LoadAsync", UiCompletionKind.Method)]
+    [InlineData("Inv|", "Invalidate", UiCompletionKind.Method)]
+    [InlineData("Upda|", "UpdateState", UiCompletionKind.Method)]
+    [InlineData("Beg|", "BeginStateUpdate", UiCompletionKind.Method)]
+    [InlineData("Ga|", "Gap", UiCompletionKind.Property)]
+    public async Task CodeBlock_TypingLettersOffersOwnAndInheritedMembersWithoutThis(
+        string body, string name, UiCompletionKind kind)
+    {
+        var fixture = Create(body);
+        var list = await fixture.Service.CompleteAsync(fixture.Uri, fixture.Offset,
+            triggerCharacter: fixture.Doc[fixture.Offset - 1]);
+        var item = Assert.Single(list.Items, candidate => candidate.Label == name && candidate.Kind == kind);
+        Assert.NotNull(item.Replacement);
+        var span = item.Replacement!.Value;
+        Assert.Equal(body.TrimEnd('|'), fixture.Doc.Substring(span.Start, span.Length));
+        Assert.True(string.CompareOrdinal(item.SortText, "2") < 0, item.SortText);
+    }
 
     [Fact]
     public async Task CodeBlock_MemberCompletionMatchesCSharpDocument()
@@ -184,7 +208,8 @@ public class CodeBlockCompletionTests
         Assert.NotNull(csTask);
         var csDescription = await service.GetDescriptionAsync(csDocument, csTask!);
         Assert.NotNull(csDescription);
-        Assert.Equal(csDescription!.Text, uiTask!.Documentation);
+        Assert.Null(uiTask!.Documentation);
+        Assert.Equal(csDescription!.Text, await uiTask.GetDocumentationAsync());
     }
 
     // ---- 扩展方法 / snippet / 触发字符 ----
@@ -300,12 +325,49 @@ public class CodeBlockCompletionTests
     // ---- §7.3 延迟实测（warm/cold 分开记录） ----
 
     [Fact]
+    public async Task CodeBlock_LspListDefersDescriptionsAndResolvePreservesEdits()
+    {
+        var fixture = Create("|");
+        var host = new LanguageServerHost(new JsonRpcConnection(Stream.Null, Stream.Null),
+            fixture.Service, SharedLegacy.Value);
+        var (line, character) = new PositionMap(fixture.Doc).ToPosition(fixture.Offset);
+        var parameters = new JsonObject
+        {
+            ["textDocument"] = new JsonObject { ["uri"] = fixture.Uri },
+            ["position"] = new JsonObject { ["line"] = line, ["character"] = character },
+        };
+        parameters = JsonNode.Parse(parameters.ToJsonString())!.AsObject();
+        var response = await host.HandleRequestAsync(new(JsonValue.Create(1)!, "textDocument/completion", parameters));
+        var items = response!["items"]!.AsArray();
+        Assert.True(items.Count > 100);
+        var candidate = Assert.Single(items, item => item!["label"]!.GetValue<string>() == "LoadAsync")!;
+        Assert.Null(candidate["documentation"]);
+        Assert.NotNull(candidate["data"]);
+        var original = candidate.ToJsonString();
+
+        // A newer list must not change the description/edit belonging to this selection.
+        await host.HandleRequestAsync(new(JsonValue.Create(2)!, "textDocument/completion", parameters));
+        var resolved = await host.HandleRequestAsync(new(JsonValue.Create(3)!, "completionItem/resolve", candidate));
+        Assert.Contains("LoadAsync", resolved!["documentation"]!["value"]!.GetValue<string>());
+        Assert.Equal(candidate["textEdit"]!.ToJsonString(), resolved["textEdit"]!.ToJsonString());
+        Assert.Equal(original, candidate.ToJsonString());
+        var repeated = await host.HandleRequestAsync(new(JsonValue.Create(4)!, "completionItem/resolve", candidate));
+        Assert.Equal(resolved.ToJsonString(), repeated!.ToJsonString());
+
+        // Retained lists are bounded; expired items are returned unchanged, never rebound by label.
+        for (var i = 0; i < 3; i++)
+            await host.HandleRequestAsync(new(JsonValue.Create(5 + i)!, "textDocument/completion", parameters));
+        var expired = await host.HandleRequestAsync(new(JsonValue.Create(8)!, "completionItem/resolve", candidate));
+        Assert.Equal(original, expired!.ToJsonString());
+    }
+
+    [Fact]
     public async Task CodeBlock_CompletionLatencyColdAndWarm()
     {
         // 独立实例：cold = 首次补全请求（workspace 创建 + MEF 组合 + provider 首载 + 语义绑定）；
         // 项目快照已由夹具断言预建（真实 server 里它在 didOpen 诊断时就绪，不计入补全延迟）。
         var projects = new ProjectWorkspace(new CatalogOptions { ProbeRoot = FindRepositoryRoot() });
-        var fixture = Create("task.|", projects: projects);
+        var fixture = Create("|", projects: projects);
 
         var watch = Stopwatch.StartNew();
         var cold = await fixture.Service.CompleteAsync(fixture.Uri, fixture.Offset);

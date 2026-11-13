@@ -55,7 +55,7 @@ design/06 §6.9 之后，目录不再是「扫 dll 元数据」，所有能力�
 | `@bind-` / 属性值 / `@` 指令 / `@using` 命名空间补全 | ✅ | `@bind-` 只列**支持绑定**的目标（控件可写属性；组件带形状正确的 `{P}Changed` 的参数，不含内容/委托/只读）；不可绑的名字由 EUI040 解释。另有枚举成员、`bool`、`Style=` 属性名；`Style="Prop: |"` 值位置按目录形态给候选（enum 列成员表，design/19） |
 | 悬停 / 大纲 | ✅ | 标签 → CLR 类型与内容模型；属性 → 类型；事件 → 处理器签名；`Style` 属性名 → 值形态（enum 列成员） |
 | 表达式补全 / 悬停 | ✅ | `{expr}` 与属性表达式走 Roslyn 投影；候选来自 `ExpressionEnvironment` + code-behind/`@code` 成员 + 接收者类型的实例成员 |
-| `@code` 块内补全 / 悬停 | ✅ | 补全使用 Roslyn 生成文档，覆盖成员、局部变量、类型、关键字、扩展方法和基础 snippet；悬停与跳转按符号回映。成员声明处的 override 候选来自真实基类，生成器占用的 InitializeUi/Render 不作为作者候选 |
+| `@code` 块内补全 / 悬停 | ✅ | 补全使用 Roslyn 生成文档，覆盖成员、局部变量、类型、关键字、扩展方法和基础 snippet；`@code` 与 `{expr}` 中直接输入名称即可补全，当前类与继承成员优先。候选说明经 `completionItem/resolve` 按需加载，不阻塞列表返回。悬停与跳转按符号回映；override 候选来自真实基类，生成器占用的 InitializeUi/Render 不作为作者候选 |
 | 跳转定义 | ✅ | 标签与**属性/事件/参数/附加属性**都走 Roslyn 符号查询，落在成员声明；有源码跳源码（含仓库里以源码编译的框架工程），无源码走成员级反编译（`eui-decompiled:`） |
 | 重命名 | ✅ | 可从 `{expr}` 或 `@code` 发起；项目模式通过 Roslyn Renamer 修改同项目 `.cs/.ui` 成员引用，`@foreach` 变量保留文档内路径。改不全、映不回或发生冲突时整体拒绝 |
 | signature help | ✅ | `textDocument/signatureHelp`，重载与当前参数位从同一份 Compilation 取 |
@@ -144,7 +144,9 @@ Rider 2024.2+），server 仍是同一个 `EclipseUI.LanguageServer`，不加第
 
 1. 把 `.ui`/`.eustyle` 注册为 `Language` + `FileType`，并用
    `com.redhat.devtools.lsp4ij.languageMapping` 把它们映射到 `eclipseui` server
-   （`languageId` 分别发 `eclipseui` / `eustyle`，与 VS Code 的 documentSelector 一致）；
+   （`languageId` 分别发 `eclipseui` / `eustyle`，与 VS Code 的 documentSelector 一致）。
+   轻量词法 PSI 提供名称与标点的范围，避免 Alt/Ctrl 悬停把整个文件当成一个链接；
+   模板与 C# 语义仍由共享 server 提供；
 2. 用 `textmate.bundleProvider` 把**共享 grammar** 交给平台，并显式绑定
    `TextMateEditorHighlighterProvider` / `TextMateSyntaxHighlighterFactory`——自定义
    FileType 会压掉 TextMate 着色，这个绑定是 lsp4ij 自己也在用的 workaround；
@@ -229,6 +231,7 @@ cd ide/vscode; node test/tokenize.test.js  # grammar：真实 oniguruma 引擎�
 cd ide/vscode; node test/extension.test.js # 客户端壳：documentSelector / watcher / 参数
 cd ide/rider;  node test/plugin.test.js    # Rider 壳静态契约（无需 JDK）：EP / 类名 / grammar / watcher / 启动参数 / wrapper
 cd ide/rider;  .\gradlew.bat verifyShell   # 同一组断言的 Gradle 入口（也组装 TextMate bundle）
+cd ide/rider;  .\gradlew.bat test          # 真实 Rider PSI / LSP4IJ：悬停名称范围与未保存编辑
 ```
 
 `ProjectSystemTests.cs` 用真实仓库跑 L1–L4，把 design/06 §6.9.7 的五条验收做成可执行夹具：

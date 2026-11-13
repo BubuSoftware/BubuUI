@@ -20,6 +20,11 @@ public sealed class LanguageServerHost
     private bool _snippetSupport = true;
     private bool _shutdownRequested;
     private readonly Dictionary<string, CancellationTokenSource> _tier2Debounce = new(StringComparer.Ordinal);
+    // Retain a few lists so a delayed selection still describes its original snapshot.
+    // Evict whole batches to bound the Roslyn documents captured by these callbacks.
+    private readonly Dictionary<string, Lazy<Task<string?>>> _completionDescriptions = new(StringComparer.Ordinal);
+    private readonly Queue<string[]> _completionBatches = new();
+    private long _nextCompletionId;
 
     public LanguageServerHost(
         JsonRpcConnection connection,
@@ -51,6 +56,9 @@ public sealed class LanguageServerHost
 
             case "textDocument/completion":
                 return await CompletionAsync(request.Parameters).ConfigureAwait(false);
+
+            case "completionItem/resolve":
+                return await ResolveCompletionAsync(request.Parameters).ConfigureAwait(false);
 
             case "textDocument/hover":
                 return Hover(request.Parameters);
@@ -117,7 +125,10 @@ public sealed class LanguageServerHost
                 // 先强制完成目录构建，再读 Notes。后台预热与 initialized 可能并发：
                 // 若先读 Notes 会得到空列表，"目录没找到"的警告被静默吞掉，编辑器表现为
                 // "高亮正常、补全空、零诊断"，用户无从判断是配置问题还是代码没问题。
-                var count = _service.Catalog.Elements.Count;
+                // No document has selected a project yet. Building DefaultCatalog here
+                // compiles an arbitrary workspace project (often a large test project),
+                // then didOpen immediately rebuilds the actual owner's compilation.
+                var count = _catalogs.Catalog.Elements.Count;
                 var notes = _service.Notes;
                 if (notes.Count > 0)
                 {
@@ -127,8 +138,8 @@ public sealed class LanguageServerHost
                         ["message"] = "EclipseUI: " + string.Join("\n", notes),
                     }).ConfigureAwait(false);
                 }
-                _log?.Invoke($"catalog: {count} tags from " +
-                             (_service.UsesProjectCatalog ? "<project compilations>" : _catalogs.RuntimePath ?? "<none>"));
+                _log?.Invoke($"catalog: {count} tags from {_catalogs.RuntimePath ?? "<none>"}; " +
+                             "project catalogs load with documents");
                 // 兜住 didOpen 早于目录就绪的窗口：目录一就绪就重发已打开文档的诊断。
                 await PublishAllDiagnosticsAsync().ConfigureAwait(false);
                 break;
@@ -261,7 +272,7 @@ public sealed class LanguageServerHost
                 {
                     // "(" 服务 @code 内 `if (|` 这类 C# 上下文（design/18 阶段 2）。
                     ["triggerCharacters"] = new JsonArray("<", "/", " ", "\"", "@", "-", ".", ":", "("),
-                    ["resolveProvider"] = false,
+                    ["resolveProvider"] = true,
                 },
                 ["hoverProvider"] = true,
                 ["definitionProvider"] = true,
@@ -310,8 +321,10 @@ public sealed class LanguageServerHost
             if (character is { Length: > 0 }) trigger = character[0];
         }
 
+        var watch = System.Diagnostics.Stopwatch.StartNew();
         var list = await _service.CompleteAsync(uri, offset, trigger).ConfigureAwait(false);
         var items = new JsonArray();
+        var descriptionKeys = new List<string>();
         var document = _service.Documents.TryGet(uri, out var doc) ? doc : null;
         var positions = document is null ? null : new PositionMap(document.Text);
 
@@ -341,6 +354,13 @@ public sealed class LanguageServerHost
                     ["kind"] = "markdown",
                     ["value"] = item.Documentation,
                 };
+            if (item.DocumentationResolver is { } resolver)
+            {
+                var key = (++_nextCompletionId).ToString(System.Globalization.CultureInfo.InvariantCulture);
+                _completionDescriptions[key] = new Lazy<Task<string?>>(() => resolver(CancellationToken.None));
+                descriptionKeys.Add(key);
+                entry["data"] = new JsonObject { ["eclipseuiCompletion"] = key };
+            }
             if (item.SortText is not null) entry["sortText"] = item.SortText;
             if (item.FilterText is not null) entry["filterText"] = item.FilterText;
             if (item.Preselect) entry["preselect"] = true;
@@ -384,11 +404,30 @@ public sealed class LanguageServerHost
             items.Add(entry);
         }
 
+        _completionBatches.Enqueue(descriptionKeys.ToArray());
+        while (_completionBatches.Count > 3)
+            foreach (var key in _completionBatches.Dequeue()) _completionDescriptions.Remove(key);
+        _log?.Invoke($"completion: {Path.GetFileName(DocumentStore.UriToPath(uri))} @{offset} " +
+                     $"-> {items.Count} items in {watch.ElapsedMilliseconds}ms");
+
         return new JsonObject
         {
             ["isIncomplete"] = list.IsIncomplete,
             ["items"] = items,
         };
+    }
+
+    private async Task<JsonNode?> ResolveCompletionAsync(JsonNode? parameters)
+    {
+        if (parameters is not JsonObject item)
+            throw new JsonRpcException(JsonRpcException.InvalidParams, "completion item must be an object");
+        var result = (JsonObject)item.DeepClone();
+        if (item["data"] is JsonObject data
+            && data["eclipseuiCompletion"] is JsonValue value && value.TryGetValue<string>(out var key)
+            && _completionDescriptions.TryGetValue(key, out var description)
+            && await description.Value.ConfigureAwait(false) is { Length: > 0 } documentation)
+            result["documentation"] = new JsonObject { ["kind"] = "markdown", ["value"] = documentation };
+        return result;
     }
 
     private static string EscapeSnippet(string text) => text.Replace("\\", "\\\\", StringComparison.Ordinal)

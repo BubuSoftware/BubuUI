@@ -20,9 +20,8 @@
     <idea-version since-build="242.*"/>
 
     <extensions defaultExtensionNs="com.intellij">
-        <!-- The two languages are the only platform-level code in this shell:
-             a Language + FileType pair lets LSP4IJ map documents to the server
-             and lets the TextMate highlighter bind to a concrete file type. -->
+        <!-- Language + FileType pairs let LSP4IJ map documents to the server
+             and let the TextMate highlighter bind to concrete file types. -->
         <fileType name="EclipseUI"
                   language="EclipseUI"
                   extensions="ui"
@@ -54,6 +53,15 @@
         <lang.syntaxHighlighterFactory
                 language="Eustyle"
                 implementationClass="org.jetbrains.plugins.textmate.language.syntax.highlighting.TextMateSyntaxHighlighterFactory"/>
+
+        <!-- TextMate supplies colours; these parsers only split the PSI into
+             words and punctuation so navigation highlights one name at a time. -->
+        <lang.parserDefinition
+                language="EclipseUI"
+                implementationClass="com.eclipseui.rider.EclipseUiParserDefinition"/>
+        <lang.parserDefinition
+                language="Eustyle"
+                implementationClass="com.eclipseui.rider.EustyleParserDefinition"/>
 
         <applicationService serviceImplementation="com.eclipseui.rider.EclipseUiSettings"/>
         <applicationConfigurable

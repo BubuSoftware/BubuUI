@@ -12,20 +12,36 @@ internal static class UnimportedTypeCompletionProvider
 {
     private static readonly ConditionalWeakTable<Compilation, TypeIndex> Indexes = new();
 
-    internal static bool NeedsImport(CompletionItem item, SemanticModel model, int position)
+    internal static Func<CompletionItem, bool> CreateImportFilter(SemanticModel model, int position)
     {
-        if (string.IsNullOrEmpty(item.InlineDescription)
-            || !item.Tags.Any(tag => tag is "Class" or "Struct" or "Interface" or "Enum" or "Delegate")) return false;
-        INamespaceSymbol? ns = model.Compilation.GlobalNamespace;
-        foreach (var part in item.InlineDescription.Split('.'))
+        var namespaces = new Dictionary<string, INamespaceSymbol?>(StringComparer.Ordinal);
+        HashSet<(string Name, string Namespace)>? visibleTypes = null;
+        return NeedsImport;
+
+        bool NeedsImport(CompletionItem item)
         {
-            ns = ns.GetNamespaceMembers().FirstOrDefault(candidate => candidate.Name == part);
-            if (ns is null) return false;
+            if (string.IsNullOrEmpty(item.InlineDescription)
+                || !item.Tags.Any(tag => tag is "Class" or "Struct" or "Interface" or "Enum" or "Delegate")) return false;
+            if (!namespaces.TryGetValue(item.InlineDescription, out var ns))
+            {
+                ns = model.Compilation.GlobalNamespace;
+                foreach (var part in item.InlineDescription.Split('.'))
+                {
+                    ns = ns.GetNamespaceMembers().FirstOrDefault(candidate => candidate.Name == part);
+                    if (ns is null) break;
+                }
+                namespaces[item.InlineDescription] = ns;
+            }
+            if (ns is null || ns.GetTypeMembers(item.DisplayText).Length == 0) return false;
+            // Roslyn can return thousands of import candidates. Enumerate the visible
+            // types once instead of repeating a semantic lookup for every candidate.
+            // Keep the alias name, since an alias does not import its target's bare name.
+            visibleTypes ??= model.LookupNamespacesAndTypes(position)
+                .Select(symbol => (symbol.Name, Type: (symbol is IAliasSymbol alias ? alias.Target : symbol) as INamedTypeSymbol))
+                .Where(entry => entry.Type is not null)
+                .Select(entry => (entry.Name, entry.Type!.ContainingNamespace.ToDisplayString())).ToHashSet();
+            return !visibleTypes.Contains((item.DisplayText, ns.ToDisplayString()));
         }
-        if (ns.GetTypeMembers(item.DisplayText).Length == 0) return false;
-        return !model.LookupNamespacesAndTypes(position, name: item.DisplayText).Any(symbol =>
-            (symbol is IAliasSymbol alias ? alias.Target : symbol) is INamedTypeSymbol type
-            && SymbolEqualityComparer.Default.Equals(type.ContainingNamespace, ns));
     }
 
     internal static IReadOnlyList<UiCompletionItem> Complete(DocumentAnalysis analysis, SemanticModel model,

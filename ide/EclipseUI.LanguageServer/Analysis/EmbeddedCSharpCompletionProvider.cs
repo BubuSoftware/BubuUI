@@ -34,7 +34,10 @@ public static class EmbeddedCSharpCompletionProvider
         var service = CompletionService.GetService(document);
         if (service is null) return UiCompletionList.Empty;
 
-        var trigger = triggerCharacter is { } character
+        // Roslyn's editor filters an existing list while a word is being typed, so
+        // insertion triggers inside identifiers can return false. An LSP client may
+        // request a fresh list there: honour it as an invocation, without requiring this.
+        var trigger = triggerCharacter is { } character && !char.IsLetterOrDigit(character) && character != '_'
             ? CompletionTrigger.CreateInsertionTrigger(character)
             : CompletionTrigger.Invoke;
         var text = await document.GetTextAsync(cancellationToken).ConfigureAwait(false);
@@ -52,16 +55,27 @@ public static class EmbeddedCSharpCompletionProvider
 
         var items = new List<UiCompletionItem>();
         var model = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
+        var scopeRanks = model is null ? null : ScopeMemberRanks(model, generatedOffset, text, completions.Span.Start);
+        var needsImport = model is null ? null : UnimportedTypeCompletionProvider.CreateImportFilter(model, generatedOffset);
         foreach (var item in completions.ItemsList)
         {
             cancellationToken.ThrowIfCancellationRequested();
             // Roslyn can return import candidates whose commit only inserts the type's
             // name: its native editor adds the using separately. Deliver those through
             // our explicit template-import path so no selectable candidate misses it.
-            if (model is not null && UnimportedTypeCompletionProvider.NeedsImport(item, model, generatedOffset)) continue;
+            if (needsImport?.Invoke(item) == true) continue;
             if (await ConvertAsync(service, document, completions, item, editing.Mappings, cancellationToken)
                 .ConfigureAwait(false) is { } converted)
+            {
+                if (scopeRanks is not null)
+                {
+                    var rank = item.Tags.Any(tag => tag is "Field" or "Property" or "Method" or "Event"
+                        or "Constant" or "Local" or "Parameter" or "RangeVariable")
+                        && scopeRanks.TryGetValue(item.DisplayText, out var memberRank) ? memberRank : 2;
+                    converted = converted with { SortText = rank + (converted.SortText ?? converted.Label) };
+                }
                 items.Add(converted);
+            }
         }
         var incomplete = false;
         if (completions.ItemsList.Any(item => item.Tags.Any(tag => tag is "Class" or "Struct" or "Interface" or "Namespace")))
@@ -70,6 +84,34 @@ public static class EmbeddedCSharpCompletionProvider
                 items.AddRange(UnimportedTypeCompletionProvider.Complete(analysis, model, generatedOffset, offset, out incomplete));
         }
         return new UiCompletionList(replacement, items, incomplete || completions.SuggestionModeItem is not null);
+    }
+
+    private static Dictionary<string, int>? ScopeMemberRanks(
+        SemanticModel model, int position, Microsoft.CodeAnalysis.Text.SourceText text, int replacementStart)
+    {
+        var previous = replacementStart - 1;
+        while (previous >= 0 && char.IsWhiteSpace(text[previous])) previous--;
+        if (previous >= 0 && text[previous] is '.' or ':') return null;
+        var enclosing = model.GetEnclosingSymbol(position);
+        var currentType = enclosing as INamedTypeSymbol ?? enclosing?.ContainingType;
+        if (currentType is null) return null;
+        var declaringTypes = new Dictionary<ISymbol, int>(SymbolEqualityComparer.Default);
+        for (var type = currentType; type is not null; type = type.BaseType)
+            declaringTypes[type.OriginalDefinition] = SymbolEqualityComparer.Default.Equals(type, currentType) ? 0 : 1;
+        var ranks = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var symbol in model.LookupSymbols(position))
+        {
+            int rank;
+            if (symbol is ILocalSymbol or IParameterSymbol or IRangeVariableSymbol) rank = 0;
+            else if (symbol is IFieldSymbol or IPropertySymbol or IMethodSymbol or IEventSymbol
+                && symbol.ContainingType is { } declaringType)
+            {
+                if (!declaringTypes.TryGetValue(declaringType.OriginalDefinition, out rank)) continue;
+            }
+            else continue;
+            if (!ranks.TryGetValue(symbol.Name, out var existing) || rank < existing) ranks[symbol.Name] = rank;
+        }
+        return ranks;
     }
 
     private static async Task<UiCompletionItem?> ConvertAsync(
@@ -112,13 +154,10 @@ public static class EmbeddedCSharpCompletionProvider
         if (!mappings.TryMapToOriginal(new UiSpan(editSpan.Start, editSpan.Length), out var uiSpan))
             return null;
 
-        var description = await service.GetDescriptionAsync(document, item, cancellationToken)
-            .ConfigureAwait(false);
         return new UiCompletionItem(
             item.DisplayText,
             KindFromTags(item.Tags),
             Detail: item.InlineDescription is { Length: > 0 } inline ? inline : null,
-            Documentation: description?.Text is { Length: > 0 } doc ? doc : null,
             InsertText: insertText,
             SortText: item.SortText,
             Replacement: uiSpan,
@@ -127,7 +166,17 @@ public static class EmbeddedCSharpCompletionProvider
             Tags: item.Tags.IsDefaultOrEmpty ? null : item.Tags,
             Preselect: item.Rules.MatchPriority == MatchPriority.Preselect,
             AdditionalEdits: additional.Count == 0 ? null : additional,
-            CaretOffset: caretOffset);
+            CaretOffset: caretOffset)
+        {
+            DocumentationResolver = token => GetDescriptionAsync(service, document, item, token),
+        };
+    }
+
+    internal static async Task<string?> GetDescriptionAsync(
+        CompletionService service, Document document, CompletionItem item, CancellationToken cancellationToken)
+    {
+        var description = await service.GetDescriptionAsync(document, item, cancellationToken).ConfigureAwait(false);
+        return description?.Text is { Length: > 0 } text ? text : null;
     }
 
     /// <summary>Roslyn 标签 → LSP 类别。按固定优先级取首个命中（符号项通常只有一个类别标签）。</summary>

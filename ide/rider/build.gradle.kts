@@ -1,3 +1,5 @@
+import org.jetbrains.intellij.platform.gradle.TestFrameworkType
+
 plugins {
     id("java")
     id("org.jetbrains.intellij.platform") version "2.20.1"
@@ -27,7 +29,11 @@ dependencies {
         create(providers.gradleProperty("platformType"), providers.gradleProperty("platformVersion"))
         bundledPlugin("org.jetbrains.plugins.textmate")
         plugin("com.redhat.devtools.lsp4ij", providers.gradleProperty("lsp4ijVersion").get())
+        testFramework(TestFrameworkType.Platform)
     }
+    testImplementation("junit:junit:4.13.2")
+    // The 2024.2 platform test framework does not declare this runtime dependency.
+    testRuntimeOnly("org.opentest4j:opentest4j:1.3.0")
 }
 
 intellijPlatform {

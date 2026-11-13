@@ -105,6 +105,27 @@ public class ExpressionCompletionTests
         Assert.Contains(list.Items, i => i.Label == "Count" && i.Kind == UiCompletionKind.Method);
     }
 
+    [Theory]
+    [InlineData("c", "count", UiCompletionKind.Field)]
+    [InlineData("cou", "count", UiCompletionKind.Field)]
+    [InlineData("Cou", "CounterLabel", UiCompletionKind.Property)]
+    [InlineData("Com", "Compute", UiCompletionKind.Method)]
+    [InlineData("Ga", "Gap", UiCompletionKind.Property)]
+    public async Task Expression_TypingLettersOffersOwnAndInheritedMembersWithoutThis(
+        string prefix, string name, UiCompletionKind kind)
+    {
+        var fixture = Create("@namespace Gallery\n@using EclipseUI.Elements\n"
+            + "<StackPanel><TextBlock>{" + prefix + "|}</TextBlock></StackPanel>\n"
+            + "@code { public int count; public string CounterLabel => count.ToString(); public string Compute() => \"\"; }");
+        var list = await fixture.Service.CompleteAsync(fixture.Uri, fixture.Offset,
+            triggerCharacter: prefix[^1]);
+        var item = Assert.Single(list.Items, candidate => candidate.Label == name && candidate.Kind == kind);
+        Assert.NotNull(item.Replacement);
+        var span = item.Replacement!.Value;
+        Assert.Equal(prefix, fixture.Doc.Substring(span.Start, span.Length));
+        Assert.True(string.CompareOrdinal(item.SortText, "2") < 0, item.SortText);
+    }
+
     [Fact]
     public async Task Expression_ForeachVariableMembersComeFromRoslyn()
     {

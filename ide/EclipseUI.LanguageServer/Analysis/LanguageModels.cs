@@ -66,6 +66,13 @@ public sealed record UiCompletionItem(
     int? CaretOffset = null)
 {
     public string Text => InsertText ?? Label;
+
+    /// <summary>Expensive Roslyn descriptions are requested only for the selected item.</summary>
+    public Func<CancellationToken, Task<string?>>? DocumentationResolver { get; init; }
+
+    public Task<string?> GetDocumentationAsync(CancellationToken cancellationToken = default) =>
+        Documentation is not null ? Task.FromResult<string?>(Documentation)
+            : DocumentationResolver?.Invoke(cancellationToken) ?? Task.FromResult<string?>(null);
 }
 
 /// <summary>
