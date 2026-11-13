@@ -71,9 +71,11 @@ public class RetainedPaintTests
 
         // 一组失效来源：按下态、焦点迁移、释放。
         input.PointerPress(new Point(60, 40));
-        retainedPainter.Build(root, Surface, focused: root.Children[1] as Button);
+        (FocusManager.GetFor(root) ?? new FocusManager(root)).Focus(root.Children[1] as Button, FocusOrigin.Keyboard);
+        retainedPainter.Build(root, Surface);
         input.PointerRelease(new Point(60, 40));
-        retainedPainter.Build(root, Surface, focused: root.Children[1] as Button);
+        (FocusManager.GetFor(root) ?? new FocusManager(root)).Focus(root.Children[1] as Button, FocusOrigin.Keyboard);
+        retainedPainter.Build(root, Surface);
 
         var retained = retainedPainter.Build(root, Surface);
         var reference = new ElementPainter(textPainter: new FakeTextPainter()).Build(root, Surface);
@@ -95,8 +97,8 @@ public class RetainedPaintTests
 
         _ = painter.Build(root, Surface);
         var (reused, repainted) = painter.LastBuildStats;
-        Assert.Equal(3, reused);   // root + Beta + Gamma 复用
-        Assert.Equal(1, repainted);
+        Assert.Equal(2, reused);   // Beta + Gamma; root focus-within changed.
+        Assert.Equal(2, repainted);
     }
 
     [Fact]
@@ -108,8 +110,10 @@ public class RetainedPaintTests
         var gamma = (Button)root.Children[2];
         var painter = new ElementPainter(textPainter: new FakeTextPainter());
 
-        _ = painter.Build(root, Surface, focused: alpha);
-        _ = painter.Build(root, Surface, focused: gamma);
+        (FocusManager.GetFor(root) ?? new FocusManager(root)).Focus(alpha, FocusOrigin.Keyboard);
+        _ = painter.Build(root, Surface);
+        (FocusManager.GetFor(root) ?? new FocusManager(root)).Focus(gamma, FocusOrigin.Keyboard);
+        _ = painter.Build(root, Surface);
 
         var (reused, repainted) = painter.LastBuildStats;
         Assert.Equal(2, reused);    // root + Beta

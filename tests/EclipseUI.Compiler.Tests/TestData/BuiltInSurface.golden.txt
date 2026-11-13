@@ -1,6 +1,6 @@
 # EclipseUI 内置模板表面（design/14 §14.11.1）。
 # 由 CatalogScannerTests.Surface_MatchesGoldenSnapshotFile 生成/比对；控件 API 变化时必须连同变更记录一起更新。
-# 标签 42 / 属性项 674 / 事件项 607 / 附加属性项 7
+# 标签 42 / 属性项 715 / 事件项 607 / 附加属性项 7
 
 [Border] global::EclipseUI.Elements.Border content=Children:Content
     prop   Background EclipseUI.UiColor declared=global::EclipseUI.Elements.Border field=BackgroundProperty writable=True
@@ -8,6 +8,7 @@
     prop   BorderThickness double declared=global::EclipseUI.Elements.Border field=BorderThicknessProperty writable=True
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
     prop   CornerRadius double declared=global::EclipseUI.Elements.Border field=CornerRadiusProperty writable=True
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
@@ -40,6 +41,7 @@
 
 [Button] global::EclipseUI.Elements.Button content=Text:Label
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
@@ -75,6 +77,7 @@
 
 [Calendar] global::EclipseUI.Elements.Calendar content=None
     prop   DisplayMonth System.DateTime declared=global::EclipseUI.Elements.Calendar field=DisplayMonthProperty writable=True
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
@@ -111,6 +114,7 @@
 
 [Canvas] global::EclipseUI.Elements.Canvas content=Children:Children
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
@@ -143,6 +147,7 @@
 
 [CheckBox] global::EclipseUI.Elements.CheckBox content=Text:Label
     prop   Checked bool declared=global::EclipseUI.Elements.CheckBox field=CheckedProperty writable=True
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
@@ -178,6 +183,7 @@
 
 [ComboBox] global::EclipseUI.Elements.ComboBox content=Children:Children
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   IsDropDownOpen bool declared=global::EclipseUI.Elements.ComboBox field=IsDropDownOpenProperty writable=True
@@ -217,6 +223,7 @@
 
 [ContentControl] global::EclipseUI.Elements.ContentControl content=Children:Content
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
@@ -249,6 +256,7 @@
 
 [ContextMenu] global::EclipseUI.Elements.ContextMenu content=Children:Items
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
@@ -292,6 +300,7 @@
 
 [DataGrid] global::EclipseUI.Elements.DataGrid content=Children:Children
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
@@ -331,6 +340,7 @@
 
 [DatePicker] global::EclipseUI.Elements.DatePicker content=Children:Children
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   IsDropDownOpen bool declared=global::EclipseUI.Elements.DatePicker field=IsDropDownOpenProperty writable=True
@@ -368,6 +378,7 @@
 
 [DockPanel] global::EclipseUI.Elements.DockPanel content=Children:Children
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
@@ -401,6 +412,7 @@
 
 [Ellipse] global::EclipseUI.Elements.Ellipse content=None
     prop   Fill EclipseUI.UiColor declared=global::EclipseUI.Elements.Shape field=FillProperty writable=True
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
@@ -435,6 +447,7 @@
 [Grid] global::EclipseUI.Elements.Grid content=Children:Children
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
     prop   ColumnDefinitions string declared=global::EclipseUI.Elements.Grid field=ColumnDefinitionsProperty writable=True
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Gap double declared=global::EclipseUI.Elements.Grid field=GapProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
@@ -468,6 +481,7 @@
     param  IsEnabled global::System.Boolean required=False delegate=False
 
 [Image] global::EclipseUI.Elements.Image content=None
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
@@ -502,6 +516,7 @@
 
 [ItemsControl] global::EclipseUI.Elements.ItemsControl content=Children:Children
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Gap double declared=global::EclipseUI.Elements.StackPanelBase field=GapProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
@@ -538,6 +553,7 @@
 
 [Line] global::EclipseUI.Elements.Line content=None
     prop   Fill EclipseUI.UiColor declared=global::EclipseUI.Elements.Shape field=FillProperty writable=True
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
@@ -575,6 +591,7 @@
 
 [ListBox] global::EclipseUI.Elements.ListBox content=Children:Children
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Gap double declared=global::EclipseUI.Elements.StackPanelBase field=GapProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
@@ -616,6 +633,7 @@
 
 [ListBoxItem] global::EclipseUI.Elements.ListBoxItem content=Children:Children
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Gap double declared=global::EclipseUI.Elements.StackPanelBase field=GapProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
@@ -651,6 +669,7 @@
 
 [Menu] global::EclipseUI.Elements.Menu content=Children:Children
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Gap double declared=global::EclipseUI.Elements.StackPanelBase field=GapProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
@@ -686,6 +705,7 @@
 [MenuItem] global::EclipseUI.Elements.MenuItem content=Text:Label
     prop   Checked bool declared=global::EclipseUI.Elements.MenuItem field=CheckedProperty writable=True
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   IsCheckable bool declared=global::EclipseUI.Elements.MenuItem field=IsCheckableProperty writable=True
@@ -723,6 +743,7 @@
 
 [NumericUpDown] global::EclipseUI.Elements.NumericUpDown content=Text:Text
     prop   AcceptsReturn bool declared=global::EclipseUI.Elements.TextBox field=AcceptsReturnProperty writable=True
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   Increment double declared=global::EclipseUI.Elements.NumericUpDown field=IncrementProperty writable=True
@@ -768,6 +789,7 @@
 
 [PasswordBox] global::EclipseUI.Elements.PasswordBox content=Text:Text
     prop   AcceptsReturn bool declared=global::EclipseUI.Elements.TextBox field=AcceptsReturnProperty writable=True
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
@@ -810,6 +832,7 @@
 [Path] global::EclipseUI.Elements.Path content=None
     prop   Data string declared=global::EclipseUI.Elements.Path field=DataProperty writable=True
     prop   Fill EclipseUI.UiColor declared=global::EclipseUI.Elements.Shape field=FillProperty writable=True
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
@@ -843,6 +866,7 @@
 
 [Popup] global::EclipseUI.Elements.Popup content=Children:Content
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
@@ -883,6 +907,7 @@
     param  VerticalOffset global::System.Double required=False delegate=False
 
 [ProgressBar] global::EclipseUI.Elements.ProgressBar content=None
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
@@ -919,6 +944,7 @@
 
 [RadioButton] global::EclipseUI.Elements.RadioButton content=Text:Label
     prop   Checked bool declared=global::EclipseUI.Elements.CheckBox field=CheckedProperty writable=True
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   GroupName string declared=global::EclipseUI.Elements.RadioButton field=GroupNameProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
@@ -955,6 +981,7 @@
 
 [Rectangle] global::EclipseUI.Elements.Rectangle content=None
     prop   Fill EclipseUI.UiColor declared=global::EclipseUI.Elements.Shape field=FillProperty writable=True
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
@@ -989,6 +1016,7 @@
 
 [ScrollViewer] global::EclipseUI.Elements.ScrollViewer content=Children:Children
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   HorizontalOffset double declared=global::EclipseUI.Elements.ScrollViewer field=HorizontalOffsetProperty writable=True
@@ -1024,6 +1052,7 @@
     param  IsEnabled global::System.Boolean required=False delegate=False
 
 [Slider] global::EclipseUI.Elements.Slider content=None
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
@@ -1062,6 +1091,7 @@
 
 [StackPanel] global::EclipseUI.Elements.StackPanel content=Children:Children
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Gap double declared=global::EclipseUI.Elements.StackPanelBase field=GapProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
@@ -1096,6 +1126,7 @@
 
 [TabControl] global::EclipseUI.Elements.TabControl content=Children:Children
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
@@ -1130,6 +1161,7 @@
 
 [TabItem] global::EclipseUI.Elements.TabItem content=Children:Content
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Header string declared=global::EclipseUI.Elements.TabItem field=HeaderProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
@@ -1163,6 +1195,7 @@
 
 [TextBlock] global::EclipseUI.Elements.TextBlock content=TextRuns
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   FontSize double declared=global::EclipseUI.Elements.TextBlock field=FontSizeProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
@@ -1197,6 +1230,7 @@
 
 [TextBox] global::EclipseUI.Elements.TextBox content=Text:Text
     prop   AcceptsReturn bool declared=global::EclipseUI.Elements.TextBox field=AcceptsReturnProperty writable=True
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
@@ -1238,6 +1272,7 @@
 [ToggleButton] global::EclipseUI.Elements.ToggleButton content=Text:Label
     prop   Checked bool declared=global::EclipseUI.Elements.ToggleButton field=CheckedProperty writable=True
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
@@ -1274,6 +1309,7 @@
 
 [ToggleSwitch] global::EclipseUI.Elements.ToggleSwitch content=Text:Label
     prop   Checked bool declared=global::EclipseUI.Elements.CheckBox field=CheckedProperty writable=True
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
@@ -1309,6 +1345,7 @@
 
 [ToolTip] global::EclipseUI.Elements.ToolTip content=Children:Content
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
@@ -1351,6 +1388,7 @@
 
 [TreeView] global::EclipseUI.Elements.TreeView content=Children:Children
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Gap double declared=global::EclipseUI.Elements.StackPanelBase field=GapProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
@@ -1391,6 +1429,7 @@
 
 [TreeViewItem] global::EclipseUI.Elements.TreeViewItem content=Children:Children
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Gap double declared=global::EclipseUI.Elements.StackPanelBase field=GapProperty writable=True
     prop   Header string declared=global::EclipseUI.Elements.TreeViewItem field=HeaderProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
@@ -1430,6 +1469,7 @@
 
 [VirtualizingStackPanel] global::EclipseUI.Elements.VirtualizingStackPanel content=Children:Children
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Gap double declared=global::EclipseUI.Elements.VirtualizingStackPanel field=GapProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
@@ -1468,6 +1508,7 @@
 
 [Window] global::EclipseUI.Window content=Children:Content
     param  AlwaysRender global::System.Boolean required=False delegate=False
+    param  AlwaysShowFocusVisuals global::System.Boolean required=False delegate=False
     param  CloseOnEscape global::System.Boolean required=False delegate=False
     param  Height global::System.Double required=False delegate=False
     param  IdleSleepMilliseconds global::System.Int32 required=False delegate=False
@@ -1479,6 +1520,7 @@
 
 [WrapPanel] global::EclipseUI.Elements.WrapPanel content=Children:Children
     prop   ClipToBounds bool declared=global::EclipseUI.Elements.Panel field=ClipToBoundsProperty writable=True
+    prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Gap double declared=global::EclipseUI.Elements.WrapPanel field=GapProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True

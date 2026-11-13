@@ -32,7 +32,8 @@ public class StylePropertyCatalogTests
             .ToArray();
 
         Assert.NotEmpty(expected);
-        Assert.Equal(expected, catalog.Properties.Select(p => p.Name).OrderBy(n => n, StringComparer.Ordinal));
+        Assert.Equal(expected, catalog.Properties.Where(p => p.IsBuiltIn).Select(p => p.Name).OrderBy(n => n, StringComparer.Ordinal));
+        Assert.Equal(StyleValueKind.Enum, catalog.Find("FocusVisualMode")!.Kind);
     }
 
     [Fact]
@@ -227,6 +228,7 @@ public class StylePropertyCatalogTests
             : throw new InvalidOperationException($"expected StyledProperty<T>, got {fieldType}");
         var underlying = Nullable.GetUnderlyingType(valueType) ?? valueType;
         if (underlying == typeof(double)) return StyleValueKind.Number;
+        if (underlying.IsEnum) return StyleValueKind.Enum;
         if (underlying == typeof(Color) || underlying == typeof(ThemeColor)) return StyleValueKind.Color;
         throw new InvalidOperationException($"unexpected value type {valueType}");
     }

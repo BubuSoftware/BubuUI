@@ -198,8 +198,10 @@ public class UnmountTests
         Assert.Same(button, focus.Focused);
 
         var detached = new Button();
-        Assert.True(focus.Focus(detached)); // 焦点移到离树元素（构造场景）
-        Assert.True(focus.ClearFocusIfDetached());
+        Assert.False(focus.Focus(detached)); // Reject focus outside this root.
+        Assert.Same(button, focus.Focused);
+        panel.Children.Remove(button); // Structural mutation clears the cached path immediately.
+        Assert.False(focus.ClearFocusIfDetached());
         Assert.Null(focus.Focused);
     }
 }

@@ -20,7 +20,7 @@
 | 日期 | Calendar、DatePicker | 公历月视图、有效日期范围、闰年、月导航、键盘日期导航、日期输入校验、弹出日历；Enter/点击确认，导航期间保留浮层 |
 | 内容与图形 | ContentControl、Border、Image、Rectangle、Ellipse、Line、Path | 单内容、边框/内边距/圆角、RGBA 图像及缩放/裁剪、形状填充和描边 |
 | 布局 | StackPanel、WrapPanel、Grid、Canvas、DockPanel | 水平/垂直堆叠，流式换行，Auto/固定/星号与跨行/跨列，绝对定位，边缘停靠/末项填充 |
-| 滚动与虚拟化 | ScrollViewer、VirtualizingStackPanel | 滚动条拖动/轨道翻页、PageUp/Down、Ctrl+Home/End、Shift 横滚；等高/变高窗口、精确行高提供器或测量估计、可选容器复用 |
+| 滚动与虚拟化 | ScrollViewer、VirtualizingStackPanel | 滚动条宽命中区拖动、轨道点击及按住连滚、捕获取消；PageUp/Down、Ctrl+Home/End、Shift 横滚；等高/变高窗口、精确行高提供器或测量估计、可选容器复用 |
 | 既有展示 | TextBlock、Button、Window | 原契约继续可用；Button 增加 Content 插槽，支持图标和任意元素内容 |
 
 DataGridColumn 是列描述对象，通过 C# 或表达式传入 Columns；它不是 UI 元素标签。TextRun 和运行时块仍不作为公开模板标签。
@@ -104,3 +104,13 @@ dotnet run --project sandbox/ControlNativeCheck
 ControlCheck 使用真实 .ui 编译产物验证双向绑定、撤销、选择、排序及浮层，并生成深浅主题截图；ControlNativeCheck 验证真实 Win32 WM_CHAR（含中文和代理对）、KeyUp、编辑、Escape 关闭顺序与 GPU 上屏。
 
 结果及可复现证据见 [验证报告](./reports/controls-2026-11-14.md)。
+
+## 焦点提示（2026-11-14）
+
+控件使用 focus / focus-within / focus-visible 三种状态。普通按钮在键盘交互时显示外圈；文本输入使用自身边框；DatePicker / ComboBox 由外壳统一提示；列表、树、表格和页签提示当前行或头部。输入来源、样式配置、绘制与缓存契约见 [design/25](./25-focus-visuals.md)。
+
+## 滚动条交互修复（2026-11-14）
+
+ScrollViewer 的绘制、命中和拖动统一读取 TryGetScrollBarGeometry。滑块沿滚动方向的范围对应整个 14 DIP 宽的命中条带，6 DIP 的绘制宽度不再限制拖动入口。支持拖出视口/窗口后继续拖动、越界钳制、点击轨道翻页，以及按住轨道 400 ms 后每 60 ms 继续翻页；滑块到达鼠标位置后停止，鼠标移出轨道暂停、返回后继续。
+
+重复滚动使用共享帧时钟。松手、取消捕获及摘除/释放结束交互；Win32 的 WM_CAPTURECHANGED / WM_CANCELMODE 接入 InputRouter.CancelPointerCapture。正常释放先发送 PointerReleased，再释放原生捕获，确保普通按钮的点击仍然有效。验证见 [滚动条修复报告](./reports/scrollbar-2026-11-14.md)。

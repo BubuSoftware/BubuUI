@@ -44,6 +44,7 @@ public sealed class WindowHostOptions
 
     /// <summary>忽略脏区判定，每帧都上屏（性能对比 / 持续动画场景）。</summary>
     public bool AlwaysRender { get; init; }
+    public bool AlwaysShowFocusVisuals { get; init; }
 
     /// <summary>无脏区且未限帧时的休眠时长，避免空转占满 CPU。</summary>
     public int IdleSleepMilliseconds { get; init; } = 4;
@@ -92,11 +93,13 @@ public sealed class WindowHost : IDisposable, IWindowHost
 
         _painter = new ElementPainter(_options.Theme, _options.TextPainter);
         _input = new InputRouter(root);
+        _input.Focus.AlwaysShowFocusVisuals = _options.AlwaysShowFocusVisuals;
 
         _window.Resized += OnResized;
         _window.PaintRequested += OnPaintRequested;
         _window.PointerMoved += OnPointerMoved;
         _window.PointerPressed += OnPointerPressed;
+        _window.PointerCaptureLost += OnPointerCaptureLost;
         _window.PointerReleased += OnPointerReleased;
         _window.PointerWheel += OnPointerWheel;
         _window.KeyDown += OnKeyDown;
@@ -247,7 +250,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
             root.Measure(size);
             root.Arrange(new Rect(Point.Zero, size));
 
-            var frame = _painter.BuildFrame(root, size, _window.ScaleFactor, _input.Focus.Focused);
+            var frame = _painter.BuildFrame(root, size, _window.ScaleFactor);
             var presented = _options.AlwaysRender || !frame.Damage.IsEmpty;
             if (presented)
             {
@@ -311,12 +314,16 @@ public sealed class WindowHost : IDisposable, IWindowHost
 
     private void OnPointerReleased(object? sender, Win32PointerEventArgs e)
         => Input.PointerRelease(e.LogicalPosition);
+    private void OnPointerCaptureLost(object? sender, EventArgs e) => Input.CancelPointerCapture();
 
     private void OnPointerWheel(object? sender, Win32WheelEventArgs e)
         => Input.PointerWheel(e.LogicalPosition, e.Delta, Win32Window.CurrentModifiers);
 
     private void OnKeyDown(object? sender, Win32KeyEventArgs e)
     {
+        if (e.Key == Key.None) return;
+        using var scope = Input.Focus.EnterInput(FocusOrigin.Keyboard, Modifiers(e));
+        Input.Focus.NotifyInput(FocusOrigin.Keyboard);
         if (e.Key == Key.Escape && Input.TryDismissPopup()) return;
         if (_options.CloseOnEscape && e.Key == Key.Escape)
         {
@@ -363,6 +370,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
             var previousInput = _input;
             _root = root;
             _input = new InputRouter(root);
+            _input.Focus.AlwaysShowFocusVisuals = _options.AlwaysShowFocusVisuals;
             _painter.ResetSegments();
             _painter.ResetDamage();
             previousInput.Reset();
@@ -380,6 +388,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
         _window.PaintRequested -= OnPaintRequested;
         _window.PointerMoved -= OnPointerMoved;
         _window.PointerPressed -= OnPointerPressed;
+        _window.PointerCaptureLost -= OnPointerCaptureLost;
         _window.PointerReleased -= OnPointerReleased;
         _window.PointerWheel -= OnPointerWheel;
         _window.KeyDown -= OnKeyDown;

@@ -33,6 +33,12 @@ public class TextBox : Element, IFrameAnimation
     public bool CanUndo => _undo.Count > 0;
     public bool CanRedo => _redo.Count > 0;
     public override bool IsFocusable => true;
+    public override bool IsTextInputClient => true;
+    internal override void CancelPointerInteraction() => _dragging = false;
+    protected override FocusVisualMode DefaultFocusVisualMode => FocusVisualMode.Control;
+    public override FocusVisualGeometry GetFocusVisualGeometry() => new(this, new(Point.Zero, FinalRect.Size), 4);
+    public override void RenderFocusVisual(IElementDrawingContext c) =>
+        c.StrokeRectangle(new(.5, .5, Math.Max(0, FinalRect.Width - 1), Math.Max(0, FinalRect.Height - 1)), c.Accent, 1, 4);
     protected virtual bool CanCopy => true;
     protected virtual string DisplayText => Text;
     protected virtual string DisplayComposition => _composition;
@@ -235,7 +241,7 @@ public class TextBox : Element, IFrameAnimation
     public override void Render(IElementDrawingContext c)
     {
         var bounds = new Rect(0, 0, FinalRect.Width, FinalRect.Height);
-        c.FillRectangle(bounds, c.Background, 4); c.StrokeRectangle(new(.5, .5, Math.Max(0, bounds.Width - 1), Math.Max(0, bounds.Height - 1)), IsFocused ? c.Accent : c.Border, 1, 4);
+        c.FillRectangle(bounds, c.Background, 4); c.StrokeRectangle(new(.5, .5, Math.Max(0, bounds.Width - 1), Math.Max(0, bounds.Height - 1)), c.Border, 1, 4);
         c.PushClip(new(4, 4, Math.Max(0, bounds.Width - 8), Math.Max(0, bounds.Height - 8)));
         var lines = DisplayText.Split('\n'); int offset = 0;
         for (var i = 0; i < lines.Length; i++)

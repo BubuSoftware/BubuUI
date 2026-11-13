@@ -4,6 +4,7 @@ namespace EclipseUI.Elements;
 
 public class TreeViewItem : StackPanel
 {
+    public override FocusVisualGeometry GetFocusVisualGeometry() => new(this, new(4, 4, Math.Max(0, FinalRect.Width - 8), 20), 3);
     public static readonly StyledProperty<string> HeaderProperty = StyledProperty<string>.Register<TreeViewItem>("Header", "", new() { Invalidate = InvalidateKind.Measure });
     public static readonly StyledProperty<bool> IsExpandedProperty = StyledProperty<bool>.Register<TreeViewItem>("IsExpanded", false, new() { Invalidate = InvalidateKind.Measure });
     public static readonly StyledProperty<bool> IsSelectedProperty = StyledProperty<bool>.Register<TreeViewItem>("IsSelected", false, new() { Invalidate = InvalidateKind.Render });
@@ -26,8 +27,8 @@ public class TreeViewItem : StackPanel
         AddHandler(KeyDownEvent, e =>
         {
             if (e is not KeyEventArgs k || !ReferenceEquals(e.Source, this)) return;
-            if (k.Key == Key.Right) { if (!IsExpanded && Children.Count > 0) IsExpanded = true; else if (Children.OfType<TreeViewItem>().FirstOrDefault() is { } first) FindTree()?.Select(first); }
-            else if (k.Key == Key.Left) { if (IsExpanded) IsExpanded = false; else if (Parent is TreeViewItem parent) FindTree()?.Select(parent); }
+            if (k.Key == Key.Right) { if (!IsExpanded && Children.Count > 0) IsExpanded = true; else if (Children.OfType<TreeViewItem>().FirstOrDefault() is { } first) { FindTree()?.Select(first); first.RequestFocus(); } }
+            else if (k.Key == Key.Left) { if (IsExpanded) IsExpanded = false; else if (Parent is TreeViewItem parent) { FindTree()?.Select(parent); parent.RequestFocus(); } }
             else if (k.Key is Key.Space or Key.Enter) FindTree()?.Select(this);
             else return;
             e.Handled = true;
@@ -63,6 +64,8 @@ public class TreeViewItem : StackPanel
 
 public class TreeView : StackPanel
 {
+    public override FocusVisualGeometry GetFocusVisualGeometry() => _selected is { IsEffectivelyVisible: true }
+        ? _selected.GetFocusVisualGeometry() : base.GetFocusVisualGeometry();
     public static readonly RoutedEvent SelectionChangedEvent = new("SelectionChanged");
     private TreeViewItem? _selected;
     private IEnumerable? _source;

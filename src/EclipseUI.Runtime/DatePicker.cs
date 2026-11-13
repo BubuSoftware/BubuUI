@@ -84,6 +84,10 @@ public class Calendar : Element
 
 public class DatePicker : Panel
 {
+    protected override FocusVisualMode DefaultFocusVisualMode => FocusVisualMode.Control;
+    public override FocusVisualGeometry GetFocusVisualGeometry() => new(this, new(Point.Zero, FinalRect.Size), 4);
+    public override void RenderFocusVisual(IElementDrawingContext c) =>
+        c.StrokeRectangle(new(.5, .5, Math.Max(0, FinalRect.Width - 1), Math.Max(0, FinalRect.Height - 1)), c.Accent, 1, 4);
     public static readonly StyledProperty<DateTime?> SelectedDateProperty = StyledProperty<DateTime?>.Register<DatePicker>("SelectedDate", null, new() { Invalidate = InvalidateKind.Render });
     public static readonly StyledProperty<bool> IsDropDownOpenProperty = StyledProperty<bool>.Register<DatePicker>("IsDropDownOpen", false, new() { Invalidate = InvalidateKind.Measure });
     public static readonly RoutedEvent SelectedDateChangedEvent = new("SelectedDateChanged");
@@ -98,6 +102,7 @@ public class DatePicker : Panel
     public DateTime MaximumDate { get => _calendar.MaximumDate; set => _calendar.MaximumDate = value; }
     public DatePicker()
     {
+        _editor.FocusVisualOwner = this; _button.FocusVisualOwner = this;
         _popup = new Popup { PlacementTarget = this, Content = new Border { Content = _calendar } };
         Children.Add(_editor); Children.Add(_button); Children.Add(_popup);
         AddHandler(PreviewKeyDownEvent, e =>

@@ -45,6 +45,7 @@ public class ElementTheme : IHostTheme
     public virtual double CheckBoxRadius { get; init; } = 4;
     public virtual double BorderWidth { get; init; } = 1;
     public virtual double FocusRingWidth { get; init; } = 2;
+    public virtual double FocusRingOffset { get; init; } = 2;
 
     // ---- 文本 ----
     /// <summary>小于该字号用次要文本色（G2 的临时规则，样式系统会替代）。</summary>

@@ -8,14 +8,14 @@ namespace Gallery;
 public static class GallerySnapshot
 {
     public static void SavePng(
-        Element root, Size logicalSize, double scale, Element? focus, string path,
+        Element root, Size logicalSize, double scale, string path,
         ElementTheme theme, ITextPainter textPainter)
     {
         var directory = Path.GetDirectoryName(Path.GetFullPath(path));
         if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
 
         var painter = new ElementPainter(theme, textPainter);
-        var list = painter.Build(root, logicalSize, scale, focus);
+        var list = painter.Build(root, logicalSize, scale);
         var errors = list.Validate();
         if (errors.Count > 0)
         {

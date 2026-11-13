@@ -170,9 +170,11 @@ public class DamageTests
 
         var theme = new ElementTheme();
         var painter = new ElementPainter(theme);
-        painter.BuildFrame(root, DefaultSize, focused: first);
+        (FocusManager.GetFor(root) ?? new FocusManager(root)).Focus(first, FocusOrigin.Keyboard);
+        painter.BuildFrame(root, DefaultSize);
 
-        var frame = painter.BuildFrame(root, DefaultSize, focused: second);
+        (FocusManager.GetFor(root) ?? new FocusManager(root)).Focus(second, FocusOrigin.Keyboard);
+        var frame = painter.BuildFrame(root, DefaultSize);
 
         var firstRect = Absolute(first);
         var secondRect = Absolute(second);
@@ -197,7 +199,8 @@ public class DamageTests
             button.FinalRect.Y + button.FinalRect.Height / 2);
         input.PointerPress(center);
 
-        var frame = painter.BuildFrame(root, DefaultSize, focused: input.Focus.Focused);
+        (FocusManager.GetFor(root) ?? new FocusManager(root)).Focus(input.Focus.Focused, FocusOrigin.Keyboard);
+        var frame = painter.BuildFrame(root, DefaultSize);
         Assert.True(button.IsPressed);
         Assert.True(Covers(frame.Damage, Absolute(button)));
     }

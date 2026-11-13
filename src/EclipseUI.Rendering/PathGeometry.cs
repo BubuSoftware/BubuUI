@@ -41,6 +41,7 @@ public sealed class PathGeometry
             double maxX = double.MinValue, maxY = double.MinValue;
             foreach (var s in Segments)
             {
+                if (s.Verb == PathVerb.Close) continue; // Close has no coordinate payload.
                 Accumulate(s.X0, s.Y0);
                 if (s.Verb is PathVerb.QuadraticTo or PathVerb.CubicTo) Accumulate(s.X1, s.Y1);
                 if (s.Verb == PathVerb.CubicTo) Accumulate(s.X2, s.Y2);

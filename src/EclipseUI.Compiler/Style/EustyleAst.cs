@@ -45,6 +45,8 @@ public enum EustyleVariant
     Pressed = 2,
     Focus = 3,
     Disabled = 4,
+    FocusVisible = 5,
+    FocusWithin = 6,
 }
 
 /// <summary>

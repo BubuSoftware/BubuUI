@@ -1,87 +1,168 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-
 namespace EclipseUI;
 
-/// <summary>
-/// 焦点系统：Tab 遍历按树序（深度优先）环形推进；
-/// 键盘事件从焦点元素路由（无焦点时从根）。
-/// </summary>
+/// <summary>Per-root focus state, input modality and transactional focus transfers.</summary>
 public sealed class FocusManager
 {
     private readonly Element _root;
-
-    public FocusManager(Element root) => _root = root;
-
+    private List<Element> _path = [], _nextPath = [];
+    private readonly List<Element> _changed = [];
+    private readonly Queue<Request> _requests = new();
+    private readonly record struct Request(Element? Target, FocusOrigin Origin, FocusVisibility Visibility, KeyModifiers Modifiers);
+    private bool _committing, _refresh, _showRequested, _alwaysShow;
+    private FocusOrigin _dispatchOrigin = FocusOrigin.Programmatic;
+    private KeyModifiers _dispatchModifiers;
+    public FocusOrigin InputMode { get; private set; } = FocusOrigin.Keyboard;
+    public FocusOrigin LastFocusOrigin { get; private set; } = FocusOrigin.Programmatic;
     public Element? Focused { get; private set; }
-
-    public IReadOnlyList<Element> Focusables
-        => _root.Descendants().Where(e => e.IsFocusable && e.IsTabStop && e.IsEffectiveEnabled && e.IsEffectivelyVisible).ToList();
-
-    public bool Focus(Element? element)
+    public FocusManager(Element root)
     {
-        if (element is null || !element.IsFocusable) return false;
-        if (!element.IsEffectiveEnabled || !element.IsEffectivelyVisible) return false; // E3：禁用元素不接受焦点（含祖先禁用的继承情形）
-        if (ReferenceEquals(Focused, element)) return true;
+        ArgumentNullException.ThrowIfNull(root);
+        _root = root;
+        var previous = root._focusManager;
+        root._focusManager = this;
+        previous?.ClearFocus();
+    }
+    public static FocusManager? GetFor(Element element) => element.FindFocusManager();
 
-        var old = Focused;
-        if (old is not null)
-        {
-            old.IsFocused = false; // 状态变化自带失效（D102）：重算焦点视觉 + 重应用伪类样式
-            old.RaiseEvent(new RoutedEventArgs(Element.LostFocusEvent) { Source = old });
-        }
-        Focused = element;
-        element.IsFocused = true;
-        element.RaiseEvent(new RoutedEventArgs(Element.GotFocusEvent) { Source = element });
+    public bool AlwaysShowFocusVisuals
+    {
+        get => _alwaysShow;
+        set { UiThreadGuard.AssertUiThread(_root, nameof(AlwaysShowFocusVisuals)); if (_alwaysShow == value) return; _alwaysShow = value; RefreshFocusPath(); }
+    }
+    public IReadOnlyList<Element> Focusables => _root.Descendants()
+        .Where(e => e.IsFocusable && e.IsTabStop && IsValid(e)).ToArray();
+
+    internal bool IsValid(Element? element)
+    {
+        if (element is null || element.IsDisposed || !element.IsFocusable || !element.IsEffectiveEnabled || !element.IsEffectivelyVisible ||
+            _root.IsDisposed || _root.Parent is not null || !ReferenceEquals(_root._focusManager, this)) return false;
+        for (var e = element; e is not null; e = e.Parent) if (ReferenceEquals(e, _root)) return true;
+        return false;
+    }
+
+    public bool Focus(Element? element, FocusOrigin origin = FocusOrigin.Auto, FocusVisibility visibility = FocusVisibility.Auto)
+    {
+        UiThreadGuard.AssertUiThread(_root, nameof(Focus));
+        if (!IsValid(element)) return false;
+        if (origin == FocusOrigin.Auto) origin = _dispatchOrigin;
+        if (origin is FocusOrigin.Pointer or FocusOrigin.Keyboard) NotifyInput(origin);
+        _requests.Enqueue(new(element, origin, visibility, _dispatchModifiers));
+        Drain();
         return true;
     }
 
     public void ClearFocus()
     {
-        var old = Focused;
-        if (old is null) return;
-        Focused = null;
-        old.IsFocused = false;
-        old.RaiseEvent(new RoutedEventArgs(Element.LostFocusEvent) { Source = old });
+        UiThreadGuard.AssertUiThread(_root, nameof(ClearFocus));
+        _requests.Enqueue(new(null, _dispatchOrigin, FocusVisibility.Auto, _dispatchModifiers));
+        Drain();
     }
 
-    /// <summary>
-    /// 焦点元素已不在本管理器的根子树内（被 Unmount/摘除）时清除焦点并广播 LostFocus。
-    /// 宿主在每帧布局前调用；返回是否发生了清除。
-    /// </summary>
+    /// <summary>Changes visibility on the same focused object without sending focus events.</summary>
+    public void NotifyInput(FocusOrigin origin)
+    {
+        UiThreadGuard.AssertUiThread(_root, nameof(NotifyInput));
+        if (origin is not (FocusOrigin.Keyboard or FocusOrigin.Pointer)) throw new ArgumentOutOfRangeException(nameof(origin));
+        if (InputMode == origin && !_showRequested) return;
+        InputMode = origin; _showRequested = false; RefreshFocusPath();
+    }
+
+    internal InputScope EnterInput(FocusOrigin origin, KeyModifiers modifiers)
+    {
+        var scope = new InputScope(this, _dispatchOrigin, _dispatchModifiers);
+        _dispatchOrigin = origin; _dispatchModifiers = modifiers;
+        return scope;
+    }
+    internal readonly struct InputScope(FocusManager manager, FocusOrigin previous, KeyModifiers modifiers) : IDisposable
+    {
+        public void Dispose() { manager._dispatchOrigin = previous; manager._dispatchModifiers = modifiers; }
+    }
+
+    internal void RefreshFocusPath()
+    {
+        if (Focused is null && _path.Count == 0) return;
+        _refresh = true; Drain();
+    }
     public bool ClearFocusIfDetached()
     {
-        var focused = Focused;
-        if (focused is null) return false;
-        if (!focused.IsEffectiveEnabled || !focused.IsEffectivelyVisible) { ClearFocus(); return true; }
-        for (Element? node = focused; node is not null; node = node._parent)
-            if (ReferenceEquals(node, _root))
-                return false;
-        ClearFocus();
-        return true;
+        var old = Focused;
+        RefreshFocusPath();
+        return old is not null && Focused is null;
+    }
+    private void Drain()
+    {
+        if (_committing) return;
+        _committing = true;
+        try
+        {
+            var count = 0;
+            List<Exception>? failures = null;
+            while (_requests.Count > 0 || _refresh)
+            {
+                if (++count > 100) throw new InvalidOperationException("Focus updates exceeded 100 rounds.");
+                if (_requests.TryDequeue(out var request))
+                {
+                    if (request.Target is not null && !IsValid(request.Target)) continue;
+                    _showRequested = request.Visibility == FocusVisibility.Show;
+                    try { Commit(request.Target, request.Origin, request.Modifiers); }
+                    catch (Exception error) { (failures ??= []).Add(error); }
+                }
+                else
+                {
+                    _refresh = false;
+                    try { Commit(IsValid(Focused) ? Focused : null, LastFocusOrigin, _dispatchModifiers); }
+                    catch (Exception error) { (failures ??= []).Add(error); }
+                }
+                if (Focused is not null && !IsValid(Focused)) _refresh = true;
+            }
+            if (failures is not null) throw new AggregateException("Focus updates failed.", failures);
+        }
+        finally { _committing = false; _requests.Clear(); _refresh = false; }
     }
 
-    /// <summary>移到下一个可聚焦元素（环形）。Tab 键的默认实现。</summary>
+    private void Commit(Element? target, FocusOrigin origin, KeyModifiers modifiers)
+    {
+        var old = Focused;
+        var moved = !ReferenceEquals(old, target);
+        _nextPath.Clear();
+        for (var e = target; e is not null; e = e.Parent) _nextPath.Add(e);
+        var visible = target is not null && (_alwaysShow || _showRequested || target.IsTextInputClient || InputMode == FocusOrigin.Keyboard);
+        Focused = target;
+        if (moved) LastFocusOrigin = origin;
+        _changed.Clear();
+        foreach (var node in _path)
+            if (node.SetFocusState(ReferenceEquals(node, target), _nextPath.Contains(node), visible && ReferenceEquals(node, target))) _changed.Add(node);
+        foreach (var node in _nextPath)
+            if (!_path.Contains(node) && node.SetFocusState(ReferenceEquals(node, target), true, visible && ReferenceEquals(node, target))) _changed.Add(node);
+        (_path, _nextPath) = (_nextPath, _path);
+        _nextPath.Clear();
+        List<Exception>? failures = null;
+        foreach (var node in _changed)
+        {
+            try { node.PublishFocusState(); }
+            catch (Exception error) { (failures ??= []).Add(error); }
+        }
+        _changed.Clear();
+        if (moved)
+        {
+            try { old?.RaiseEvent(new FocusEventArgs(Element.LostFocusEvent, origin, modifiers) { Source = old }); }
+            catch (Exception error) { (failures ??= []).Add(error); }
+            try { target?.RaiseEvent(new FocusEventArgs(Element.GotFocusEvent, origin, modifiers) { Source = target }); }
+            catch (Exception error) { (failures ??= []).Add(error); }
+        }
+        if (failures is not null) throw new AggregateException("Focus notification failed.", failures);
+    }
+
     public Element? MovePrevious() => Move(-1);
-
     public Element? MoveNext() => Move(1);
-
     private Element? Move(int direction)
     {
-        var focusables = Focusables;
-        if (focusables.Count == 0) return null;
+        var items = Focusables;
+        if (items.Count == 0) return null;
         int index = -1;
-        for (int i = 0; i < focusables.Count; i++)
-        {
-            if (ReferenceEquals(focusables[i], Focused))
-            {
-                index = i;
-                break;
-            }
-        }
-        var next = focusables[(index < 0 ? (direction > 0 ? 0 : focusables.Count - 1) : (index + direction + focusables.Count) % focusables.Count)];
-        Focus(next);
-        return next;
+        for (var i = 0; i < items.Count; i++) if (ReferenceEquals(items[i], Focused)) { index = i; break; }
+        var next = items[index < 0 ? direction > 0 ? 0 : items.Count - 1 : (index + direction + items.Count) % items.Count];
+        Focus(next, FocusOrigin.Keyboard);
+        return Focused;
     }
 }

@@ -114,6 +114,7 @@ public class Slider : RangeControl
     public Orientation Orientation { get => GetValue(OrientationProperty); set => SetValue(OrientationProperty, value); }
     public override bool IsFocusable => true;
     private bool _drag;
+    internal override void CancelPointerInteraction() => _drag = false;
     public Slider()
     {
         AddHandler(PointerPressedEvent, e => { if (e is PointerEventArgs p && p.Button == PointerButton.Left) { _drag = true; SetFromPointer(p); e.Handled = true; } });

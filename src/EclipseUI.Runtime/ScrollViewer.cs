@@ -35,10 +35,10 @@ public enum ScrollBarVisibility
 /// <item>方向开关（design/05 §布局契约）：Horizontal 默认 <see cref="ScrollBarVisibility.Disabled"/>
 ///   （Avalonia 对齐——单列文档式布局不被偶发横向溢出拖出滚动条），需要横滚显式设 Auto；
 ///   Vertical 默认 Auto。</item>
-/// <item>滚动条支持轨道翻页和拖动；PageUp/Down、Ctrl+Home/End 与 Shift+横滚共用偏移钳制。</item>
+/// <item>滚动条支持宽命中区拖动、轨道点击翻页与按住连滚；PageUp/Down、Ctrl+Home/End 与 Shift+横滚共用偏移钳制。</item>
 /// </list>
 /// </summary>
-public class ScrollViewer : Panel
+public class ScrollViewer : Panel, IFrameAnimation
 {
     /// <summary>每 1/120 齿轮刻度对应的滚动像素（一格滚轮 = 48 逻辑像素，WPF 惯例近似）。</summary>
     public const double WheelScrollPixels = 48d / 120d;
@@ -63,24 +63,43 @@ public class ScrollViewer : Panel
             ScrollBarVisibility.Auto,
             new PropertyOptions { Invalidate = InvalidateKind.Measure });
 
-    private bool _draggingBar, _dragHorizontal;
-    private double _dragStart, _dragOffset;
+    private const double BarInset = 4, BarThickness = 6, BarHitThickness = 14;
+    private const double RepeatDelay = .4, RepeatInterval = .06;
+    private bool _barHeld, _barScrolling, _draggingBar, _dragHorizontal;
+    private double _dragStart, _dragOffset, _repeatRemaining;
+    private int _pageDirection;
+    private Point _barPointer;
+
+    /// <summary>Local scrollbar geometry shared by drawing, hit testing and dragging.</summary>
+    public bool TryGetScrollBarGeometry(bool horizontal, out ScrollBarGeometry geometry)
+    {
+        geometry = default;
+        var visibility = horizontal ? HorizontalScrollBarVisibility : VerticalScrollBarVisibility;
+        var scrollable = horizontal ? ScrollableWidth : ScrollableHeight;
+        if (visibility is ScrollBarVisibility.Hidden or ScrollBarVisibility.Disabled || visibility == ScrollBarVisibility.Auto && scrollable <= 0) return false;
+        var length = (horizontal ? FinalRect.Width : FinalRect.Height) - BarInset * 2;
+        if (length <= BarThickness * 2 || (horizontal ? FinalRect.Height : FinalRect.Width) < BarInset + BarThickness) return false;
+        var viewport = horizontal ? ViewportWidth : ViewportHeight;
+        var extent = horizontal ? ExtentWidth : ExtentHeight;
+        var size = scrollable <= 0 ? length : Math.Clamp(length * viewport / Math.Max(1, extent), BarThickness, length);
+        var offset = horizontal ? HorizontalOffset : VerticalOffset;
+        var position = BarInset + (length - size) * offset / (scrollable > 0 ? scrollable : 1);
+        var thumb = horizontal ? new Rect(position, FinalRect.Height - BarInset - BarThickness, size, BarThickness)
+            : new Rect(FinalRect.Width - BarInset - BarThickness, position, BarThickness, size);
+        var track = horizontal ? new Rect(BarInset, Math.Max(0, FinalRect.Height - BarHitThickness), length, Math.Min(BarHitThickness, FinalRect.Height))
+            : new Rect(Math.Max(0, FinalRect.Width - BarHitThickness), BarInset, Math.Min(BarHitThickness, FinalRect.Width), length);
+        geometry = new(track, thumb);
+        return true;
+    }
+
     public bool TryGetScrollBar(Point local, out bool horizontal, out Rect thumb)
     {
-        foreach (var h in new[] { false, true })
+        // Horizontal is drawn last and owns any overlap at the bottom-right corner.
+        for (var i = 0; i < 2; i++)
         {
-            var visibility = h ? HorizontalScrollBarVisibility : VerticalScrollBarVisibility;
-            var scrollable = h ? ScrollableWidth : ScrollableHeight;
-            if (visibility is ScrollBarVisibility.Hidden or ScrollBarVisibility.Disabled || visibility == ScrollBarVisibility.Auto && scrollable <= 0) continue;
-            var length = (h ? FinalRect.Width : FinalRect.Height) - 8;
-            if (length <= 12) continue;
-            var viewport = h ? ViewportWidth : ViewportHeight; var extent = h ? ExtentWidth : ExtentHeight;
-            var size = scrollable <= 0 ? length : Math.Max(6, length * viewport / Math.Max(1, extent));
-            var offset = h ? HorizontalOffset : VerticalOffset;
-            var position = 4 + (length - size) * offset / Math.Max(1, scrollable);
-            thumb = h ? new(position, FinalRect.Height - 10, size, 6) : new(FinalRect.Width - 10, position, 6, size);
-            var track = h ? new Rect(4, FinalRect.Height - 14, length, 14) : new Rect(FinalRect.Width - 14, 4, 14, length);
-            if (track.Contains(local)) { horizontal = h; return true; }
+            var h = i == 0;
+            if (TryGetScrollBarGeometry(h, out var bar) && bar.Track.Contains(local))
+            { horizontal = h; thumb = bar.Thumb; return true; }
         }
         horizontal = false; thumb = default; return false;
     }
@@ -88,28 +107,38 @@ public class ScrollViewer : Panel
     {
         AddHandler(PointerPressedEvent, e =>
         {
-            if (e is not PointerEventArgs p || !TryGetScrollBar(PointFromRoot(p.Position), out var h, out var thumb)) return;
+            if (!ReferenceEquals(e.Source, this) || e is not PointerEventArgs { Button: PointerButton.Left } p ||
+                !TryGetScrollBar(PointFromRoot(p.Position), out var h, out var thumb)) return;
             var local = PointFromRoot(p.Position); var coordinate = h ? local.X : local.Y;
-            _dragHorizontal = h;
-            if (!thumb.Contains(local))
+            _barHeld = true; _barScrolling = (h ? ScrollableWidth : ScrollableHeight) > 0;
+            _dragHorizontal = h; _barPointer = p.Position;
+            _repeatRemaining = RepeatDelay;
+            // Use the whole cross-axis hit strip for the thumb, including its padding.
+            var start = h ? thumb.Left : thumb.Top; var end = h ? thumb.Right : thumb.Bottom;
+            _draggingBar = coordinate >= start && coordinate <= end;
+            if (!_draggingBar)
             {
-                var direction = coordinate < (h ? thumb.X : thumb.Y) ? -1 : 1;
-                if (h) ScrollToHorizontalOffset(HorizontalOffset + direction * ViewportWidth); else ScrollToVerticalOffset(VerticalOffset + direction * ViewportHeight);
+                _pageDirection = coordinate < start ? -1 : 1;
+                PageTowardPointer();
             }
-            else { _draggingBar = true; _dragStart = coordinate; _dragOffset = h ? HorizontalOffset : VerticalOffset; }
+            else { _dragStart = coordinate; _dragOffset = h ? HorizontalOffset : VerticalOffset; }
             e.Handled = true;
         });
         AddHandler(PointerMovedEvent, e =>
         {
-            if (!_draggingBar || e is not PointerEventArgs p) return;
-            var local = PointFromRoot(p.Position); var h = _dragHorizontal;
-            var length = (h ? FinalRect.Width : FinalRect.Height) - 8;
-            var thumb = Math.Max(6, length * (h ? ViewportWidth : ViewportHeight) / Math.Max(1, h ? ExtentWidth : ExtentHeight));
-            var offset = _dragOffset + ((h ? local.X : local.Y) - _dragStart) / Math.Max(1, length - thumb) * (h ? ScrollableWidth : ScrollableHeight);
-            if (h) ScrollToHorizontalOffset(offset); else ScrollToVerticalOffset(offset);
+            if (!_barHeld || !ReferenceEquals(e.Source, this) || e is not PointerEventArgs p) return;
+            _barPointer = p.Position;
             e.Handled = true;
+            if (!_barScrolling) return;
+            if (!CanContinueBarInteraction()) { StopBarScrolling(); return; }
+            if (!_draggingBar) return;
+            var local = PointFromRoot(p.Position); var h = _dragHorizontal;
+            TryGetScrollBarGeometry(h, out var bar);
+            var travel = h ? bar.Track.Width - bar.Thumb.Width : bar.Track.Height - bar.Thumb.Height;
+            var offset = _dragOffset + ((h ? local.X : local.Y) - _dragStart) / (travel > 0 ? travel : 1) * (h ? ScrollableWidth : ScrollableHeight);
+            if (h) ScrollToHorizontalOffset(offset); else ScrollToVerticalOffset(offset);
         });
-        AddHandler(PointerReleasedEvent, _ => _draggingBar = false);
+        AddHandler(PointerReleasedEvent, e => { if (_barHeld) { CancelPointerInteraction(); e.Handled = true; } });
         AddHandler(KeyDownEvent, e =>
         {
             if (e is not KeyEventArgs k) return;
@@ -144,6 +173,39 @@ public class ScrollViewer : Panel
             }
         });
     }
+
+    private bool CanContinueBarInteraction() => IsPressed && !IsDisposed && IsEffectiveEnabled && IsEffectivelyVisible && IsHitTestVisible &&
+        TryGetScrollBarGeometry(_dragHorizontal, out _) && (_dragHorizontal ? ScrollableWidth : ScrollableHeight) > 0;
+
+    private void PageTowardPointer()
+    {
+        if (!TryGetScrollBarGeometry(_dragHorizontal, out var bar)) return;
+        var local = PointFromRoot(_barPointer);
+        if (!bar.Track.Contains(local)) return; // Leaving the track pauses auto-repeat.
+        var coordinate = _dragHorizontal ? local.X : local.Y;
+        var edge = _dragHorizontal ? _pageDirection < 0 ? bar.Thumb.Left : bar.Thumb.Right
+            : _pageDirection < 0 ? bar.Thumb.Top : bar.Thumb.Bottom;
+        if ((coordinate - edge) * _pageDirection <= 0) return; // Stop when the thumb reaches the pointer.
+        if (_dragHorizontal) ScrollToHorizontalOffset(HorizontalOffset + _pageDirection * ViewportWidth);
+        else ScrollToVerticalOffset(VerticalOffset + _pageDirection * ViewportHeight);
+    }
+
+    public void Advance(TimeSpan elapsed)
+    {
+        if (!_barHeld || !_barScrolling) return;
+        if (!CanContinueBarInteraction()) { StopBarScrolling(); return; }
+        if (_draggingBar) return;
+        _repeatRemaining -= Math.Min(1, elapsed.TotalSeconds);
+        // Bound catch-up work after a suspended or stalled frame.
+        for (var i = 0; _repeatRemaining <= 0 && i < 16; i++)
+        { PageTowardPointer(); _repeatRemaining += RepeatInterval; }
+        if (_repeatRemaining <= 0) _repeatRemaining = RepeatInterval;
+    }
+
+    private void StopBarScrolling() { _barScrolling = _draggingBar = false; }
+    internal override void CancelPointerInteraction() { _barHeld = false; StopBarScrolling(); _repeatRemaining = 0; }
+    protected override void OnDetached() { CancelPointerInteraction(); base.OnDetached(); }
+    protected override void OnDispose() { CancelPointerInteraction(); base.OnDispose(); }
 
     public double VerticalOffset
     {
@@ -274,3 +336,6 @@ public class ScrollViewer : Panel
         ExtentHeight = content.DesiredSize.Height;
     }
 }
+
+/// <summary>Scrollbar hit track and painted thumb in ScrollViewer-local coordinates.</summary>
+public readonly record struct ScrollBarGeometry(Rect Track, Rect Thumb);

@@ -93,6 +93,7 @@ internal sealed class ClassicDesktopLifetime : IApplicationLifetime
                 TextPainter = textPainter,
                 MaxFramesPerSecond = window.MaxFramesPerSecond,
                 AlwaysRender = window.AlwaysRender,
+                AlwaysShowFocusVisuals = window.AlwaysShowFocusVisuals,
                 CloseOnEscape = window.CloseOnEscape,
                 IdleSleepMilliseconds = window.IdleSleepMilliseconds,
             }, window);

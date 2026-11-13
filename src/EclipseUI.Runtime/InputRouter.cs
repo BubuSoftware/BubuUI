@@ -29,15 +29,42 @@ public sealed class InputRouter
     /// 捕获期间冻结在捕获元素上，释放后重算。</summary>
     public Element? Hovered { get; private set; }
 
+    /// <summary>Cancels a drag/hold without synthesizing a release or click.</summary>
+    public void CancelPointerCapture()
+    {
+        var target = Captured; Captured = null;
+        if (target is not null) EndPointerInteraction(target);
+    }
+
+    private static void EndPointerInteraction(Element target)
+    {
+        try { target.CancelPointerInteraction(); }
+        finally
+        {
+            for (var ancestor = target.Parent; ancestor is not null; ancestor = ancestor.Parent)
+                if (ancestor is Elements.Button or Elements.CheckBox) ancestor.IsPressed = false;
+            target.IsPressed = false;
+        }
+    }
+
+    private bool CanRoutePointer(Element target)
+    {
+        if (target.IsDisposed || !target.IsEffectiveEnabled || !target.IsEffectivelyVisible || _root.IsDisposed) return false;
+        for (Element? node = target; node is not null; node = node.Parent)
+        {
+            if (!node.IsHitTestVisible) return false;
+            if (ReferenceEquals(node, _root)) return true;
+        }
+        return false;
+    }
+
     /// <summary>Ends input ownership without synthesizing a release/click on the previous tree.</summary>
     internal void Reset()
     {
-        var captured = Captured;
         var hovered = Hovered;
-        Captured = null;
         Hovered = null;
         List<Exception>? failures = null;
-        try { for (var item = captured; item is not null; item = item.Parent) item.IsPressed = false; }
+        try { CancelPointerCapture(); }
         catch (Exception error) { (failures ??= new()).Add(error); }
         try { if (hovered is not null) hovered.IsHovered = false; }
         catch (Exception error) { (failures ??= new()).Add(error); }
@@ -65,6 +92,9 @@ public sealed class InputRouter
     /// </summary>
     public void PointerPress(Point point, KeyModifiers modifiers = KeyModifiers.None, PointerButton button = PointerButton.Left)
     {
+        using var scope = Focus.EnterInput(FocusOrigin.Pointer, modifiers);
+        Focus.NotifyInput(FocusOrigin.Pointer);
+        CancelPointerCapture();
         foreach (var popup in OpenPopups().Reverse().ToArray())
             if (!popup.StaysOpen && !popup.ContainsRootPoint(point) && !popup.Descendants().OfType<Elements.Popup>().Any(p => p.IsOpen && p.ContainsRootPoint(point))) popup.Close();
         var hit = HitTest(point);
@@ -97,24 +127,27 @@ public sealed class InputRouter
     /// 只清按下位、不路由事件——禁用元素的 Released 不产生 Click。</summary>
     public void PointerRelease(Point point)
     {
+        using var scope = Focus.EnterInput(FocusOrigin.Pointer, _modifiers);
         var target = Captured ?? HitTest(point);
         Captured = null;
         if (target is not null)
         {
-            if (target.IsEffectiveEnabled && target.IsEffectivelyVisible)
-                target.RaiseEvent(new PointerEventArgs(Element.PointerReleasedEvent, point, _modifiers, _button) { Source = target });
-            for (var ancestor = target.Parent; ancestor is not null; ancestor = ancestor.Parent)
-                if (ancestor is Elements.Button or Elements.CheckBox) ancestor.IsPressed = false;
-            target.IsPressed = false; // 事件之后清除：Released handler 内「按下才触发」门控仍成立
+            try
+            {
+                if (CanRoutePointer(target))
+                    target.RaiseEvent(new PointerEventArgs(Element.PointerReleasedEvent, point, _modifiers, _button) { Source = target });
+            }
+            finally { EndPointerInteraction(target); } // Released handlers still observe IsPressed.
         }
         UpdateHover(HitTest(point)); // 释放后重算悬停（指针可能在按住期间移出）
     }
 
     public void PointerMove(Point point)
     {
+        if (Captured is { } captured && !CanRoutePointer(captured)) CancelPointerCapture();
         var target = Captured ?? HitTest(point);
         UpdateHover(target);
-        if (target is null || !target.IsEffectiveEnabled) return; // 禁用元素不路由移动事件
+        if (target is null || !CanRoutePointer(target)) return;
         target.RaiseEvent(new PointerEventArgs(Element.PointerMovedEvent, point, _modifiers, _button) { Source = target });
     }
 
@@ -149,6 +182,9 @@ public sealed class InputRouter
     /// E3：焦点元素被禁用（中途 <see cref="Element.IsEnabled"/> 翻转）时吞键。</summary>
     public void KeyPress(Key key, KeyModifiers modifiers = KeyModifiers.None, bool isRepeat = false)
     {
+        if (key == Key.None) return;
+        using var scope = Focus.EnterInput(FocusOrigin.Keyboard, modifiers);
+        Focus.NotifyInput(FocusOrigin.Keyboard);
         if (key == Key.Escape && TryDismissPopup()) return;
         var target = Focus.Focused ?? _root;
         if (!target.IsEffectiveEnabled || !target.IsEffectivelyVisible) return;

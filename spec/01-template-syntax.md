@@ -621,6 +621,12 @@ string        ::= '"' raw-char* '"'
   必须显式 `Invalidate()`（spec/03 §9.3）。
 - 事件名区分大小写；`Onclick` 是未知属性。
 
+### 4.13.1 焦点状态与样式
+
+`IsFocused`、`IsFocusWithin`、`IsFocusVisible` 是 FocusManager 维护的只读状态，不接受模板赋值或 @bind。对应平台伪类为 `:focus`、`:focus-within`、`:focus-visible`，无需 @states 注册；`:focus` 仍表示直接拥有焦点。
+
+Element 的 `FocusVisualMode` 是可赋值、可样式化的枚举属性，取值 Auto / Outline / Control / None。样式目录同时提供 FocusRingWidth、FocusRingOffset、支持 theme() 的 FocusRingColor。文本编辑器默认使用自身边框，普通控件在键盘交互时显示外圈。Window 的 AlwaysShowFocusVisuals 参数配置本窗口的始终提示偏好。完整运行时与绘制契约见 [design/25](../design/25-focus-visuals.md)。
+
 ### 4.14 可复用 UI 类型
 
 可复用类型可以用 C#、.ui 或二者的 partial 组合编写。文件根类型决定继承关系，类型本身决定属性、事件、内容与嵌入能力。

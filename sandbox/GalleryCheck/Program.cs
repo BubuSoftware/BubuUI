@@ -242,8 +242,7 @@ themeButton.AddHandler(Button.ClickEvent, () =>
     Console.WriteLine($"state: counter={counter.count} showButton={counter.showButton} tasks={taskList.tasks.Count}");
 
     if (shotPath is not null && rendered > 0)
-        GallerySnapshot.SavePng(gallery, window.LogicalClientSize, window.ScaleFactor,
-            host.Input.Focus.Focused, shotPath, theme, textPainter);
+        GallerySnapshot.SavePng(gallery, window.LogicalClientSize, window.ScaleFactor, shotPath, theme, textPainter);
 
     if (selfCheck)
     {
@@ -290,7 +289,7 @@ int RunCpu()
     gallery.Arrange(new Rect(Point.Zero, size));
 
     var path = shotPath ?? Path.Combine(Environment.CurrentDirectory, "out", "gallery-cpu.png");
-    GallerySnapshot.SavePng(gallery, size, 1.0, input.Focus.Focused, path, theme, textPainter);
+    GallerySnapshot.SavePng(gallery, size, 1.0, path, theme, textPainter);
     return 0;
 }
 

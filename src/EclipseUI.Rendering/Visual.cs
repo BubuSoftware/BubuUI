@@ -44,6 +44,16 @@ public static class Visual
     public static readonly StyledProperty<double?> FocusRingWidthProperty =
         StyledProperty<double?>.Register<Element>("Visual.FocusRingWidth", null);
 
+    public static readonly StyledProperty<double?> FocusRingOffsetProperty = StyledProperty<double?>.Register<Element>("Visual.FocusRingOffset", null, new() { Invalidate = InvalidateKind.Render });
+    public static readonly StyledProperty<Color?> FocusRingColorProperty = StyledProperty<Color?>.Register<Element>("Visual.FocusRingColor", null, new() { Invalidate = InvalidateKind.Render });
+    public static readonly StyledProperty<ThemeColor?> FocusRingColorResourceProperty = StyledProperty<ThemeColor?>.Register<Element>("Visual.FocusRingColorResource", null, new() { Invalidate = InvalidateKind.Render });
+    public static double? GetFocusRingOffset(Element element) => element.GetValue(FocusRingOffsetProperty);
+    public static Color? GetFocusRingColor(Element element) => element.GetValue(FocusRingColorProperty);
+    public static ThemeColor? GetFocusRingColorResource(Element element) => element.GetValue(FocusRingColorResourceProperty);
+    public static void SetFocusRingOffset(Element element, double? offset) { if (offset is null) element.ClearLocalValue(FocusRingOffsetProperty); else element.SetValue(FocusRingOffsetProperty, offset); }
+    public static void SetFocusRingColor(Element element, Color? color) { if (color is null) element.ClearLocalValue(FocusRingColorProperty); else element.SetValue(FocusRingColorProperty, color); }
+    public static void SetFocusRingColorResource(Element element, ThemeColor? color) { if (color is null) element.ClearLocalValue(FocusRingColorResourceProperty); else element.SetValue(FocusRingColorResourceProperty, color); }
+
     public static Color? GetBackground(Element element) => element.GetValue(BackgroundProperty);
 
     /// <summary>null 表示取消覆盖（清除 local 层，回落 class 样式/主题）。</summary>

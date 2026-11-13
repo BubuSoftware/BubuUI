@@ -102,7 +102,7 @@ public class PseudoStateTests
 
         headless.Focus.Focus(button);
         Assert.True(button.IsFocused);
-        Assert.Equal(PseudoStates.Focused, button.PseudoStates);
+        Assert.Equal(PseudoStates.Focused | PseudoStates.FocusWithin | PseudoStates.FocusVisible, button.PseudoStates);
 
         headless.Focus.ClearFocus();
         Assert.False(button.IsFocused);
@@ -118,11 +118,11 @@ public class PseudoStateTests
         headless.PointerPress(center);
         Assert.True(button.IsPressed);
         // 按下即命中（hover 同开）+ 可聚焦元素获得焦点（平台标准行为）。
-        Assert.Equal(PseudoStates.Hover | PseudoStates.Pressed | PseudoStates.Focused, button.PseudoStates);
+        Assert.Equal(PseudoStates.Hover | PseudoStates.Pressed | PseudoStates.Focused | PseudoStates.FocusWithin, button.PseudoStates);
 
         headless.PointerRelease(center);
         Assert.False(button.IsPressed);
-        Assert.Equal(PseudoStates.Hover | PseudoStates.Focused, button.PseudoStates); // 焦点仍在、悬停仍在
+        Assert.Equal(PseudoStates.Hover | PseudoStates.Focused | PseudoStates.FocusWithin, button.PseudoStates); // 焦点仍在、悬停仍在
 
         headless.Focus.ClearFocus();
         headless.PointerMove(new Point(Surface.Width + 200, Surface.Height + 200));
@@ -266,7 +266,7 @@ public class PseudoStateTests
     [Fact]
     public void Register_RejectsPlatformNames_AndInvalidNames()
     {
-        foreach (var platform in new[] { "hover", "pressed", "active", "focus", "disabled" })
+        foreach (var platform in new[] { "hover", "pressed", "active", "focus", "focus-visible", "focus-within", "disabled" })
             Assert.Throws<ArgumentException>(() => PseudoStatesRegistry.Register(platform));
         Assert.Throws<ArgumentException>(() => PseudoStatesRegistry.Register(""));
         Assert.Throws<ArgumentException>(() => PseudoStatesRegistry.Register("has space"));

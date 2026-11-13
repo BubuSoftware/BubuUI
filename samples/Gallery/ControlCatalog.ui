@@ -4,6 +4,11 @@
 @using System.Collections.ObjectModel
 
 <StackPanel Gap="12">
+    <TextBlock FontSize="18">Focus: click, press Space, then click again</TextBlock>
+    <WrapPanel Gap="16" Padding="6">
+        <Button Class="focus-action" Ref={focusAction}>Keyboard outline</Button>
+        <Button Class="focus-fill">Keyboard fill cue</Button>
+    </WrapPanel>
     <TextBlock FontSize="18">Input and values</TextBlock>
     <TextBox Width="320" Placeholder="Type here; select, copy, paste, undo" @bind-Text={message} />
     <TextBlock>{message}</TextBlock>
@@ -80,6 +85,7 @@ Unicode, selection and IME composition</TextBox>
 </StackPanel>
 
 @code {
+    public Button focusAction = null!;
     public string message = "Editable text";
     public double level = 35;
     public DateTime? initialDate = new DateTime(2026, 11, 14);
@@ -99,5 +105,18 @@ Unicode, selection and IME composition</TextBox>
     public ContextMenu context = null!;
     protected override void OnInitialized() {
         base.OnInitialized(); hint.Target = hintTarget; context.Target = hintTarget;
+    }
+}
+
+@style {
+    .focus-action {
+        FocusRingWidth: 2;
+        FocusRingOffset: 3;
+        FocusRingColor: theme(#7ebaff, #3476ff);
+        &:focus-visible { CornerRadius: 8; }
+    }
+    .focus-fill {
+        FocusVisualMode: None;
+        &:focus-visible { Background: theme(#805dba, #6b42a8); }
     }
 }

@@ -47,6 +47,9 @@ public sealed class DataGridColumn : INotifyPropertyChanged
 
 public class DataGrid : Panel
 {
+    public override FocusVisualGeometry GetFocusVisualGeometry() => _rows.GetRealizedItem(SelectedIndex) is { } row
+        ? new(row, new(4, 4, Math.Max(0, row.FinalRect.Width - 8), Math.Max(0, row.FinalRect.Height - 8)), 3)
+        : base.GetFocusVisualGeometry();
     private readonly Grid _header = new() { RowDefinitions = "Auto" };
     private readonly VirtualizingStackPanel _rows = new() { IsVariableHeight = true };
     private readonly ScrollViewer _scroll = new();
@@ -168,7 +171,7 @@ public class DataGrid : Panel
     }
     private Element CreateRow(int index)
     {
-        var row = new ListBoxItem { Padding = 2 };
+        var row = new ListBoxItem { Padding = 2, FocusVisualOwner = this };
         row.AddHandler(PreviewPointerPressedEvent, _ => { if (row.Item is RowIndex current) SelectedIndex = current.Index; });
         UpdateRow(row, index); return row;
     }

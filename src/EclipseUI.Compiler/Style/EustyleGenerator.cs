@@ -177,6 +177,8 @@ public static class EustyleGenerator
         EustyleVariant.Hover => "Hover",
         EustyleVariant.Pressed => "Pressed",
         EustyleVariant.Focus => "Focus",
+        EustyleVariant.FocusVisible => "FocusVisible",
+        EustyleVariant.FocusWithin => "FocusWithin",
         EustyleVariant.Disabled => "Disabled",
         _ => throw new InvalidOperationException("unexpected base variant in chain emission"),
     };

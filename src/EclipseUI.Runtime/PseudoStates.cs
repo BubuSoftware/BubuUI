@@ -2,7 +2,7 @@ namespace EclipseUI;
 
 /// <summary>
 /// 元素伪类状态掩码（D102，CSS 伪类对应物）：由 <see cref="InputRouter"/>（Hover/Pressed）
-/// 与 <see cref="FocusManager"/>（Focused）在路由过程中维护；样式匹配
+/// 与 <see cref="FocusManager"/>（Focused/FocusVisible/FocusWithin）在路由过程中维护；样式匹配
 /// （<c>StyleRegistry.ApplyClass</c>）与绘制段缓存键共用。状态变化自动触发
 /// 渲染失效与 class 层样式重应用（变体 setter 经 <c>AppBuilder.UseStyles</c> 链式声明）。
 /// </summary>
@@ -27,4 +27,8 @@ public enum PseudoStates
     /// （见 <see cref="Element.IsEnabled"/> setter）。
     /// </summary>
     Disabled = 8,
+    /// <summary>直接拥有焦点且需要可见提示（CSS :focus-visible）。</summary>
+    FocusVisible = 16,
+    /// <summary>自身或实际内容后代拥有焦点（CSS :focus-within）。</summary>
+    FocusWithin = 32,
 }

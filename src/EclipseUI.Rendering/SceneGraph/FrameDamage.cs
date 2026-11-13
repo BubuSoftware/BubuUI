@@ -105,50 +105,40 @@ public sealed class FrameDamage
 /// </summary>
 internal sealed class DamageTracker
 {
-    private readonly record struct Entry(Rect Bounds, long Version);
+    private readonly record struct Entry(Rect Bounds, long Version, FocusVisualDescriptor Focus);
 
     private Dictionary<Element, Entry> _previous = new();
     private Dictionary<Element, Entry> _current = new();
     private FrameDamage _damage = new();
     private Size _surface;
     private double _scale;
-    private Element? _focused;
-    private Element? _lastFocused;
     private Size _lastSurface;
     private double _lastScale;
     private bool _hasFrame;
-    private bool _focusedChanged;
 
-    public FrameDamage Begin(Size surface, double scale, Element? focused)
+    public FrameDamage Begin(Size surface, double scale)
     {
         _damage = new FrameDamage();
         _surface = surface;
         _scale = scale;
-        _focused = focused;
 
         if (!_hasFrame || surface != _lastSurface || Math.Abs(scale - _lastScale) > 1e-9)
             _damage.AddFull();
 
-        _focusedChanged = _hasFrame && !ReferenceEquals(focused, _lastFocused);
-        if (_focusedChanged && _lastFocused is not null &&
-            _previous.TryGetValue(_lastFocused, out var previousFocus))
-        {
-            AddClamped(previousFocus.Bounds);
-        }
 
         // End() 已清空并保留容量：避免每帧按元素数重新分配字典。
         _current.Clear();
         return _damage;
     }
 
-    public void Visit(Element element, Rect bounds)
+    public void Visit(Element element, Rect bounds, FocusVisualDescriptor focus)
     {
-        _current[element] = new Entry(bounds, element.RenderVersion);
+        _current[element] = new Entry(bounds, element.RenderVersion, focus);
         if (_damage.IsFull) return;
 
         if (_previous.TryGetValue(element, out var previous))
         {
-            if (previous.Version != element.RenderVersion || previous.Bounds != bounds)
+            if (previous.Version != element.RenderVersion || previous.Bounds != bounds || previous.Focus != focus)
             {
                 AddClamped(previous.Bounds);
                 AddClamped(bounds);
@@ -159,8 +149,6 @@ internal sealed class DamageTracker
             AddClamped(bounds);
         }
 
-        if (_focusedChanged && ReferenceEquals(element, _focused))
-            AddClamped(bounds);
     }
 
     public void End()
@@ -174,7 +162,6 @@ internal sealed class DamageTracker
             }
         }
 
-        _lastFocused = _focused;
         _lastSurface = _surface;
         _lastScale = _scale;
         _hasFrame = true;

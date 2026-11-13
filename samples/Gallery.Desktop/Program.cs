@@ -64,7 +64,7 @@ static int RunOffscreen(AppBuilder builder, GalleryLaunchOptions options)
         var textPainter = app.Services.GetService<ITextPainter>() ?? new MeasuringTextPainter();
         var shotPath = options.ShotPath
                        ?? Path.Combine(Environment.CurrentDirectory, "out", "gallery-cpu.png");
-        GallerySnapshot.SavePng(root, size, 1.0, null, shotPath, theme, textPainter);
+        GallerySnapshot.SavePng(root, size, 1.0, shotPath, theme, textPainter);
 
         window.Dispose();
         return 0;

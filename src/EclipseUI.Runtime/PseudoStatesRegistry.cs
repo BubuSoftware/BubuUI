@@ -13,14 +13,14 @@ namespace EclipseUI;
 /// </summary>
 public static class PseudoStatesRegistry
 {
-    /// <summary>平台保留名（撞名注册即启动期错误）：四个枚举位 + <c>active</c>（pressed 的 CSS 别名）。</summary>
+    /// <summary>平台保留名（撞名注册即启动期错误）：六个枚举位 + <c>active</c>（pressed 的 CSS 别名）。</summary>
     private static readonly string[] PlatformNames =
-        ["hover", "pressed", "active", "focus", "disabled"];
+        ["hover", "pressed", "active", "focus", "focus-visible", "focus-within", "disabled"];
 
     private static readonly Dictionary<string, PseudoStates> Registered = new(StringComparer.Ordinal);
 
-    /// <summary>下一个可分配位（平台四位的后一位起）。位 31 是符号位，不参与分配。</summary>
-    private static int _nextBit = (int)PseudoStates.Disabled << 1;
+    /// <summary>下一个可分配位（平台六位的后一位起）。位 31 是符号位，不参与分配。</summary>
+    private static int _nextBit = (int)PseudoStates.FocusWithin << 1;
 
     /// <summary>全部已注册位的并集（<see cref="Element.SetRegisteredState"/> 的合法性校验源）。</summary>
     private static PseudoStates _registeredBits;
@@ -29,9 +29,9 @@ public static class PseudoStatesRegistry
 
     /// <summary>
     /// 注册一个自定义伪类状态名并返回其掩码位（启动期调用，幂等）。名称规范化（去前导
-    /// <c>:</c>）、小写敏感（Ordinal）；与平台位撞名（hover/pressed/active/focus/disabled）
-    /// 或名称非法立即抛出——启动期 fail fast，不留运行期静默。位从 <see cref="PseudoStates.Disabled"/>
-    /// 后一位自增分配；int 掩码可容纳 27 个注册位（design/17 §8：不够升 long，段键同步扩字段）。
+    /// <c>:</c>）、小写敏感（Ordinal）；与平台位撞名（hover/pressed/active/focus/focus-visible/focus-within/disabled）
+    /// 或名称非法立即抛出——启动期 fail fast，不留运行期静默。位从 <see cref="PseudoStates.FocusWithin"/>
+    /// 后一位自增分配；int 掩码可容纳 25 个注册位（design/17 §8：不够升 long，段键同步扩字段）。
     /// </summary>
     public static PseudoStates Register(string name)
     {
@@ -40,9 +40,9 @@ public static class PseudoStatesRegistry
         {
             if (Registered.TryGetValue(normalized, out var existing))
                 return existing;
-            if (_nextBit >= unchecked((int)0x40000000))
+            if (_nextBit <= 0)
                 throw new InvalidOperationException(
-                    $"no free pseudo-state bits left for '{normalized}'; the int mask holds 27 " +
+                    $"no free pseudo-state bits left for '{normalized}'; the int mask holds 25 " +
                     "registered states — promote PseudoStates to long (design/17 §8) when needed");
             var mask = (PseudoStates)_nextBit;
             _nextBit <<= 1;
@@ -79,7 +79,7 @@ public static class PseudoStatesRegistry
                     "use letters, digits, '-' or '_'.", nameof(name));
         if (Array.IndexOf(PlatformNames, normalized) >= 0)
             throw new ArgumentException(
-                $"'{normalized}' is a platform pseudo-class (hover/pressed/active/focus/disabled); " +
+                $"'{normalized}' is a platform pseudo-class (hover/pressed/active/focus/focus-visible/focus-within/disabled); " +
                 "registered names must not shadow platform states.", nameof(name));
         return normalized;
     }

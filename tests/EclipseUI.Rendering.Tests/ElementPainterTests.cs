@@ -222,7 +222,8 @@ public class ElementPainterTests
         Layout(root);
 
         var theme = new ElementTheme();
-        var list = new ElementPainter(theme, new FakeTextPainter()).Build(root, DefaultSize, focused: button);
+        (FocusManager.GetFor(root) ?? new FocusManager(root)).Focus(button, FocusOrigin.Keyboard);
+        var list = new ElementPainter(theme, new FakeTextPainter()).Build(root, DefaultSize);
 
         var ring = list.Commands.OfType<StrokePath>().Single(s => BrushColor(s.Brush) == theme.FocusRing);
         Assert.Equal(theme.FocusRingWidth, ring.Width);

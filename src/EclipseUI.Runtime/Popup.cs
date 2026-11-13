@@ -20,7 +20,7 @@ public class Popup : ContentControl
     public Point PointerPosition { get => _pointerPosition; set { _pointerPosition = value; InvalidateArrange(); } }
     public double HorizontalOffset { get => _horizontalOffset; set { _horizontalOffset = value; InvalidateArrange(); } }
     public double VerticalOffset { get => _verticalOffset; set { _verticalOffset = value; InvalidateArrange(); } }
-    private Element? _previousFocus;
+    private WeakReference<Element>? _previousFocus;
     public Popup()
     {
         PropertyChanged += (_, property) =>
@@ -30,11 +30,16 @@ public class Popup : ContentControl
                 InvalidateRender();
                 var root = this as Element; while (root.Parent is not null) root = root.Parent;
                 var focus = root._focusManager;
-                if (IsOpen) _previousFocus = focus?.Focused;
-                else if (focus?.Focused is { } current && Descendants().Contains(current))
+                if (IsOpen) _previousFocus = focus?.Focused is { } previous ? new(previous) : null;
+                else
                 {
-                    focus.ClearFocus();
-                    if (_previousFocus is not null) focus.Focus(_previousFocus);
+                    var previous = _previousFocus; _previousFocus = null;
+                    if (focus?.Focused is { } current && Descendants().Contains(current))
+                    {
+                        focus.ClearFocus();
+                        if (previous?.TryGetTarget(out var target) == true) focus.Focus(target, FocusOrigin.Restore);
+                    }
+                    focus?.RefreshFocusPath();
                 }
                 RaiseEvent(new(IsOpen ? OpenedEvent : ClosedEvent));
             }

@@ -70,6 +70,7 @@ public class Window : UiObject
 
     /// <summary>忽略脏区判定，每帧都上屏（性能对比 / 持续动画场景）。</summary>
     [UiParameter] public bool AlwaysRender { get; set; }
+    [UiParameter] public bool AlwaysShowFocusVisuals { get; set; }
 
     /// <summary>Esc 关闭窗口（应用内可关掉，自己处理键）。</summary>
     [UiParameter] public bool CloseOnEscape { get; set; } = true;

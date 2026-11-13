@@ -15,9 +15,10 @@ namespace EclipseUI.Rendering;
 /// </list>
 ///
 /// G2 retained（D93）：每个元素的**自绘命令**（类型绘制 + 卡片 + 焦点环）按
-/// (RenderVersion, 绝对位置, 尺寸, 焦点态) 缓存——树未变的元素直接复用命令段，
+/// (RenderVersion, 绝对位置, 尺寸, 状态, 焦点视觉描述符) 缓存——树未变的元素直接复用命令段，
 /// 不再逐条重新构造（帧间分配趋零）；失效契约与 <c>DamageTracker</c> 一致：
-/// 「一切影响像素的变化都递增 <see cref="Element.RenderVersion"/>」。
+/// 状态/样式递增 <see cref="Element.RenderVersion"/>；导航项与裁剪几何进入同一描述符。
+/// 自绘段先于子内容输出，焦点段在子内容与自身裁剪结束后输出。
 /// clip 作用域与滚动条每帧重新生成（位置可能变、且成本可忽略），不属于段。
 /// 金标准：retained 构建与全量构建渲染结果逐像素一致（<c>RetainedPaintTests</c> 锁定）。
 /// <see cref="BuildFrame"/> 额外产出元素级脏区，宿主据此跳过空闲帧的上屏。
@@ -25,7 +26,8 @@ namespace EclipseUI.Rendering;
 public sealed class ElementPainter
 {
     /// <summary>单元素自绘命令段；缓存后视为只读。</summary>
-    private sealed record Segment(long Version, Point Position, Size Size, PseudoStates States, List<DrawCommand> Commands);
+    private sealed record Segment(long Version, Point Position, Size Size, PseudoStates States,
+        FocusVisualDescriptor Focus, List<DrawCommand> Commands, List<DrawCommand> FocusCommands);
 
     private ElementTheme _theme;
     private readonly ITextPainter? _text;
@@ -35,7 +37,8 @@ public sealed class ElementPainter
     private DisplayList _list = null!;
     private DisplayList _paintList = null!;
     private readonly List<(Elements.Popup Popup, Point Offset)> _popups = new();
-    private Element? _focused;
+    private FocusVisualDescriptor _focus;
+    private double _aaMargin;
     private int _reusedSegments;
     private int _repaintedSegments;
 
@@ -71,21 +74,21 @@ public sealed class ElementPainter
     /// 坐标使用设备无关单位；<paramref name="scale"/> 为 DPI 缩放，
     /// 由根变换一次性放大到设备像素。返回的 list 尺寸为逻辑尺寸。
     /// </summary>
-    public DisplayList Build(Element root, Size size, double scale = 1, Element? focused = null)
+    public DisplayList Build(Element root, Size size, double scale = 1)
     {
         _damageTracker.Reset();
-        return BuildCore(root, size, scale, focused, tracker: null);
+        return BuildCore(root, size, scale, tracker: null);
     }
 
     /// <summary>
     /// 构建一帧并返回相对上一帧的脏区。首帧 / 尺寸 / DPI 变化为整帧；
     /// 脏区为空时宿主可跳过上屏（画面保持不变）。
     /// </summary>
-    public PaintedFrame BuildFrame(Element root, Size size, double scale = 1, Element? focused = null)
+    public PaintedFrame BuildFrame(Element root, Size size, double scale = 1)
     {
         ArgumentNullException.ThrowIfNull(root);
-        var damage = _damageTracker.Begin(size, scale, focused);
-        var list = BuildCore(root, size, scale, focused, _damageTracker);
+        var damage = _damageTracker.Begin(size, scale);
+        var list = BuildCore(root, size, scale, _damageTracker);
         _damageTracker.End();
         return new PaintedFrame(list, damage);
     }
@@ -93,14 +96,15 @@ public sealed class ElementPainter
     /// <summary>丢弃脏区历史，下一帧强制整帧重绘（窗口遮挡恢复等场景）。</summary>
     public void ResetDamage() => _damageTracker.Reset();
 
-    private DisplayList BuildCore(Element root, Size size, double scale, Element? focused, DamageTracker? tracker)
+    private DisplayList BuildCore(Element root, Size size, double scale, DamageTracker? tracker)
     {
         ArgumentNullException.ThrowIfNull(root);
 
         var list = new DisplayList(size);
         _list = list;
         _paintList = list;
-        _focused = focused;
+        _focus = FocusVisualDescriptor.Resolve(root, _theme);
+        _aaMargin = scale > 0 ? Math.Max(1, 1 / scale) : 1;
         _popups.Clear();
         _reusedSegments = 0;
         _repaintedSegments = 0;
@@ -136,27 +140,20 @@ public sealed class ElementPainter
         var final = element.FinalRect;
         var rect = new Rect(offset.X + final.X, offset.Y + final.Y, final.Width, final.Height);
 
-        // 伪类状态（D102）：hover/pressed/focused 读元素自身（FocusManager/InputRouter 维护
-        // IsFocused）；Build 的 focused 参数是 headless 手工传焦点的兼容入口。两来源并集，
-        // 段键与焦点环绘制同源——否则 retained 复用键与全量重画判定会分叉。
         var states = element.PseudoStates;
-        if (ReferenceEquals(element, _focused) && element.IsFocusable)
-            states |= PseudoStates.Focused;
-        var focused = (states & PseudoStates.Focused) != 0;
-        // E3：焦点环宽度可被 class/inline 覆盖（Visual.FocusRingWidth），null 回落主题令牌。
-        var ringWidth = Visual.GetFocusRingWidth(element) ?? _theme.FocusRingWidth;
-        // 焦点环 stroke 居中于 ring（rect 外扩 ringWidth）路径：外缘达 1.5×ringWidth，
-        // AA 半覆盖再 +1——脏区必须覆盖全部环像素（D102 抓出的既有覆盖不足：旧式 1× 膨胀下
-        // 环外缘 ~1px 带留在脏区外，GPU retained 合成与整帧参照逐像素比对时暴露）。
-        var visualBounds = focused ? Inflate(rect, ringWidth * 1.5 + 1) : rect;
-        tracker?.Visit(element, visualBounds);
+        var focus = ReferenceEquals(element, _focus.Owner) ? _focus : default;
+        if (element.IsFocusWithin && ReferenceEquals(element.FocusVisualTarget, element) && element.EffectiveFocusVisualMode == FocusVisualMode.Control)
+            focus = new(element, FocusManager.GetFor(element)?.Focused, rect, Control: true);
+        var visualBounds = focus.Owner is not null && !focus.Control
+            ? FrameDamage.Union(rect, Inflate(focus.Bounds, Math.Max(0, focus.Offset + focus.Width / 2) + _aaMargin)) : rect;
+        tracker?.Visit(element, visualBounds, focus);
 
         // retained 段：自绘命令（类型绘制 + 卡片 + 焦点环）按失效键复用。
         if (_segments.TryGetValue(element, out var segment) &&
             segment.Version == element.RenderVersion &&
             segment.Position == rect.Location &&
             segment.Size == rect.Size &&
-            segment.States == states)
+            segment.States == states && segment.Focus == focus)
         {
             _list.AddRange(segment.Commands);
             _reusedSegments++;
@@ -165,10 +162,14 @@ public sealed class ElementPainter
         {
             var buffer = new DisplayList();
             _paintList = buffer;
-            PaintSelf(element, rect, focused, isRoot);
+            PaintSelf(element, rect, isRoot);
+            var decoration = new DisplayList();
+            _paintList = decoration;
+            if (focus.Owner is not null) PaintFocusRing(element, rect, focus);
             _paintList = _list;
             _segments.Remove(element);
-            _segments.Add(element, new Segment(element.RenderVersion, rect.Location, rect.Size, states, buffer.Commands));
+            segment = new Segment(element.RenderVersion, rect.Location, rect.Size, states, focus, buffer.Commands, decoration.Commands);
+            _segments.Add(element, segment);
             _list.AddRange(buffer.Commands);
             _repaintedSegments++;
         }
@@ -195,10 +196,11 @@ public sealed class ElementPainter
         // 滚动条画在内容之上（裁剪作用域外也不越界：位置按视口矩形内缩计算）。
         if (element is ScrollViewer viewer)
             PaintScrollBar(viewer, rect);
+        _list.AddRange(segment.FocusCommands);
     }
 
     /// <summary>元素的自身绘制（写入当前段缓冲；子树由 <see cref="PaintElement"/> 递归处理）。</summary>
-    private void PaintSelf(Element element, Rect rect, bool focused, bool isRoot)
+    private void PaintSelf(Element element, Rect rect, bool isRoot)
     {
         if (element.UsesDefaultDrawing) switch (element)
             {
@@ -233,7 +235,6 @@ public sealed class ElementPainter
             ResolveForeground(element, _theme.Foreground), ResolveBackground(element, _theme.ControlBackground), element.IsEffectiveEnabled);
         element.Render(context);
         context.Complete();
-        if (focused) PaintFocusRing(element, rect);
     }
 
     /// <summary>叠加式滚动条：可滚动方向在视口内缘画拇指，命中/拖动由 ScrollViewer 处理。
@@ -241,54 +242,15 @@ public sealed class ElementPainter
     /// Hidden/Disabled 不出条。</summary>
     private void PaintScrollBar(ScrollViewer viewer, Rect rect)
     {
-        if (ShowScrollBar(viewer.VerticalScrollBarVisibility, viewer.ScrollableHeight))
+        for (var i = 0; i < 2; i++)
         {
-            var trackHeight = rect.Height - ScrollBarInset * 2;
-            if (trackHeight > ScrollBarThickness * 2)
-            {
-                var thumbHeight = viewer.ScrollableHeight == 0 ? trackHeight : Math.Max(ScrollBarThickness,
-                    trackHeight * viewer.ViewportHeight / Math.Max(1, viewer.ExtentHeight));
-                var maxScroll = Math.Max(1, viewer.ScrollableHeight);
-                var offset = Math.Clamp(viewer.VerticalOffset, 0, viewer.ScrollableHeight);
-                var thumbY = rect.Y + ScrollBarInset
-                             + (trackHeight - thumbHeight) * (offset / maxScroll);
-                _paintList.Add(new FillRoundedRect(
-                    new Rect(rect.Right - ScrollBarInset - ScrollBarThickness, thumbY, ScrollBarThickness, thumbHeight),
-                    ScrollBarThickness / 2,
-                    _theme.ScrollBarThumb));
-            }
-        }
-
-        if (ShowScrollBar(viewer.HorizontalScrollBarVisibility, viewer.ScrollableWidth))
-        {
-            var trackWidth = rect.Width - ScrollBarInset * 2;
-            if (trackWidth > ScrollBarThickness * 2)
-            {
-                var thumbWidth = viewer.ScrollableWidth == 0 ? trackWidth : Math.Max(ScrollBarThickness,
-                    trackWidth * viewer.ViewportWidth / Math.Max(1, viewer.ExtentWidth));
-                var maxScroll = Math.Max(1, viewer.ScrollableWidth);
-                var offset = Math.Clamp(viewer.HorizontalOffset, 0, viewer.ScrollableWidth);
-                var thumbX = rect.X + ScrollBarInset
-                             + (trackWidth - thumbWidth) * (offset / maxScroll);
-                _paintList.Add(new FillRoundedRect(
-                    new Rect(thumbX, rect.Bottom - ScrollBarInset - ScrollBarThickness, thumbWidth, ScrollBarThickness),
-                    ScrollBarThickness / 2,
-                    _theme.ScrollBarThumb));
-            }
+            if (!viewer.TryGetScrollBarGeometry(i == 1, out var bar)) continue;
+            var thumb = bar.Thumb;
+            _paintList.Add(new FillRoundedRect(
+                new Rect(rect.X + thumb.X, rect.Y + thumb.Y, thumb.Width, thumb.Height),
+                3, _theme.ScrollBarThumb));
         }
     }
-
-    private const double ScrollBarInset = 4;
-    private const double ScrollBarThickness = 6;
-
-    /// <summary>方向开关 → 是否画滚动条：Auto 按需（可滚才画）、Visible 恒画
-    ///（不可滚时拇指满槽）、Hidden/Disabled 不画。</summary>
-    private static bool ShowScrollBar(ScrollBarVisibility visibility, double scrollable) => visibility switch
-    {
-        ScrollBarVisibility.Auto => scrollable > 0,
-        ScrollBarVisibility.Visible => true,
-        _ => false,
-    };
 
     // ---- S-C 有效色解析：主题资源 > 静态覆盖 > 主题令牌（解析发生在段构建期，
     // 换主题 ReplaceTheme 丢段重建即随新表刷新）----
@@ -443,24 +405,20 @@ public sealed class ElementPainter
             _theme.BorderWidth));
     }
 
-    private void PaintFocusRing(Element element, Rect rect)
+    private void PaintFocusRing(Element element, Rect rect, FocusVisualDescriptor focus)
     {
-        if (rect.Width <= 0 || rect.Height <= 0) return;
-
-        var radius = element switch
+        if (focus.Control)
         {
-            Button => _theme.ButtonRadius,
-            CheckBox => _theme.CheckBoxRadius,
-            ListBoxItem => _theme.ItemRadius,
-            _ => _theme.PanelRadius,
-        };
-
-        var ringWidth = Visual.GetFocusRingWidth(element) ?? _theme.FocusRingWidth;
-        var ring = Inflate(rect, ringWidth);
+            var context = new ElementDrawingContext(_paintList, rect.Location, _theme, _text,
+                ResolveForeground(element, _theme.Foreground), ResolveBackground(element, _theme.ControlBackground), element.IsEffectiveEnabled);
+            element.RenderFocusVisual(context); context.Complete(); return;
+        }
+        var ring = Inflate(focus.Bounds, focus.Offset);
+        if (ring.Width <= 0 || ring.Height <= 0) return;
+        if (focus.Clip is { } clip) _paintList.Add(new PushClip(clip));
         _paintList.Add(new StrokePath(
-            PathGeometry.RoundedRectangle(ring, radius + ringWidth),
-            _theme.FocusRing,
-            ringWidth));
+            PathGeometry.RoundedRectangle(ring, Math.Max(0, focus.Radius + focus.Offset)), focus.Color, focus.Width));
+        if (focus.Clip is not null) _paintList.Add(new PopClip());
     }
 
     private static Rect Inset(Rect rect, double amount) => new(

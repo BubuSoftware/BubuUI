@@ -23,6 +23,43 @@ public class EustyleTests
     /// <summary>真实符号派生的属性目录（扫描 Runtime + Rendering，绝不手写固定表）�?/summary>
     private static StylePropertyCatalog Catalog => UiTestCatalogs.StyleProperties();
 
+    [Theory]
+    [InlineData("IsFocused")]
+    [InlineData("IsFocusWithin")]
+    [InlineData("IsFocusVisible")]
+    public void FocusStatesCannotBeAssignedByTemplates(string state)
+    {
+        var result = Run(new TestAdditionalText("Probe.ui", "@using EclipseUI.Elements\n<Button " + state + "=\"true\" />"));
+        Assert.NotEmpty(result.Diagnostics);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.GetMessage().Contains(state));
+    }
+
+    [Fact]
+    public void FocusVariantsAndVisualPropertiesCompileThroughRealCatalog()
+    {
+        const string ui = """
+            @using EclipseUI.Elements
+            <StackPanel><Button Class="action" Style="FocusVisualMode: Outline">Go</Button></StackPanel>
+            @style {
+                .action {
+                    FocusVisualMode: Outline;
+                    FocusRingWidth: 3;
+                    FocusRingOffset: 4;
+                    FocusRingColor: theme(#7ebaff, #3476ff);
+                    &:focus { Background: #123456; }
+                    &:focus-visible { CornerRadius: 8; }
+                    &:focus-within { Padding: 3; }
+                }
+            }
+            """;
+        var result = Run(new TestAdditionalText("Probe.ui", ui));
+        Assert.Empty(result.Diagnostics);
+        var code = SourceOf(result, hint => hint.Contains("Probe."));
+        AssertGeneratedCodeParses(code);
+        Assert.Contains(".Focus(s =>", code); Assert.Contains(".FocusVisible(s =>", code); Assert.Contains(".FocusWithin(s =>", code);
+        Assert.Contains("s.FocusRingOffset(4)", code); Assert.Contains("FocusVisualMode.Outline", code);
+    }
+
     private static (EustyleStylesheet Sheet, List<UiDiagnostic> Diags) Parse(string source, int offset = 0)
     {
         var diags = new List<UiDiagnostic>();

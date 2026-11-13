@@ -89,8 +89,11 @@ public sealed class ClassStyleVariants
     /// <summary>指针按下变体（CSS :active / WPF IsPressed）。</summary>
     public ClassStyleVariants Pressed(Action<StyleBuilder> build) => AddVariant(PseudoStates.Pressed, build);
 
-    /// <summary>键盘焦点变体（CSS :focus）。</summary>
+    /// <summary>直接焦点变体（CSS :focus，响应所有输入来源）。</summary>
     public ClassStyleVariants Focus(Action<StyleBuilder> build) => AddVariant(PseudoStates.Focused, build);
+
+    public ClassStyleVariants FocusVisible(Action<StyleBuilder> build) => AddVariant(PseudoStates.FocusVisible, build);
+    public ClassStyleVariants FocusWithin(Action<StyleBuilder> build) => AddVariant(PseudoStates.FocusWithin, build);
 
     /// <summary>有效禁用变体（CSS :disabled，E3）：祖先禁用同样命中（有效值沿树继承）。</summary>
     public ClassStyleVariants Disabled(Action<StyleBuilder> build) => AddVariant(PseudoStates.Disabled, build);
@@ -152,6 +155,10 @@ public sealed class StyleBuilder
 
     /// <summary>焦点环宽度覆盖（E3）：绘制时回落主题令牌 <see cref="ElementTheme.FocusRingWidth"/>。</summary>
     public StyleBuilder FocusRingWidth(double width) => Set(Visual.FocusRingWidthProperty, (double?)width);
+
+    public StyleBuilder FocusRingOffset(double offset) => Set(Visual.FocusRingOffsetProperty, (double?)offset);
+    public StyleBuilder FocusRingColor(Color color) => Set(Visual.FocusRingColorProperty, (Color?)color);
+    public StyleBuilder FocusRingColor(ThemeColor color) => Set(Visual.FocusRingColorResourceProperty, (ThemeColor?)color);
 
     private sealed class StyleSetter<T>(StyledProperty<T> property, T value) : IStyleSetter
     {

@@ -208,6 +208,17 @@ public class CompletionTests
         Assert.Equal(UiCompletionKind.StyleProperty, Item(list, "CornerRadius").Kind);
         // 插入形态是 `Name: `，接着就能写值。
         Assert.Equal("CornerRadius: ", Item(list, "CornerRadius").Text);
+        Assert.Equal(UiCompletionKind.StyleProperty, Item(list, "FocusRingColor").Kind);
+        Assert.Equal(UiCompletionKind.StyleProperty, Item(list, "FocusRingOffset").Kind);
+        Assert.Equal(UiCompletionKind.StyleProperty, Item(list, "FocusVisualMode").Kind);
+    }
+
+    [Fact]
+    public void FocusVisualModeOffersRealEnumMembers()
+    {
+        var (service, uri, offset) = TestHost.Open(Using + "<Button Style=\"FocusVisualMode: |\" />");
+        var labels = service.Complete(uri, offset).Items.Select(i => i.Label).ToArray();
+        Assert.Equal(new[] { "Auto", "Control", "None", "Outline" }, labels.OrderBy(v => v, StringComparer.Ordinal));
     }
 
     /// <summary>

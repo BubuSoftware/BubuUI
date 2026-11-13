@@ -178,6 +178,7 @@ public sealed partial class Win32Window : IDisposable
     public event EventHandler<Win32PointerEventArgs>? PointerMoved;
 
     public event EventHandler<Win32PointerEventArgs>? PointerPressed;
+    public event EventHandler? PointerCaptureLost;
 
     public event EventHandler<Win32PointerEventArgs>? PointerReleased;
 
@@ -229,19 +230,35 @@ public sealed partial class Win32Window : IDisposable
     /// </summary>
     public void PostPointerClick(Point position, bool rightButton = false)
     {
+        PostPointerPress(position, rightButton);
+        PostPointerRelease(position, rightButton);
+    }
+
+    /// <summary>Posts a held button press in device pixels, for native drag/hold checks.</summary>
+    public void PostPointerPress(Point position, bool rightButton = false)
+    {
         ObjectDisposedException.ThrowIf(_disposed, this);
-
-        int x = (int)Math.Round(position.X);
-        int y = (int)Math.Round(position.Y);
-        var lParam = (nint)((y << 16) | (x & 0xFFFF));
-
         Win32Native.PostMessageW(_hwnd,
             (uint)(rightButton ? Win32Native.WM_RBUTTONDOWN : Win32Native.WM_LBUTTONDOWN),
-            rightButton ? 2 : 1, lParam);
+            rightButton ? 2 : 1, PointerLParam(position));
+    }
+
+    public void PostPointerMove(Point position)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        Win32Native.PostMessageW(_hwnd, Win32Native.WM_MOUSEMOVE, 0, PointerLParam(position));
+    }
+
+    public void PostPointerRelease(Point position, bool rightButton = false)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         Win32Native.PostMessageW(_hwnd,
             (uint)(rightButton ? Win32Native.WM_RBUTTONUP : Win32Native.WM_LBUTTONUP),
-            0, lParam);
+            0, PointerLParam(position));
     }
+
+    private static nint PointerLParam(Point position) =>
+        (nint)(((int)Math.Round(position.Y) << 16) | ((int)Math.Round(position.X) & 0xFFFF));
 
     /// <summary>按设备无关尺寸请求客户区大小（内部换算 DPI 与边框），用于 resize 冒烟测试。</summary>
     public void SetClientSize(int width, int height)
@@ -519,12 +536,22 @@ public sealed partial class Win32Window : IDisposable
                     if (InputEnabled)
                     {
                         var position = PointFromLParam(lParam);
-                        Win32Native.ReleaseCapture();
-                        PointerReleased?.Invoke(this, new Win32PointerEventArgs(
-                            position, ToLogical(position), message == Win32Native.WM_RBUTTONUP));
+                        // ReleaseCapture synchronously sends WM_CAPTURECHANGED. Deliver the
+                        // normal release first, so cancellation cannot suppress a valid click.
+                        try { PointerReleased?.Invoke(this, new Win32PointerEventArgs(
+                            position, ToLogical(position), message == Win32Native.WM_RBUTTONUP)); }
+                        finally { Win32Native.ReleaseCapture(); }
                     }
                     return 0;
                 }
+
+            case 0x0215 /* WM_CAPTURECHANGED */:
+                if (lParam != _hwnd) PointerCaptureLost?.Invoke(this, EventArgs.Empty);
+                return 0;
+            case 0x001F /* WM_CANCELMODE */:
+                Win32Native.ReleaseCapture();
+                PointerCaptureLost?.Invoke(this, EventArgs.Empty);
+                return 0;
 
             case Win32Native.WM_MOUSEWHEEL:
                 {

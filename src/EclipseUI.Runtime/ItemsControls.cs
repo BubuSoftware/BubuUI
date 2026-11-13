@@ -135,6 +135,13 @@ public class ListBox : ItemsControl
     public SelectionModel Selection { get; } = new();
     private bool _sync;
     private int _navigationIndex = -1;
+    public override FocusVisualGeometry GetFocusVisualGeometry()
+    {
+        var index = _navigationIndex >= 0 && _navigationIndex < Children.Count ? _navigationIndex : SelectedIndex;
+        return index >= 0 && index < Children.Count
+            ? new(Children[index], new(4, 4, Math.Max(0, Children[index].FinalRect.Width - 8), Math.Max(0, Children[index].FinalRect.Height - 8)))
+            : base.GetFocusVisualGeometry();
+    }
     private int[] _reportedIndices = [];
     private object?[] _reportedItems = [];
     public Action<object?>? SelectedItemChanged { get; set; }
@@ -150,7 +157,7 @@ public class ListBox : ItemsControl
         {
             if (_sync) return;
             if (p == SelectionModeProperty) { Selection.Mode = SelectionMode; Selection.SetItems(ItemValues); SynchronizeSelection(); }
-            if (p == SelectedIndexProperty && ItemValues.Count > 0) { Selection.SetItems(ItemValues); Selection.Select(SelectedIndex); SynchronizeSelection(); }
+            if (p == SelectedIndexProperty && ItemValues.Count > 0) { _navigationIndex = SelectedIndex; Selection.SetItems(ItemValues); Selection.Select(SelectedIndex); SynchronizeSelection(); }
         };
         AddHandler(PreviewPointerPressedEvent, args =>
         {
@@ -183,16 +190,17 @@ public class ListBox : ItemsControl
     {
         Selection.Mode = SelectionMode; Selection.SetItems(ItemValues);
         Selection.Select(index, SelectionMode == SelectionMode.Multiple || modifiers.HasFlag(KeyModifiers.Control), modifiers.HasFlag(KeyModifiers.Shift));
-        _navigationIndex = index; BringItemIntoView(index);
+        _navigationIndex = index; InvalidateRender(); BringItemIntoView(index);
     }
     protected override Element CreateContainer(object? item)
     {
-        if (item is ListBoxItem existing) return existing;
-        var container = new ListBoxItem { Item = item }; container.Children.Add(MakeItemContent(item)); return container;
+        if (item is ListBoxItem existing) { existing.FocusVisualOwner = this; return existing; }
+        var container = new ListBoxItem { Item = item, FocusVisualOwner = this }; container.Children.Add(MakeItemContent(item)); return container;
     }
     protected override void OnItemsChanged()
     {
         if (_sync) return;
+        foreach (var item in Children.OfType<ListBoxItem>()) item.FocusVisualOwner = this;
         Selection.Mode = SelectionMode;
         var requested = SelectedIndex;
         var hadSelection = Selection.SelectedIndex >= 0;

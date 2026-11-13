@@ -64,8 +64,12 @@ public sealed class ElementCollection : IReadOnlyList<Element>
         child._needsArrange = true;
         _owner.InvalidateMeasure();
         _owner.InvalidateRender();
-        child.AttachToParent(_owner);
+        List<Exception>? failures = null;
+        try { child._focusManager?.RefreshFocusPath(); } catch (Exception error) { (failures ??= new()).Add(error); }
+        try { _owner.NotifyFocusTreeChanged(); } catch (Exception error) { (failures ??= new()).Add(error); }
+        try { child.AttachToParent(_owner); } catch (Exception error) { (failures ??= new()).Add(error); }
         _owner.OnChildrenChanged();
+        if (failures is not null) throw new AggregateException("Content attachment notifications failed.", failures);
     }
 
     public bool Remove(Element child)
@@ -82,8 +86,11 @@ public sealed class ElementCollection : IReadOnlyList<Element>
             child.ReconnectUpdates(previousRoot);
             _owner.InvalidateMeasure();
             _owner.InvalidateRender();
-            child.DetachFromTree();
+            List<Exception>? failures = null;
+            try { _owner.NotifyFocusTreeChanged(); } catch (Exception error) { (failures ??= new()).Add(error); }
+            try { if (child.UpdateParent is null) child.DetachFromTree(); } catch (Exception error) { (failures ??= new()).Add(error); }
             _owner.OnChildrenChanged();
+            if (failures is not null) throw new AggregateException("Content removal notifications failed.", failures);
             return true;
         }
         return false;
@@ -105,9 +112,10 @@ public sealed class ElementCollection : IReadOnlyList<Element>
         _owner.InvalidateMeasure();
         _owner.InvalidateRender();
         List<Exception>? failures = null;
+        try { _owner.NotifyFocusTreeChanged(); } catch (Exception error) { (failures ??= new()).Add(error); }
         foreach (var child in removed.Reverse())
         {
-            try { child.DetachFromTree(); }
+            try { if (child.UpdateParent is null) child.DetachFromTree(); }
             catch (Exception error) { (failures ??= new()).Add(error); }
         }
         _owner.OnChildrenChanged();
@@ -161,9 +169,14 @@ public sealed class ElementCollection : IReadOnlyList<Element>
         _owner.InvalidateRender();
 
         List<Exception>? failures = null;
+        foreach (var child in added)
+        {
+            try { child._focusManager?.RefreshFocusPath(); } catch (Exception error) { (failures ??= new()).Add(error); }
+        }
+        try { _owner.NotifyFocusTreeChanged(); } catch (Exception error) { (failures ??= new()).Add(error); }
         foreach (var child in removed.Reverse())
         {
-            try { child.DetachFromTree(); }
+            try { if (child.UpdateParent is null) child.DetachFromTree(); }
             catch (Exception error) { (failures ??= new()).Add(error); }
         }
         foreach (var child in added)
@@ -231,18 +244,18 @@ public abstract class Element : UiObject
     private IReadOnlyList<string>? _localClasses;
     private bool _isHovered;
     private bool _isPressed;
-    private bool _isFocused;
+    private bool _isFocused, _isFocusWithin, _isFocusVisible;
     private bool _isEnabled = true;
     private Dictionary<RoutedEvent, List<Action<RoutedEventArgs>>>? _handlers;
     // 宿主安装 UiSynchronizationContext 时只绑定到根元素；Debug 线程亲和断言沿父链查找，
     // 因此块内动态创建的元素无需再登记（design/15 §15.14.3）。
 
     public Element? Parent => _parent;
-    public bool RequestFocus()
+    public bool RequestFocus(FocusOrigin origin = FocusOrigin.Auto, FocusVisibility visibility = FocusVisibility.Auto)
     {
         var root = this;
         while (root.Parent is not null) root = root.Parent;
-        return root._focusManager?.Focus(this) ?? false;
+        return root._focusManager?.Focus(this, origin, visibility) ?? false;
     }
     internal override UiObject? UpdateParent => (UiObject?)_parent ?? _contentOwner;
     protected internal override IEnumerable<UiObject> UiChildren => VisualChildren;
@@ -438,11 +451,12 @@ public abstract class Element : UiObject
         }
         if (property.Inherits)
             NotifyInheritedChange(property);
+        if (property == IsVisibleProperty) NotifyFocusTreeChanged();
     }
 
     /// <summary>
     /// 伪类状态掩码（D102，CSS 伪类对应物）：<see cref="IsHovered"/>/<see cref="IsPressed"/>/
-    /// <see cref="IsFocused"/> 三位的合成，供样式匹配与绘制段键使用。变化即失效：
+    /// <see cref="IsFocused"/>/<see cref="IsFocusVisible"/>/<see cref="IsFocusWithin"/> 的合成，供样式匹配与绘制段键使用。变化即失效：
     /// 渲染重算 + class 层样式重应用（伪类变体按当前状态重选）。
     /// E3：<see cref="PseudoStates.Disabled"/> 位在此合成（**有效值**——沿祖先链继承，
     /// 父禁用则子也禁用），使变体匹配与段键对其零特殊处理。
@@ -453,6 +467,8 @@ public abstract class Element : UiObject
         (_isHovered ? PseudoStates.Hover : PseudoStates.None) |
         (_isPressed ? PseudoStates.Pressed : PseudoStates.None) |
         (_isFocused ? PseudoStates.Focused : PseudoStates.None) |
+        (_isFocusVisible ? PseudoStates.FocusVisible : PseudoStates.None) |
+        (_isFocusWithin ? PseudoStates.FocusWithin : PseudoStates.None) |
         (IsEffectiveEnabled ? PseudoStates.None : PseudoStates.Disabled) |
         _registeredStates;
 
@@ -471,11 +487,36 @@ public abstract class Element : UiObject
     }
 
     /// <summary>键盘焦点（CSS :focus）。由 <see cref="FocusManager"/> 维护；仅可聚焦元素成立。</summary>
-    public bool IsFocused
+    public bool IsFocused => _isFocused;
+    public bool IsFocusWithin => _isFocusWithin;
+    public bool IsFocusVisible => _isFocusVisible;
+    public virtual bool IsTextInputClient => false;
+    [UiStyleProperty(Owner = typeof(Element))]
+    public static readonly StyledProperty<FocusVisualMode> FocusVisualModeProperty = StyledProperty<FocusVisualMode>.Register<Element>("FocusVisualMode", FocusVisualMode.Auto, new() { Invalidate = InvalidateKind.Render });
+    public FocusVisualMode FocusVisualMode { get => GetValue(FocusVisualModeProperty); set => SetValue(FocusVisualModeProperty, value); }
+    protected virtual FocusVisualMode DefaultFocusVisualMode => FocusVisualMode.Outline;
+    public FocusVisualMode EffectiveFocusVisualMode => FocusVisualMode == FocusVisualMode.Auto ? DefaultFocusVisualMode : FocusVisualMode;
+    public virtual FocusVisualGeometry GetFocusVisualGeometry() => new(this, new Rect(Point.Zero, FinalRect.Size));
+    // Composite controls can delegate the outline to an ancestor shell without moving input ownership.
+    internal Element? FocusVisualOwner { get; set; }
+    public virtual Element FocusVisualTarget => FocusVisualOwner ?? this;
+    /// <summary>Control-mode focus decoration, drawn after children in local coordinates.</summary>
+    public virtual void RenderFocusVisual(IElementDrawingContext context) { }
+    internal virtual void CancelPointerInteraction() { }
+
+    internal bool SetFocusState(bool focused, bool within, bool visible)
     {
-        get => _isFocused;
-        internal set => SetPseudoState(PseudoStates.Focused, value, ref _isFocused);
+        if (_isFocused == focused && _isFocusWithin == within && _isFocusVisible == visible) return false;
+        _isFocused = focused; _isFocusWithin = within; _isFocusVisible = visible;
+        return true;
     }
+    internal void PublishFocusState() { InvalidateRender(); if (!IsDisposed) ReapplyStyles(); }
+    internal FocusManager? FindFocusManager()
+    {
+        var root = this; while (root.Parent is not null) root = root.Parent;
+        return root._focusManager;
+    }
+    internal void NotifyFocusTreeChanged() => FindFocusManager()?.RefreshFocusPath();
 
     /// <summary>
     /// 自身启用声明值（E3，默认 true）。**有效值沿祖先链继承**——任一祖先为 false 则
@@ -490,6 +531,7 @@ public abstract class Element : UiObject
         {
             if (_isEnabled == value) return;
             _isEnabled = value;
+            NotifyFocusTreeChanged();
             InvalidateRender();
             ReapplyStyles();
             foreach (var descendant in Descendants())
@@ -994,6 +1036,7 @@ public abstract class Element : UiObject
 
     protected override void OnDispose()
     {
+        NotifyFocusTreeChanged();
         Styling.PendingClasses.RemoveAll(p => ReferenceEquals(p.Element, this));
         _handlers?.Clear();
         PropertyChanged = null;

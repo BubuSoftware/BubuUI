@@ -61,7 +61,7 @@ StyledProperty 可写属性支持 UiBinding；普通属性仅在存在可写 PCh
 
 内置 primitive/enum/几何值按固定转换规则处理。第三方值通过 UiLiteralParser 声明 static Parse(string)、可选 Pattern/Candidates；编译时不执行 Parse，运行时发直接调用。无转换器 EUI023，格式错误 EUI003。
 
-StyleBuilder 内建属性与 UiStyleProperty 标注字段合并成样式目录。扫描验证 public static readonly StyledProperty<T>、类型形状、规范名及冲突；声明/冲突 EUI058/EUI059。Class 与 Style 编译器、IDE 共用该目录。
+StyleBuilder 内建属性与 UiStyleProperty 标注字段合并成样式目录。扫描验证 public static readonly StyledProperty<T>、类型形状、规范名及冲突；声明/冲突 EUI058/EUI059。Class 与 Style 编译器、IDE 共用该目录。FocusVisualMode 通过 Element 上的 UiStyleProperty 枚举通道进入目录；FocusRingWidth / FocusRingOffset / FocusRingColor 通过 StyleBuilder 通道发布。focus / focus-visible / focus-within 为平台伪类；对应元素状态只读，不提供可赋值或可绑定入口。
 
 ## 8. 增量与诊断
 

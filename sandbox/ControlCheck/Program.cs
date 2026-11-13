@@ -16,6 +16,13 @@ catalog.EnsureInitialized();
 using var host = new HeadlessRoot(catalog) { AvailableSize = new(900, 4000) };
 host.UpdateLayout(); host.UpdateLayout();
 void Check(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }
+var focusButton = catalog.focusAction;
+host.Focus.Focus(focusButton, FocusOrigin.Pointer); Check(!focusButton.IsFocusVisible, "Pointer focus outline was visible.");
+host.Input.KeyPress(Key.Space); Check(focusButton.IsFocusVisible, "Keyboard did not reveal focus on the same button.");
+GallerySnapshot.SavePng(catalog, new(900, 340), 1, "out/focus-keyboard.png", new ElementTheme(), text);
+GallerySnapshot.SavePng(catalog, new(900, 340), 1, "out/focus-keyboard-light.png", new LightTheme(), text);
+host.Focus.NotifyInput(FocusOrigin.Pointer); Check(!focusButton.IsFocusVisible, "Pointer did not hide keyboard focus.");
+GallerySnapshot.SavePng(catalog, new(900, 340), 1, "out/focus-pointer.png", new ElementTheme(), text);
 var editor = catalog.Descendants().OfType<TextBox>().First();
 host.Focus.Focus(editor); editor.SelectAll(); host.Input.TextInput("Unicode + 中文 😀 👩‍💻 👍🏽 ❤️ 🎉"); host.UpdateLayout();
 Check(catalog.message == "Unicode + 中文 😀 👩‍💻 👍🏽 ❤️ 🎉", "Compiled TextBox two-way binding did not update the source.");
@@ -23,8 +30,8 @@ var unicodePath = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(shot) ?
 var unicodeList = new ElementPainter(textPainter: text).Build(catalog, new(900, 220));
 Check(unicodeList.Commands.OfType<DrawGlyphs>().Any(r => r.Font.Name == "msyh.ttc"), "Chinese fallback font was not used.");
 Check(unicodeList.Commands.OfType<DrawGlyphs>().Any(r => r.Font.Name == "seguiemj.ttf"), "Color emoji fallback font was not used.");
-GallerySnapshot.SavePng(catalog, new(900, 220), 1, editor, unicodePath, new ElementTheme(), text);
-GallerySnapshot.SavePng(catalog, new(900, 220), 1, editor, System.IO.Path.Combine(System.IO.Path.GetDirectoryName(shot) ?? ".", "unicode-input-light.png"), new LightTheme(), text);
+GallerySnapshot.SavePng(catalog, new(900, 220), 1, unicodePath, new ElementTheme(), text);
+GallerySnapshot.SavePng(catalog, new(900, 220), 1, System.IO.Path.Combine(System.IO.Path.GetDirectoryName(shot) ?? ".", "unicode-input-light.png"), new LightTheme(), text);
 host.Input.KeyPress(Key.Z, KeyModifiers.Control); host.UpdateLayout(); Check(catalog.message == "Editable text", "Compiled binding undo did not update.");
 var slider = catalog.Descendants().OfType<Slider>().Single(); host.Focus.Focus(slider); host.Input.KeyPress(Key.End); host.UpdateLayout();
 Check(catalog.level == 100 && catalog.Descendants().OfType<ProgressBar>().Single().Value == 100, "Compiled slider/progress binding failed.");
@@ -35,6 +42,6 @@ var painter = new ElementPainter(textPainter: text); Check(painter.Build(catalog
 host.Input.KeyPress(Key.Escape); Check(!combo.IsDropDownOpen, "Escape did not close dropdown.");
 host.Focus.ClearFocus(); host.UpdateLayout();
 var size = new Size(900, Math.Ceiling(catalog.DesiredSize.Height + 20));
-GallerySnapshot.SavePng(catalog, size, 1, null, shot, new ElementTheme(), text);
-GallerySnapshot.SavePng(catalog, size, 1, null, System.IO.Path.Combine(System.IO.Path.GetDirectoryName(shot) ?? ".", System.IO.Path.GetFileNameWithoutExtension(shot) + "-light.png"), new LightTheme(), text);
+GallerySnapshot.SavePng(catalog, size, 1, shot, new ElementTheme(), text);
+GallerySnapshot.SavePng(catalog, size, 1, System.IO.Path.Combine(System.IO.Path.GetDirectoryName(shot) ?? ".", System.IO.Path.GetFileNameWithoutExtension(shot) + "-light.png"), new LightTheme(), text);
 Console.WriteLine($"control catalog selfcheck passed; {catalog.Descendants().Count()} live elements; {grid.RealizedRowCount} grid rows.");

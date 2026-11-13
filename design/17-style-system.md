@@ -77,20 +77,20 @@ local（inline / 属性直赋）
 
 ```csharp
 [Flags]
-public enum PseudoStates { None = 0, Hover = 1, Pressed = 2, Focused = 4, Disabled = 8 /* E3 ✅ D103 */ }
+public enum PseudoStates { None = 0, Hover = 1, Pressed = 2, Focused = 4, Disabled = 8, FocusVisible = 16, FocusWithin = 32 }
 ```
 
-- 元素持有三 bool（`IsHovered/IsPressed/IsFocused`，setter 为 **internal**——写入者受控），
+- 元素持有受控状态：`IsHovered/IsPressed` 由输入路由写入；只读 `IsFocused/IsFocusWithin/IsFocusVisible` 由 FocusManager 批量提交，
   `PseudoStates` 为合成掩码。
 - 状态变化 = `InvalidateRender`（版本 bump）+ `ReapplyStyles`（class 层按新掩码重选变体）。
 - **段键携带状态掩码**：状态翻转即使值被短路，段也重建——hover 帧间正确切换。
-- 焦点判定同源：retained 复用键与全量重画统一为「元素状态 ∪ focused 参数」。
+- 焦点判定同源：绘制只读取运行时状态；焦点视觉描述符同时进入 retained 段键和 damage。绘制器不再接受 focused 参数，详见 [design/25](./25-focus-visuals.md)。
 
 ### 3.2 状态的三种来源（写入者受控，全平台共识）
 
 | 来源 | 状态位 | 维护者 | 落地 |
 |------|--------|--------|------|
-| 平台通用位 | `:hover` `:pressed` `:focus`（`:focus-within` 远期） | InputRouter / FocusManager | ✅ D102 |
+| 平台通用位 | `:hover` `:pressed` `:focus` `:focus-visible` `:focus-within` | InputRouter / FocusManager | ✅ D102 |
 | 平台通用位 | `:disabled` | `IsEnabled` 属性 + 属性系统（有效值沿树继承） | ✅ D103（E3） |
 | 控件语义位 | `:checked` `:indeterminate` `:valid`… | **控件自身**（属性变化回调里翻转自己的位） | 需要样式化时逐控件加 |
 | 第三方注册位 | 任意（`:loading` 等） | `PseudoStatesRegistry.Register("loading")` → 返回掩码（幂等）；注册者经 `Element.SetRegisteredState(mask, bool)` 翻转（掩码即凭证——拒绝平台位/未注册位） | ✅ E5（D107） |
@@ -102,7 +102,7 @@ public enum PseudoStates { None = 0, Hover = 1, Pressed = 2, Focused = 4, Disabl
 E5 落地（D107）：`PseudoStates` 是 enum 不能挂静态方法——注册表落 `PseudoStatesRegistry` 静态类；
 样式表侧 `@states { name; }` 顶层声明块（预扫两遍解析，声明序无关），声明的名字在本表内可作
 伪类选择器、跨文件经全局目录兜底校验；产物是 `StyleBootstrap.Apply` 顶部的幂等 `Register` 行 +
-变体链 `.State(Register("name"), …)`。撞平台保留名（hover/pressed/active/focus/disabled）编译期
+变体链 `.State(Register("name"), …)`。撞平台保留名（hover/pressed/active/focus/focus-visible/focus-within/disabled）编译期
 报 EUI050、运行时 `Register` 抛 ArgumentException（同名单双通道拦截）。
 
 ### 3.3 变体声明
@@ -147,7 +147,7 @@ registry.Define("primary", s => s.Background(new ThemeColor(Dark: ..., Light: ..
 | 阶段 | 语法 | 编译产物 |
 |------|------|----------|
 | E1 | `.class { }` | `Define("class", ...)` |
-| E1 | `.class:hover { }` `:pressed` `:focus`（`:disabled` E3 后） | `.Hover(s => ...)` 变体链 |
+| E1 | `.class:hover { }` `:pressed` `:focus` `:focus-visible` `:focus-within` `:disabled` | `.Hover(s => ...)` 变体链 |
 | ✅ E4 | `.panel > Button { }` | 派生类 `panel__button`（塌缩，见 §4.5） |
 | ✅ E4 | `.panel TextBlock.title { }` | 派生类 `panel__text-block-title`（类型名 kebab 化） |
 | ✅ E4 | `.panel > Button:hover { }` | 派生类的伪类变体 |
@@ -187,6 +187,9 @@ registry.Define("primary", s => s.Background(new ThemeColor(Dark: ..., Light: ..
 | `Foreground` | color | `Visual.ForegroundProperty` | ✅ `ForegroundResourceProperty` |
 | `CornerRadius` | number | `Visual.CornerRadiusProperty` | — |
 | `FocusRingWidth` | number | `Visual.FocusRingWidthProperty` | — |
+| `FocusRingOffset` | number | `Visual.FocusRingOffsetProperty` | — |
+| `FocusRingColor` | color | `Visual.FocusRingColorProperty` | ✅ `FocusRingColorResourceProperty` |
+| `FocusVisualMode` | enum | `Element.FocusVisualModeProperty`（UiStyleProperty 标注） | — |
 | `Padding` | number | `Panel.PaddingProperty` | — |
 | `FontSize` | number | `TextBlock.FontSizeProperty` | — |
 

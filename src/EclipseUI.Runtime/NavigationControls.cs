@@ -2,6 +2,10 @@ namespace EclipseUI.Elements;
 
 public class ComboBox : Panel
 {
+    protected override FocusVisualMode DefaultFocusVisualMode => FocusVisualMode.Control;
+    public override FocusVisualGeometry GetFocusVisualGeometry() => new(this, new(Point.Zero, FinalRect.Size), 4);
+    public override void RenderFocusVisual(IElementDrawingContext c) =>
+        c.StrokeRectangle(new(.5, .5, Math.Max(0, FinalRect.Width - 1), Math.Max(0, FinalRect.Height - 1)), c.Accent, 1, 4);
     private readonly Button _button;
     private readonly ListBox _list;
     private readonly Popup _popup;
@@ -20,7 +24,7 @@ public class ComboBox : Panel
     private bool _sync;
     public ComboBox()
     {
-        _button = new DropDownButton { IsTabStop = false }; _list = new ListBox();
+        _button = new DropDownButton { IsTabStop = false, FocusVisualOwner = this }; _list = new ListBox();
         var scroll = new ScrollViewer { MaxHeight = 240 }; scroll.Children.Add(_list);
         _popup = new Popup { PlacementTarget = this, Content = new Border { Content = scroll, Padding = 2 } };
         Children.Add(_button); Children.Add(_popup); MinWidth = 100;
@@ -107,6 +111,7 @@ public class ContextMenu : Popup
 
 public class MenuItem : Button
 {
+    public override FocusVisualGeometry GetFocusVisualGeometry() => new(this, new(Point.Zero, FinalRect.Size), 3);
     public static readonly StyledProperty<bool> IsCheckableProperty = StyledProperty<bool>.Register<MenuItem>("IsCheckable", false, new() { Invalidate = InvalidateKind.Render });
     public static readonly StyledProperty<bool> CheckedProperty = StyledProperty<bool>.Register<MenuItem>("Checked", false, new() { Invalidate = InvalidateKind.Render });
     public bool IsCheckable { get => GetValue(IsCheckableProperty); set => SetValue(IsCheckableProperty, value); }
@@ -153,6 +158,9 @@ public class TabControl : Panel
     public override bool IsFocusable => true;
     private const double HeaderHeight = 34;
     private double[] _headerWidths = [];
+    public override FocusVisualGeometry GetFocusVisualGeometry() => SelectedIndex >= 0 && SelectedIndex < _headerWidths.Length
+        ? new(this, new(_headerWidths.Take(SelectedIndex).Sum() + 4, 4, Math.Max(0, _headerWidths[SelectedIndex] - 8), HeaderHeight - 8), 4)
+        : base.GetFocusVisualGeometry();
     public TabControl()
     {
         PropertyChanged += (_, p) => { if (p == SelectedIndexProperty) { UpdateTabs(); RaiseEvent(new(SelectionChangedEvent)); } };
@@ -165,7 +173,11 @@ public class TabControl : Panel
         AddHandler(KeyDownEvent, e =>
         {
             if (e is not KeyEventArgs k || Children.Count == 0) return;
-            if (k.Key == Key.Tab && k.Modifiers.HasFlag(KeyModifiers.Control)) SelectedIndex = (SelectedIndex + (k.Modifiers.HasFlag(KeyModifiers.Shift) ? -1 : 1) + Children.Count) % Children.Count;
+            if (k.Key == Key.Tab && k.Modifiers.HasFlag(KeyModifiers.Control))
+            {
+                SelectedIndex = (SelectedIndex + (k.Modifiers.HasFlag(KeyModifiers.Shift) ? -1 : 1) + Children.Count) % Children.Count;
+                RequestFocus();
+            }
             else if (ReferenceEquals(e.Source, this) && k.Key is Key.Left or Key.Right) SelectedIndex = (SelectedIndex + (k.Key == Key.Left ? -1 : 1) + Children.Count) % Children.Count;
             else return;
             e.Handled = true;

@@ -14,7 +14,7 @@ namespace EclipseUI.Compiler;
 /// </code>
 /// value := theme(color, color) | #rgb | #rrggbb | #rrggbbaa | number | $var
 ///        | keyword（枚举成员，按属性目录成员表校验）| "string"（design/19 §5.1）
-/// state := hover | active | pressed | focus | disabled（active 是 pressed 的 CSS 别名）
+/// state := hover | active | pressed | focus | focus-visible | focus-within | disabled（active 是 pressed 的 CSS 别名）
 ///        | @states 声明的注册名（E5；本文件声明优先，未声明查 <paramref name="externalStates"/>）
 /// 注释 := // 行注释 | /* 块注释 */
 ///
@@ -36,12 +36,14 @@ public static class Eustyle
             ["pressed"] = EustyleVariant.Pressed,
             ["active"] = EustyleVariant.Pressed,   // CSS :active 别名
             ["focus"] = EustyleVariant.Focus,
+            ["focus-visible"] = EustyleVariant.FocusVisible,
+            ["focus-within"] = EustyleVariant.FocusWithin,
             ["disabled"] = EustyleVariant.Disabled,
         };
 
     /// <summary>平台保留伪类名（E5）：@states 不得重声明，运行时 Register 同名单拒绝。</summary>
     internal static readonly string[] PlatformStateNames =
-        ["hover", "pressed", "active", "focus", "disabled"];
+        ["hover", "pressed", "active", "focus", "focus-visible", "focus-within", "disabled"];
 
     /// <summary>
     /// 解析样式表源码。<paramref name="spanOffset"/> 是源码在宿主文件内的起始偏移
@@ -207,7 +209,7 @@ public static class Eustyle
                 }
                 if (Array.IndexOf(PlatformStateNames, name) >= 0)
                     ErrorSpan(SpanAt(nameStart, name.Length),
-                        $"'{name}' is a platform pseudo-class (hover/active/pressed/focus/disabled) " +
+                        $"'{name}' is a platform pseudo-class (hover/active/pressed/focus/focus-visible/focus-within/disabled) " +
                         "and cannot be redeclared in @states (EUI050)",
                         UiDiagnostics.StyleSyntax);
                 else if (!DeclaredContains(name))
@@ -262,7 +264,7 @@ public static class Eustyle
             if (DeclaredContains(state) || EnumerableContains(_externalStates, state))
                 return (EustyleVariant.None, state);
             ErrorSpan(SpanAt(nameStart, Math.Max(1, state.Length)),
-                $"unknown pseudo-class ':{state}'; platform states are hover/active/pressed/focus/disabled — " +
+                $"unknown pseudo-class ':{state}'; platform states are hover/active/pressed/focus/focus-visible/focus-within/disabled — " +
                 "declare custom states in a '@states {{ name; }}' block (EUI050)",
                 UiDiagnostics.StyleSyntax);
             return (EustyleVariant.None, null);

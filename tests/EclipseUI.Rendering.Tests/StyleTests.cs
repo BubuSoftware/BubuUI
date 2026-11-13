@@ -300,4 +300,16 @@ public class StyleTests : IDisposable
         var stroke = Assert.Single(list.Commands.OfType<StrokePath>());
         Assert.Equal(5, stroke.Width); // 环宽取 class 值，而非主题令牌 2
     }
+    [Fact]
+    public void StylesDistinguishDirectWithinAndVisibleFocus()
+    {
+        _registry.Define("shell", s => s.Padding(0)).FocusWithin(s => s.Padding(5));
+        _registry.Define("action", s => s.FocusRingOffset(7)).Focus(s => s.FocusRingWidth(3)).FocusVisible(s => s.FocusRingColor(new Color(255, 0, 255)));
+        var root = new StackPanel { Classes = ["shell"] }; var button = new Button { Classes = ["action"] }; root.Children.Add(button);
+        using var host = new HeadlessRoot(root); host.Focus.Focus(button, FocusOrigin.Pointer);
+        Assert.Equal(5, root.Padding); Assert.Equal(3, Visual.GetFocusRingWidth(button)); Assert.Null(Visual.GetFocusRingColor(button));
+        host.Focus.NotifyInput(FocusOrigin.Keyboard); Assert.Equal(new Color(255, 0, 255), Visual.GetFocusRingColor(button));
+        host.Focus.ClearFocus(); Assert.Equal(0, root.Padding); Assert.Null(Visual.GetFocusRingWidth(button));
+    }
+
 }

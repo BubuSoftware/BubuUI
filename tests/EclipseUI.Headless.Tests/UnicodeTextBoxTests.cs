@@ -29,7 +29,8 @@ public class UnicodeTextBoxTests
             using var host = new HeadlessRoot(editor); host.UpdateLayout(); host.Focus.Focus(editor);
             host.Input.TextInput(value); host.UpdateLayout();
             Assert.Equal(value, editor.Text);
-            var list = new ElementPainter(textPainter: painter).Build(editor, new(700, 120), focused: editor);
+            (FocusManager.GetFor(editor) ?? new FocusManager(editor)).Focus(editor, FocusOrigin.Keyboard);
+            var list = new ElementPainter(textPainter: painter).Build(editor, new(700, 120));
             Assert.Empty(list.Validate());
             var runs = list.Commands.OfType<DrawGlyphs>().ToArray();
             Assert.Equal(value, string.Concat(runs.Select(r => r.Glyphs.Text)));
