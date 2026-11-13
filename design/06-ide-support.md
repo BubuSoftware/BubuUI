@@ -233,7 +233,7 @@ scopeName、watcher glob 与启动参数，无需 JVM；IDE 侧 199 例全绿。
 `compilation.Assembly` 是一个零类型空壳，于是 [UiCatalogFactory.cs:168](../src/EclipseUI.Compiler.Metadata/UiCatalogFactory.cs#L168)
 的两格扫描口径里**第①格（源程序集）恒空**，自家项目的类型只能从第②格（元数据引用）进来。
 编译器侧走的是第①格：[TemplateGenerator.cs:40](../src/EclipseUI.Compiler.Generator/TemplateGenerator.cs#L40)
-拿 `context.CompilationProvider`，`MyControl` 是 source symbol，根本不需要 dll。
+拿 `context.CompilationProvider`，应用集自定义控件是 source symbol，根本不需要 dll。
 
 **已实测的三个后果**：
 
@@ -245,6 +245,10 @@ scopeName、watcher glob 与启动参数，无需 JVM；IDE 侧 199 例全绿。
    | `ide/vscode/server/`（23:24 发布，扩展实际加载） | 9 | `EUI001 unknown tag 'MyControl'`，hover 返回 null |
    | 仓库 Debug 构建（23:38，含 `WorkspaceAssemblies`） | 14 | 零诊断，hover 显示 `Gallery.MyControl` |
    | 旧 server + `--assembly …/Gallery.dll` | 14 | 零诊断 |
+
+   > 注：上表是 2026-11-10 的历史实测，夹具控件 `Gallery.MyControl` 已于 2026-11-13
+   > 从 `samples/Gallery` 移除；结论（自家控件需先 build 才有提示）不受影响，当前 IDE
+   > 回归夹具改用 `.ui` 派生组件 `Gallery.Counter` 覆盖别名解析。
 
    第三组证明扫描器、`@using Gallery` 可见性过滤（K22）、类型暴露判定全部正确；
    直接原因是扩展优先加载打包目录（[extension.js:23](../ide/vscode/client/extension.js#L23)）
@@ -338,7 +342,7 @@ L8 内嵌 C# 语言服务（签名帮助 / 语义着色 / 代码操作 / 格式�
 - 编译选项读 L1 真值（今天 [CatalogProvider.cs:163](../ide/EclipseUI.LanguageServer/Workspace/CatalogProvider.cs#L163)
   硬编码 `Nullable enable`）。
 - `ImplicitUsings` 必须展开成真实 using，否则表达式里 `List<T>`/`Task` 绑不出来。
-- **打开的文档用编辑器缓冲区覆盖磁盘内容**——否则"写完未保存的 `MyControl.cs`"仍不可见，只解决一半。
+- **打开的文档用编辑器缓冲区覆盖磁盘内容**——否则"写完未保存的 `.cs`"仍不可见，只解决一半。
 
 **L3 在 IDE 内跑真生成器**
 
@@ -476,7 +480,7 @@ P5 保鲜的是已有能力，本身不闭合任何一条要求。
 | 项 | 内容 | 闭合 | 验收 |
 |---|---|---|---|
 | **P0** | 重跑 [ide/build.ps1](../ide/build.ps1) 重发布 server | 2·3 触发案例 | 触发案例的 EUI001 消失（与架构无关） |
-| **P1** | 别名补全（`Tags()` 读 `Aliases`） | **1** | `@using Alt = Gallery.MyControl` 后光标停在 `<Al` 列出 `Alt`，选中解析到目标类型 |
+| **P1** | 别名补全（`Tags()` 读 `Aliases`） | **1** | `@using Alt = Gallery.Counter` 后光标停在 `<Al` 列出 `Alt`，选中解析到目标类型 |
 | **P2** | **spike**：MSBuildLocator + MSBuild 求值 + assets.json 读引用 | — | 手写源码一个不漏不多、属性最终值逐项等于 build 的真值；**差集只允许是已知生成物**（`obj/…/AssemblyInfo.cs` 等，见 §6.9.3 L1 边界） |
 | **P3** | L1 + L2 + L4，删 dll 启发式 | **2·3** | 自家控件写完**未 build** 即可：标签列全、属性列全、零诊断 |
 | **P4** | L6 符号查询：标签 + **属性/事件/参数/附加属性**转定义 | **4** | F12 落在成员声明处；同名不同类型跳对；无源码走反编译 |

@@ -186,15 +186,15 @@ public class AppBuilderTests
             Assert.Contains("Tone=Success", demo.Label);
             Assert.Contains("BadgeLabel=\"eustyle\"", demo.Label);
 
-            var badge = new MyControl();
+            var badge = new TextBlock();
             badge.Classes = ["badge"];
             Assert.Equal(6d, badge.GetValue(BadgeStyles.GlowProperty));
             Assert.Equal(BadgeTone.Success, badge.GetValue(BadgeStyles.ToneProperty));
             Assert.Equal("eustyle", badge.GetValue(BadgeStyles.BadgeLabelProperty));
 
             // 变体通道（&:hover { Glow: 12; }）的运行时行为由 HeadlessRoot.PointerMove
-            // 维护 IsHovered——badge 元素 0×0 不可命中测试，故这里只断言 base 层；
-            // hover 变体的编译与状态选择已由 EustyleTests / StyleTests 覆盖。
+            // 维护 IsHovered——这里只断言 base 层；hover 变体的编译与状态选择
+            // 已由 EustyleTests / StyleTests 覆盖。
         }
         finally
         {

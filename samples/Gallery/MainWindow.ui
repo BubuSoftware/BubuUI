@@ -8,7 +8,7 @@
    注册伪类掩码、CLR 事件桥、条目工厂）由 GalleryApp 对这些字段完成，树内不表达。 *@
 
 <Window Title="EclipseUI Gallery" Width={W} Height={H}>
-    <ScrollViewer HorizontalScrollBarVisibility="Auto" Ref={RootViewer}>
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled"  Ref={RootViewer}>
         <StackPanel Gap="16" Padding="24">
 
             @* 头部：标题区 + 主题切换（Click 由宿主接线：SetTheme 换 token 表 → 整帧重绘）。 *@

@@ -88,14 +88,14 @@ public class ProjectSystemTests
             StringComparison.OrdinalIgnoreCase));
     }
 
-    /// <summary>要求 2/3 的根因：未 build 的源码控件与 .ui 派生组件都要进目录。</summary>
+    /// <summary>要求 2/3 的根因：源码控件与 .ui 派生组件都要进目录。</summary>
     [Fact]
-    public void Fixture2_UnbuiltSourceControlsAndUiComponentsAreInTheCatalog()
+    public void Fixture2_SourceControlsAndUiComponentsAreInTheCatalog()
     {
         var fixture = Shared.Value;
         var snapshot = Assert.Single(fixture.Workspace.ResolveAll(fixture.Gallery("Counter.ui")));
 
-        Assert.Contains(snapshot.Catalog.Elements, e => e.Tag == "MyControl");
+        Assert.Contains(snapshot.Catalog.Elements, e => e.Tag == "TextBlock");
         Assert.Contains(snapshot.Catalog.Elements, e => e.Tag == "Counter");
         Assert.Contains(snapshot.Catalog.Elements, e => e.Tag == "Button");
     }
@@ -106,11 +106,11 @@ public class ProjectSystemTests
     {
         var fixture = Shared.Value;
         var uri = DocumentStore.PathToUri(fixture.Gallery("Counter.ui"));
-        const string completing = "@using EclipseUI.Elements\n@using Alt = Gallery.MyControl\n\n<Al";
+        const string completing = "@using EclipseUI.Elements\n@using Alt = Gallery.Counter\n\n<Al";
         fixture.Service.Documents.Open(uri, completing, 1);
         Assert.Contains(fixture.Service.Complete(uri, completing.Length).Items, i => i.Label == "Alt");
 
-        const string hovering = "@using EclipseUI.Elements\n@using Alt = Gallery.MyControl\n\n<Alt />\n";
+        const string hovering = "@using EclipseUI.Elements\n@using Alt = Gallery.Counter\n\n<Alt />\n";
         fixture.Service.Documents.Open(uri, hovering, 2);
         var offset = hovering.IndexOf("Alt />", StringComparison.Ordinal) + 1;
         Assert.NotNull(fixture.Service.Hover(uri, offset));

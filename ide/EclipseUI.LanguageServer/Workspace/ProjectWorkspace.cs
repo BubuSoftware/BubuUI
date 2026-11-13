@@ -34,7 +34,7 @@ public sealed class ProjectSnapshot
 ///
 /// 口径总则：**编译时按什么，IDE 就按什么**。归属判据是求值后 AdditionalFiles 命中，
 /// 一个文档被多个项目收就返回多个快照，没被任何项目收就明确提示、不给目录也不给诊断。
-/// 打开的文档用编辑器缓冲区覆盖磁盘（未保存的 MyControl.cs 也可见，R4）。
+/// 打开的文档用编辑器缓冲区覆盖磁盘（未保存的 .cs 也可见，R4）。
 /// </summary>
 public sealed class ProjectWorkspace
 {
