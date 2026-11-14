@@ -116,6 +116,8 @@ public sealed partial class Win32Window : IDisposable
     private bool _disposed;
     private bool _trackingLeave;
     private bool _initialized;
+    private const int SizeMoveTimerId = 0xE100;
+    private nint _sizeMoveTimer;
 
     public Win32Window(string title, int width, int height)
     {
@@ -163,6 +165,8 @@ public sealed partial class Win32Window : IDisposable
     public nint Handle => _hwnd;
 
     public bool IsClosed { get; private set; }
+    /// <summary>Windows is dispatching its nested move/size message loop on the UI thread.</summary>
+    public bool IsInSizeMove { get; private set; }
 
     /// <summary>缩放因子（DPI / 96）。窗口创建时与 WM_DPICHANGED 时更新。</summary>
     public double ScaleFactor { get; private set; } = 1.0;
@@ -198,6 +202,8 @@ public sealed partial class Win32Window : IDisposable
 
     /// <summary>WM_PAINT：上层可选择立即重绘或仅在下一帧处理。</summary>
     public event EventHandler? PaintRequested;
+    /// <summary>UI-thread frame opportunity while the normal caller's message pump is blocked by dragging.</summary>
+    public event EventHandler? LiveResizeFrameRequested;
 
     /// <summary>WM_CLOSE 已被处理，窗口即将销毁。</summary>
     public event EventHandler? Closing;
@@ -326,6 +332,7 @@ public sealed partial class Win32Window : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        EndSizeMove();
 
         if (!IsClosed)
         {
@@ -346,6 +353,13 @@ public sealed partial class Win32Window : IDisposable
         if (!Win32Native.GetClientRect(_hwnd, out var rect)) return;
         ClientWidth = Math.Max(rect.Width, 0);
         ClientHeight = Math.Max(rect.Height, 0);
+    }
+
+    private void EndSizeMove()
+    {
+        if (_sizeMoveTimer != 0) Win32Native.KillTimer(_hwnd, _sizeMoveTimer);
+        _sizeMoveTimer = 0;
+        IsInSizeMove = false;
     }
 
     private void UpdateScale()
@@ -430,6 +444,23 @@ public sealed partial class Win32Window : IDisposable
         if (ProcessIme(message, lParam)) return 0;
         switch (message)
         {
+            case Win32Native.WM_ENTERSIZEMOVE:
+                if (!IsInSizeMove)
+                {
+                    IsInSizeMove = true;
+                    _sizeMoveTimer = Win32Native.SetTimer(_hwnd, SizeMoveTimerId, 16, 0);
+                }
+                return 0;
+
+            case Win32Native.WM_EXITSIZEMOVE:
+                EndSizeMove();
+                PaintRequested?.Invoke(this, EventArgs.Empty);
+                return 0;
+
+            case Win32Native.WM_TIMER when IsInSizeMove && _sizeMoveTimer != 0 && wParam == _sizeMoveTimer:
+                LiveResizeFrameRequested?.Invoke(this, EventArgs.Empty);
+                return 0;
+
             case Win32Native.WM_SIZE:
                 {
                     var previousWidth = ClientWidth;
@@ -610,6 +641,7 @@ public sealed partial class Win32Window : IDisposable
                 return 0;
 
             case Win32Native.WM_DESTROY:
+                EndSizeMove();
                 IsClosed = true;
                 lock (ClassLock) Windows.Remove(_hwnd);
                 Win32Native.PostQuitMessage(0);

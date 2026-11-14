@@ -66,6 +66,8 @@ dotnet run --project sandbox/GalleryCheck -- --cpu --selfcheck --shot out/galler
 
 所有样例和测试使用统一 UiObject 机制。旧组件包装、第二所有权树、来源枚举和窗口模板兼容层均已移除。
 
+Windows 拖动窗口边框时会按最新客户区实时重新布局和上屏，文字及控件保持原有尺寸；验证方式见[交互缩放报告](./design/reports/live-resize-2026-11-14.md)。
+
 ## Linux 桌面
 
 `Gallery.Desktop` 自动选择 Windows / Linux / macOS 平台。Linux 使用 SDL3 3.2+ 创建 X11 或 Wayland 窗口，Vello 通过 Vulkan 上屏；需安装 `libSDL3.so.0`、Vulkan loader/驱动和字体（建议 DejaVu Sans、Noto CJK、Noto Color Emoji）。

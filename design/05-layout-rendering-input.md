@@ -188,6 +188,24 @@ WrapPanel、NoWrap 文本和尺寸对齐的旧断言也已按本契约迁移，G
 - 动画（spring/tween）在合成器线程跑，改的是 layer 变换而非元素属性。
 - damage region 保证只重绘脏区域。
 
+### Windows 交互缩放
+
+Win32 的移动/缩放会进入系统的内部消息循环，不能依赖外层 PumpMessages 返回后才更新内容。
+WindowHost 把普通循环、WM_SIZE、WM_PAINT 和缩放期间的帧请求接到同一 UI 线程帧流程：
+排空 UI 续体 → 更新失效树与动画 → 按最新逻辑尺寸 Measure/Arrange → 匹配客户区像素的
+表面 Resize → BuildFrame/Present。不会把上一帧作为内容按窗口大小整体缩放。
+
+Win32Window 在 WM_ENTERSIZEMOVE 启动 16 ms 定时器，通过 LiveResizeFrameRequested 提供
+帧机会；WM_EXITSIZEMOVE、销毁和 Dispose 清理定时器，退出缩放时补一次重绘。鼠标暂停
+拖动期间仍能处理 UI 续体和动画；未变化的帧继续通过 damage 跳过 Present。
+
+帧流程带有重入保护。正在布局或呈现时收到的缩放先记录，待当前帧释放资源后使用最新
+尺寸；连续变化最多合并尝试三次，其余交给后续原生重绘，避免在持有表面纹理时 Resize。
+原生补帧中的托管异常保存原始栈，由外层托管循环重新抛出并正常卸载，不穿过 WndProc。
+Ticks/FrameTicked/MaxTicks 保留外层循环口径；RenderedFrames 包含原生补帧。
+
+原生窗口测试、真实系统缩放循环与 GPU 重排证据见[交互缩放报告](./reports/live-resize-2026-11-14.md)。
+
 ### Vello 集成设计
 
 - **变体分工**：`vello_gpu` 为主力渲染路径（CPU 预处理路径 + GPU 栅格合成，

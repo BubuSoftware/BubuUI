@@ -25,6 +25,7 @@
     <Project Path="tests/EclipseUI.Headless.Tests/EclipseUI.Headless.Tests.csproj" />
     <Project Path="tests/EclipseUI.Platform.Linux.Tests/EclipseUI.Platform.Linux.Tests.csproj" />
     <Project Path="tests/EclipseUI.Platform.MacOS.Tests/EclipseUI.Platform.MacOS.Tests.csproj" />
+    <Project Path="tests/EclipseUI.Platform.Windows.Tests/EclipseUI.Platform.Windows.Tests.csproj" />
     <Project Path="tests/EclipseUI.Ide.Tests/EclipseUI.Ide.Tests.csproj" />
     <Project Path="tests/EclipseUI.Rendering.Tests/EclipseUI.Rendering.Tests.csproj" />
     <Project Path="tests/EclipseUI.VisualStudio.Tests/EclipseUI.VisualStudio.Tests.csproj" />
