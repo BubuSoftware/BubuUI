@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using EclipseUI.Rendering;
+using EclipseUI.Themes.Fluent;
 
 namespace EclipseUI.Platform.MacOS;
 
@@ -31,7 +32,8 @@ public sealed class HostFrameEventArgs : EventArgs
 
 public sealed class WindowHostOptions
 {
-    public ElementTheme? Theme { get; init; }
+    public IHostTheme? Theme { get; init; }
+    public ISystemThemeProvider? SystemTheme { get; init; }
 
     public ITextPainter? TextPainter { get; init; }
 
@@ -71,6 +73,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
     private readonly UiObject _uiRoot;
     private readonly WindowHostOptions _options;
     private readonly ElementPainter _painter;
+    private readonly ThemeBinding _themeBinding;
     private bool _disposed;
     private bool _running;
     private IClipboard? _previousClipboard;
@@ -90,7 +93,9 @@ public sealed class WindowHost : IDisposable, IWindowHost
         root.EnsureInitialized();
         _options = options ?? new WindowHostOptions();
 
-        _painter = new ElementPainter(_options.Theme, _options.TextPainter);
+        _themeBinding = new ThemeBinding(_options.Theme ?? FluentTheme.System, _options.SystemTheme ?? window as ISystemThemeProvider);
+        _painter = new ElementPainter(_themeBinding.Current, _options.TextPainter);
+        _themeBinding.Update(_painter, root);
         _input = new InputRouter(root);
         _input.Focus.AlwaysShowFocusVisuals = _options.AlwaysShowFocusVisuals;
 
@@ -119,19 +124,23 @@ public sealed class WindowHost : IDisposable, IWindowHost
 
     /// <summary>
     /// 运行时切换主题（S-A）：换 token 表 → 段缓存与脏区历史整体失效，
-    /// 下一帧整帧重绘上屏。颜色令牌不影响布局，无需失效 Measure/Arrange。
+    /// 下一帧整帧重绘上屏；皮肤默认尺寸发生变化时也使布局失效。
     /// </summary>
     public void SetTheme(ElementTheme theme)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _painter.ReplaceTheme(theme);
+        _themeBinding.SetSource(theme);
+        _themeBinding.Update(_painter, Root);
         _painter.ResetDamage(); // 当前帧可能已构建过：再保证下一帧整帧
     }
 
-    /// <summary><see cref="IWindowHost"/> 实现（D101）：主题经标记接口传入，此处还原为 <see cref="ElementTheme"/>。</summary>
+    /// <summary>Replace a palette or a follow-system source on the UI thread.</summary>
     public void SetTheme(IHostTheme theme)
-        => SetTheme(theme as ElementTheme
-            ?? throw new ArgumentException($"Theme must be an ElementTheme (got {theme?.GetType().Name ?? "null"}).", nameof(theme)));
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _themeBinding.SetSource(theme);
+        _themeBinding.Update(_painter, Root);
+    }
 
     public InputRouter Input
     {
@@ -219,6 +228,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
         while (!_disposed && !_uiRoot.IsDisposed && _window.PumpMessages())
         {
             if (_disposed || _uiRoot.IsDisposed || _window.IsClosed || IsExiting) break;
+            _themeBinding.Update(_painter, Root);
 
             // tick 顺序：PumpMessages → Drain →（自动失效）→ ProcessInvalidations → 布局 → present。
             // drain 按快照批执行，回调里新 Post 的续体下一 tick 再跑；只要跑过回调就按批
@@ -245,6 +255,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
             _uiRoot.ProcessInvalidations();
             if (_disposed || _uiRoot.IsDisposed) break;
             var root = SyncRoot();
+            _painter.Prepare(root);
             var animationNow = Stopwatch.GetTimestamp();
             FrameAnimations.Advance(root, TimeSpan.FromSeconds((animationNow - animationTime) / (double)Stopwatch.Frequency));
             animationTime = animationNow;

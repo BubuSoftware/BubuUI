@@ -7,6 +7,8 @@ namespace EclipseUI.Platform.Linux;
 internal static class SdlNative
 {
     private const string Library = "libSDL3.so.0";
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int SDL_GetSystemTheme();
     internal const uint InitVideo = 0x20;
     internal const ulong WindowFlags = 0x8 | 0x20 | 0x2000 | 0x10000000; // hidden, resizable, high density, Vulkan
     internal const uint Quit = 0x100, WindowExposed = 0x204, WindowResized = 0x206,

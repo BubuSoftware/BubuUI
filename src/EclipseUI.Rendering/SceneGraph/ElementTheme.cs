@@ -38,6 +38,29 @@ public class ElementTheme : IHostTheme
     public virtual Color ScrollBarTrack { get; init; } = new(0, 0, 0, 0);
     public virtual Color ScrollBarThumb { get; init; } = new(96, 106, 132);
 
+    // Semantic control tokens. Existing custom palettes retain their original defaults.
+    public virtual Color AccentHover => Accent;
+    public virtual Color ButtonBackground => Accent;
+    public virtual Color ButtonHoverBackground => ButtonBackground;
+    public virtual Color ButtonPressedBackground => AccentPressed;
+    public virtual Color ButtonForeground => OnAccent;
+    public virtual Color ButtonBorder => new(0, 0, 0, 0);
+    public virtual Color ControlHoverBackground => ControlBackground;
+    public virtual Color ControlPressedBackground => ControlBackground;
+    public virtual Color ControlHoverBorder => ControlBorder;
+    public virtual Color DisabledBorder => ControlBorder;
+    public virtual Color SelectionBackground => Accent;
+    public virtual Color SelectionForeground => OnAccent;
+    public virtual Color ItemHoverBackground => ItemBackground;
+    public virtual Color ItemPressedBackground => ItemBackground;
+    public virtual Color PopupBackground => PanelBackground;
+    public virtual Color PopupBorder => PanelBorder;
+    public virtual Color PopupShadow => new(0, 0, 0, 0);
+    public virtual double ControlRadius => 4;
+    public virtual double PopupRadius => PanelRadius;
+    public virtual double PopupShadowSize => 0;
+    public virtual bool TransparentPanels => false;
+
     // ---- 形状 ----
     public virtual double PanelRadius { get; init; } = 12;
     public virtual double ItemRadius { get; init; } = 8;

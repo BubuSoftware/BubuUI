@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Fluent desktop skin for EclipseUI, with light, dark and system modes.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../EclipseUI.Rendering/EclipseUI.Rendering.csproj" />
+  </ItemGroup>
+</Project>

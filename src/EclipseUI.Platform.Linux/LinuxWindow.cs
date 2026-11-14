@@ -3,8 +3,10 @@ using EclipseUI.Rendering;
 namespace EclipseUI.Platform.Linux;
 
 /// <summary>SDL3 window backed by X11 or Wayland. Create, pump and dispose on the main thread.</summary>
-public sealed class LinuxWindow : ILinuxWindow
+public sealed class LinuxWindow : ILinuxWindow, ISystemThemeProvider
 {
+    // Query only after SDL video initialization, on the window's UI thread.
+    ThemeVariant ISystemThemeProvider.Variant => SdlNative.SDL_GetSystemTheme() == 2 ? ThemeVariant.Dark : ThemeVariant.Light;
     private static readonly Dictionary<uint, LinuxWindow> Windows = new();
     private static int VideoThread;
     private readonly int _thread = Environment.CurrentManagedThreadId;

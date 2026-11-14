@@ -108,6 +108,20 @@ dotnet publish samples/Gallery.Desktop -c Release -r osx-arm64 --self-contained 
 
 ## 控件库
 
+Windows/Linux/macOS 桌面默认使用 Fluent 皮肤并跟随系统明暗；也可显式配置：
+
+```csharp
+using EclipseUI;
+using EclipseUI.Themes.Fluent;
+
+AppBuilder.Configure<MyApp>()
+    .UseFluentTheme(ThemeVariant.System) // Light / Dark 固定明暗
+    // 继续装配平台、渲染和文本管线
+    .Start(args);
+```
+
+运行期调用 `SetTheme(FluentTheme.Dark)`，或传入 `FluentTheme.Light` / `FluentTheme.System` 切换模式。Gallery 支持 `--theme system|light|dark`，主题按钮循环切换三种模式。令牌、默认值层和验证见 [Fluent 皮肤](./design/27-fluent-theme.md)。
+
 当前目录有 42 个公开标签（含 Window）。除原有文本、按钮和布局控件外，已提供 TextBox/PasswordBox、ListBox/ComboBox、开关与数值输入、浮层和菜单、TabControl、TreeView、DataGrid、DatePicker/Calendar、图像与形状，以及 Canvas/DockPanel。Grid 支持跨行跨列，滚动条可拖动，虚拟列表支持变高和可选容器复用。
 
 完整行为、使用示例及能力边界见 [控件库契约](./design/24-control-library.md)。Gallery 第六区展示新增控件；也可独立验证并生成深浅主题截图：

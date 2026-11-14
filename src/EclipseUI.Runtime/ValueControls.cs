@@ -11,8 +11,8 @@ public class ToggleButton : Button
     public ToggleButton() => AddHandler(ClickEvent, _ => { Checked = !Checked; RaiseEvent(new(CheckedChangedEvent)); });
     public override void Render(IElementDrawingContext c)
     {
-        c.FillRectangle(new(0, 0, FinalRect.Width, FinalRect.Height), Checked ? c.Accent : c.Background, 4);
-        c.StrokeRectangle(new(.5, .5, Math.Max(0, FinalRect.Width - 1), Math.Max(0, FinalRect.Height - 1)), c.Border, 1, 4);
+        c.FillRectangle(new(0, 0, FinalRect.Width, FinalRect.Height), Checked ? c.Accent : c.Background, c.CornerRadius);
+        c.StrokeRectangle(new(.5, .5, Math.Max(0, FinalRect.Width - 1), Math.Max(0, FinalRect.Height - 1)), c.Border, 1, c.CornerRadius);
         if (Content is null)
         {
             var fs = GetValue(TextBlock.FontSizeProperty); var m = TextMeasurer.Current.Measure(Label, fs);

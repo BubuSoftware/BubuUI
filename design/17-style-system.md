@@ -9,7 +9,7 @@
 
 ## 0. 一句话总纲
 
-**外观三问，各答各的**：谁来写值（有效值四层级联，D99）、状态怎么变（伪类位掩码，D102 + E3/E5 扩展）、
+**外观三问，各答各的**：谁来写值（有效值级联，D99；后续增加template层和[主题默认值](./27-fluent-theme.md)）、状态怎么变（伪类位掩码，D102 + E3/E5 扩展）、
 作者怎么写（`.eustyle` 样式表，类 SCSS 语法，编译期编译为 `Define` 调用——E1/E2/E4）。
 全程**无运行时选择器引擎**：字符串只允许出现在「定义/注册」时刻，绝不进入「每帧匹配」路径。
 
@@ -41,13 +41,15 @@
 
 ## 2. 分层模型（语义核心，D99 已落）
 
-### 2.1 有效值四层
+### 2.1 当前有效值层
 
 ```
 local（inline / 属性直赋）
-  > class（样式类写入 _styleValues）
-    > inherited（FontSize 等经属性系统继承）
-      > default（StyledProperty 默认值）
+  > template（模板根默认值）
+    > class（样式类写入 _styleValues）
+      > inherited（FontSize 等经属性系统继承）
+        > theme default（沿实际 Parent 查找的皮肤默认值）
+          > property default（StyledProperty 默认值）
 ```
 
 - class 层读写：`SetStyleValue` / `ClearStyleValues`；local 清除：`ClearLocalValue`
@@ -67,7 +69,7 @@ local（inline / 属性直赋）
 | 静态覆盖 vs 主题资源 vs 令牌（painter 内） | resource > 静态覆盖 > 主题令牌 | D100 |
 
 > 注意最后一行是**同属性内的 painter 解析序**（`Visual.BackgroundResource` vs `Visual.Background`），
-> 与值盒四层是正交的两维：值盒决定「谁写这个属性」，D100 序决定「painter 读取时如何合成」。
+> 与属性值层是正交的两维：值层决定「谁写这个属性」，D100 序决定「painter 读取时如何合成」。
 
 ---
 

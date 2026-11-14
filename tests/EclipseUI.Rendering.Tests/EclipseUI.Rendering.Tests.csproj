@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\EclipseUI.Rendering\EclipseUI.Rendering.csproj" />
+    <ProjectReference Include="../../src/EclipseUI.Themes.Fluent/EclipseUI.Themes.Fluent.csproj" />
     <ProjectReference Include="..\..\src\EclipseUI.Rendering.Vello\EclipseUI.Rendering.Vello.csproj" />
     <ProjectReference Include="..\..\src\EclipseUI.Text.Shaping\EclipseUI.Text.Shaping.csproj" />
   </ItemGroup>

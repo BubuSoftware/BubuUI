@@ -66,7 +66,7 @@ public class Calendar : Element
     protected internal override void ArrangeCore(Rect final) { }
     public override void Render(IElementDrawingContext c)
     {
-        c.FillRectangle(new(0, 0, FinalRect.Width, FinalRect.Height), c.Background, 4);
+        c.FillRectangle(new(0, 0, FinalRect.Width, FinalRect.Height), c.Background, c.CornerRadius);
         var cell = FinalRect.Width / 7;
         c.Line(new(18, 10), new(12, 16), c.Foreground, 1.5); c.Line(new(12, 16), new(18, 22), c.Foreground, 1.5);
         ControlIcons.Chevron(c, new(FinalRect.Width - 16, 16), right: true, size: 6);
@@ -76,7 +76,7 @@ public class Calendar : Element
         {
             var index = day - 1 + (int)DisplayMonth.DayOfWeek; var date = DisplayMonth.AddDays(day - 1); var selected = SelectedDate == date;
             var r = new Rect(index % 7 * cell + 2, 56 + index / 7 * 28, cell - 4, 26);
-            if (selected) c.FillRectangle(r, c.Accent, 4);
+            if (selected) c.FillRectangle(r, c.Accent, c.CornerRadius);
             c.Text(day.ToString(CultureInfo.InvariantCulture), new(r.X + 6, r.Y + 3), 13, date < MinimumDate || date > MaximumDate ? c.Foreground with { A = 80 } : selected ? c.OnAccent : c.Foreground);
         }
     }
@@ -87,7 +87,7 @@ public class DatePicker : Panel
     protected override FocusVisualMode DefaultFocusVisualMode => FocusVisualMode.Control;
     public override FocusVisualGeometry GetFocusVisualGeometry() => new(this, new(Point.Zero, FinalRect.Size), 4);
     public override void RenderFocusVisual(IElementDrawingContext c) =>
-        c.StrokeRectangle(new(.5, .5, Math.Max(0, FinalRect.Width - 1), Math.Max(0, FinalRect.Height - 1)), c.Accent, 1, 4);
+        c.StrokeRectangle(new(.5, .5, Math.Max(0, FinalRect.Width - 1), Math.Max(0, FinalRect.Height - 1)), c.Accent, 1, c.CornerRadius);
     public static readonly StyledProperty<DateTime?> SelectedDateProperty = StyledProperty<DateTime?>.Register<DatePicker>("SelectedDate", null, new() { Invalidate = InvalidateKind.Render });
     public static readonly StyledProperty<bool> IsDropDownOpenProperty = StyledProperty<bool>.Register<DatePicker>("IsDropDownOpen", false, new() { Invalidate = InvalidateKind.Measure });
     public static readonly RoutedEvent SelectedDateChangedEvent = new("SelectedDateChanged");

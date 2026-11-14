@@ -3,8 +3,10 @@ using EclipseUI.Rendering;
 namespace EclipseUI.Platform.MacOS;
 
 /// <summary>SDL3 Cocoa window with a Metal NSView. Create, pump and dispose on the process main thread.</summary>
-public sealed class MacOSWindow : IMacOSWindow
+public sealed class MacOSWindow : IMacOSWindow, ISystemThemeProvider
 {
+    // SDL video is initialized by this window; query only on its UI thread.
+    ThemeVariant ISystemThemeProvider.Variant => SdlNative.SDL_GetSystemTheme() == 2 ? ThemeVariant.Dark : ThemeVariant.Light;
     private static readonly Dictionary<uint, MacOSWindow> Windows = new();
     private nint _window;
     private nint _metalView;

@@ -1,6 +1,7 @@
 using EclipseUI;
 using EclipseUI.Elements;
 using EclipseUI.Rendering;
+using EclipseUI.Themes.Fluent;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Gallery;
@@ -29,11 +30,13 @@ public sealed class GalleryApp : Application
         window.MaxTicks = options.Frames;
 
         // S-A 亮暗切换：换 token 表 → 段缓存失效 → 整帧重绘。初值主题由 AppBuilder.UseTheme 提供。
-        var dark = true;
+        var mode = options.Theme;
+        mainWindow.ThemeButton.Label = $"Theme: {mode}";
         mainWindow.ThemeButton.AddHandler(Button.ClickEvent, () =>
         {
-            dark = !dark;
-            SetTheme(dark ? ElementTheme.Dark : ElementTheme.Light);
+            mode = mode switch { ThemeVariant.System => ThemeVariant.Light, ThemeVariant.Light => ThemeVariant.Dark, _ => ThemeVariant.System };
+            mainWindow.ThemeButton.Label = $"Theme: {mode}";
+            SetTheme(FluentTheme.For(mode));
         });
 
         // 应用级接线（注册伪类 / 读回订阅 / 条目工厂 / 启用开关）——与验证壳共用。

@@ -4,6 +4,7 @@ using EclipseUI.Platform.Windows;
 using EclipseUI.Platform.Linux;
 using EclipseUI.Platform.MacOS;
 using EclipseUI.Rendering;
+using EclipseUI.Themes.Fluent;
 using EclipseUI.Rendering.Vello;
 using EclipseUI.Text.Shaping;
 using Gallery;
@@ -22,7 +23,7 @@ if (options is null)
 var builder = AppBuilder.Configure<GalleryApp>()
     .UseVello(new VelloSurfaceOptions { PreferVsync = options.Vsync })
     .UseHarfBuzzText()
-    .UseTheme(ElementTheme.Dark)
+    .UseFluentTheme(options.Theme)
     .UseStyles(StyleRegistry.Instance, StyleBootstrap.Apply)
     .ConfigureServices(s => s.AddSingleton(options));
 
@@ -50,7 +51,7 @@ static GalleryLaunchOptions? ParseArgs(string[] args)
         Console.Error.WriteLine(ex.Message);
         Console.Error.WriteLine(
             "usage: Gallery.Desktop [--width N] [--height N] [--frames N] [--max-fps N] " +
-            "[--no-vsync] [--always-render] [--cpu] [--shot path]");
+            "[--no-vsync] [--always-render] [--theme system|light|dark] [--cpu] [--shot path]");
         return null;
     }
 }
@@ -63,11 +64,13 @@ static int RunOffscreen(AppBuilder builder, GalleryLaunchOptions options)
         var window = app.MainWindow ?? throw new InvalidOperationException("MainWindow was not set.");
         var root = window.Content ?? throw new InvalidOperationException("Window.Content was not set.");
 
+        var theme = new ThemeBinding(window.Theme ?? app.DefaultTheme ?? FluentTheme.System).Current;
+        root.SetThemeDefaults(theme as IElementThemeDefaults);
+
         var size = new Size(options.Width, options.Height);
         root.Measure(size);
         root.Arrange(new Rect(Point.Zero, size));
 
-        var theme = (window.Theme ?? app.DefaultTheme) as ElementTheme ?? new ElementTheme();
         var textPainter = app.Services.GetService<ITextPainter>() ?? new MeasuringTextPainter();
         var shotPath = options.ShotPath
                        ?? Path.Combine(Environment.CurrentDirectory, "out", "gallery-cpu.png");

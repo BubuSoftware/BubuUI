@@ -1,3 +1,5 @@
+using EclipseUI;
+
 namespace Gallery;
 
 /// <summary>
@@ -6,6 +8,7 @@ namespace Gallery;
 /// </summary>
 public sealed record GalleryLaunchOptions
 {
+    public ThemeVariant Theme { get; init; } = ThemeVariant.System;
     public int Width { get; init; } = 1000;
 
     public int Height { get; init; } = 760;
@@ -39,11 +42,19 @@ public sealed record GalleryLaunchOptions
         bool useCpu = false;
         bool alwaysRender = false;
         int maxFps = 0;
+        var theme = ThemeVariant.System;
 
         for (int i = 0; i < args.Length; i++)
         {
             switch (args[i])
             {
+                case "--theme" when i + 1 < args.Length:
+                    theme = args[++i].ToLowerInvariant() switch
+                    {
+                        "system" => ThemeVariant.System, "light" => ThemeVariant.Light, "dark" => ThemeVariant.Dark,
+                        _ => throw new ArgumentException("--theme must be system, light or dark."),
+                    };
+                    break;
                 case "--frames" when i + 1 < args.Length:
                     frames = int.Parse(args[++i]);
                     break;
@@ -77,6 +88,7 @@ public sealed record GalleryLaunchOptions
 
         return new GalleryLaunchOptions
         {
+            Theme = theme,
             Width = width,
             Height = height,
             Frames = frames,

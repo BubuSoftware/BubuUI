@@ -16,11 +16,22 @@ internal sealed class ElementDrawingContext : IElementDrawingContext
     public UiColor Border { get; }
     public UiColor Accent { get; }
     public UiColor OnAccent { get; }
-    internal ElementDrawingContext(DisplayList list, Point offset, ElementTheme theme, ITextPainter? text, Color foreground, Color background, bool enabled)
+    public UiColor SelectionBackground { get; }
+    public UiColor SelectionForeground { get; }
+    public UiColor MutedForeground { get; }
+    public double CornerRadius { get; }
+    internal ElementDrawingContext(DisplayList list, Point offset, ElementTheme theme, ITextPainter? text, Color foreground, Color background, Element element)
     {
         _list = list; _offset = offset; _text = text;
         Foreground = Convert(foreground); Background = Convert(background);
-        Border = Convert(theme.ControlBorder); Accent = Convert(enabled ? theme.Accent : theme.DisabledBackground); OnAccent = Convert(enabled ? theme.OnAccent : theme.DisabledForeground);
+        var enabled = element.IsEffectiveEnabled;
+        Border = Convert(!enabled ? theme.DisabledBorder : element.IsHovered ? theme.ControlHoverBorder : theme.ControlBorder);
+        Accent = Convert(!enabled ? theme.DisabledBackground : element.IsPressed ? theme.AccentPressed : element.IsHovered ? theme.AccentHover : theme.Accent);
+        OnAccent = Convert(enabled ? theme.OnAccent : theme.DisabledForeground);
+        SelectionBackground = Convert(enabled ? theme.SelectionBackground : theme.DisabledBackground);
+        SelectionForeground = Convert(enabled ? theme.SelectionForeground : theme.DisabledForeground);
+        MutedForeground = Convert(enabled ? theme.MutedForeground : theme.DisabledForeground);
+        CornerRadius = Visual.GetCornerRadius(element) ?? theme.ControlRadius;
     }
     private static UiColor Convert(Color c) => new(c.R, c.G, c.B, c.A);
     private static Color Convert(UiColor c) => new(c.R, c.G, c.B, c.A);

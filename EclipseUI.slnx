@@ -13,6 +13,7 @@
     <Project Path="src/EclipseUI.Platform.MacOS/EclipseUI.Platform.MacOS.csproj" />
     <Project Path="src/EclipseUI.Rendering.Vello/EclipseUI.Rendering.Vello.csproj" />
     <Project Path="src/EclipseUI.Rendering/EclipseUI.Rendering.csproj" />
+    <Project Path="src/EclipseUI.Themes.Fluent/EclipseUI.Themes.Fluent.csproj" />
     <Project Path="src/EclipseUI.Runtime/EclipseUI.Runtime.csproj" />
     <Project Path="src/EclipseUI.Text.Shaping/EclipseUI.Text.Shaping.csproj" />
   </Folder>

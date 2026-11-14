@@ -10,6 +10,7 @@ namespace EclipseUI;
 public sealed class InputRouter
 {
     private readonly Element _root;
+    private Element? _hoverOwner;
     private PointerButton _button;
     private KeyModifiers _modifiers;
 
@@ -62,11 +63,15 @@ public sealed class InputRouter
     internal void Reset()
     {
         var hovered = Hovered;
+        var owner = _hoverOwner;
+        _hoverOwner = null;
         Hovered = null;
         List<Exception>? failures = null;
         try { CancelPointerCapture(); }
         catch (Exception error) { (failures ??= new()).Add(error); }
         try { if (hovered is not null) hovered.IsHovered = false; }
+        catch (Exception error) { (failures ??= new()).Add(error); }
+        try { if (owner is not null && !ReferenceEquals(owner, hovered)) owner.IsHovered = false; }
         catch (Exception error) { (failures ??= new()).Add(error); }
         try { Focus.ClearFocus(); }
         catch (Exception error) { (failures ??= new()).Add(error); }
@@ -159,12 +164,25 @@ public sealed class InputRouter
             target = null;
         if (ReferenceEquals(Hovered, target)) return;
         var old = Hovered;
+        var oldOwner = _hoverOwner;
         Hovered = target;
+        _hoverOwner = HoverOwner(target);
         if (old is not null) old.IsHovered = false;
         if (target is not null) target.IsHovered = true;
+        if (oldOwner is not null && !ReferenceEquals(oldOwner, _hoverOwner) && !ReferenceEquals(oldOwner, target)) oldOwner.IsHovered = false;
+        if (_hoverOwner is not null && !ReferenceEquals(_hoverOwner, target)) _hoverOwner.IsHovered = true;
         static bool Contains(Element ancestor, Element? child) { for (var e = child; e is not null; e = e.Parent) if (ReferenceEquals(e, ancestor)) return true; return false; }
         for (var e = old; e is not null; e = e.Parent) if (!Contains(e, target)) e.RaiseEvent(new RoutedEventArgs(Element.PointerExitedEvent));
         for (var e = target; e is not null; e = e.Parent) if (!Contains(e, old)) e.RaiseEvent(new RoutedEventArgs(Element.PointerEnteredEvent));
+    }
+
+    // Content is hit-tested normally; the enclosing interactive control also needs hover feedback.
+    // Stop at the nearest control so hovering a nested tree row does not highlight every ancestor row.
+    private static Element? HoverOwner(Element? target)
+    {
+        for (var node = target; node is not null; node = node.Parent)
+            if (node is Elements.Button or Elements.CheckBox or Elements.ListBoxItem or Elements.TreeViewItem) return node;
+        return null;
     }
 
     /// <summary>

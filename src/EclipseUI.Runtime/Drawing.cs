@@ -30,6 +30,10 @@ public interface IElementDrawingContext
     UiColor Border { get; }
     UiColor Accent { get; }
     UiColor OnAccent { get; }
+    UiColor SelectionBackground => Accent;
+    UiColor SelectionForeground => OnAccent;
+    UiColor MutedForeground => Foreground with { A = 160 };
+    double CornerRadius => 4;
     void FillRectangle(Rect rect, UiColor color, double radius = 0);
     void StrokeRectangle(Rect rect, UiColor color, double width = 1, double radius = 0);
     void Ellipse(Rect rect, UiColor fill, UiColor stroke, double strokeWidth = 0);

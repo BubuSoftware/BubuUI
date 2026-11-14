@@ -297,9 +297,23 @@ public abstract class Element : UiObject
     public static readonly RoutedEvent GotFocusEvent = new RoutedEvent("GotFocus", RoutingStrategy.Bubble);
     public static readonly RoutedEvent LostFocusEvent = new RoutedEvent("LostFocus", RoutingStrategy.Bubble);
 
+    private IElementThemeDefaults? _themeDefaults;
+
+    /// <summary>Defaults inherited by the actual content subtree; changing skins also invalidates layout.</summary>
+    public IElementThemeDefaults? ThemeDefaults => _themeDefaults ?? _parent?.ThemeDefaults;
+
+    public void SetThemeDefaults(IElementThemeDefaults? value)
+    {
+        UiThreadGuard.AssertUiThread(this, nameof(SetThemeDefaults));
+        if (ReferenceEquals(_themeDefaults, value)) return;
+        _themeDefaults = value;
+        InvalidateMeasure(); InvalidateRender();
+        foreach (var element in Descendants()) { element.InvalidateMeasure(); element.InvalidateRender(); }
+    }
+
     public T GetValue<T>(StyledProperty<T> property)
     {
-        // 有效值分层（S-B）：local（inline）→ class 样式 → 继承 → 默认。
+        // Effective values: local → template → class → inherited → scoped theme → property default.
         // 命中值盒：强类型读取，无拆箱。类型不匹配（正常 API 下不可达）时退化到下一层。
         if (_localValues is not null &&
             _localValues.TryGetValue(property, out var box) &&
@@ -315,7 +329,7 @@ public abstract class Element : UiObject
             return styleTyped.Value;
         if (property.Inherits && _parent is not null)
             return _parent.GetValue(property);
-        return property.DefaultValue;
+        return ThemeDefaults is { } theme ? theme.GetDefault(this, property) : property.DefaultValue;
     }
 
     public void SetValue<T>(StyledProperty<T> property, T value)

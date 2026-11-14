@@ -16,7 +16,7 @@ EnsureInitialized晚于对象初始化器及标签输入，幂等且不在基类
 
 更新队列按真实内容树归属共享调度根，后台Invalidate仅入队，UI线程按深度和批次执行Render。结构移动迁移pending工作；循环上限针对反复更新轮次，不限制一批正常节点数量。
 
-Element的StyledProperty有效值层为local > template > class > inherited > default；模板值scope保留setter校验。类集按内部/外部顺序合并；继承属性沿实际Element父链处理。
+Element的StyledProperty有效值层为local > template > class > inherited > theme default > property default；模板值scope保留setter校验。类集按内部/外部顺序合并；继承属性沿实际Element父链处理。主题默认值由实际树上的SetThemeDefaults安装，见[Fluent皮肤](./27-fluent-theme.md)。
 
 绑定、计时器和块资源登记到Track或BlockScope；子节点通过真实树释放。Children.Remove只摘除，Unmount摘除并释放；Dispose幂等，逆序清理并聚合异常。不存在组件根订阅卸载事件的桥接层。
 

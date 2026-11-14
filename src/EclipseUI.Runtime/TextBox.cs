@@ -39,7 +39,7 @@ public class TextBox : Element, IFrameAnimation
     protected override FocusVisualMode DefaultFocusVisualMode => FocusVisualMode.Control;
     public override FocusVisualGeometry GetFocusVisualGeometry() => new(this, new(Point.Zero, FinalRect.Size), 4);
     public override void RenderFocusVisual(IElementDrawingContext c) =>
-        c.StrokeRectangle(new(.5, .5, Math.Max(0, FinalRect.Width - 1), Math.Max(0, FinalRect.Height - 1)), c.Accent, 1, 4);
+        c.StrokeRectangle(new(.5, .5, Math.Max(0, FinalRect.Width - 1), Math.Max(0, FinalRect.Height - 1)), c.Accent, 1, c.CornerRadius);
     protected virtual bool CanCopy => true;
     protected virtual string DisplayText => Text;
     protected virtual string DisplayComposition => _composition;
@@ -275,7 +275,7 @@ public class TextBox : Element, IFrameAnimation
     public override void Render(IElementDrawingContext c)
     {
         var bounds = new Rect(0, 0, FinalRect.Width, FinalRect.Height);
-        c.FillRectangle(bounds, c.Background, 4); c.StrokeRectangle(new(.5, .5, Math.Max(0, bounds.Width - 1), Math.Max(0, bounds.Height - 1)), c.Border, 1, 4);
+        c.FillRectangle(bounds, c.Background, c.CornerRadius); c.StrokeRectangle(new(.5, .5, Math.Max(0, bounds.Width - 1), Math.Max(0, bounds.Height - 1)), c.Border, 1, c.CornerRadius);
         c.PushClip(new(4, 4, Math.Max(0, bounds.Width - 8), Math.Max(0, bounds.Height - 8)));
         var lines = DisplayText.Split('\n'); int offset = 0;
         for (var i = 0; i < lines.Length; i++)
@@ -289,7 +289,7 @@ public class TextBox : Element, IFrameAnimation
             }
             c.Text(line, new(6 - _scrollX, y), FontSize, c.Foreground); offset += line.Length + 1;
         }
-        if (Text.Length == 0 && _composition.Length == 0) c.Text(Placeholder, new(6, 6), FontSize, c.Foreground with { A = 135 });
+        if (Text.Length == 0 && _composition.Length == 0) c.Text(Placeholder, new(6, 6), FontSize, c.MutedForeground);
         if (IsFocused)
         {
             var caret = CaretRect; if (_caretVisible) c.FillRectangle(caret, c.Foreground);

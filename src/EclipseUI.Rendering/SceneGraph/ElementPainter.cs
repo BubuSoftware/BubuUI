@@ -50,6 +50,9 @@ public sealed class ElementPainter
 
     public ElementTheme Theme => _theme;
 
+    /// <summary>Apply scoped font and control metrics before layout, including newly attached children.</summary>
+    public void Prepare(Element root) => root.SetThemeDefaults(_theme as IElementThemeDefaults);
+
     /// <summary>
     /// 替换主题（S-A 亮暗切换）：段缓存里的命令持有旧主题的颜色快照，
     /// 必须整段丢弃；脏区历史同步重置，下一帧按整帧重绘上屏。
@@ -220,19 +223,25 @@ public sealed class ElementPainter
             switch (element)
             {
                 case ListBoxItem item:
-                    PaintCard(element, rect, item.IsSelected ? _theme.Accent : _theme.ItemBackground, _theme.ItemBorder, _theme.ItemRadius);
+                    PaintCard(element, rect, item.IsSelected ? _theme.SelectionBackground : ItemBackground(element), _theme.ItemBorder, _theme.ItemRadius);
+                    if (item.IsSelected && _theme.TransparentPanels)
+                        _paintList.Add(new FillRoundedRect(new(rect.X + 3, rect.Y + 6, 3, Math.Max(0, rect.Height - 12)), 1.5, element.IsEffectiveEnabled ? _theme.Accent : _theme.DisabledForeground));
+                    break;
+                case Elements.Popup:
+                    PaintPopup(element, rect);
                     break;
                 case ScrollViewer:
                     PaintCard(element, rect, _theme.PanelBackground, _theme.PanelBorder, _theme.PanelRadius);
                     break;
                 case StackPanel:
+                    if (_theme.TransparentPanels && Visual.GetBackground(element) is null && Visual.GetBackgroundResource(element) is null) break;
                     PaintCard(element, rect, _theme.PanelBackground, _theme.PanelBorder, _theme.PanelRadius);
                     break;
             }
         }
 
         var context = new ElementDrawingContext(_paintList, rect.Location, _theme, _text,
-            ResolveForeground(element, _theme.Foreground), ResolveBackground(element, _theme.ControlBackground), element.IsEffectiveEnabled);
+            ResolveForeground(element, _theme.Foreground), ResolveBackground(element, ControlBackground(element)), element);
         element.Render(context);
         context.Complete();
     }
@@ -265,6 +274,29 @@ public sealed class ElementPainter
     }
 
     private Color ResolveForeground(Element element, Color fallback) => PeekForeground(element) ?? fallback;
+
+    private Color ItemBackground(Element element) => element.IsPressed ? _theme.ItemPressedBackground : element.IsHovered ? _theme.ItemHoverBackground : _theme.ItemBackground;
+    private Color ControlBackground(Element element) => element switch
+    {
+        MenuItem or TreeViewItem => ItemBackground(element),
+        Calendar or Elements.Popup => _theme.PopupBackground,
+        _ => element.IsPressed ? _theme.ControlPressedBackground : element.IsHovered ? _theme.ControlHoverBackground : _theme.ControlBackground,
+    };
+
+    private void PaintPopup(Element element, Rect rect)
+    {
+        var size = _theme.PopupShadowSize;
+        if (size > 0)
+        {
+            for (var i = 3; i >= 1; i--)
+            {
+                var spread = size * i / 3;
+                var shadow = new Color(_theme.PopupShadow.R, _theme.PopupShadow.G, _theme.PopupShadow.B, (byte)(_theme.PopupShadow.A / 3));
+                _paintList.Add(new FillRoundedRect(new(rect.X - spread, rect.Y + size - spread, rect.Width + spread * 2, rect.Height + spread * 2), _theme.PopupRadius + spread, shadow));
+            }
+        }
+        PaintCard(element, rect, _theme.PopupBackground, _theme.PopupBorder, _theme.PopupRadius);
+    }
 
     private Color ResolveBackground(Element element, Color fallback)
     {
@@ -324,8 +356,12 @@ public sealed class ElementPainter
 
         // S-B：元素级视觉覆盖（class/inline）优先，null 回落主题令牌；
         // 覆盖色完全接管按下态换色（v1 口径）。S-C：主题资源最先解析。
-        var background = ResolveBackground(button, button.IsPressed ? _theme.AccentPressed : _theme.Accent);
-        _paintList.Add(new FillRoundedRect(rect, Visual.GetCornerRadius(button) ?? _theme.ButtonRadius, background));
+        var background = ResolveBackground(button, button.IsPressed ? _theme.ButtonPressedBackground : button.IsHovered ? _theme.ButtonHoverBackground : _theme.ButtonBackground);
+        var radius = Visual.GetCornerRadius(button) ?? _theme.ButtonRadius;
+        _paintList.Add(new FillRoundedRect(rect, radius, background));
+        var border = button.IsEffectiveEnabled || _theme.ButtonBorder.A == 0 ? _theme.ButtonBorder : _theme.DisabledBorder;
+        if (border.A > 0 && _theme.BorderWidth > 0)
+            _paintList.Add(new StrokePath(PathGeometry.RoundedRectangle(Inset(rect, _theme.BorderWidth / 2), radius), border, _theme.BorderWidth));
 
         if (button.Content is not null) return;
         var label = button.Label;
@@ -338,7 +374,7 @@ public sealed class ElementPainter
             rect.Y + (rect.Height - metrics.Height) / 2);
         // 必须写段缓冲 _paintList：写 _list 会先于背景 AddRange（背景后画盖掉文字），
         // 且文字命令不进段、复用帧彻底丢失（D97 回归测试锁定）。
-        _text.Paint(_paintList, label, fontSize, origin, ResolveForeground(button, _theme.OnAccent));
+        _text.Paint(_paintList, label, fontSize, origin, ResolveForeground(button, _theme.ButtonForeground));
     }
 
     private void PaintCheckBox(CheckBox checkBox, Rect rect)
@@ -351,13 +387,13 @@ public sealed class ElementPainter
 
         if (checkBox.IsIndeterminate)
         {
-            _paintList.Add(new FillRoundedRect(box, _theme.CheckBoxRadius, ResolveBackground(checkBox, _theme.Accent)));
-            _paintList.Add(new FillRect(new Rect(box.X + boxSize * .2, box.Y + boxSize * .43, boxSize * .6, boxSize * .14), _theme.OnAccent));
+            _paintList.Add(new FillRoundedRect(box, _theme.CheckBoxRadius, ResolveBackground(checkBox, AccentBackground(checkBox))));
+            _paintList.Add(new FillRect(new Rect(box.X + boxSize * .2, box.Y + boxSize * .43, boxSize * .6, boxSize * .14), checkBox.IsEffectiveEnabled ? _theme.OnAccent : _theme.DisabledForeground));
         }
         else if (checkBox.Checked)
         {
             var checkedBg = ResolveBackground(checkBox,
-                checkBox.IsPressed ? _theme.AccentPressed : _theme.Accent);
+                AccentBackground(checkBox));
             _paintList.Add(new FillRoundedRect(box, _theme.CheckBoxRadius, checkedBg));
 
             var strokeWidth = Math.Max(1.5, boxSize * 0.11);
@@ -366,15 +402,15 @@ public sealed class ElementPainter
                 .LineTo(box.X + boxSize * 0.43, box.Y + boxSize * 0.71)
                 .LineTo(box.X + boxSize * 0.77, box.Y + boxSize * 0.31)
                 .Build();
-            _paintList.Add(new StrokePath(check, _theme.OnAccent, strokeWidth));
+            _paintList.Add(new StrokePath(check, checkBox.IsEffectiveEnabled ? _theme.OnAccent : _theme.DisabledForeground, strokeWidth));
         }
         else
         {
             _paintList.Add(new FillRoundedRect(box, _theme.CheckBoxRadius,
-                checkBox.IsPressed ? _theme.AccentPressed : _theme.ControlBackground));
+                ResolveBackground(checkBox, ControlBackground(checkBox))));
             _paintList.Add(new StrokePath(
                 PathGeometry.RoundedRectangle(Inset(box, _theme.BorderWidth / 2), _theme.CheckBoxRadius),
-                _theme.ControlBorder,
+                checkBox.IsEffectiveEnabled ? checkBox.IsHovered ? _theme.ControlHoverBorder : _theme.ControlBorder : _theme.DisabledBorder,
                 _theme.BorderWidth));
         }
 
@@ -405,12 +441,14 @@ public sealed class ElementPainter
             _theme.BorderWidth));
     }
 
+    private Color AccentBackground(Element element) => element.IsPressed ? _theme.AccentPressed : element.IsHovered ? _theme.AccentHover : _theme.Accent;
+
     private void PaintFocusRing(Element element, Rect rect, FocusVisualDescriptor focus)
     {
         if (focus.Control)
         {
             var context = new ElementDrawingContext(_paintList, rect.Location, _theme, _text,
-                ResolveForeground(element, _theme.Foreground), ResolveBackground(element, _theme.ControlBackground), element.IsEffectiveEnabled);
+                ResolveForeground(element, _theme.Foreground), ResolveBackground(element, ControlBackground(element)), element);
             element.RenderFocusVisual(context); context.Complete(); return;
         }
         var ring = Inflate(focus.Bounds, focus.Offset);

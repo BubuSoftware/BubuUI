@@ -10,6 +10,7 @@
   <ItemGroup>
     <ProjectReference Include="..\EclipseUI.Runtime\EclipseUI.Runtime.csproj" />
     <ProjectReference Include="..\EclipseUI.Rendering\EclipseUI.Rendering.csproj" />
+    <ProjectReference Include="../EclipseUI.Themes.Fluent/EclipseUI.Themes.Fluent.csproj" />
   </ItemGroup>
 
 </Project>

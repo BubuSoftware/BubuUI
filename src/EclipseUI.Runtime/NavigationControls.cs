@@ -5,7 +5,7 @@ public class ComboBox : Panel
     protected override FocusVisualMode DefaultFocusVisualMode => FocusVisualMode.Control;
     public override FocusVisualGeometry GetFocusVisualGeometry() => new(this, new(Point.Zero, FinalRect.Size), 4);
     public override void RenderFocusVisual(IElementDrawingContext c) =>
-        c.StrokeRectangle(new(.5, .5, Math.Max(0, FinalRect.Width - 1), Math.Max(0, FinalRect.Height - 1)), c.Accent, 1, 4);
+        c.StrokeRectangle(new(.5, .5, Math.Max(0, FinalRect.Width - 1), Math.Max(0, FinalRect.Height - 1)), c.Accent, 1, c.CornerRadius);
     private readonly Button _button;
     private readonly ListBox _list;
     private readonly Popup _popup;
@@ -137,9 +137,9 @@ public class MenuItem : Button
     public override bool UsesDefaultDrawing => false;
     public override void Render(IElementDrawingContext c)
     {
-        c.FillRectangle(new(0, 0, FinalRect.Width, FinalRect.Height), IsHovered ? c.Accent : c.Background, 3);
+        c.FillRectangle(new(0, 0, FinalRect.Width, FinalRect.Height), c.Background, c.CornerRadius);
         if (Submenu is not null) ControlIcons.Chevron(c, new(FinalRect.Width - 10, FinalRect.Height / 2), right: true);
-        c.Text((IsCheckable ? Checked ? "✓ " : "   " : "") + Label, new(8, 6), GetValue(TextBlock.FontSizeProperty), IsHovered ? c.OnAccent : c.Foreground);
+        c.Text((IsCheckable ? Checked ? "✓ " : "   " : "") + Label, new(8, 6), GetValue(TextBlock.FontSizeProperty), c.Foreground);
     }
 }
 
@@ -200,8 +200,10 @@ public class TabControl : Panel
         double x = 0;
         for (var i = 0; i < _headerWidths.Length; i++)
         {
-            c.FillRectangle(new(x, 0, _headerWidths[i], HeaderHeight), i == SelectedIndex ? c.Accent : c.Background, 4);
-            c.Text((Children[i] as TabItem)?.Header ?? "Tab", new(x + 12, 7), GetValue(TextBlock.FontSizeProperty), i == SelectedIndex ? c.OnAccent : c.Foreground); x += _headerWidths[i];
+            c.FillRectangle(new(x, 0, _headerWidths[i], HeaderHeight), i == SelectedIndex ? c.SelectionBackground : c.Background, c.CornerRadius);
+            c.Text((Children[i] as TabItem)?.Header ?? "Tab", new(x + 12, 7), GetValue(TextBlock.FontSizeProperty), i == SelectedIndex ? c.SelectionForeground : c.Foreground);
+            if (i == SelectedIndex) c.FillRectangle(new(x + 12, HeaderHeight - 3, Math.Max(0, _headerWidths[i] - 24), 3), c.Accent, 1.5);
+            x += _headerWidths[i];
         }
     }
 }

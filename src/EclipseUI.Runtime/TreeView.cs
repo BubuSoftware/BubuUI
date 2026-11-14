@@ -55,8 +55,9 @@ public class TreeViewItem : StackPanel
     }
     public override void Render(IElementDrawingContext c)
     {
-        c.FillRectangle(new(0, 0, FinalRect.Width, 28), IsSelected ? c.Accent : c.Background, 3);
-        var fg = IsSelected ? c.OnAccent : c.Foreground;
+        c.FillRectangle(new(0, 0, FinalRect.Width, 28), IsSelected ? c.SelectionBackground : c.Background, c.CornerRadius);
+        var fg = IsSelected ? c.SelectionForeground : c.Foreground;
+        if (IsSelected) c.FillRectangle(new(3, 6, 3, 16), c.Accent, 1.5);
         if (Children.Count > 0) ControlIcons.Chevron(c, new(10, 14), right: !IsExpanded);
         c.Text(Header, new(24, 4), GetValue(TextBlock.FontSizeProperty), fg);
     }

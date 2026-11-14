@@ -9,6 +9,25 @@ namespace EclipseUI.Platform.MacOS.Tests;
 
 public class WindowHostTests
 {
+    private sealed class ThemePreference : ISystemThemeProvider { public ThemeVariant Variant { get; set; } }
+
+    [Fact]
+    public void SystemThemeSourceFollowsPreferenceAndExplicitModeStopsFollowing()
+    {
+        using var window = new TestWindow(); using var presenter = new TestPresenter();
+        using var root = new StackPanel();
+        var preference = new ThemePreference { Variant = ThemeVariant.Light };
+        using var host = new WindowHost(window, presenter, root, new WindowHostOptions { SystemTheme = preference });
+        Assert.Same(EclipseUI.Themes.Fluent.FluentTheme.Light, host.Painter.Theme);
+        host.FrameTicked += (_, e) =>
+        {
+            if (e.Iteration == 1) preference.Variant = ThemeVariant.Dark;
+            if (e.Iteration == 2) { Assert.Same(EclipseUI.Themes.Fluent.FluentTheme.Dark, host.Painter.Theme); host.SetTheme(EclipseUI.Themes.Fluent.FluentTheme.Light); }
+            if (e.Iteration == 3) Assert.Same(EclipseUI.Themes.Fluent.FluentTheme.Light, host.Painter.Theme);
+        };
+        Assert.Equal(3, host.Run(4));
+        Assert.Equal(1, host.SkippedFrames);
+    }
     [Fact]
     public void MacOSSetupCanBeBuiltWithoutLoadingSdl()
     {

@@ -8,6 +8,8 @@ namespace EclipseUI.Platform.MacOS;
 internal static class SdlNative
 {
     private const string Library = "EclipseUI.SDL3.MacOS";
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int SDL_GetSystemTheme();
 
     static SdlNative() => NativeLibrary.SetDllImportResolver(typeof(SdlNative).Assembly, ResolveLibrary);
 

@@ -11,7 +11,12 @@ public class Button : Panel
         StyledProperty<string>.Register<Button>("Label", "",
             new PropertyOptions { Invalidate = InvalidateKind.Measure });
 
-    private const double HPad = 12, VPad = 6;
+    public static readonly StyledProperty<double> HorizontalPaddingProperty = StyledProperty<double>.Register<Button>("HorizontalPadding", 12, new() { Invalidate = InvalidateKind.Measure });
+    public static readonly StyledProperty<double> VerticalPaddingProperty = StyledProperty<double>.Register<Button>("VerticalPadding", 6, new() { Invalidate = InvalidateKind.Measure });
+    public double HorizontalPadding { get => GetValue(HorizontalPaddingProperty); set => SetValue(HorizontalPaddingProperty, Math.Max(0, value)); }
+    public double VerticalPadding { get => GetValue(VerticalPaddingProperty); set => SetValue(VerticalPaddingProperty, Math.Max(0, value)); }
+    private double HPad => HorizontalPadding;
+    private double VPad => VerticalPadding;
 
     public Button()
     {

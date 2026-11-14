@@ -13,10 +13,11 @@ $primary: theme(#22a064, #1c8c58);
 
 .primary {
     Background: $primary;
+    Foreground: #ffffff;
 
     &:hover    { Background: theme(#30ba78, #26a268); }  // brighten on hover
     &:pressed  { Background: theme(#187e4e, #146e44); }  // darken while pressed
-    &:disabled { Background: theme(#2e3e3a, #ced6d2); }  // explicit :disabled variant (E3)
+    &:disabled { Background: theme(#2e3e3a, #ced6d2); Foreground: theme(#9aa4bc, #616161); }  // explicit :disabled variant (E3)
 }
 
 // Tool buttons: neutral grey, both shades.

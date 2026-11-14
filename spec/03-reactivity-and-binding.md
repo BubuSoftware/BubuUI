@@ -98,7 +98,9 @@ foreach刷新构建失败时清理本轮全部新增条目，不提前释放旧�
 
 ## 7. 属性层与类集
 
-StyledProperty 优先级为 local > template > class > inherited > default。SetTemplateValue/BeginTemplateValues 提供模板默认值，公开 setter 的校验仍执行；使用点赋值和普通 C# setter 写 local。
+StyledProperty 优先级为 local > template > class > inherited > theme default > property default。SetTemplateValue/BeginTemplateValues 提供模板默认值，公开 setter 的校验仍执行；使用点赋值和普通 C# setter 写 local。
+
+主题默认值由实际内容树上的 SetThemeDefaults(IElementThemeDefaults?) 设置，未设置的后代沿 Parent 查找。它只提供缺省值，不写入 local/template/class，也不覆盖继承值；动态新增内容立即使用当前树的主题默认值。切换默认值提供者使该子树的布局和绘制失效。桌面宿主在布局前安装解析后的主题；离屏调用方先调用 ElementPainter.Prepare(root)，再布局。主题默认值不产生属性写入通知。
 
 模板类集与使用点类集分开记录并按“内部在前、外部在后”合并；动态更新不累积旧类。普通 CLR 属性没有 StyledProperty 值层，其通知/回调能力按类型声明决定。
 

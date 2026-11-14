@@ -1,5 +1,6 @@
 using EclipseUI;
 using EclipseUI.Rendering;
+using EclipseUI.Themes.Fluent;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace EclipseUI.Platform.MacOS;
@@ -86,7 +87,7 @@ internal sealed class MacOSDesktopLifetime : IApplicationLifetime
             Console.WriteLine($"vsync={presenter.IsVsync}, max-fps={window.MaxFramesPerSecond}");
 
             // 主题解析：窗口显式 > 应用默认（UseTheme）> 平台默认；IHostTheme 擦除后还原为 ElementTheme。
-            var theme = (window.Theme ?? app.DefaultTheme) as ElementTheme ?? new ElementTheme();
+            var theme = window.Theme ?? app.DefaultTheme ?? FluentTheme.System;
             host = new WindowHost(win, presenter, content, new WindowHostOptions
             {
                 Theme = theme,

@@ -9,6 +9,26 @@ namespace EclipseUI.Platform.Linux.Tests;
 
 public class WindowHostTests
 {
+    private sealed class ThemePreference : ISystemThemeProvider { public ThemeVariant Variant { get; set; } }
+
+    [Fact]
+    public void SystemSkinUpdatesOnUiThreadAndExplicitPaletteStopsFollowing()
+    {
+        using var window = new TestWindow();
+        using var presenter = new TestPresenter();
+        using var root = new StackPanel();
+        var preference = new ThemePreference { Variant = ThemeVariant.Light };
+        using var host = new WindowHost(window, presenter, root, new WindowHostOptions { SystemTheme = preference });
+        Assert.True(host.Painter.Theme.IsLight);
+        host.FrameTicked += (_, e) =>
+        {
+            if (e.Iteration == 1) preference.Variant = ThemeVariant.Dark;
+            if (e.Iteration == 2) { Assert.False(host.Painter.Theme.IsLight); host.SetTheme(EclipseUI.Themes.Fluent.FluentTheme.Light); }
+            if (e.Iteration == 3) Assert.True(host.Painter.Theme.IsLight);
+        };
+        Assert.Equal(3, host.Run(4));
+        Assert.Equal(1, host.SkippedFrames);
+    }
     [Fact]
     public void LinuxSetupCanBeBuiltWithoutLoadingSdl()
     {

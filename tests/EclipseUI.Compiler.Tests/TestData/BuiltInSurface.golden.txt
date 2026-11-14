@@ -1,6 +1,6 @@
 # EclipseUI 内置模板表面（design/14 §14.11.1）。
 # 由 CatalogScannerTests.Surface_MatchesGoldenSnapshotFile 生成/比对；控件 API 变化时必须连同变更记录一起更新。
-# 标签 42 / 属性项 715 / 事件项 607 / 附加属性项 7
+# 标签 42 / 属性项 721 / 事件项 607 / 附加属性项 7
 
 [Border] global::EclipseUI.Elements.Border content=Children:Content
     prop   Background EclipseUI.UiColor declared=global::EclipseUI.Elements.Border field=BackgroundProperty writable=True
@@ -44,6 +44,7 @@
     prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
+    prop   HorizontalPadding double declared=global::EclipseUI.Elements.Button field=HorizontalPaddingProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
     prop   IsTabStop bool declared=global::EclipseUI.Element field=IsTabStopProperty writable=True
     prop   IsVisible bool declared=global::EclipseUI.Element field=IsVisibleProperty writable=True
@@ -55,6 +56,7 @@
     prop   MinWidth double declared=global::EclipseUI.Element field=MinWidthProperty writable=True
     prop   Padding double declared=global::EclipseUI.Elements.Panel field=PaddingProperty writable=True
     prop   VerticalAlignment EclipseUI.VerticalAlignment declared=global::EclipseUI.Element field=VerticalAlignmentProperty writable=True
+    prop   VerticalPadding double declared=global::EclipseUI.Elements.Button field=VerticalPaddingProperty writable=True
     prop   Width double declared=global::EclipseUI.Element field=WidthProperty writable=True
     event  OnClick Click declared=global::EclipseUI.Elements.Button field=ClickEvent
     event  OnGotFocus GotFocus declared=global::EclipseUI.Element field=GotFocusEvent
@@ -708,6 +710,7 @@
     prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
+    prop   HorizontalPadding double declared=global::EclipseUI.Elements.Button field=HorizontalPaddingProperty writable=True
     prop   IsCheckable bool declared=global::EclipseUI.Elements.MenuItem field=IsCheckableProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
     prop   IsTabStop bool declared=global::EclipseUI.Element field=IsTabStopProperty writable=True
@@ -720,6 +723,7 @@
     prop   MinWidth double declared=global::EclipseUI.Element field=MinWidthProperty writable=True
     prop   Padding double declared=global::EclipseUI.Elements.Panel field=PaddingProperty writable=True
     prop   VerticalAlignment EclipseUI.VerticalAlignment declared=global::EclipseUI.Element field=VerticalAlignmentProperty writable=True
+    prop   VerticalPadding double declared=global::EclipseUI.Elements.Button field=VerticalPaddingProperty writable=True
     prop   Width double declared=global::EclipseUI.Element field=WidthProperty writable=True
     event  OnClick Click declared=global::EclipseUI.Elements.Button field=ClickEvent
     event  OnGotFocus GotFocus declared=global::EclipseUI.Element field=GotFocusEvent
@@ -1275,6 +1279,7 @@
     prop   FocusVisualMode EclipseUI.FocusVisualMode declared=global::EclipseUI.Element field=FocusVisualModeProperty writable=True
     prop   Height double declared=global::EclipseUI.Element field=HeightProperty writable=True
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
+    prop   HorizontalPadding double declared=global::EclipseUI.Elements.Button field=HorizontalPaddingProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
     prop   IsTabStop bool declared=global::EclipseUI.Element field=IsTabStopProperty writable=True
     prop   IsVisible bool declared=global::EclipseUI.Element field=IsVisibleProperty writable=True
@@ -1286,6 +1291,7 @@
     prop   MinWidth double declared=global::EclipseUI.Element field=MinWidthProperty writable=True
     prop   Padding double declared=global::EclipseUI.Elements.Panel field=PaddingProperty writable=True
     prop   VerticalAlignment EclipseUI.VerticalAlignment declared=global::EclipseUI.Element field=VerticalAlignmentProperty writable=True
+    prop   VerticalPadding double declared=global::EclipseUI.Elements.Button field=VerticalPaddingProperty writable=True
     prop   Width double declared=global::EclipseUI.Element field=WidthProperty writable=True
     event  OnCheckedChanged CheckedChanged declared=global::EclipseUI.Elements.ToggleButton field=CheckedChangedEvent
     event  OnClick Click declared=global::EclipseUI.Elements.Button field=ClickEvent
