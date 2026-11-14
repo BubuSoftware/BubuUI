@@ -11,13 +11,12 @@ public class ToggleButton : Button
     public ToggleButton() => AddHandler(ClickEvent, _ => { Checked = !Checked; RaiseEvent(new(CheckedChangedEvent)); });
     public override void Render(IElementDrawingContext c)
     {
-        c.FillRectangle(new(0, 0, FinalRect.Width, FinalRect.Height), Checked ? c.Accent : c.Background, c.CornerRadius);
-        c.StrokeRectangle(new(.5, .5, Math.Max(0, FinalRect.Width - 1), Math.Max(0, FinalRect.Height - 1)), c.Border, 1, c.CornerRadius);
+        c.ControlSurface(new(0, 0, FinalRect.Width, FinalRect.Height), c.CornerRadius, selected: Checked);
         if (Content is null)
         {
             var fs = GetValue(TextBlock.FontSizeProperty); var m = TextMeasurer.Current.Measure(Label, fs);
             var bounds = GetLabelBounds(); c.PushClip(bounds);
-            c.Text(Label, new(bounds.X + (bounds.Width - m.Width) / 2, bounds.Y + (bounds.Height - m.Height) / 2), fs, Checked ? c.OnAccent : c.Foreground);
+            c.Text(Label, GetLabelOrigin(new(m.Width, m.Height)), fs, Checked ? c.OnAccent : c.Foreground);
             c.PopClip();
         }
     }
@@ -32,9 +31,13 @@ public class ToggleSwitch : CheckBox
     }
     public override void Render(IElementDrawingContext c)
     {
-        var y = (FinalRect.Height - 22) / 2;
-        c.FillRectangle(new(0, y, 40, 22), Checked ? c.Accent : c.Border, 11);
-        c.Ellipse(new(Checked ? 21 : 3, y + 3, 16, 16), c.OnAccent, UiColor.Transparent);
+        var height = c.HasLayeredChrome ? 20 : 22;
+        var y = (FinalRect.Height - height) / 2;
+        c.FillRectangle(new(0, y, 40, height), Checked ? c.Accent : c.HasLayeredChrome ? c.AltBackground : c.Border, height / 2);
+        if (c.HasLayeredChrome && !Checked) c.StrokeRectangle(new(.5, y + .5, 39, height - 1), c.StrongBorder, 1, height / 2 - .5);
+        var knob = c.HasLayeredChrome ? IsHovered || IsPressed ? 14 : 12 : 16;
+        var center = Checked ? 30 : 10;
+        c.Ellipse(new(center - knob / 2d, y + (height - knob) / 2d, knob, knob), Checked || !c.HasLayeredChrome ? c.OnAccent : c.StrongBorder, UiColor.Transparent);
         var fs = GetValue(TextBlock.FontSizeProperty); var m = TextMeasurer.Current.Measure(Label, fs);
         c.Text(Label, new(48, (FinalRect.Height - m.Height) / 2), fs, c.Foreground);
     }
@@ -73,9 +76,18 @@ public class RadioButton : CheckBox
     }
     public override void Render(IElementDrawingContext c)
     {
-        var fs = GetValue(TextBlock.FontSizeProperty); var size = fs * 1.1; var y = (FinalRect.Height - size) / 2;
-        c.Ellipse(new(1, y + 1, size - 2, size - 2), c.Background, Checked ? c.Accent : c.Border, 1.5);
-        if (Checked) c.Ellipse(new(size * .25, y + size * .25, size * .5, size * .5), c.Accent, UiColor.Transparent);
+        var fs = GetValue(TextBlock.FontSizeProperty); var size = EffectiveGlyphSize; var y = (FinalRect.Height - size) / 2;
+        if (c.HasLayeredChrome)
+        {
+            c.Ellipse(new(.5, y + .5, size - 1, size - 1), Checked ? c.Accent : c.AltBackground, Checked ? c.Accent : c.StrongBorder, 1);
+            var dot = IsPressed ? 8d : IsHovered ? 12d : 10d;
+            if (Checked) c.Ellipse(new((size - dot) / 2, y + (size - dot) / 2, dot, dot), c.OnAccent, UiColor.Transparent);
+        }
+        else
+        {
+            c.Ellipse(new(1, y + 1, size - 2, size - 2), c.Background, Checked ? c.Accent : c.Border, 1.5);
+            if (Checked) c.Ellipse(new(size * .25, y + size * .25, size * .5, size * .5), c.Accent, UiColor.Transparent);
+        }
         var m = TextMeasurer.Current.Measure(Label, fs); c.Text(Label, new(size + 8, (FinalRect.Height - m.Height) / 2), fs, c.Foreground);
     }
 }
@@ -108,6 +120,9 @@ public abstract class RangeControl : Element
 
 public class Slider : RangeControl
 {
+    public static readonly StyledProperty<double> ThumbSizeProperty = StyledProperty<double>.Register<Slider>("ThumbSize", 14, new() { Invalidate = InvalidateKind.Measure });
+    public double ThumbSize { get => GetValue(ThumbSizeProperty); set => SetValue(ThumbSizeProperty, Math.Max(0, value)); }
+    private double TrackInset => Math.Max(8, ThumbSize / 2);
     public static readonly StyledProperty<double> SmallChangeProperty = StyledProperty<double>.Register<Slider>("SmallChange", 1, new() { Invalidate = InvalidateKind.Render });
     public static readonly StyledProperty<double> TickFrequencyProperty = StyledProperty<double>.Register<Slider>("TickFrequency", 0, new() { Invalidate = InvalidateKind.Render });
     public static readonly StyledProperty<Orientation> OrientationProperty = StyledProperty<Orientation>.Register<Slider>("Orientation", Orientation.Horizontal, new() { Invalidate = InvalidateKind.Measure });
@@ -141,7 +156,7 @@ public class Slider : RangeControl
     private void SetFromPointer(PointerEventArgs p)
     {
         var local = PointFromRoot(p.Position); var vertical = Orientation == Orientation.Vertical;
-        var fraction = vertical ? 1 - (local.Y - 8) / Math.Max(1, FinalRect.Height - 16) : (local.X - 8) / Math.Max(1, FinalRect.Width - 16);
+        var fraction = vertical ? 1 - (local.Y - TrackInset) / Math.Max(1, FinalRect.Height - TrackInset * 2) : (local.X - TrackInset) / Math.Max(1, FinalRect.Width - TrackInset * 2);
         var value = Minimum + Math.Clamp(fraction, 0, 1) * Math.Max(0, Maximum - Minimum);
         if (TickFrequency > 0) value = Minimum + Math.Round((value - Minimum) / TickFrequency, MidpointRounding.AwayFromZero) * TickFrequency;
         Value = value;
@@ -150,10 +165,18 @@ public class Slider : RangeControl
     public override void Render(IElementDrawingContext c)
     {
         var vertical = Orientation == Orientation.Vertical;
-        var x = vertical ? FinalRect.Width / 2 : 8 + Math.Max(0, FinalRect.Width - 16) * Fraction;
-        var y = vertical ? FinalRect.Height - 8 - Math.Max(0, FinalRect.Height - 16) * Fraction : FinalRect.Height / 2;
-        c.FillRectangle(vertical ? new(FinalRect.Width / 2 - 2, 8, 4, Math.Max(0, FinalRect.Height - 16)) : new(8, FinalRect.Height / 2 - 2, Math.Max(0, FinalRect.Width - 16), 4), c.Border, 2);
-        c.Ellipse(new(x - 7, y - 7, 14, 14), c.Accent, c.OnAccent, 1);
+        var inset = TrackInset;
+        var x = vertical ? FinalRect.Width / 2 : inset + Math.Max(0, FinalRect.Width - inset * 2) * Fraction;
+        var y = vertical ? FinalRect.Height - inset - Math.Max(0, FinalRect.Height - inset * 2) * Fraction : FinalRect.Height / 2;
+        c.FillRectangle(vertical ? new(FinalRect.Width / 2 - 2, inset, 4, Math.Max(0, FinalRect.Height - inset * 2)) : new(inset, FinalRect.Height / 2 - 2, Math.Max(0, FinalRect.Width - inset * 2), 4), c.HasLayeredChrome ? c.StrongBorder : c.Border, 2);
+        if (c.HasLayeredChrome)
+        {
+            c.FillRectangle(vertical ? new(x - 2, y, 4, Math.Max(0, FinalRect.Height - inset - y)) : new(inset, y - 2, Math.Max(0, x - inset), 4), c.Accent, 2);
+            c.Ellipse(new(x - ThumbSize / 2, y - ThumbSize / 2, ThumbSize, ThumbSize), c.ThumbBackground, c.Border, 1);
+            var inner = ThumbSize * (IsPressed ? .36 : IsHovered ? .64 : .5);
+            c.Ellipse(new(x - inner / 2, y - inner / 2, inner, inner), c.Accent, UiColor.Transparent);
+        }
+        else c.Ellipse(new(x - ThumbSize / 2, y - ThumbSize / 2, ThumbSize, ThumbSize), c.Accent, c.OnAccent, 1);
     }
 }
 
@@ -170,14 +193,14 @@ public class ProgressBar : RangeControl, IFrameAnimation
     protected internal override Size MeasureCore(Size available) => new(120, 12);
     public override void Render(IElementDrawingContext c)
     {
-        c.FillRectangle(new(0, 0, FinalRect.Width, FinalRect.Height), c.Background, FinalRect.Height / 2);
+        c.FillRectangle(new(0, 0, FinalRect.Width, FinalRect.Height), c.HasLayeredChrome ? c.StrongBorder : c.Background, FinalRect.Height / 2);
         c.FillRectangle(new(IsIndeterminate ? FinalRect.Width * .6 * (1 - Math.Abs(_phase * 2 - 1)) : 0, 0, FinalRect.Width * (IsIndeterminate ? .4 : Fraction), FinalRect.Height), c.Accent, FinalRect.Height / 2);
     }
 }
 
 public class NumericUpDown : TextBox
 {
-    protected override Rect TextViewport => new(4, 4, Math.Max(0, FinalRect.Width - 28), Math.Max(0, FinalRect.Height - 8));
+    protected override Rect TextViewport => new(Math.Max(0, HorizontalPadding - 2), Math.Max(0, VerticalPadding - 2), Math.Max(0, FinalRect.Width - HorizontalPadding - 22), Math.Max(0, FinalRect.Height - Math.Max(0, VerticalPadding - 2) * 2));
     public static readonly StyledProperty<double> ValueProperty = StyledProperty<double>.Register<NumericUpDown>("Value", 0, new() { Invalidate = InvalidateKind.Render });
     public static readonly StyledProperty<double> MinimumProperty = StyledProperty<double>.Register<NumericUpDown>("Minimum", double.MinValue, new() { Invalidate = InvalidateKind.Render });
     public static readonly StyledProperty<double> MaximumProperty = StyledProperty<double>.Register<NumericUpDown>("Maximum", double.MaxValue, new() { Invalidate = InvalidateKind.Render });
@@ -218,7 +241,7 @@ public class NumericUpDown : TextBox
     public override void Render(IElementDrawingContext c)
     {
         base.Render(c);
-        c.FillRectangle(new(Math.Max(0, FinalRect.Width - 20), 1, 19, Math.Max(0, FinalRect.Height - 2)), c.Background);
+        if (!c.HasLayeredChrome) c.FillRectangle(new(Math.Max(0, FinalRect.Width - 20), 1, 19, Math.Max(0, FinalRect.Height - 2)), c.Background);
         ControlIcons.Chevron(c, new(FinalRect.Width - 10, FinalRect.Height / 4), up: true, size: 3);
         ControlIcons.Chevron(c, new(FinalRect.Width - 10, FinalRect.Height * .75), size: 3);
     }

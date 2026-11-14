@@ -78,8 +78,8 @@ if (harfBuzz is not null) TextMeasurer.Current = harfBuzz;
 var theme = lightTheme ? ElementTheme.Light : new ElementTheme();
 Styling.Provider = StyleRegistry.Instance; // S-B：装配 Class 样式（类名直配 setter 序列）
 StyleBootstrap.Apply(StyleRegistry.Instance); // E1：app.eustyle 编译产物（生成的 Define 序列）
-// MainWindow.ui 直接生成 Window 派生类；先初始化，再读取内容与 Ref 锚点。
-var mainWindow = new MainWindow();
+// LegacyWindow.ui preserves the framework feature showcase used by this validation harness.
+var mainWindow = new LegacyWindow();
 mainWindow.EnsureInitialized();
 GalleryApp.WireInteractions(mainWindow); // 应用级接线（注册伪类/读回订阅/条目工厂/启用开关）
 var galleryRoot = mainWindow;

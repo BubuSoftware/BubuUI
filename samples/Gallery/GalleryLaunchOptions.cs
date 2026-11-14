@@ -9,9 +9,10 @@ namespace Gallery;
 public sealed record GalleryLaunchOptions
 {
     public ThemeVariant Theme { get; init; } = ThemeVariant.System;
-    public int Width { get; init; } = 1000;
+    public int Width { get; init; } = 720;
 
-    public int Height { get; init; } = 760;
+    public int Height { get; init; } = 960;
+    public bool Legacy { get; init; }
 
     /// <summary>--frames N：最多跑 N 个循环 tick 后自动退出（默认跑到窗口关闭）。</summary>
     public int? Frames { get; init; }
@@ -34,8 +35,9 @@ public sealed record GalleryLaunchOptions
     /// <summary>解析 CLI；未知参数抛 <see cref="ArgumentException"/>（调用方打印用法并返回退出码）。</summary>
     public static GalleryLaunchOptions Parse(string[] args)
     {
-        int width = 1000;
-        int height = 760;
+        int width = 720;
+        int height = 960;
+        bool legacy = false;
         int? frames = null;
         string? shotPath = null;
         bool vsync = true;
@@ -48,6 +50,9 @@ public sealed record GalleryLaunchOptions
         {
             switch (args[i])
             {
+                case "--legacy":
+                    legacy = true;
+                    break;
                 case "--theme" when i + 1 < args.Length:
                     theme = args[++i].ToLowerInvariant() switch
                     {
@@ -89,6 +94,7 @@ public sealed record GalleryLaunchOptions
         return new GalleryLaunchOptions
         {
             Theme = theme,
+            Legacy = legacy,
             Width = width,
             Height = height,
             Frames = frames,

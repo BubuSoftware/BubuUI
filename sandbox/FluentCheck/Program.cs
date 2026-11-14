@@ -39,6 +39,7 @@ foreach (var theme in new[] { FluentTheme.Light, FluentTheme.Dark })
     host.Input.PointerMove(point); Save($"hover-{mode}.png");
     host.Input.PointerPress(point); Save($"pressed-{mode}.png");
     host.Input.CancelPointerCapture(); button.IsEnabled = false; Save($"disabled-{mode}.png");
+    foreach (var scale in new[] { 1d, 1.25, 1.5, 2d }) StateSheet.Save(output, theme, text, scale);
     void Save(string name)
     {
         var frame = painter.BuildFrame(catalog, size);

@@ -2,126 +2,14 @@
 @using EclipseUI
 @using EclipseUI.Elements
 
-@* 画廊主窗口（design/20 P2 模板化）：根节点 <Window> 声明窗口本体（标题/尺寸是 live 面，
-   尺寸经 [UiParameter] 从应用侧传入），页面全部 5 个分区由模板组合——GalleryScene 的手工
-   元素树在此退役。Ref 字段（ThemeButton/TaskListView/…）是对外锚点：应用级接线（主题切换、
-   注册伪类掩码、CLR 事件桥、条目工厂）由 GalleryApp 对这些字段完成，树内不表达。 *@
-
 <Window Title="EclipseUI Gallery" Width={W} Height={H}>
-    <ScrollViewer HorizontalScrollBarVisibility="Disabled"  Ref={RootViewer}>
-        <StackPanel Gap="16" Padding="24">
-
-            @* 头部：标题区 + 主题切换（Click 由宿主接线：SetTheme 换 token 表 → 整帧重绘）。 *@
-            <StackPanel Gap="4">
-                <TextBlock FontSize="28" TextWrapping="Wrap">EclipseUI Gallery</TextBlock>
-                <TextBlock FontSize="13" TextWrapping="Wrap">Reactive UI → scene graph → Vello. Scroll to browse every feature; Tab / Space to focus, Esc to clear focus.</TextBlock>
-                <WrapPanel Gap="8">
-                    <Button Class="tool" Ref={ThemeButton}>Toggle theme</Button>
-                </WrapPanel>
-            </StackPanel>
-
-            @* ① 反应式组件（@bind + @if + OnClick）：checkbox 必须是树中第一个 CheckBox
-               （GalleryCheck selfcheck 依赖——其余复选框都排在其后）。 *@
-            <Section Title="1. Reactivity - template components: bind / if">
-                <Slot Name="Body">
-                    <Counter Ref={CounterView} />
-                </Slot>
-            </Section>
-
-            @* ② 任务列表（@foreach + ListBoxItem 卡片 + 追加按钮：Add 逻辑在 TaskList 自身）。 *@
-            <Section Title="2. TaskList - foreach + routed events">
-                <Slot Name="Body">
-                    <StackPanel Gap="8">
-                        <Button Class="primary" OnClick={AddTask}>+ Add task</Button>
-                        <TaskList Ref={TaskListView} />
-                    </StackPanel>
-                </Slot>
-            </Section>
-
-            @* ③ 控件与布局陈列（模板 Showcase.ui：文本分级 / CheckBox / Grid / WrapPanel /
-               ScrollViewer / 虚拟化 / @switch / 内联 Style= 读回）。 *@
-            <Section Title="3. Controls & Layout - template compile pipeline">
-                <Slot Name="Body">
-                    <Showcase Ref={ShowcasePanel} />
-                </Slot>
-            </Section>
-
-            @* ④ 样式系统：有效值分层 local > class > theme 的按钮五连 + Visual 覆盖卡片
-               （theme() 双色经内联 Style= 落 local 层）+ E5 注册伪类（spinning 掩码由宿主翻位）。 *@
-            <Section Title="4. Styles - theme tokens + class layers + registered states">
-                <Slot Name="Body">
-                    <StackPanel Gap="10">
-                        <WrapPanel Gap="8">
-                            <Button>theme default</Button>
-                            <Button Class="primary">class: primary</Button>
-                            <Button Class="tool">class: tool</Button>
-                            <Button Style="Background: #c45498; CornerRadius: 18">inline: static</Button>
-                            <Button Class="primary" Ref={DisabledDemo}>:disabled</Button>
-                        </WrapPanel>
-
-                        <StackPanel Gap="6" Padding="14" Style="Background: theme(#26547c, #d0e8f4); CornerRadius: 14">
-                            <TextBlock FontSize="14" TextWrapping="Wrap" Style="Foreground: theme(#e9eef8, #1e222c)">StackPanel + ThemeColor resource (follows theme)</TextBlock>
-                            <TextBlock FontSize="15" TextWrapping="Wrap" Style="Foreground: theme(#7edcb4, #127658)">TextBlock + ThemeColor foreground override (local beats muted-by-size rule)</TextBlock>
-                        </StackPanel>
-
-                        <WrapPanel Gap="8">
-                            <TextBlock FontSize="13" Class="spinner">spinner: idle</TextBlock>
-                            <TextBlock FontSize="13" Class="spinner" Ref={BusyChip}>spinner: spinning</TextBlock>
-                        </WrapPanel>
-                    </StackPanel>
-                </Slot>
-            </Section>
-
-            @* ⑤ 自定义样式属性（design/19 E6）：类通道 .badge 落值 + &:hover 变体翻 Glow。
-               标签初值 = {BadgeText} 快照（槽内容 build-once，§4.12.3 规则 8）；hover 翻转由
-               宿主订阅 PropertyChanged 后直接重写 Label（值已落 class 层，无需组件失效）。 *@
-            <Section Title="5. Custom style properties - [UiStyleProperty] catalog union (design/19)">
-                <Slot Name="Body">
-                    <StackPanel Gap="8">
-                        <TextBlock FontSize="13" TextWrapping="Wrap">App-assembly [UiStyleProperty] fields join the style catalog - no framework changes.</TextBlock>
-                        <Button Class="badge" Ref={BadgeDemo} Label={BadgeText} />
-                        <TextBlock FontSize="12" TextWrapping="Wrap">Number / enum keyword / string - all three forms declared in BadgeStyles.cs; hover flips Glow 6 → 12 via the .badge &:hover variant.</TextBlock>
-                        <TextBlock FontSize="12" TextWrapping="Wrap">Inline Style= in Showcase (section 3) writes the same fields locally; its caption reads the values back.</TextBlock>
-                    </StackPanel>
-                </Slot>
-            </Section>
-
-            <Section Title="6. Control catalog - input, selection, navigation, data, overlays and shapes">
-                <Slot Name="Body"><ControlCatalog /></Slot>
-            </Section>
-
-            <TextBlock FontSize="12" TextWrapping="Wrap">EclipseUI - retained segment caching (D93) - scroll to browse the whole gallery</TextBlock>
-        </StackPanel>
-    </ScrollViewer>
+    <FluentGalleryPage Ref={Page} />
 </Window>
 
 @code {
-    // 窗口尺寸：创建期由 GalleryApp 从启动参数传入（<= 0 时用平台默认 960×640）。
     [UiParameter] public double W { get; set; }
     [UiParameter] public double H { get; set; }
-
-    // ---- Ref 锚点（应用级接线用，spec/02 §4.14：字段对外可见）----
-    public ScrollViewer RootViewer = null!;
-    public Counter CounterView = null!;
-    public TaskList TaskListView = null!;
-    public Showcase ShowcasePanel = null!;
-    public Button AddButton = null!;
-    public Button ThemeButton = null!;
-    public Button DisabledDemo = null!;
-    public TextBlock BusyChip = null!;
-    public Button BadgeDemo = null!;
-
-    /// <summary>"+ Add task"：追加逻辑封装在 TaskList 组件自身。</summary>
-    public void AddTask() => TaskListView.Add();
-
-    /// <summary>
-    /// 类通道演示的读回文案：三种自定义样式属性的存储层事实（属性访问形态与 {mode} 同一条
-    /// 表达式通道）。作 Label 快照初值；hover 翻转由宿主订阅 PropertyChanged 后用它重写
-    /// Label（BadgeDemo 在同标签 Ref 先于 Label 赋值，首次求值即可读）。
-    /// </summary>
-    public string BadgeText => BadgeDemo is null
-        ? ""
-        : $"class .badge: Glow={BadgeDemo.GetValue(BadgeStyles.GlowProperty)} · " +
-          $"Tone={BadgeDemo.GetValue(BadgeStyles.ToneProperty)} · " +
-          $"BadgeLabel=\"{BadgeDemo.GetValue(BadgeStyles.BadgeLabelProperty)}\"";
+    public FluentGalleryPage Page = null!;
+    public Button ThemeButton => Page.ThemeButton;
+    public ScrollViewer RootViewer => Page.Viewer;
 }

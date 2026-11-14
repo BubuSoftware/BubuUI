@@ -207,7 +207,7 @@ public class TabControl : Panel
         for (var i = 0; i < _headerWidths.Length; i++)
         {
             c.PushClip(new(x, 0, _headerWidths[i], HeaderHeight));
-            c.FillRectangle(new(x, 0, _headerWidths[i], HeaderHeight), i == SelectedIndex ? c.SelectionBackground : c.Background, c.CornerRadius);
+            c.FillRectangle(new(x, 0, _headerWidths[i], HeaderHeight), i == SelectedIndex ? c.SelectionBackground : c.HasLayeredChrome ? UiColor.Transparent : c.Background, c.CornerRadius);
             c.Text((Children[i] as TabItem)?.Header ?? "Tab", new(x + 12, 7), GetValue(TextBlock.FontSizeProperty), i == SelectedIndex ? c.SelectionForeground : c.Foreground);
             if (i == SelectedIndex) c.FillRectangle(new(x + 12, HeaderHeight - 3, Math.Max(0, _headerWidths[i] - 24), 3), c.Accent, 1.5);
             c.PopClip();

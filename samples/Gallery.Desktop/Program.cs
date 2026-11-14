@@ -51,7 +51,7 @@ static GalleryLaunchOptions? ParseArgs(string[] args)
         Console.Error.WriteLine(ex.Message);
         Console.Error.WriteLine(
             "usage: Gallery.Desktop [--width N] [--height N] [--frames N] [--max-fps N] " +
-            "[--no-vsync] [--always-render] [--theme system|light|dark] [--cpu] [--shot path]");
+            "[--no-vsync] [--always-render] [--theme system|light|dark] [--legacy] [--cpu] [--shot path]");
         return null;
     }
 }

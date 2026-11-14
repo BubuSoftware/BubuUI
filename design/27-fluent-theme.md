@@ -2,6 +2,8 @@
 
 2026-11-14。已实施。设计参考 [Fluent 2 设计令牌](https://fluent2.microsoft.design/design-tokens)及[语义颜色](https://fluent2.microsoft.design/color-tokens)；当前实现为 EclipseUI 的 Fluent 风格桌面皮肤。
 
+后续外观修订已改以 Windows 11 / WinUI 控件资源为基准，新增渐变边框、输入底线和可配置控件几何。当前实现、验证范围、仍有差距及底层改造方案见[WinUI 对齐报告](./reports/fluent-winui-fidelity-2026-11-14.md)。下文的初版验证数字保留为历史记录，不能作为逐像素一致的证明。
+
 ## 接入
 
 `EclipseUI.Themes.Fluent` 是独立可打包项目，只依赖 Rendering（及其 Runtime 依赖），不引用平台或渲染后端。Windows/Linux/macOS 桌面宿主在窗口和应用都未指定主题时默认采用 `FluentTheme.System`。

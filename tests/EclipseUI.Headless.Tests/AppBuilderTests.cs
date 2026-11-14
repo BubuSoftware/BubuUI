@@ -150,7 +150,7 @@ public class AppBuilderTests
             Assert.Equal(options.Width, window.Width);
             Assert.Equal(options.Height, window.Height);
             Assert.NotNull(window.Content);
-            Assert.NotNull(Assert.IsType<MainWindow>(window).CounterView);
+            Assert.Equal(14, Assert.IsType<MainWindow>(window).Page.LiveControls.Count);
             Assert.Same(ElementTheme.Dark, app.DefaultTheme);
             Assert.Same(StyleRegistry.Instance, Styling.Provider);
         }
@@ -171,7 +171,7 @@ public class AppBuilderTests
         try
         {
             var app = AppBuilder.Configure<GalleryApp>()
-                .ConfigureServices(s => s.AddSingleton(GalleryLaunchOptions.Parse([])))
+                .ConfigureServices(s => s.AddSingleton(GalleryLaunchOptions.Parse(["--legacy"])))
                 .UseStyles(StyleRegistry.Instance, StyleBootstrap.Apply)
                 .Build();
 

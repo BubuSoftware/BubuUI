@@ -229,7 +229,7 @@ public class LayoutConstraintTests
     [Fact]
     public void GallerySections_FollowNarrowViewport_AndRecoverOnResize()
     {
-        using var window = new MainWindow();
+        using var window = new LegacyWindow();
         window.EnsureInitialized();
         GalleryApp.WireInteractions(window);
         var root = window.Content!;

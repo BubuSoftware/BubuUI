@@ -184,7 +184,7 @@ public class ProjectSystemTests
     public void ComponentAttribute_NavigatesToOtherTemplatesCodeDeclaration()
     {
         var fixture = Shared.Value;
-        var path = fixture.Gallery("MainWindow.ui");
+        var path = fixture.Gallery("LegacyWindow.ui");
         var uri = DocumentStore.PathToUri(path);
         var text = File.ReadAllText(path);
         fixture.Service.Documents.Open(uri, text, 1);
@@ -206,7 +206,7 @@ public class ProjectSystemTests
         var targetText = File.ReadAllText(target).Replace("public string Title", "/* unsaved target */ public string Title", StringComparison.Ordinal);
         fixture.Service.Documents.Open(targetUri, targetText, 2);
         fixture.Service.ApplyBuffer(targetUri, targetText);
-        var path = fixture.Gallery("MainWindow.ui");
+        var path = fixture.Gallery("LegacyWindow.ui");
         var uri = DocumentStore.PathToUri(path);
         var text = File.ReadAllText(path);
         fixture.Service.Documents.Open(uri, text, 1);

@@ -1,11 +1,92 @@
 using EclipseUI.Elements;
 using EclipseUI.Themes.Fluent;
+using EclipseUI.Rendering.Vello;
 using Xunit;
 
 namespace EclipseUI.Rendering.Tests;
 
 public class FluentThemeTests
 {
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public void InputUsesRoundedBaselineForPointerFocusAndDisablesItWhenDisabled(bool dark)
+    {
+        var theme = dark ? FluentTheme.Dark : FluentTheme.Light;
+        var root = new Canvas(); var editor = new TextBox { Width = 160, Height = 32 };
+        root.Children.Add(editor);
+        var painter = new ElementPainter(theme); painter.Prepare(root);
+        using var host = new HeadlessRoot(root) { AvailableSize = Size }; host.UpdateLayout();
+        var normal = painter.BuildFrame(root, Size);
+        Assert.Contains(normal.List.Commands.OfType<FillRoundedRect>(), f => f.Rect == new Rect(0, 31, 160, 1) && ColorOf(f) == theme.InputBottomBorder);
+        host.Input.PointerPress(new(20, 16)); host.Input.PointerRelease(new(20, 16));
+        Assert.True(editor.IsFocused);
+        var focused = painter.BuildFrame(root, Size);
+        Assert.False(focused.Damage.IsEmpty);
+        Assert.Contains(focused.List.Commands.OfType<FillRoundedRect>(), f => f.Rect == new Rect(0, 30, 160, 2) && ColorOf(f) == theme.Accent);
+        Assert.Contains(focused.List.Commands, c => c is PushClipPath);
+        Assert.Empty(focused.List.Validate());
+        Assert.True(painter.BuildFrame(root, Size).Damage.IsEmpty);
+        editor.IsEnabled = false;
+        Assert.DoesNotContain(painter.Build(root, Size).Commands.OfType<FillRoundedRect>(), f => f.Rect.Height is 1 or 2);
+    }
+
+    [Fact]
+    public void ThemeMetricsReachMeasurementAndCanBeOverriddenOrRemoved()
+    {
+        var root = new Canvas(); var check = new CheckBox(); var slider = new Slider(); var progress = new ProgressBar();
+        var editor = new TextBox(); var combo = new ComboBox();
+        foreach (var element in new Element[] { check, slider, progress, editor, combo }) root.Children.Add(element);
+        var painter = new ElementPainter(FluentTheme.Light); painter.Prepare(root);
+        using var host = new HeadlessRoot(root) { AvailableSize = Size }; host.UpdateLayout();
+        Assert.Equal(20, check.EffectiveGlyphSize); Assert.Equal(32, check.DesiredSize.Height);
+        Assert.Equal(22, slider.ThumbSize); Assert.Equal(32, slider.DesiredSize.Height);
+        Assert.Equal(3, progress.DesiredSize.Height); Assert.Equal(12, editor.HorizontalPadding);
+        Assert.Equal(HorizontalAlignment.Left, combo.Descendants().OfType<Button>().First().LabelAlignment);
+        check.GlyphSize = 24; editor.HorizontalPadding = 18; progress.Height = 6;
+        painter.ReplaceTheme(ElementTheme.Dark); painter.Prepare(root); host.UpdateLayout();
+        Assert.Equal(24, check.EffectiveGlyphSize); Assert.Equal(18, editor.HorizontalPadding); Assert.Equal(6, progress.DesiredSize.Height);
+        Assert.Equal(14, slider.ThumbSize);
+    }
+
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public void ButtonElevationUsesGradientOnlyInEnabledRestAndHoverStates(bool dark)
+    {
+        var theme = dark ? FluentTheme.Dark : FluentTheme.Light;
+        var root = new Canvas(); var button = new Button { Width = 120, Height = 32 }; root.Children.Add(button);
+        var painter = new ElementPainter(theme); painter.Prepare(root);
+        using var host = new HeadlessRoot(root) { AvailableSize = Size }; host.UpdateLayout();
+        var gradient = Assert.IsType<LinearGradient>(Assert.Single(painter.Build(root, Size).Commands.OfType<StrokePath>()).Brush);
+        Assert.Equal(theme.ControlSecondaryBorder, gradient.Stops[0].Color);
+        Assert.Equal(theme.ControlBorder, gradient.Stops[^1].Color);
+        Assert.Equal(dark ? 0 : 32, gradient.Start.Y);
+        Assert.Equal(dark ? 3 : 29, gradient.End.Y);
+        host.Input.PointerPress(new(10, 10));
+        Assert.DoesNotContain(painter.Build(root, Size).Commands.OfType<StrokePath>(), s => s.Brush is LinearGradient);
+        host.Input.PointerRelease(new(10, 10)); button.IsEnabled = false;
+        Assert.DoesNotContain(painter.Build(root, Size).Commands.OfType<StrokePath>(), s => s.Brush is LinearGradient);
+    }
+
+    [Theory]
+    [InlineData(1)] [InlineData(1.25)] [InlineData(1.5)] [InlineData(2)]
+    public void LayeredChromeRetainedFramesMatchFreshRenderingAcrossDpi(double scale)
+    {
+        var root = new Canvas(); var editor = new TextBox { Width = 150, Height = 32 }; root.Children.Add(editor);
+        var button = new Button { Width = 120, Height = 32 }; Canvas.SetTop(button, 50); root.Children.Add(button);
+        var painter = new ElementPainter(FluentTheme.Light); painter.Prepare(root);
+        using var host = new HeadlessRoot(root) { AvailableSize = Size }; host.UpdateLayout();
+        painter.BuildFrame(root, Size, scale);
+        host.Input.PointerPress(new(20, 16)); host.Input.PointerRelease(new(20, 16));
+        var retained = painter.BuildFrame(root, Size, scale).List;
+        var fresh = new ElementPainter(FluentTheme.Light).Build(root, Size, scale);
+        Assert.Equal(Render.Frame(fresh).ContentHash(), Render.Frame(retained).ContentHash());
+        Assert.True(painter.BuildFrame(root, Size, scale).Damage.IsEmpty);
+        painter.ReplaceTheme(FluentTheme.Dark); painter.Prepare(root); host.UpdateLayout();
+        var changed = painter.BuildFrame(root, Size, scale);
+        Assert.False(changed.Damage.IsEmpty);
+        Assert.Equal(Render.Frame(new ElementPainter(FluentTheme.Dark).Build(root, Size, scale)).ContentHash(), Render.Frame(changed.List).ContentHash());
+    }
+
     private static readonly Size Size = new(320, 240);
     private sealed class Preference : ISystemThemeProvider { public ThemeVariant Variant { get; set; } }
     private sealed class App : Application { }
@@ -115,7 +196,7 @@ public class FluentThemeTests
         var button = new Button { Label = "Next", Width = 120, Height = 32 }; root.Children.Add(button); Canvas.SetTop(button, 50);
         host.UpdateLayout(); host.Input.KeyPress(Key.Tab);
         list = painter.Build(root, Size);
-        Assert.Contains(list.Commands.OfType<StrokePath>(), stroke => ((SolidColorBrush)stroke.Brush).Color == theme.FocusRing);
+        Assert.Contains(list.Commands.OfType<StrokePath>(), stroke => stroke.Brush is SolidColorBrush brush && brush.Color == theme.FocusRing);
     }
 
     [Theory]

@@ -8,9 +8,8 @@ namespace Gallery;
 
 /// <summary>
 /// 画廊应用（D101，Avalonia 式应用定义）：平台壳只做 <c>AppBuilder.Configure&lt;GalleryApp&gt;()...Start(args)</c>。
-/// design/20 P2 模板化后，窗口与整页 UI 由 <c>MainWindow.ui</c> 一个文件声明，应用侧只剩
-/// 一行窗口装配 + 树内不表达的应用级接线（主题切换 / 注册伪类掩码 / CLR 事件桥 / 虚拟化
-/// 条目工厂 / 启用开关——Application 关切或代码优先 API，不再是手工元素树）。
+/// MainWindow.ui hosts the Fluent control state gallery. The former feature showcase remains
+/// available through --legacy; only that window needs the framework demonstration wiring.
 /// CLI 选项经 <see cref="Application.Services"/>（依赖注入）消费；主题切换经
 /// <see cref="Application.SetTheme"/>——宿主运行期由桌面生命周期注入 <see cref="Application.Host"/>。
 /// </summary>
@@ -20,9 +19,19 @@ public sealed class GalleryApp : Application
     {
         var options = Services.GetRequiredService<GalleryLaunchOptions>();
 
-        var mainWindow = new MainWindow { W = options.Width, H = options.Height };
-        mainWindow.EnsureInitialized();
-        var window = mainWindow;
+        Window window;
+        Button themeButton;
+        if (options.Legacy)
+        {
+            var legacy = new LegacyWindow { W = options.Width, H = options.Height };
+            legacy.EnsureInitialized(); WireInteractions(legacy);
+            window = legacy; themeButton = legacy.ThemeButton;
+        }
+        else
+        {
+            var main = new MainWindow { W = options.Width, H = options.Height };
+            main.EnsureInitialized(); window = main; themeButton = main.ThemeButton;
+        }
 
         // CLI 帧循环/调试旋钮：在平台创建窗口之前设置。
         window.MaxFramesPerSecond = options.MaxFps;
@@ -31,16 +40,14 @@ public sealed class GalleryApp : Application
 
         // S-A 亮暗切换：换 token 表 → 段缓存失效 → 整帧重绘。初值主题由 AppBuilder.UseTheme 提供。
         var mode = options.Theme;
-        mainWindow.ThemeButton.Label = $"Theme: {mode}";
-        mainWindow.ThemeButton.AddHandler(Button.ClickEvent, () =>
+        themeButton.Label = $"Theme: {mode}";
+        themeButton.AddHandler(Button.ClickEvent, () =>
         {
             mode = mode switch { ThemeVariant.System => ThemeVariant.Light, ThemeVariant.Light => ThemeVariant.Dark, _ => ThemeVariant.System };
-            mainWindow.ThemeButton.Label = $"Theme: {mode}";
+            themeButton.Label = $"Theme: {mode}";
             SetTheme(FluentTheme.For(mode));
         });
 
-        // 应用级接线（注册伪类 / 读回订阅 / 条目工厂 / 启用开关）——与验证壳共用。
-        WireInteractions(mainWindow);
         MainWindow = window;
     }
 
@@ -48,7 +55,7 @@ public sealed class GalleryApp : Application
     /// 应用级接线（design/20 P2：树内不表达的应用关切，GalleryApp 与 GalleryCheck 验证壳共用）。
     /// 主题切换不在此列——两台宿主的 SetTheme 目标不同（Application vs WindowHost）。
     /// </summary>
-    public static void WireInteractions(MainWindow mainWindow)
+    public static void WireInteractions(LegacyWindow mainWindow)
     {
         // E5 注册伪类（design/17 §3.2）：'spinning' 已由 app.eustyle 的 @states 启动期注册
         // （Register 幂等，重复注册返回同一掩码），掩码即凭证——:spinning 变体命中即变体色。

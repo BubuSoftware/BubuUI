@@ -6,6 +6,10 @@ namespace EclipseUI.Elements;
 [UiContent(UiContentKind.Text, Target = nameof(Text))]
 public class TextBox : Element, IFrameAnimation
 {
+    public static readonly StyledProperty<double> HorizontalPaddingProperty = StyledProperty<double>.Register<TextBox>("HorizontalPadding", 6, new() { Invalidate = InvalidateKind.Measure });
+    public static readonly StyledProperty<double> VerticalPaddingProperty = StyledProperty<double>.Register<TextBox>("VerticalPadding", 6, new() { Invalidate = InvalidateKind.Measure });
+    public double HorizontalPadding { get => GetValue(HorizontalPaddingProperty); set => SetValue(HorizontalPaddingProperty, Math.Max(0, value)); }
+    public double VerticalPadding { get => GetValue(VerticalPaddingProperty); set => SetValue(VerticalPaddingProperty, Math.Max(0, value)); }
     public static readonly StyledProperty<string> TextProperty = StyledProperty<string>.Register<TextBox>("Text", "", new() { Invalidate = InvalidateKind.Measure });
     public static readonly StyledProperty<string> PlaceholderProperty = StyledProperty<string>.Register<TextBox>("Placeholder", "", new() { Invalidate = InvalidateKind.Measure });
     public static readonly StyledProperty<bool> IsReadOnlyProperty = StyledProperty<bool>.Register<TextBox>("IsReadOnly", false, new() { Invalidate = InvalidateKind.Render });
@@ -38,8 +42,12 @@ public class TextBox : Element, IFrameAnimation
     internal override void CancelPointerInteraction() => _dragging = false;
     protected override FocusVisualMode DefaultFocusVisualMode => FocusVisualMode.Control;
     public override FocusVisualGeometry GetFocusVisualGeometry() => new(this, new(Point.Zero, FinalRect.Size), 4);
-    public override void RenderFocusVisual(IElementDrawingContext c) =>
-        c.StrokeRectangle(new(.5, .5, Math.Max(0, FinalRect.Width - 1), Math.Max(0, FinalRect.Height - 1)), c.Accent, 1, c.CornerRadius);
+    public override void RenderFocusVisual(IElementDrawingContext c)
+    {
+        // Layered chrome renders focus with its baseline in Render, also for pointer focus.
+        if (!c.HasLayeredChrome)
+            c.StrokeRectangle(new(.5, .5, Math.Max(0, FinalRect.Width - 1), Math.Max(0, FinalRect.Height - 1)), c.Accent, 1, c.CornerRadius);
+    }
     protected virtual bool CanCopy => true;
     protected virtual string DisplayText => Text;
     protected virtual string DisplayComposition => _composition;
@@ -237,8 +245,9 @@ public class TextBox : Element, IFrameAnimation
         var lines = prefix.Split('\n');
         return new(TextMeasurer.Current.Measure(lines[^1], FontSize).Width, (lines.Length - 1) * LineHeight);
     }
-    public Rect CaretRect { get { var p = CaretPosition(); return new(p.X + 6 - _scrollX, p.Y + 6 - _scrollY, 1, LineHeight); } }
-    protected virtual Rect TextViewport => new(4, 4, Math.Max(0, FinalRect.Width - 8), Math.Max(0, FinalRect.Height - 8));
+    private double TextTop => AcceptsReturn ? VerticalPadding : Math.Max(VerticalPadding, (FinalRect.Height - LineHeight) / 2);
+    public Rect CaretRect { get { var p = CaretPosition(); return new(p.X + HorizontalPadding - _scrollX, p.Y + TextTop - _scrollY, 1, LineHeight); } }
+    protected virtual Rect TextViewport => new(Math.Max(0, HorizontalPadding - 2), Math.Max(0, VerticalPadding - 2), Math.Max(0, FinalRect.Width - Math.Max(0, HorizontalPadding - 2) * 2), Math.Max(0, FinalRect.Height - Math.Max(0, VerticalPadding - 2) * 2));
     private void EnsureCaretVisible()
     {
         var p = CaretPosition();
@@ -248,9 +257,9 @@ public class TextBox : Element, IFrameAnimation
     private int IndexAt(Point p)
     {
         var lines = DisplayText.Split('\n');
-        var line = Math.Clamp((int)Math.Floor((p.Y - 6 + _scrollY) / LineHeight), 0, lines.Length - 1);
+        var line = Math.Clamp((int)Math.Floor((p.Y - TextTop + _scrollY) / LineHeight), 0, lines.Length - 1);
         var start = lines.Take(line).Sum(l => l.Length + 1); var text = lines[line];
-        var x = Math.Max(0, p.X - 6 + _scrollX);
+        var x = Math.Max(0, p.X - HorizontalPadding + _scrollX);
         var breaks = StringInfo.ParseCombiningCharacters(text).Append(text.Length).ToArray();
         for (var i = 1; i < breaks.Length; i++)
         {
@@ -263,7 +272,7 @@ public class TextBox : Element, IFrameAnimation
     protected internal override Size MeasureCore(Size available)
     {
         var lines = DisplayText.Split('\n');
-        return new(Math.Max(80, lines.Max(l => TextMeasurer.Current.Measure(l, FontSize).Width) + 12), Math.Max(AcceptsReturn ? 3 : 1, lines.Length) * LineHeight + 12);
+        return new(Math.Max(80, lines.Max(l => TextMeasurer.Current.Measure(l, FontSize).Width) + HorizontalPadding * 2), Math.Max(AcceptsReturn ? 3 : 1, lines.Length) * LineHeight + VerticalPadding * 2);
     }
     protected internal override void ArrangeCore(Rect final) => EnsureCaretVisible();
     public void Advance(TimeSpan elapsed)
@@ -276,21 +285,21 @@ public class TextBox : Element, IFrameAnimation
     public override void Render(IElementDrawingContext c)
     {
         var bounds = new Rect(0, 0, FinalRect.Width, FinalRect.Height);
-        c.FillRectangle(bounds, c.Background, c.CornerRadius); c.StrokeRectangle(new(.5, .5, Math.Max(0, bounds.Width - 1), Math.Max(0, bounds.Height - 1)), c.Border, 1, c.CornerRadius);
+        c.ControlSurface(bounds, c.CornerRadius, input: true, focused: IsFocused);
         c.PushClip(TextViewport);
         var lines = DisplayText.Split('\n'); int offset = 0;
         for (var i = 0; i < lines.Length; i++)
         {
-            var line = lines[i]; var y = 6 + i * LineHeight - _scrollY;
+            var line = lines[i]; var y = TextTop + i * LineHeight - _scrollY;
             var a = Math.Clamp(SelectionStart - offset, 0, line.Length); var b = Math.Clamp(SelectionStart + SelectionLength - offset, 0, line.Length);
             if (b > a)
             {
                 var x = TextMeasurer.Current.Measure(line[..a], FontSize).Width;
-                c.FillRectangle(new(6 + x - _scrollX, y, TextMeasurer.Current.Measure(line[a..b], FontSize).Width, LineHeight), c.Accent with { A = 100 });
+                c.FillRectangle(new(HorizontalPadding + x - _scrollX, y, TextMeasurer.Current.Measure(line[a..b], FontSize).Width, LineHeight), c.Accent with { A = 100 });
             }
-            c.Text(line, new(6 - _scrollX, y), FontSize, c.Foreground); offset += line.Length + 1;
+            c.Text(line, new(HorizontalPadding - _scrollX, y), FontSize, c.Foreground); offset += line.Length + 1;
         }
-        if (Text.Length == 0 && _composition.Length == 0) c.Text(Placeholder, new(6, 6), FontSize, c.MutedForeground);
+        if (Text.Length == 0 && _composition.Length == 0) c.Text(Placeholder, new(HorizontalPadding, TextTop), FontSize, c.MutedForeground);
         if (IsFocused)
         {
             var caret = CaretRect; if (_caretVisible) c.FillRectangle(caret, c.Foreground);

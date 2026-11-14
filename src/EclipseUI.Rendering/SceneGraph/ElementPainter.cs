@@ -236,6 +236,7 @@ public sealed class ElementPainter
                     PaintPopup(element, rect);
                     break;
                 case ScrollViewer:
+                    if (_theme.TransparentPanels && Visual.GetBackground(element) is null && Visual.GetBackgroundResource(element) is null) break;
                     PaintCard(element, rect, _theme.PanelBackground, _theme.PanelBorder, _theme.PanelRadius);
                     break;
                 case StackPanel:
@@ -367,9 +368,15 @@ public sealed class ElementPainter
         // 覆盖色完全接管按下态换色（v1 口径）。S-C：主题资源最先解析。
         var background = ResolveBackground(button, button.IsPressed ? _theme.ButtonPressedBackground : button.IsHovered ? _theme.ButtonHoverBackground : _theme.ButtonBackground);
         var radius = Visual.GetCornerRadius(button) ?? _theme.ButtonRadius;
-        _paintList.Add(new FillRoundedRect(rect, radius, background));
+        if (_theme.HasLayeredChrome)
+        {
+            var context = new ElementDrawingContext(_paintList, rect.Location, _theme, _text,
+                ResolveForeground(button, _theme.ButtonForeground), background, button);
+            context.ControlSurface(new(Point.Zero, rect.Size), radius);
+        }
+        else _paintList.Add(new FillRoundedRect(rect, radius, background));
         var border = button.IsEffectiveEnabled || _theme.ButtonBorder.A == 0 ? _theme.ButtonBorder : _theme.DisabledBorder;
-        if (border.A > 0 && _theme.BorderWidth > 0)
+        if (!_theme.HasLayeredChrome && border.A > 0 && _theme.BorderWidth > 0)
             _paintList.Add(new StrokePath(PathGeometry.RoundedRectangle(Inset(rect, _theme.BorderWidth / 2), radius), border, _theme.BorderWidth));
 
         if (button.Content is not null) return;
@@ -379,13 +386,12 @@ public sealed class ElementPainter
         var fontSize = button.GetValue(TextBlock.FontSizeProperty);
         var metrics = _text.Measure(label, fontSize);
         var labelBounds = button.GetLabelBounds();
-        var origin = new Point(
-            rect.X + labelBounds.X + (labelBounds.Width - metrics.Width) / 2,
-            rect.Y + labelBounds.Y + (labelBounds.Height - metrics.Height) / 2);
+        var labelOrigin = button.GetLabelOrigin(new(metrics.Width, metrics.Height));
+        var origin = new Point(rect.X + labelOrigin.X, rect.Y + labelOrigin.Y);
         // 必须写段缓冲 _paintList：写 _list 会先于背景 AddRange（背景后画盖掉文字），
         // 且文字命令不进段、复用帧彻底丢失（D97 回归测试锁定）。
         _paintList.Add(new PushClip(ToRoot(labelBounds, rect.Location)));
-        _text.Paint(_paintList, label, fontSize, origin, ResolveForeground(button, _theme.ButtonForeground));
+        _text.Paint(_paintList, label, fontSize, origin, ResolveForeground(button, button.IsPressed ? _theme.PressedForeground : _theme.ButtonForeground));
         _paintList.Add(new PopClip());
     }
 
@@ -394,18 +400,17 @@ public sealed class ElementPainter
         if (rect.Width <= 0 || rect.Height <= 0) return;
 
         var fontSize = checkBox.GetValue(TextBlock.FontSizeProperty);
-        var boxSize = fontSize * 1.1;
+        var boxSize = checkBox.EffectiveGlyphSize;
         var box = new Rect(rect.X, rect.Y + (rect.Height - boxSize) / 2, boxSize, boxSize);
 
         if (checkBox.IsIndeterminate)
         {
-            _paintList.Add(new FillRoundedRect(box, _theme.CheckBoxRadius, ResolveBackground(checkBox, AccentBackground(checkBox))));
-            _paintList.Add(new FillRect(new Rect(box.X + boxSize * .2, box.Y + boxSize * .43, boxSize * .6, boxSize * .14), checkBox.IsEffectiveEnabled ? _theme.OnAccent : _theme.DisabledForeground));
+            _paintList.Add(new FillRoundedRect(box, _theme.CheckBoxRadius, CheckBackground(checkBox)));
+            _paintList.Add(new FillRect(new Rect(box.X + boxSize * .2, box.Y + boxSize * .43, boxSize * .6, boxSize * .14), checkBox.IsEffectiveEnabled ? _theme.OnAccent : _theme.OnAccentDisabled));
         }
         else if (checkBox.Checked)
         {
-            var checkedBg = ResolveBackground(checkBox,
-                AccentBackground(checkBox));
+            var checkedBg = CheckBackground(checkBox);
             _paintList.Add(new FillRoundedRect(box, _theme.CheckBoxRadius, checkedBg));
 
             var strokeWidth = Math.Max(1.5, boxSize * 0.11);
@@ -414,15 +419,15 @@ public sealed class ElementPainter
                 .LineTo(box.X + boxSize * 0.43, box.Y + boxSize * 0.71)
                 .LineTo(box.X + boxSize * 0.77, box.Y + boxSize * 0.31)
                 .Build();
-            _paintList.Add(new StrokePath(check, checkBox.IsEffectiveEnabled ? _theme.OnAccent : _theme.DisabledForeground, strokeWidth));
+            _paintList.Add(new StrokePath(check, checkBox.IsEffectiveEnabled ? _theme.OnAccent : _theme.OnAccentDisabled, strokeWidth));
         }
         else
         {
             _paintList.Add(new FillRoundedRect(box, _theme.CheckBoxRadius,
-                ResolveBackground(checkBox, ControlBackground(checkBox))));
+                ResolveBackground(checkBox, _theme.HasLayeredChrome ? checkBox.IsPressed ? _theme.ControlAltPressedBackground : checkBox.IsHovered ? _theme.ControlAltHoverBackground : _theme.ControlAltBackground : ControlBackground(checkBox))));
             _paintList.Add(new StrokePath(
                 PathGeometry.RoundedRectangle(Inset(box, _theme.BorderWidth / 2), _theme.CheckBoxRadius),
-                checkBox.IsEffectiveEnabled ? checkBox.IsHovered ? _theme.ControlHoverBorder : _theme.ControlBorder : _theme.DisabledBorder,
+                _theme.HasLayeredChrome ? checkBox.IsEffectiveEnabled ? _theme.ControlStrongBorder : _theme.ControlStrongDisabledBorder : checkBox.IsEffectiveEnabled ? checkBox.IsHovered ? _theme.ControlHoverBorder : _theme.ControlBorder : _theme.DisabledBorder,
                 _theme.BorderWidth));
         }
 
@@ -454,6 +459,8 @@ public sealed class ElementPainter
     }
 
     private Color AccentBackground(Element element) => element.IsPressed ? _theme.AccentPressed : element.IsHovered ? _theme.AccentHover : _theme.Accent;
+    private Color CheckBackground(Element element) => Visual.GetBackgroundResource(element)?.Resolve(_theme)
+        ?? Visual.GetBackground(element) ?? (element.IsEffectiveEnabled ? AccentBackground(element) : _theme.AccentDisabled);
 
     private void PaintFocusRing(Element element, Rect rect, FocusVisualDescriptor focus)
     {
@@ -468,6 +475,11 @@ public sealed class ElementPainter
         if (focus.Clip is { } clip) _paintList.Add(new PushClip(clip));
         _paintList.Add(new StrokePath(
             PathGeometry.RoundedRectangle(ring, Math.Max(0, focus.Radius + focus.Offset)), focus.Color, focus.Width));
+        if (_theme.FocusRingInner.A > 0)
+        {
+            var inset = focus.Width / 2 + .5;
+            _paintList.Add(new StrokePath(PathGeometry.RoundedRectangle(Inset(ring, inset), Math.Max(0, focus.Radius + focus.Offset - inset)), _theme.FocusRingInner, 1));
+        }
         if (focus.Clip is not null) _paintList.Add(new PopClip());
     }
 

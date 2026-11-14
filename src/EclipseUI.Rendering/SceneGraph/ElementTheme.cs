@@ -33,6 +33,7 @@ public class ElementTheme : IHostTheme
     public virtual Color ControlBackground { get; init; } = new(44, 51, 68);
     public virtual Color ControlBorder { get; init; } = new(78, 88, 112);
     public virtual Color FocusRing { get; init; } = new(126, 186, 255);
+    public virtual Color FocusRingInner => new(0, 0, 0, 0);
     public virtual Color DisabledForeground { get; init; } = new(122, 128, 148);
     public virtual Color DisabledBackground { get; init; } = new(60, 66, 84);
     public virtual Color ScrollBarTrack { get; init; } = new(0, 0, 0, 0);
@@ -60,6 +61,21 @@ public class ElementTheme : IHostTheme
     public virtual double PopupRadius => PanelRadius;
     public virtual double PopupShadowSize => 0;
     public virtual bool TransparentPanels => false;
+    public virtual bool HasLayeredChrome => false;
+    public virtual Color ControlStrongBorder => ControlBorder;
+    public virtual Color ControlStrongDisabledBorder => DisabledBorder;
+    public virtual Color ControlAltBackground => ControlBackground;
+    public virtual Color ControlAltHoverBackground => ControlHoverBackground;
+    public virtual Color ControlAltPressedBackground => ControlPressedBackground;
+    public virtual Color ThumbBackground => OnAccent;
+    public virtual Color InputActiveBackground => ControlBackground;
+    public virtual Color InputBottomBorder => ControlBorder;
+    public virtual Color ControlSecondaryBorder => ControlBorder;
+    public virtual Color AccentDisabled => DisabledBackground;
+    public virtual Color AccentBorder => ControlBorder;
+    public virtual Color AccentSecondaryBorder => ControlSecondaryBorder;
+    public virtual Color OnAccentDisabled => DisabledForeground;
+    public virtual Color PressedForeground => Foreground;
 
     // ---- 形状 ----
     public virtual double PanelRadius { get; init; } = 12;
