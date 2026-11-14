@@ -2,6 +2,7 @@ namespace EclipseUI.Elements;
 
 public class ComboBox : Panel
 {
+    public override Rect? GetContentClip() => new Rect(Point.Zero, FinalRect.Size);
     protected override FocusVisualMode DefaultFocusVisualMode => FocusVisualMode.Control;
     public override FocusVisualGeometry GetFocusVisualGeometry() => new(this, new(Point.Zero, FinalRect.Size), 4);
     public override void RenderFocusVisual(IElementDrawingContext c) =>
@@ -69,6 +70,7 @@ public class ComboBox : Panel
 
 public class Menu : StackPanel
 {
+    public override Rect? GetContentClip() => new Rect(Padding, Padding, Math.Max(0, FinalRect.Width - Padding * 2), Math.Max(0, FinalRect.Height - Padding * 2));
     public Menu()
     {
         Orientation = Orientation.Horizontal;
@@ -111,6 +113,7 @@ public class ContextMenu : Popup
 
 public class MenuItem : Button
 {
+    public override Rect GetLabelBounds() => new(8, 6, Math.Max(0, FinalRect.Width - 16 - (Submenu is null ? 0 : 16)), Math.Max(0, FinalRect.Height - 12));
     public override FocusVisualGeometry GetFocusVisualGeometry() => new(this, new(Point.Zero, FinalRect.Size), 3);
     public static readonly StyledProperty<bool> IsCheckableProperty = StyledProperty<bool>.Register<MenuItem>("IsCheckable", false, new() { Invalidate = InvalidateKind.Render });
     public static readonly StyledProperty<bool> CheckedProperty = StyledProperty<bool>.Register<MenuItem>("Checked", false, new() { Invalidate = InvalidateKind.Render });
@@ -139,7 +142,9 @@ public class MenuItem : Button
     {
         c.FillRectangle(new(0, 0, FinalRect.Width, FinalRect.Height), c.Background, c.CornerRadius);
         if (Submenu is not null) ControlIcons.Chevron(c, new(FinalRect.Width - 10, FinalRect.Height / 2), right: true);
+        c.PushClip(GetLabelBounds());
         c.Text((IsCheckable ? Checked ? "✓ " : "   " : "") + Label, new(8, 6), GetValue(TextBlock.FontSizeProperty), c.Foreground);
+        c.PopClip();
     }
 }
 
@@ -151,6 +156,7 @@ public class TabItem : ContentControl
 
 public class TabControl : Panel
 {
+    public override Rect? GetContentClip() => new Rect(0, HeaderHeight, FinalRect.Width, Math.Max(0, FinalRect.Height - HeaderHeight));
     public static readonly StyledProperty<int> SelectedIndexProperty = StyledProperty<int>.Register<TabControl>("SelectedIndex", 0, new() { Invalidate = InvalidateKind.Measure });
     public static readonly RoutedEvent SelectionChangedEvent = new("SelectionChanged");
     public int SelectedIndex { get => GetValue(SelectedIndexProperty); set => SetValue(SelectedIndexProperty, value); }
@@ -200,9 +206,11 @@ public class TabControl : Panel
         double x = 0;
         for (var i = 0; i < _headerWidths.Length; i++)
         {
+            c.PushClip(new(x, 0, _headerWidths[i], HeaderHeight));
             c.FillRectangle(new(x, 0, _headerWidths[i], HeaderHeight), i == SelectedIndex ? c.SelectionBackground : c.Background, c.CornerRadius);
             c.Text((Children[i] as TabItem)?.Header ?? "Tab", new(x + 12, 7), GetValue(TextBlock.FontSizeProperty), i == SelectedIndex ? c.SelectionForeground : c.Foreground);
             if (i == SelectedIndex) c.FillRectangle(new(x + 12, HeaderHeight - 3, Math.Max(0, _headerWidths[i] - 24), 3), c.Accent, 1.5);
+            c.PopClip();
             x += _headerWidths[i];
         }
     }

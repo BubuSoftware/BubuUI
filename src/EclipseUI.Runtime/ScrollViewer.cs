@@ -40,6 +40,7 @@ public enum ScrollBarVisibility
 /// </summary>
 public class ScrollViewer : Panel, IFrameAnimation
 {
+    public override Rect? GetContentClip() => new Rect(Padding, Padding, ViewportWidth, ViewportHeight);
     /// <summary>每 1/120 齿轮刻度对应的滚动像素（一格滚轮 = 48 逻辑像素，WPF 惯例近似）。</summary>
     public const double WheelScrollPixels = 48d / 120d;
 

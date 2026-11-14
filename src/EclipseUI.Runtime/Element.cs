@@ -283,6 +283,10 @@ public abstract class Element : UiObject
     public static readonly RoutedEvent PointerExitedEvent = new("PointerExited", RoutingStrategy.Direct);
     public virtual bool UsesDefaultDrawing => true;
     public virtual void Render(IElementDrawingContext context) { }
+    /// <summary>Local clip for this element's own drawing; focus decorations are drawn separately.</summary>
+    public virtual Rect? GetDrawingClip() => new Rect(Point.Zero, FinalRect.Size);
+    /// <summary>Local child clip, shared by painting, hit testing and navigation focus.</summary>
+    public virtual Rect? GetContentClip() => this is Panel { ClipToBounds: true } ? new Rect(Point.Zero, FinalRect.Size) : null;
     public static readonly StyledProperty<bool> IsVisibleProperty = StyledProperty<bool>.Register<Element>("IsVisible", true,
         new PropertyOptions { Invalidate = InvalidateKind.Measure });
     public bool IsVisible { get => GetValue(IsVisibleProperty); set => SetValue(IsVisibleProperty, value); }
@@ -1014,14 +1018,11 @@ public abstract class Element : UiObject
     public Element? HitTest(Point point)
     {
         if (!IsHitTestVisible || !IsEffectivelyVisible) return null;
-        var inside = new Rect(default, FinalRect.Size).Contains(PointFromRoot(point));
-        // 与绘制相同：仅宿主边界、显式裁剪和滚动视口阻止遍历溢出的子项。
-        if (!inside && (Parent is null || this is Panel { ClipToBounds: true } || this is ScrollViewer))
-            return null;
-        if (this is ScrollViewer viewer &&
-            !new Rect(viewer.Padding, viewer.Padding, viewer.ViewportWidth, viewer.ViewportHeight).Contains(PointFromRoot(point)))
-            return inside ? this : null;
+        var local = PointFromRoot(point);
+        var inside = new Rect(default, FinalRect.Size).Contains(local);
+        if (!inside && Parent is null) return null;
         if (this is ScrollViewer bars && bars.TryGetScrollBar(PointFromRoot(point), out _, out _)) return this;
+        if (GetContentClip() is { } clip && !clip.Contains(local)) return inside ? this : null;
         foreach (var child in VisualChildren.Reverse())
         {
             if (child.HitTest(point) is { } hit)

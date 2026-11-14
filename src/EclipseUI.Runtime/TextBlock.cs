@@ -86,6 +86,7 @@ public sealed record TextLayoutLine(double Y, double Height, IReadOnlyList<TextL
 [UiContent(UiContentKind.TextRuns)]
 public class TextBlock : Panel, ITextContentHost
 {
+    public override Rect? GetContentClip() => new Rect(Point.Zero, FinalRect.Size);
     public static readonly StyledProperty<double> FontSizeProperty =
         StyledProperty<double>.Register<TextBlock>("FontSize", 14d,
             new PropertyOptions { Inherits = true, Invalidate = InvalidateKind.Measure });

@@ -5,6 +5,9 @@ namespace EclipseUI.Elements;
 [UiContent(UiContentKind.Text, Target = nameof(Label))]
 public class Button : Panel
 {
+    public override Rect? GetContentClip() => GetLabelBounds();
+    /// <summary>Label/content area; compound buttons can reserve space for an icon.</summary>
+    public virtual Rect GetLabelBounds() => new(HorizontalPadding, VerticalPadding, Math.Max(0, FinalRect.Width - HorizontalPadding * 2), Math.Max(0, FinalRect.Height - VerticalPadding * 2));
     public static readonly RoutedEvent ClickEvent = new RoutedEvent("Click", RoutingStrategy.Bubble);
 
     public static readonly StyledProperty<string> LabelProperty =

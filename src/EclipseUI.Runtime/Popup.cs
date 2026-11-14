@@ -5,6 +5,9 @@ public enum Placement { Bottom, Top, Left, Right, Pointer }
 /// <summary>Content remains in the owner tree; hosts paint/hit-test open popups above normal content.</summary>
 public class Popup : ContentControl
 {
+    // Popup is a zero-size anchor; its real content is arranged outside the anchor.
+    public override Rect? GetDrawingClip() => null;
+    public override Rect? GetContentClip() => Content?.FinalRect ?? new Rect(Point.Zero, Size.Empty);
     public static readonly StyledProperty<bool> IsOpenProperty = StyledProperty<bool>.Register<Popup>("IsOpen", false, new() { Invalidate = InvalidateKind.Measure });
     public static readonly StyledProperty<bool> StaysOpenProperty = StyledProperty<bool>.Register<Popup>("StaysOpen", false, new() { Invalidate = InvalidateKind.Render });
     public static readonly StyledProperty<Placement> PlacementProperty = StyledProperty<Placement>.Register<Popup>("Placement", Placement.Bottom, new() { Invalidate = InvalidateKind.Arrange });

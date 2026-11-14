@@ -4,6 +4,8 @@ namespace EclipseUI.Elements;
 
 public class TreeViewItem : StackPanel
 {
+    public override Rect? GetDrawingClip() => new Rect(0, 0, FinalRect.Width, Math.Min(28, FinalRect.Height));
+    public override Rect? GetContentClip() => new Rect(20, 28, Math.Max(0, FinalRect.Width - 20), Math.Max(0, FinalRect.Height - 28));
     public override FocusVisualGeometry GetFocusVisualGeometry() => new(this, new(4, 4, Math.Max(0, FinalRect.Width - 8), 20), 3);
     public static readonly StyledProperty<string> HeaderProperty = StyledProperty<string>.Register<TreeViewItem>("Header", "", new() { Invalidate = InvalidateKind.Measure });
     public static readonly StyledProperty<bool> IsExpandedProperty = StyledProperty<bool>.Register<TreeViewItem>("IsExpanded", false, new() { Invalidate = InvalidateKind.Measure });
@@ -65,6 +67,7 @@ public class TreeViewItem : StackPanel
 
 public class TreeView : StackPanel
 {
+    public override Rect? GetContentClip() => new Rect(Padding, Padding, Math.Max(0, FinalRect.Width - Padding * 2), Math.Max(0, FinalRect.Height - Padding * 2));
     public override FocusVisualGeometry GetFocusVisualGeometry() => _selected is { IsEffectivelyVisible: true }
         ? _selected.GetFocusVisualGeometry() : base.GetFocusVisualGeometry();
     public static readonly RoutedEvent SelectionChangedEvent = new("SelectionChanged");

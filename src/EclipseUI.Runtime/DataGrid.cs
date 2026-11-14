@@ -47,6 +47,7 @@ public sealed class DataGridColumn : INotifyPropertyChanged
 
 public class DataGrid : Panel
 {
+    public override Rect? GetContentClip() => new Rect(Point.Zero, FinalRect.Size);
     public override FocusVisualGeometry GetFocusVisualGeometry() => _rows.GetRealizedItem(SelectedIndex) is { } row
         ? new(row, new(4, 4, Math.Max(0, row.FinalRect.Width - 8), Math.Max(0, row.FinalRect.Height - 8)), 3)
         : base.GetFocusVisualGeometry();
@@ -122,6 +123,11 @@ public class DataGrid : Panel
     private sealed class HeaderButton : Button
     {
         internal int SortDirection;
+        public override Rect GetLabelBounds()
+        {
+            var bounds = base.GetLabelBounds();
+            return bounds with { Size = new(Math.Max(0, bounds.Width - (SortDirection == 0 ? 0 : 16)), bounds.Height) };
+        }
         public override void Render(IElementDrawingContext c) { if (SortDirection != 0) ControlIcons.Chevron(c, new(FinalRect.Width - 12, FinalRect.Height / 2), up: SortDirection > 0); }
     }
     private sealed record RowIndex(int Index);

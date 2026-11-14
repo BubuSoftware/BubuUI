@@ -61,7 +61,9 @@ Button 的文字内容继续写入 Label，任意元素内容用 Content 插槽�
 
 Element.Render(IElementDrawingContext) 提供局部坐标的绘制入口；运行时接口不引用 Rendering 或平台包。上下文支持矩形、圆角、椭圆、路径、线、文字、图像及裁剪，并提供已解析主题/样式的前景、背景、边框、强调色。自定义绘制与内置绘制共用 retained 段、失效版本和 damage。
 
-新控件可重写 UsesDefaultDrawing 以替换继承控件的默认外观。PushClip/PopClip 必须平衡；绘制应在声明的布局尺寸内完成。第三方控件无需修改 ElementPainter 的类型 switch。
+新控件可重写 UsesDefaultDrawing 以替换继承控件的默认外观。PushClip/PopClip 必须平衡；自身绘制默认由 GetDrawingClip 限制在布局尺寸内，普通子内容由 GetContentClip 声明区域，绘制/命中/导航焦点共用。焦点外圈和浮层有独立的绘制范围。第三方控件无需修改 ElementPainter 的类型 switch；区域与验证见 [布局契约](./05-layout-rendering-input.md#控件绘制与内容区域)。
+
+按钮、选择控件、内容控件、菜单、树、表格、页签与日历的溢出回归、极小/零尺寸及原生宿主验证见[控件溢出报告](./reports/control-overflow-2026-11-14.md)。
 
 UiColor 支持模板字面量 #RRGGBB/#RRGGBBAA。StyleBuilder 通过 UiStyleOwner 显式指定内建字段来源，避免 Border.BackgroundProperty 等正常同名字段干扰 Visual 的样式发射；普通第三方样式属性仍走原有 UiStyleProperty opt-in。
 

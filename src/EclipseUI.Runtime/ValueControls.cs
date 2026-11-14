@@ -16,7 +16,9 @@ public class ToggleButton : Button
         if (Content is null)
         {
             var fs = GetValue(TextBlock.FontSizeProperty); var m = TextMeasurer.Current.Measure(Label, fs);
-            c.Text(Label, new((FinalRect.Width - m.Width) / 2, (FinalRect.Height - m.Height) / 2), fs, Checked ? c.OnAccent : c.Foreground);
+            var bounds = GetLabelBounds(); c.PushClip(bounds);
+            c.Text(Label, new(bounds.X + (bounds.Width - m.Width) / 2, bounds.Y + (bounds.Height - m.Height) / 2), fs, Checked ? c.OnAccent : c.Foreground);
+            c.PopClip();
         }
     }
 }
@@ -175,6 +177,7 @@ public class ProgressBar : RangeControl, IFrameAnimation
 
 public class NumericUpDown : TextBox
 {
+    protected override Rect TextViewport => new(4, 4, Math.Max(0, FinalRect.Width - 28), Math.Max(0, FinalRect.Height - 8));
     public static readonly StyledProperty<double> ValueProperty = StyledProperty<double>.Register<NumericUpDown>("Value", 0, new() { Invalidate = InvalidateKind.Render });
     public static readonly StyledProperty<double> MinimumProperty = StyledProperty<double>.Register<NumericUpDown>("Minimum", double.MinValue, new() { Invalidate = InvalidateKind.Render });
     public static readonly StyledProperty<double> MaximumProperty = StyledProperty<double>.Register<NumericUpDown>("Maximum", double.MaxValue, new() { Invalidate = InvalidateKind.Render });

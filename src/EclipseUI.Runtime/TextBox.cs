@@ -238,10 +238,11 @@ public class TextBox : Element, IFrameAnimation
         return new(TextMeasurer.Current.Measure(lines[^1], FontSize).Width, (lines.Length - 1) * LineHeight);
     }
     public Rect CaretRect { get { var p = CaretPosition(); return new(p.X + 6 - _scrollX, p.Y + 6 - _scrollY, 1, LineHeight); } }
+    protected virtual Rect TextViewport => new(4, 4, Math.Max(0, FinalRect.Width - 8), Math.Max(0, FinalRect.Height - 8));
     private void EnsureCaretVisible()
     {
         var p = CaretPosition();
-        var w = Math.Max(1, FinalRect.Width - 14); var h = Math.Max(LineHeight, FinalRect.Height - 12);
+        var w = Math.Max(1, TextViewport.Width - 6); var h = Math.Max(LineHeight, TextViewport.Height - 4);
         _scrollX = Math.Max(0, Math.Clamp(_scrollX, p.X - w, p.X)); _scrollY = Math.Max(0, Math.Clamp(_scrollY, p.Y - h + LineHeight, p.Y));
     }
     private int IndexAt(Point p)
@@ -276,7 +277,7 @@ public class TextBox : Element, IFrameAnimation
     {
         var bounds = new Rect(0, 0, FinalRect.Width, FinalRect.Height);
         c.FillRectangle(bounds, c.Background, c.CornerRadius); c.StrokeRectangle(new(.5, .5, Math.Max(0, bounds.Width - 1), Math.Max(0, bounds.Height - 1)), c.Border, 1, c.CornerRadius);
-        c.PushClip(new(4, 4, Math.Max(0, bounds.Width - 8), Math.Max(0, bounds.Height - 8)));
+        c.PushClip(TextViewport);
         var lines = DisplayText.Split('\n'); int offset = 0;
         for (var i = 0; i < lines.Length; i++)
         {

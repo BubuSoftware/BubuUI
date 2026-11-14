@@ -136,6 +136,7 @@ public class StackPanel : StackPanelBase { }
 
 public class ListBoxItem : StackPanelBase
 {
+    public override Rect? GetContentClip() => new Rect(Padding, Padding, Math.Max(0, FinalRect.Width - Padding * 2), Math.Max(0, FinalRect.Height - Padding * 2));
     public static readonly StyledProperty<bool> IsSelectedProperty = StyledProperty<bool>.Register<ListBoxItem>("IsSelected", false, new() { Invalidate = InvalidateKind.Render });
     public bool IsSelected { get => GetValue(IsSelectedProperty); set => SetValue(IsSelectedProperty, value); }
     public override bool IsFocusable => true;

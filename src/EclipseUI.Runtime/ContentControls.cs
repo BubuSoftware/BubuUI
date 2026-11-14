@@ -4,6 +4,7 @@ namespace EclipseUI.Elements;
 [UiContent(UiContentKind.Children, Target = nameof(Content))]
 public class ContentControl : Panel
 {
+    public override Rect? GetContentClip() => new Rect(Padding, Padding, Math.Max(0, FinalRect.Width - Padding * 2), Math.Max(0, FinalRect.Height - Padding * 2));
     public Element? Content
     {
         get => Children.Count == 0 ? null : Children[0];
@@ -25,6 +26,11 @@ public class ContentControl : Panel
 
 public class Border : ContentControl
 {
+    public override Rect? GetContentClip()
+    {
+        var inset = Padding + BorderThickness;
+        return new Rect(inset, inset, Math.Max(0, FinalRect.Width - inset * 2), Math.Max(0, FinalRect.Height - inset * 2));
+    }
     public static readonly StyledProperty<UiColor> BackgroundProperty = StyledProperty<UiColor>.Register<Border>("Background", UiColor.Transparent, new() { Invalidate = InvalidateKind.Render });
     public static readonly StyledProperty<UiColor> BorderColorProperty = StyledProperty<UiColor>.Register<Border>("BorderColor", new(100, 110, 125), new() { Invalidate = InvalidateKind.Render });
     public static readonly StyledProperty<double> BorderThicknessProperty = StyledProperty<double>.Register<Border>("BorderThickness", 1, new() { Invalidate = InvalidateKind.Measure });

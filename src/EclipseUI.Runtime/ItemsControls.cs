@@ -63,6 +63,7 @@ public sealed class SelectionModel
 
 public class ItemsControl : StackPanel
 {
+    public override Rect? GetContentClip() => new Rect(Padding, Padding, Math.Max(0, FinalRect.Width - Padding * 2), Math.Max(0, FinalRect.Height - Padding * 2));
     private IEnumerable? _source;
     private INotifyCollectionChanged? _observable;
     private Func<object?, Element>? _template;

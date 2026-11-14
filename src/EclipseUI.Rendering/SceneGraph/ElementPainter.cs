@@ -142,20 +142,24 @@ public sealed class ElementPainter
         if (element is Elements.Popup popup && !overlay) { _popups.Add((popup, offset)); return; }
         var final = element.FinalRect;
         var rect = new Rect(offset.X + final.X, offset.Y + final.Y, final.Width, final.Height);
+        var selfBounds = SelfBounds(element, rect);
+        var drawingClip = element.GetDrawingClip();
 
         var states = element.PseudoStates;
         var focus = ReferenceEquals(element, _focus.Owner) ? _focus : default;
         if (element.IsFocusWithin && ReferenceEquals(element.FocusVisualTarget, element) && element.EffectiveFocusVisualMode == FocusVisualMode.Control)
             focus = new(element, FocusManager.GetFor(element)?.Focused, rect, Control: true);
-        var visualBounds = focus.Owner is not null && !focus.Control
-            ? FrameDamage.Union(rect, Inflate(focus.Bounds, Math.Max(0, focus.Offset + focus.Width / 2) + _aaMargin)) : rect;
+        var visualBounds = element is Elements.Popup ? Inflate(selfBounds, _theme.PopupShadowSize * 2 + _aaMargin) : rect;
+        if (drawingClip is { } drawingBounds) visualBounds = FrameDamage.Union(visualBounds, ToRoot(drawingBounds, rect.Location));
+        if (focus.Owner is not null && !focus.Control)
+            visualBounds = FrameDamage.Union(visualBounds, Inflate(focus.Bounds, Math.Max(0, focus.Offset + focus.Width / 2) + _aaMargin));
         tracker?.Visit(element, visualBounds, focus);
 
         // retained 段：自绘命令（类型绘制 + 卡片 + 焦点环）按失效键复用。
         if (_segments.TryGetValue(element, out var segment) &&
             segment.Version == element.RenderVersion &&
-            segment.Position == rect.Location &&
-            segment.Size == rect.Size &&
+            segment.Position == selfBounds.Location &&
+            segment.Size == selfBounds.Size &&
             segment.States == states && segment.Focus == focus)
         {
             _list.AddRange(segment.Commands);
@@ -166,26 +170,27 @@ public sealed class ElementPainter
             var buffer = new DisplayList();
             _paintList = buffer;
             PaintSelf(element, rect, isRoot);
+            // Bound both built-in drawing and the custom Render path. Cache the balanced
+            // scope with the commands; empty layout/coordination nodes need no extra clip.
+            if (buffer.Commands.Count > 0 && drawingClip is { } selfClip)
+            {
+                buffer.Commands.Insert(0, new PushClip(ToRoot(selfClip, rect.Location)));
+                buffer.Add(new PopClip());
+            }
             var decoration = new DisplayList();
             _paintList = decoration;
             if (focus.Owner is not null) PaintFocusRing(element, rect, focus);
             _paintList = _list;
             _segments.Remove(element);
-            segment = new Segment(element.RenderVersion, rect.Location, rect.Size, states, focus, buffer.Commands, decoration.Commands);
+            segment = new Segment(element.RenderVersion, selfBounds.Location, selfBounds.Size, states, focus, buffer.Commands, decoration.Commands);
             _segments.Add(element, segment);
             _list.AddRange(buffer.Commands);
             _repaintedSegments++;
         }
 
-        // ScrollViewer 无论 ClipToBounds 与否都必须裁剪：内容按 -Offset 平移，不裁就画出视口外。
-        var clip = element is Panel { ClipToBounds: true } || element is ScrollViewer;
-        if (clip)
-        {
-            var clipRect = element is ScrollViewer scroll
-                ? new Rect(rect.X + scroll.Padding, rect.Y + scroll.Padding, scroll.ViewportWidth, scroll.ViewportHeight)
-                : rect;
-            _list.Add(new PushClip(clipRect));
-        }
+        // Content regions come from the control, shared with hit testing and focus geometry.
+        var contentClip = element.GetContentClip();
+        if (contentClip is { } childClip) _list.Add(new PushClip(ToRoot(childClip, rect.Location)));
 
         // G2 的可视子节点全部来自 Panel（TextBlock 的 run 也是 Panel.Children 的一部分）。
         if (element is Panel panel)
@@ -194,7 +199,7 @@ public sealed class ElementPainter
                 PaintElement(child, rect.Location, isRoot: false, tracker);
         }
 
-        if (clip) _list.Add(new PopClip());
+        if (contentClip is not null) _list.Add(new PopClip());
 
         // 滚动条画在内容之上（裁剪作用域外也不越界：位置按视口矩形内缩计算）。
         if (element is ScrollViewer viewer)
@@ -251,14 +256,17 @@ public sealed class ElementPainter
     /// Hidden/Disabled 不出条。</summary>
     private void PaintScrollBar(ScrollViewer viewer, Rect rect)
     {
+        var clipped = false;
         for (var i = 0; i < 2; i++)
         {
             if (!viewer.TryGetScrollBarGeometry(i == 1, out var bar)) continue;
+            if (!clipped) { _list.Add(new PushClip(rect)); clipped = true; }
             var thumb = bar.Thumb;
             _paintList.Add(new FillRoundedRect(
                 new Rect(rect.X + thumb.X, rect.Y + thumb.Y, thumb.Width, thumb.Height),
                 3, _theme.ScrollBarThumb));
         }
+        if (clipped) _list.Add(new PopClip());
     }
 
     // ---- S-C 有效色解析：主题资源 > 静态覆盖 > 主题令牌（解析发生在段构建期，
@@ -285,6 +293,7 @@ public sealed class ElementPainter
 
     private void PaintPopup(Element element, Rect rect)
     {
+        rect = SelfBounds(element, rect);
         var size = _theme.PopupShadowSize;
         if (size > 0)
         {
@@ -369,12 +378,15 @@ public sealed class ElementPainter
 
         var fontSize = button.GetValue(TextBlock.FontSizeProperty);
         var metrics = _text.Measure(label, fontSize);
+        var labelBounds = button.GetLabelBounds();
         var origin = new Point(
-            rect.X + (rect.Width - metrics.Width) / 2,
-            rect.Y + (rect.Height - metrics.Height) / 2);
+            rect.X + labelBounds.X + (labelBounds.Width - metrics.Width) / 2,
+            rect.Y + labelBounds.Y + (labelBounds.Height - metrics.Height) / 2);
         // 必须写段缓冲 _paintList：写 _list 会先于背景 AddRange（背景后画盖掉文字），
         // 且文字命令不进段、复用帧彻底丢失（D97 回归测试锁定）。
+        _paintList.Add(new PushClip(ToRoot(labelBounds, rect.Location)));
         _text.Paint(_paintList, label, fontSize, origin, ResolveForeground(button, _theme.ButtonForeground));
+        _paintList.Add(new PopClip());
     }
 
     private void PaintCheckBox(CheckBox checkBox, Rect rect)
@@ -464,6 +476,10 @@ public sealed class ElementPainter
         rect.Y + amount,
         Math.Max(0, rect.Width - amount * 2),
         Math.Max(0, rect.Height - amount * 2));
+
+    private static Rect ToRoot(Rect rect, Point offset) => new(rect.X + offset.X, rect.Y + offset.Y, rect.Width, rect.Height);
+    private static Rect SelfBounds(Element element, Rect rect) => element is Elements.Popup { Content: { } body }
+        ? ToRoot(body.FinalRect, rect.Location) : rect;
 
     private static Rect Inflate(Rect rect, double amount) => new(
         rect.X - amount,

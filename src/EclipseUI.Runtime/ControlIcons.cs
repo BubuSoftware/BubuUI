@@ -20,6 +20,8 @@ internal static class ControlIcons
 
 internal class DropDownButton : Button
 {
+    public override Rect GetLabelBounds() => new(HorizontalPadding, VerticalPadding,
+        Math.Max(0, FinalRect.Width - HorizontalPadding * 2 - 16), Math.Max(0, FinalRect.Height - VerticalPadding * 2));
     public override void Render(IElementDrawingContext c) => ControlIcons.Chevron(c, new(FinalRect.Width - 12, FinalRect.Height / 2));
     protected internal override Size MeasureCore(Size available) { var size = base.MeasureCore(available); return new(size.Width + 16, size.Height); }
 }

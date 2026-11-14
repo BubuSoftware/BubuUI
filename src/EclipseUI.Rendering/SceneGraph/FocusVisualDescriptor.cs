@@ -28,12 +28,10 @@ internal readonly record struct FocusVisualDescriptor(
         // a navigation target and its owner, without escaping ancestor clips.
         for (var node = ReferenceEquals(target, owner) ? null : target.Parent; node is not null; node = node.Parent)
         {
-            if (node is ScrollViewer || node is Panel { ClipToBounds: true })
+            if (node.GetContentClip() is { } localClip)
             {
                 var p = node.PointFromRoot(Point.Zero);
-                var r = node is ScrollViewer scroll
-                    ? new Rect(-p.X + scroll.Padding, -p.Y + scroll.Padding, scroll.ViewportWidth, scroll.ViewportHeight)
-                    : new Rect(-p.X, -p.Y, node.FinalRect.Width, node.FinalRect.Height);
+                var r = new Rect(localClip.X - p.X, localClip.Y - p.Y, localClip.Width, localClip.Height);
                 clip = clip is { } previous ? Intersect(previous, r) : r;
             }
             if (ReferenceEquals(node, owner)) break;
