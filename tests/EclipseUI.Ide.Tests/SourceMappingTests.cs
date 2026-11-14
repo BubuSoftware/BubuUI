@@ -15,7 +15,8 @@ namespace EclipseUI.Ide.Tests;
 /// </summary>
 public class SourceMappingTests
 {
-    private const string UiPath = "/templates/Probe.ui";
+    // GeneratorHost keys generated documents by the platform's absolute path.
+    private static readonly string UiPath = Path.GetFullPath("/templates/Probe.ui");
 
     // ---- A. DocumentMappingService 合成用例 ----
 
