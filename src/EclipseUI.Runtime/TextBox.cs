@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 
 namespace EclipseUI.Elements;
 
@@ -90,6 +91,35 @@ public class TextBox : Element, IFrameAnimation
         foreach (var boundary in StringInfo.ParseCombiningCharacters(Text)) if (boundary > index) return boundary;
         return Text.Length;
     }
+    private int LineStart => Text[.._caret].LastIndexOf('\n') + 1;
+    private int LineEnd
+    {
+        get { var end = Text.IndexOf('\n', _caret); return end >= 0 ? end : Text.Length; }
+    }
+    private int WordKind(int index)
+    {
+        if (!Rune.TryGetRuneAt(Text, index, out var rune)) rune = Rune.ReplacementChar;
+        if (Rune.IsWhiteSpace(rune)) return 0;
+        return Rune.IsLetterOrDigit(rune) || Rune.GetUnicodeCategory(rune) is
+            UnicodeCategory.NonSpacingMark or UnicodeCategory.SpacingCombiningMark or
+            UnicodeCategory.EnclosingMark or UnicodeCategory.ConnectorPunctuation ? 1 : 2;
+    }
+    private int PreviousWord(int index)
+    {
+        while (index > 0 && WordKind(Previous(index)) == 0) index = Previous(index);
+        if (index == 0) return 0;
+        var kind = WordKind(Previous(index));
+        while (index > 0 && WordKind(Previous(index)) == kind) index = Previous(index);
+        return index;
+    }
+    private int NextWord(int index)
+    {
+        while (index < Text.Length && WordKind(index) == 0) index = Next(index);
+        if (index == Text.Length) return index;
+        var kind = WordKind(index);
+        while (index < Text.Length && WordKind(index) == kind) index = Next(index);
+        return index;
+    }
     public void Select(int start, int length)
     {
         var end = Math.Clamp((long)start + Math.Max(0, length), 0, Text.Length);
@@ -150,8 +180,11 @@ public class TextBox : Element, IFrameAnimation
     protected virtual void HandleKey(RoutedEventArgs args)
     {
         if (args is not KeyEventArgs e) return;
-        var control = e.Modifiers.HasFlag(KeyModifiers.Control); var shift = e.Modifiers.HasFlag(KeyModifiers.Shift);
-        if (control)
+        var shortcut = InputGestures.HasCommand(e.Modifiers);
+        var shift = e.Modifiers.HasFlag(KeyModifiers.Shift);
+        var command = OperatingSystem.IsMacOS() && e.Modifiers.HasFlag(KeyModifiers.Meta);
+        var word = OperatingSystem.IsMacOS() && e.Modifiers.HasFlag(KeyModifiers.Alt);
+        if (shortcut)
         {
             switch (e.Key)
             {
@@ -168,18 +201,19 @@ public class TextBox : Element, IFrameAnimation
     Navigation:
         switch (e.Key)
         {
-            case Key.Left: MoveCaret(!shift && SelectionLength > 0 ? SelectionStart : Previous(_caret), shift); break;
-            case Key.Right: MoveCaret(!shift && SelectionLength > 0 ? SelectionStart + SelectionLength : Next(_caret), shift); break;
-            case Key.Home: MoveCaret(control ? 0 : Text[.._caret].LastIndexOf('\n') + 1, shift); break;
-            case Key.End: var end = Text.IndexOf('\n', _caret); MoveCaret(control || end < 0 ? Text.Length : end, shift); break;
+            case Key.Left: MoveCaret(command ? LineStart : word ? PreviousWord(_caret) : !shift && SelectionLength > 0 ? SelectionStart : Previous(_caret), shift); break;
+            case Key.Right: MoveCaret(command ? LineEnd : word ? NextWord(_caret) : !shift && SelectionLength > 0 ? SelectionStart + SelectionLength : Next(_caret), shift); break;
+            case Key.Home: MoveCaret(shortcut ? 0 : LineStart, shift); break;
+            case Key.End: MoveCaret(shortcut ? Text.Length : LineEnd, shift); break;
             case Key.Up:
             case Key.Down:
+                if (command) { MoveCaret(e.Key == Key.Up ? 0 : Text.Length, shift); break; }
                 var caret = CaretPosition(); MoveCaret(IndexAt(new(caret.X + 6 - _scrollX, caret.Y + 6 - _scrollY + (e.Key == Key.Up ? -1 : 1) * LineHeight)), shift); break;
             case Key.Backspace:
-                if (!IsReadOnly) { if (SelectionLength == 0 && _caret > 0) { var previous = Previous(_caret); Select(previous, _caret - previous); } if (SelectionLength > 0) InsertText(""); }
+                if (!IsReadOnly) { if (SelectionLength == 0 && _caret > 0) { var previous = command ? LineStart : word ? PreviousWord(_caret) : Previous(_caret); Select(previous, _caret - previous); } if (SelectionLength > 0) InsertText(""); }
                 break;
             case Key.Delete:
-                if (!IsReadOnly) { if (SelectionLength == 0 && _caret < Text.Length) Select(_caret, Next(_caret) - _caret); if (SelectionLength > 0) InsertText(""); }
+                if (!IsReadOnly) { if (SelectionLength == 0 && _caret < Text.Length) Select(_caret, (word ? NextWord(_caret) : Next(_caret)) - _caret); if (SelectionLength > 0) InsertText(""); }
                 break;
             case Key.Enter: if (!AcceptsReturn) return; InsertText("\n"); break;
             default: return;

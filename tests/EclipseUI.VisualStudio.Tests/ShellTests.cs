@@ -77,7 +77,8 @@ public sealed class ShellTests : IDisposable
         await middle.HandleRequestAsync("initialize", request, parameters =>
         {
             var root = parameters["rootUri"]!.Value<string>()!;
-            Assert.Equal(Path.GetFullPath(_root).TrimEnd('\\'), new Uri(root).LocalPath.TrimEnd('\\'));
+            Assert.Equal(Path.TrimEndingDirectorySeparator(Path.GetFullPath(_root)),
+                Path.TrimEndingDirectorySeparator(new Uri(root).LocalPath));
             Assert.Equal(root, parameters["workspaceFolders"]![0]!["uri"]!.Value<string>());
             Assert.False(parameters["capabilities"]!["textDocument"]!["hover"]!["dynamicRegistration"]!.Value<bool>());
             return Task.FromResult<JToken?>(new JObject());

@@ -178,7 +178,7 @@ public class ListBox : ItemsControl
                 case Key.Down: index = Math.Min(Children.Count - 1, index + 1); break;
                 case Key.Home: index = 0; break;
                 case Key.End: index = Children.Count - 1; break;
-                case Key.A when k.Modifiers.HasFlag(KeyModifiers.Control) && SelectionMode != SelectionMode.Single:
+                case Key.A when InputGestures.HasCommand(k.Modifiers) && SelectionMode != SelectionMode.Single:
                     Selection.Select(0); Selection.Select(Children.Count - 1, extend: true); args.Handled = true; return;
                 case Key.Space: Select(Math.Max(0, index), k.Modifiers | KeyModifiers.Control); args.Handled = true; return;
                 default: return;
@@ -189,7 +189,7 @@ public class ListBox : ItemsControl
     public void Select(int index, KeyModifiers modifiers = KeyModifiers.None)
     {
         Selection.Mode = SelectionMode; Selection.SetItems(ItemValues);
-        Selection.Select(index, SelectionMode == SelectionMode.Multiple || modifiers.HasFlag(KeyModifiers.Control), modifiers.HasFlag(KeyModifiers.Shift));
+        Selection.Select(index, SelectionMode == SelectionMode.Multiple || InputGestures.HasCommand(modifiers), modifiers.HasFlag(KeyModifiers.Shift));
         _navigationIndex = index; InvalidateRender(); BringItemIntoView(index);
     }
     protected override Element CreateContainer(object? item)

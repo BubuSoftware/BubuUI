@@ -24,7 +24,7 @@ namespace EclipseUI.Compiler.Tests;
 /// </summary>
 public class MetadataOutletTests
 {
-    private const string UiPath = "C:\\templates\\Probe.ui";
+    private const string UiPath = "/templates/Probe.ui";
     private const string CleanCodeBehind = "public partial class Probe { }";
 
     private sealed class UiAdditionalText : AdditionalText
@@ -209,7 +209,7 @@ public static readonly RoutedEvent FooEvent = new RoutedEvent("Foo", RoutingStra
 """;
 
         // 两个 .ui 都叫 Probe（不同目录），逐文件管道跑两次；目录级出口只跑一次。
-        var result = Run(source, extraUiPaths: new[] { "C:\\templates\\nested\\Probe.ui" });
+        var result = Run(source, extraUiPaths: new[] { "/templates/nested/Probe.ui" });
 
         Assert.Equal(2, result.GeneratedSources.Length);
         Assert.Single(result.Diagnostics, d => d.Id == "EUI026");

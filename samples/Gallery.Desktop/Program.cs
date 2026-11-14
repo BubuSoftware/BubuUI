@@ -2,13 +2,14 @@ using System.Diagnostics.CodeAnalysis;
 using EclipseUI;
 using EclipseUI.Platform.Windows;
 using EclipseUI.Platform.Linux;
+using EclipseUI.Platform.MacOS;
 using EclipseUI.Rendering;
 using EclipseUI.Rendering.Vello;
 using EclipseUI.Text.Shaping;
 using Gallery;
 using Microsoft.Extensions.DependencyInjection;
 
-// EclipseUI 画廊 · Windows/Linux 桌面入口；共享 UI 在 samples/Gallery。
+// EclipseUI 画廊 · Windows/Linux/macOS 桌面入口；共享 UI 在 samples/Gallery。
 //   dotnet run --project samples/Gallery.Desktop -c Release
 //   dotnet run --project samples/Gallery.Desktop -c Release -- --shot out/gallery-cpu.png   （离屏快照）
 //   dotnet run --project samples/Gallery.Desktop -c Release -- --cpu --shot out/gallery-cpu.png
@@ -31,7 +32,8 @@ if (options.Offscreen)
 
 if (OperatingSystem.IsWindows()) builder.UseWindows();
 else if (OperatingSystem.IsLinux()) builder.UseLinux();
-else throw new PlatformNotSupportedException("Gallery.Desktop supports Windows and Linux.");
+else if (OperatingSystem.IsMacOS()) builder.UseMacOS();
+else throw new PlatformNotSupportedException("Gallery.Desktop supports Windows, Linux and macOS.");
 
 return builder.Start(args);
 

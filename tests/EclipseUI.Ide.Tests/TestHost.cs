@@ -34,7 +34,8 @@ internal static class TestHost
         var content = offset >= 0 ? text.Remove(offset, marker.Length) : text;
         // 文件名必须是合法 C# 标识符（spec/02 §2.2 文件契约）：Ast.ClassName 由它推导，
         // @code 合成类名非法会导致成员树解析失败、探针绑定全部落空。
-        var uri = "file:///D:/workspace/tests/" + Guid.NewGuid().ToString("N") + "/ProbeDoc.ui";
+        var uri = DocumentStore.PathToUri(Path.Combine(Path.GetTempPath(), "eclipseui-ide-memory",
+            Guid.NewGuid().ToString("N"), "ProbeDoc.ui"));
         service.Documents.Open(uri, content, 1);
         return (service, uri, offset < 0 ? content.Length : offset);
     }

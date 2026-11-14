@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>EclipseUI.Platform.MacOS</RootNamespace>
+    <Description>EclipseUI macOS desktop host: SDL3 Cocoa, Metal, Retina, input and clipboard.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../EclipseUI.Runtime/EclipseUI.Runtime.csproj" />
+    <ProjectReference Include="../EclipseUI.Rendering/EclipseUI.Rendering.csproj" />
+    <InternalsVisibleTo Include="EclipseUI.Platform.MacOS.Tests" />
+  </ItemGroup>
+</Project>

@@ -68,7 +68,7 @@ dotnet run --project sandbox/GalleryCheck -- --cpu --selfcheck --shot out/galler
 
 ## Linux 桌面
 
-`Gallery.Desktop` 自动选择 Windows / Linux 平台。Linux 使用 SDL3 3.2+ 创建 X11 或 Wayland 窗口，Vello 通过 Vulkan 上屏；需安装 `libSDL3.so.0`、Vulkan loader/驱动和字体（建议 DejaVu Sans、Noto CJK、Noto Color Emoji）。
+`Gallery.Desktop` 自动选择 Windows / Linux / macOS 平台。Linux 使用 SDL3 3.2+ 创建 X11 或 Wayland 窗口，Vello 通过 Vulkan 上屏；需安装 `libSDL3.so.0`、Vulkan loader/驱动和字体（建议 DejaVu Sans、Noto CJK、Noto Color Emoji）。
 
 ```bash
 dotnet run --project samples/Gallery.Desktop
@@ -82,6 +82,19 @@ dotnet publish samples/Gallery.Desktop -c Release -r linux-x64 --self-contained 
 ```
 
 自建应用通过 `.UseLinux().UseVello().UseHarfBuzzText()` 注册平台。窗口、DPI 缩放、输入/输入法、剪贴板及验证范围见 [Linux 平台说明](./design/26-linux-platform.md)。已在 WSLg 验证 X11 / Wayland 原生窗口、队列输入与缩放；仓库提供 Linux X11 原生窗口 CI。旧 SDL 配合缺少输入法协议的 Wayland 环境会回退基本键盘输入，完整 IME 可选择 X11；真实输入法候选交互仍需验收。
+
+## macOS 桌面
+
+macOS 使用 SDL3 Cocoa 窗口与 Vello Metal 上屏，支持 Retina、Command 快捷键、Option 词导航、中文/emoji 字体回退、输入法和系统剪贴板。
+
+```bash
+brew install sdl3 harfbuzz
+dotnet run --project samples/Gallery.Desktop
+dotnet run --project samples/Gallery.Desktop -- --cpu --shot out/gallery-macos.png
+dotnet publish samples/Gallery.Desktop -c Release -r osx-arm64 --self-contained true
+```
+
+自建应用使用 `.UseMacOS().UseVello().UseHarfBuzzText()`；从进程主线程同步调用 `Start(args)`。Intel 发布使用 `osx-x64`。依赖、平台契约与验证范围见 [macOS 平台说明](./design/27-macos-platform.md)。
 
 ## 当前能力
 

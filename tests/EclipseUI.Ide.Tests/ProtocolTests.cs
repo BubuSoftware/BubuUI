@@ -143,7 +143,7 @@ public class ProtocolTests
     [Fact]
     public async Task Session_PublishesDiagnosticsOnOpen()
     {
-        var uri = "file:///D:/workspace/Session.ui";
+        var uri = "file:///workspace/Session.ui";
         var transcript = await RunSession(
             Request(1, "initialize"),
             Notification("initialized", new JsonObject()),
@@ -161,7 +161,7 @@ public class ProtocolTests
     [Fact]
     public async Task Session_RemovingUsingReportsUnknownTagOnChange()
     {
-        var uri = "file:///D:/workspace/Counter.ui";
+        var uri = "file:///workspace/Counter.ui";
         var transcript = await RunSession(
             Request(1, "initialize"),
             Notification("initialized", new JsonObject()),
@@ -197,7 +197,7 @@ public class ProtocolTests
             RuntimePath = Path.Combine(Path.GetTempPath(), "eclipseui-missing-" + Guid.NewGuid().ToString("N")),
             IncludeSiblingAssemblies = false,
         });
-        var uri = "file:///D:/workspace/NoCatalog.ui";
+        var uri = "file:///workspace/NoCatalog.ui";
         var transcript = await RunSessionWith(empty,
             Request(1, "initialize"),
             Notification("initialized", new JsonObject()),
@@ -216,7 +216,7 @@ public class ProtocolTests
     [Fact]
     public async Task Session_CompletionReturnsEditsInsideTheTag()
     {
-        var uri = "file:///D:/workspace/Session.ui";
+        var uri = "file:///workspace/Session.ui";
         var transcript = await RunSession(
             Request(1, "initialize"),
             Notification("initialized", new JsonObject()),
@@ -238,7 +238,7 @@ public class ProtocolTests
     [InlineData("\r\n")]
     public async Task Session_UnimportedTagCompletionReturnsAdditionalImportEdit(string newline)
     {
-        const string uri = "file:///D:/workspace/ImportCompletion.ui";
+        const string uri = "file:///workspace/ImportCompletion.ui";
         var text = "@namespace Gallery" + newline + "<But" + newline;
         var transcript = await RunSession(
             Request(1, "initialize"),
@@ -266,7 +266,7 @@ public class ProtocolTests
     [Fact]
     public async Task Session_AlreadyImportedTagCompletionDoesNotRepeatUsing()
     {
-        const string uri = "file:///D:/workspace/ExistingImport.ui";
+        const string uri = "file:///workspace/ExistingImport.ui";
         const string text = "@namespace Gallery\n@using EclipseUI.Elements\n<But";
         var transcript = await RunSession(
             Request(1, "initialize"),
@@ -283,7 +283,7 @@ public class ProtocolTests
     [Fact]
     public async Task Session_UsingCompletionReplacesTheQualifiedPrefix()
     {
-        const string uri = "file:///D:/workspace/UsingCompletion.ui";
+        const string uri = "file:///workspace/UsingCompletion.ui";
         const string text = "@namespace Gallery\n@using System.Col";
         var transcript = await RunSession(
             Request(1, "initialize"),
@@ -300,7 +300,7 @@ public class ProtocolTests
     [Fact]
     public async Task Session_ClientsWithoutSnippetSupportReceiveTheUsingDefaultAsPlainText()
     {
-        const string uri = "file:///D:/workspace/PlainDirective.ui";
+        const string uri = "file:///workspace/PlainDirective.ui";
         const string text = "@us";
         var transcript = await RunSession(
             Request(1, "initialize", new JsonObject
@@ -642,7 +642,7 @@ public class ProtocolTests
     [Fact]
     public async Task Session_HoverAndSymbolsRespond()
     {
-        var uri = "file:///D:/workspace/Session.ui";
+        var uri = "file:///workspace/Session.ui";
         var transcript = await RunSession(
             Request(1, "initialize"),
             Notification("initialized", new JsonObject()),
@@ -667,7 +667,7 @@ public class ProtocolTests
     [InlineData("Grid.Row", "\"1\"")]
     public async Task Session_AttributeStartSupportsCtrlHoverAndDefinition(string attribute, string value)
     {
-        const string uri = "file:///D:/workspace/AttributeNavigation.ui";
+        const string uri = "file:///workspace/AttributeNavigation.ui";
         var text = "@using EclipseUI.Elements\n<Button " + attribute + "=" + value + " />";
         var offset = text.IndexOf(attribute + "=", StringComparison.Ordinal);
         var (line, character) = new PositionMap(text).ToPosition(offset);
@@ -701,7 +701,7 @@ public class ProtocolTests
     [Fact]
     public async Task Session_CloseClearsDiagnostics()
     {
-        var uri = "file:///D:/workspace/Session.ui";
+        var uri = "file:///workspace/Session.ui";
         var transcript = await RunSession(
             Request(1, "initialize"),
             Notification("initialized", new JsonObject()),
@@ -744,7 +744,7 @@ public class ProtocolTests
     [Fact]
     public async Task Session_SignatureHelpResolvesInvocationInExpression()
     {
-        const string uri = "file:///D:/workspace/Signature.ui";
+        const string uri = "file:///workspace/Signature.ui";
         const string text = "@using System\n<TextBlock Text={Math.Max(1, 2)} />\n";
         var transcript = await RunSession(
             Request(1, "initialize"),
@@ -763,7 +763,7 @@ public class ProtocolTests
     [Fact]
     public async Task Session_SemanticTokensAreDeltaEncoded()
     {
-        const string uri = "file:///D:/workspace/Tokens.ui";
+        const string uri = "file:///workspace/Tokens.ui";
         const string text = "@using System\n<TextBlock Text={Math.Max(1, 2)} />\n";
         var transcript = await RunSession(
             Request(1, "initialize"),
@@ -788,7 +788,7 @@ public class ProtocolTests
     [Fact]
     public async Task Session_CodeActionAddsMissingUsing()
     {
-        const string uri = "file:///D:/workspace/Action.ui";
+        const string uri = "file:///workspace/Action.ui";
         var transcript = await RunSession(
             Request(1, "initialize"),
             Notification("initialized", new JsonObject()),
@@ -815,7 +815,7 @@ public class ProtocolTests
     [Fact]
     public async Task Session_FormattingAndRangeFormattingAgree()
     {
-        const string uri = "file:///D:/workspace/Format.ui";
+        const string uri = "file:///workspace/Format.ui";
         const string text = "@using EclipseUI.Elements\n<StackPanel>\n   <Button />\n</StackPanel>\n";
         var transcript = await RunSession(
             Request(1, "initialize"),
@@ -880,7 +880,7 @@ public class ProtocolTests
     [Fact]
     public async Task Session_WatchedFilesRepublishDiagnostics()
     {
-        const string uri = "file:///D:/workspace/Watched.ui";
+        const string uri = "file:///workspace/Watched.ui";
         var transcript = await RunSession(
             Request(1, "initialize"),
             Notification("initialized", new JsonObject()),
@@ -889,7 +889,7 @@ public class ProtocolTests
             {
                 ["changes"] = new JsonArray
                 {
-                    new JsonObject { ["uri"] = "file:///D:/workspace/Widget.cs", ["type"] = 2 },
+                    new JsonObject { ["uri"] = "file:///workspace/Widget.cs", ["type"] = 2 },
                 },
             }));
 

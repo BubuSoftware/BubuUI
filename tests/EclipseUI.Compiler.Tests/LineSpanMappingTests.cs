@@ -105,7 +105,7 @@ public class LineSpanMappingTests
     [Fact]
     public void GeneratedCode_EmitsOnlyValidSpanDirectives_AndNoCS8939()
     {
-        const string uiPath = "C:\\templates\\Probe.ui";
+        const string uiPath = "/templates/Probe.ui";
         const string ui = """
             @using EclipseUI.Elements
             <StackPanel Gap={gap}>
@@ -150,7 +150,7 @@ public class LineSpanMappingTests
     [Fact]
     public void TypeError_MapsBackToExactColumn_WhenExpressionStartsFarRight()
     {
-        const string uiPath = "C:\\templates\\Probe.ui";
+        const string uiPath = "/templates/Probe.ui";
         const string pad = "                                        "; // 40 空格
         const string prefix = "<StackPanel Gap={";
         var ui = "@using EclipseUI.Elements\n" + pad + prefix + "gap}>\n" + pad + "    <TextBlock>{message}</TextBlock>\n" + pad + "</StackPanel>";

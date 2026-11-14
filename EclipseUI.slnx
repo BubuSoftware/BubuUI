@@ -10,6 +10,7 @@
     <Project Path="src/EclipseUI.Compiler/EclipseUI.Compiler.csproj" />
     <Project Path="src/EclipseUI.Platform.Windows/EclipseUI.Platform.Windows.csproj" />
     <Project Path="src/EclipseUI.Platform.Linux/EclipseUI.Platform.Linux.csproj" />
+    <Project Path="src/EclipseUI.Platform.MacOS/EclipseUI.Platform.MacOS.csproj" />
     <Project Path="src/EclipseUI.Rendering.Vello/EclipseUI.Rendering.Vello.csproj" />
     <Project Path="src/EclipseUI.Rendering/EclipseUI.Rendering.csproj" />
     <Project Path="src/EclipseUI.Runtime/EclipseUI.Runtime.csproj" />
@@ -22,6 +23,7 @@
     <Project Path="tests/EclipseUI.Compiler.Tests/EclipseUI.Compiler.Tests.csproj" />
     <Project Path="tests/EclipseUI.Headless.Tests/EclipseUI.Headless.Tests.csproj" />
     <Project Path="tests/EclipseUI.Platform.Linux.Tests/EclipseUI.Platform.Linux.Tests.csproj" />
+    <Project Path="tests/EclipseUI.Platform.MacOS.Tests/EclipseUI.Platform.MacOS.Tests.csproj" />
     <Project Path="tests/EclipseUI.Ide.Tests/EclipseUI.Ide.Tests.csproj" />
     <Project Path="tests/EclipseUI.Rendering.Tests/EclipseUI.Rendering.Tests.csproj" />
     <Project Path="tests/EclipseUI.VisualStudio.Tests/EclipseUI.VisualStudio.Tests.csproj" />

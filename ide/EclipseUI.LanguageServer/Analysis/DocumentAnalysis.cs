@@ -53,7 +53,8 @@ public sealed class DocumentStore
     /// <c>AdditionalFiles</c> 的路径，于是文档「不属于任何项目」，补全/诊断/跳转全空。
     /// （2026-11-11 实测：手写 <c>file:///D:/…</c> 的脚本全绿、真实编辑器全废，就是这个分支。）
     ///
-    /// 所以自己解一遍：先按 URI 语义解转义，再按盘符/UNC 还原成 Windows 路径。
+    /// 所以自己解一遍：先按 URI 语义解转义，再按盘符/UNC 还原 Windows 路径；
+    /// macOS/Linux 本地绝对路径保留 '/'，供文件系统和项目归属判断使用。
     /// </summary>
     public static string UriToPath(string uri)
     {
@@ -67,12 +68,12 @@ public sealed class DocumentStore
         if (parsed.Host.Length > 0 && !string.Equals(parsed.Host, "localhost", StringComparison.OrdinalIgnoreCase))
             return @"\\" + parsed.Host + path.Replace('/', '\\');
 
-        // 本地路径。file URI 的绝对路径总以 '/' 开头：
-        //   "/d:/repo/x.ui" → "d:\repo\x.ui"
-        //   "/home/u/x.ui"  → "\home\u\x.ui"（非 Windows 场景原样保留）
-        if (path[0] == '/' && path.Length >= 3 && path[2] == ':')
+        // 盘符路径可能来自其他平台上的编辑器，仍按 Windows 语义解析。
+        // 本机 Unix 路径则不能替换分隔符，否则文件名和项目归属都会损坏。
+        if (path[0] == '/' && path.Length >= 3 && char.IsAsciiLetter(path[1]) && path[2] == ':')
             path = path[1..];
-        return path.Replace('/', '\\');
+        var windowsDrive = path.Length >= 2 && char.IsAsciiLetter(path[0]) && path[1] == ':';
+        return OperatingSystem.IsWindows() || windowsDrive ? path.Replace('/', '\\') : path;
     }
 
     public static string PathToUri(string path) =>

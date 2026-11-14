@@ -15,7 +15,7 @@ namespace EclipseUI.Compiler.Tests;
 /// </summary>
 public class CodeBehindConflictTests
 {
-    private const string UiPath = "C:\\templates\\Probe.ui";
+    private const string UiPath = "/templates/Probe.ui";
     private const string Ui = "@using EclipseUI.Elements\n<StackPanel><TextBlock>hi</TextBlock></StackPanel>";
 
     private sealed class UiAdditionalText : AdditionalText

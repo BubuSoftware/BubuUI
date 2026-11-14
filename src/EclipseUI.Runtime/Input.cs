@@ -62,7 +62,16 @@ public sealed class WheelEventArgs : RoutedEventArgs
 }
 
 [Flags]
-public enum KeyModifiers { None = 0, Shift = 1, Control = 2, Alt = 4 }
+public enum KeyModifiers { None = 0, Shift = 1, Control = 2, Alt = 4, Meta = 8 }
+
+internal static class InputGestures
+{
+    // Keep the existing Control shortcuts available; on macOS Command is also
+    // a command modifier without changing the native modifier reported to apps.
+    internal static bool HasCommand(KeyModifiers modifiers)
+        => modifiers.HasFlag(KeyModifiers.Control)
+           || OperatingSystem.IsMacOS() && modifiers.HasFlag(KeyModifiers.Meta);
+}
 public enum PointerButton { Left, Right, Middle }
 public enum CompositionStage { Started, Updated, Committed, Cancelled }
 public sealed class TextInputEventArgs : RoutedEventArgs

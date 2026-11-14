@@ -55,7 +55,12 @@ public sealed class HarfBuzzTextPainter : ITextPainter, ITextMeasurer, IDisposab
                 return new[] { "msyh.ttc", "seguisym.ttf", "simsun.ttc", "simsunb.ttf", "seguiemj.ttf" }
                     .Select(name => Path.Combine(directory, name)).ToArray();
             }
-            if (OperatingSystem.IsMacOS()) return ["/System/Library/Fonts/Apple Color Emoji.ttc", "/System/Library/Fonts/PingFang.ttc"];
+            if (OperatingSystem.IsMacOS()) return [
+                "/System/Library/Fonts/Apple Color Emoji.ttc",
+                "/System/Library/Fonts/PingFang.ttc",
+                "/System/Library/Fonts/STHeiti Medium.ttc",
+                "/System/Library/Fonts/STHeiti Light.ttc",
+                "/System/Library/Fonts/Supplemental/Songti.ttc"];
             return ["/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
                 "/usr/share/fonts/noto/NotoColorEmoji.ttf",
                 "/usr/share/fonts/google-noto-emoji/NotoColorEmoji.ttf",

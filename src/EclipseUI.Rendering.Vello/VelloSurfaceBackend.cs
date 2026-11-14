@@ -15,7 +15,9 @@ public sealed class VelloSurfaceOptions
     public AntialiasingMode Antialiasing { get; init; } = AntialiasingMode.Area;
 
     /// <summary>优先使用的 wgpu 后端；null 表示由 wgpu 自动选择。</summary>
-    public WgpuBackend? PreferredBackend { get; init; } = OperatingSystem.IsWindows() ? WgpuBackend.Dx12 : WgpuBackend.Vulkan;
+    public WgpuBackend? PreferredBackend { get; init; } = OperatingSystem.IsWindows()
+        ? WgpuBackend.Dx12
+        : OperatingSystem.IsMacOS() ? WgpuBackend.Metal : WgpuBackend.Vulkan;
 
     /// <summary>优先垂直同步；false 时选 Immediate（仅用于测帧率上限）。</summary>
     public bool PreferVsync { get; init; } = true;
@@ -30,7 +32,7 @@ public sealed class VelloSurfaceOptions
 }
 
 /// <summary>
-/// Vello GPU surface 后端：wgpu instance/adapter/device + Win32/X11/Wayland 表面。
+/// Vello GPU surface 后端：wgpu instance/adapter/device + Win32/AppKit/X11/Wayland 表面。
 /// 帧路径：AcquireNextTexture → RenderSurface → Present，不经过 CPU 回读。
 /// </summary>
 public sealed class VelloSurfaceBackend : ISurfacePresenter
@@ -90,7 +92,14 @@ public sealed class VelloSurfaceBackend : ISurfacePresenter
     {
         if (window.Kind == NativeWindowKind.Unknown || window.Handle == 0)
             throw new ArgumentException("A valid native window handle is required.", nameof(window));
-        if (window.Kind == NativeWindowKind.Win32 ? !OperatingSystem.IsWindows() : !OperatingSystem.IsLinux())
+        var supported = window.Kind switch
+        {
+            NativeWindowKind.Win32 => OperatingSystem.IsWindows(),
+            NativeWindowKind.AppKit => OperatingSystem.IsMacOS(),
+            NativeWindowKind.Xlib or NativeWindowKind.Wayland => OperatingSystem.IsLinux(),
+            _ => false,
+        };
+        if (!supported)
             throw new PlatformNotSupportedException($"Cannot create a {window.Kind} surface on this operating system.");
         if (width <= 0) throw new ArgumentOutOfRangeException(nameof(width));
         if (height <= 0) throw new ArgumentOutOfRangeException(nameof(height));
@@ -120,6 +129,7 @@ public sealed class VelloSurfaceBackend : ISurfacePresenter
                 NativeWindowKind.Win32 => SurfaceHandle.FromWin32(window.Handle),
                 NativeWindowKind.Xlib => SurfaceHandle.FromXlib(unchecked((ulong)(nuint)window.Handle), window.Display, window.Screen, 0),
                 NativeWindowKind.Wayland => SurfaceHandle.FromWayland(window.Handle, window.Display),
+                NativeWindowKind.AppKit => SurfaceHandle.FromAppKit(window.Handle),
                 _ => throw new PlatformNotSupportedException($"Unsupported window kind: {window.Kind}."),
             },
         };

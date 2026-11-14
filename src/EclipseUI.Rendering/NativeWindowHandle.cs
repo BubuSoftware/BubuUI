@@ -1,6 +1,6 @@
 namespace EclipseUI.Rendering;
 
-public enum NativeWindowKind { Unknown, Win32, Xlib, Wayland }
+public enum NativeWindowKind { Unknown, Win32, Xlib, Wayland, AppKit }
 
 /// <summary>Borrowed native window and display handles. The platform owns their lifetime.</summary>
 public readonly record struct NativeWindowHandle
@@ -8,7 +8,7 @@ public readonly record struct NativeWindowHandle
     private NativeWindowHandle(NativeWindowKind kind, nint handle, nint display, int screen)
     {
         if (handle == 0) throw new ArgumentException("Window handle must not be zero.", nameof(handle));
-        if (kind != NativeWindowKind.Win32 && display == 0)
+        if (kind is NativeWindowKind.Xlib or NativeWindowKind.Wayland && display == 0)
             throw new ArgumentException("Display handle must not be zero.", nameof(display));
         Kind = kind;
         Handle = handle;
@@ -26,4 +26,7 @@ public readonly record struct NativeWindowHandle
         => new(NativeWindowKind.Xlib, window, display, screen);
     public static NativeWindowHandle FromWayland(nint surface, nint display)
         => new(NativeWindowKind.Wayland, surface, display, 0);
+
+    /// <summary>A borrowed NSView, retained by the platform until the rendering surface is disposed.</summary>
+    public static NativeWindowHandle FromAppKit(nint nsView) => new(NativeWindowKind.AppKit, nsView, 0, 0);
 }

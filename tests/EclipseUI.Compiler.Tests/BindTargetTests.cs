@@ -19,7 +19,7 @@ namespace EclipseUI.Compiler.Tests;
 /// </summary>
 public class BindTargetTests
 {
-    private const string UiPath = "C:\\templates\\Probe.ui";
+    private const string UiPath = "/templates/Probe.ui";
 
     private const string Controls =
         "public partial class Probe { public bool flag; public string text = \"\"; }";

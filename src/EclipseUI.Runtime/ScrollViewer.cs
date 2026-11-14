@@ -146,8 +146,8 @@ public class ScrollViewer : Panel, IFrameAnimation
             {
                 case Key.PageDown: ScrollToVerticalOffset(VerticalOffset + ViewportHeight); break;
                 case Key.PageUp: ScrollToVerticalOffset(VerticalOffset - ViewportHeight); break;
-                case Key.Home when k.Modifiers.HasFlag(KeyModifiers.Control): ScrollToHome(); break;
-                case Key.End when k.Modifiers.HasFlag(KeyModifiers.Control): ScrollToEnd(); break;
+                case Key.Home when InputGestures.HasCommand(k.Modifiers): ScrollToHome(); break;
+                case Key.End when InputGestures.HasCommand(k.Modifiers): ScrollToEnd(); break;
                 default: return;
             }
             e.Handled = true;

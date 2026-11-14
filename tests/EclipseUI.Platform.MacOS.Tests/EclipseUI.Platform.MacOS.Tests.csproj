@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <!-- Native smoke scenarios run as a subprocess so AppKit owns the OS main thread. -->
+    <GenerateProgramFile>false</GenerateProgramFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" PrivateAssets="all" />
+    <ProjectReference Include="../../src/EclipseUI.Platform.MacOS/EclipseUI.Platform.MacOS.csproj" />
+    <ProjectReference Include="../../src/EclipseUI.Rendering.Vello/EclipseUI.Rendering.Vello.csproj" />
+  </ItemGroup>
+</Project>

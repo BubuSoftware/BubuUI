@@ -15,6 +15,8 @@ namespace EclipseUI.Compiler.Tests;
 /// 契约没有保留值：<c>global</c> 只是普通名字，处于全局命名空间的 code-behind 无法与任何声明相等
 /// （C# 写不出 global namespace 声明）。这类夹具被包进合成命名空间 <see cref="SyntheticNamespace"/>。
 ///
+/// 内存文件路径使用正斜杠（如 /templates/Probe.ui），让 Path 的文件名解析在 Windows 与 Unix 一致。
+///
 /// 幂等：已有 <c>@namespace</c> 的文本原样返回，所以 Run 里按真实 code-behind 规整一次之后，
 /// AdditionalText 构造时的兜底不会再动它。
 /// </summary>

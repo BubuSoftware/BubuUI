@@ -15,7 +15,7 @@ namespace EclipseUI.Ide.Tests;
 /// </summary>
 public class SourceMappingTests
 {
-    private const string UiPath = @"C:\templates\Probe.ui";
+    private const string UiPath = "/templates/Probe.ui";
 
     // ---- A. DocumentMappingService 合成用例 ----
 

@@ -14,6 +14,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="EclipseUI.Platform.Windows" />
     <InternalsVisibleTo Include="EclipseUI.Platform.Linux" />
+    <InternalsVisibleTo Include="EclipseUI.Platform.MacOS" />
   </ItemGroup>
 
 </Project>

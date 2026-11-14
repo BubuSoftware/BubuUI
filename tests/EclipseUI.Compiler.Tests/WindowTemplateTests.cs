@@ -87,7 +87,7 @@ public class WindowTemplateTests
             }
             """;
 
-        var code = Generated(RunFiles(("C:\\templates\\Shell.ui", ui, null)));
+        var code = Generated(RunFiles(("/templates/Shell.ui", ui, null)));
 
         Assert.Contains("partial class Shell : global::EclipseUI.Window", code);
         // 内容根按普通根发射：局部变量构造并返回
@@ -116,7 +116,7 @@ public class WindowTemplateTests
             }
             """;
 
-        var code = Generated(RunFiles(("C:\\templates\\Shell.ui", ui, null)));
+        var code = Generated(RunFiles(("/templates/Shell.ui", ui, null)));
 
         // Title 尺寸各一路 U；Render 登记
         Assert.Contains("private void U0()", code);
@@ -140,7 +140,7 @@ public class WindowTemplateTests
             </Window>
             """;
 
-        var code = Generated(RunFiles(("C:\\templates\\Shell.ui", ui, null)));
+        var code = Generated(RunFiles(("/templates/Shell.ui", ui, null)));
 
         Assert.Contains("this.Title = \"Static\";", code);
         Assert.Contains("this.CloseOnEscape = false;", code);
@@ -161,7 +161,7 @@ public class WindowTemplateTests
             }
             """;
 
-        var code = Generated(RunFiles(("C:\\templates\\Shell.ui", ui, null)));
+        var code = Generated(RunFiles(("/templates/Shell.ui", ui, null)));
 
         Assert.Contains("this.MaxFramesPerSecond = v;", code);
         Assert.Contains("this.AlwaysRender = v;", code);
@@ -189,8 +189,8 @@ public class WindowTemplateTests
             """;
 
         var result = RunFiles(
-            ("C:\\templates\\Shell.ui", shell, null),
-            ("C:\\templates\\App.ui", app, "public partial class App { public int gap = 4; }"));
+            ("/templates/Shell.ui", shell, null),
+            ("/templates/App.ui", app, "public partial class App { public int gap = 4; }"));
 
         Assert.True(HasDiagnostic(result, "EUI060"),
             string.Join("\n", result.Diagnostics.Select(d => $"{d.Id}: {d.GetMessage()}")));
@@ -208,7 +208,7 @@ public class WindowTemplateTests
             </StackPanel>
             """;
 
-        var result = RunFiles(("C:\\templates\\App.ui", ui, "public partial class App { public int gap = 4; }"));
+        var result = RunFiles(("/templates/App.ui", ui, "public partial class App { public int gap = 4; }"));
 
         Assert.True(HasDiagnostic(result, "EUI060"),
             string.Join("\n", result.Diagnostics.Select(d => $"{d.Id}: {d.GetMessage()}")));
@@ -224,7 +224,7 @@ public class WindowTemplateTests
             <Window Title="Empty" />
             """;
 
-        var result = RunFiles(("C:\\templates\\Shell.ui", ui, null));
+        var result = RunFiles(("/templates/Shell.ui", ui, null));
 
         Assert.DoesNotContain(result.Diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
     }
@@ -240,7 +240,7 @@ public class WindowTemplateTests
             </Window>
             """;
 
-        var result = RunFiles(("C:\\templates\\Shell.ui", ui, null));
+        var result = RunFiles(("/templates/Shell.ui", ui, null));
 
         Assert.True(HasDiagnostic(result, "EUI021"),
             string.Join("\n", result.Diagnostics.Select(d => $"{d.Id}: {d.GetMessage()}")));
@@ -261,7 +261,7 @@ public class WindowTemplateTests
             }
             """;
 
-        var result = RunFiles(("C:\\templates\\Shell.ui", ui, null));
+        var result = RunFiles(("/templates/Shell.ui", ui, null));
 
         Assert.DoesNotContain(result.Diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
     }
@@ -276,7 +276,7 @@ public class WindowTemplateTests
             </Window>
             """;
 
-        var result = RunFiles(("C:\\templates\\Shell.ui", ui, null));
+        var result = RunFiles(("/templates/Shell.ui", ui, null));
 
         Assert.True(HasDiagnostic(result, "EUI002"),
             string.Join("\n", result.Diagnostics.Select(d => $"{d.Id}: {d.GetMessage()}")));
@@ -292,7 +292,7 @@ public class WindowTemplateTests
             </Window>
             """;
 
-        var result = RunFiles(("C:\\templates\\Shell.ui", ui, null));
+        var result = RunFiles(("/templates/Shell.ui", ui, null));
 
         var diagnostic = Assert.Single(result.Diagnostics.Where(d => d.Id == "EUI002"));
         Assert.Contains("did you mean 'Title'?", diagnostic.GetMessage());
@@ -308,7 +308,7 @@ public class WindowTemplateTests
             </Window>
             """;
 
-        var result = RunFiles(("C:\\templates\\Shell.ui", ui, null));
+        var result = RunFiles(("/templates/Shell.ui", ui, null));
 
         // IHostTheme 无字面量转换器 → EUI023 指向表达式形式
         Assert.True(HasDiagnostic(result, "EUI023"),
@@ -327,7 +327,7 @@ public class WindowTemplateTests
             </Window>
             """;
 
-        var result = RunFiles(("C:\\templates\\Shell.ui", ui,
+        var result = RunFiles(("/templates/Shell.ui", ui,
             "public partial class Shell : global::EclipseUI.Elements.StackPanel { }"));
 
         Assert.True(HasDiagnostic(result, "EUI045"),
@@ -342,7 +342,7 @@ public class WindowTemplateTests
             <StackPanel Gap="8" />
             """;
 
-        var result = RunFiles(("C:\\templates\\App.ui", ui,
+        var result = RunFiles(("/templates/App.ui", ui,
             "public partial class App : global::EclipseUI.Window { }"));
 
         Assert.True(HasDiagnostic(result, "EUI045"),
@@ -359,7 +359,7 @@ public class WindowTemplateTests
             </Window>
             """;
 
-        var result = RunFiles(("C:\\templates\\Shell.ui", ui,
+        var result = RunFiles(("/templates/Shell.ui", ui,
             "public partial class Shell : global::EclipseUI.Window { }"));
 
         Assert.DoesNotContain(result.Diagnostics, d => d.Id == "EUI045");
@@ -379,7 +379,7 @@ public class WindowTemplateTests
             """;
         var compilation = CreateCompilation("");
         var declaration = UiTemplateScanner.FromFile(
-            "C:\\templates\\Shell.ui", NamespaceDeclarationFixture.Ensure("Shell.ui", ui))!;
+            "/templates/Shell.ui", NamespaceDeclarationFixture.Ensure("Shell.ui", ui))!;
 
         Assert.Equal("Window", declaration.RootTag);
 
@@ -410,7 +410,7 @@ public class WindowTemplateTests
             """;
         var compilation = CreateCompilation("");
         var declaration = UiTemplateScanner.FromFile(
-            "C:\\templates\\Shell.ui", NamespaceDeclarationFixture.Ensure("Shell.ui", ui))!;
+            "/templates/Shell.ui", NamespaceDeclarationFixture.Ensure("Shell.ui", ui))!;
 
         var first = UiCatalogFactory.Build(compilation, new[] { declaration });
         var second = UiCatalogFactory.Build(compilation, new[] { declaration });

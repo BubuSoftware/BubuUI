@@ -1,0 +1,34 @@
+name: macOS desktop
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  cocoa:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Install native dependencies
+        run: brew install sdl3 harfbuzz
+      - name: Cocoa window, Metal presentation, Unicode and fonts
+        run: dotnet test tests/EclipseUI.Platform.MacOS.Tests --logger "trx;LogFileName=macos.trx"
+      - name: Publish and run Gallery
+        shell: bash
+        run: |
+          if [ "$(uname -m)" = arm64 ]; then rid=osx-arm64; else rid=osx-x64; fi
+          dotnet publish samples/Gallery.Desktop -c Release -r "$rid" --self-contained true -o out/macos
+          out/macos/Gallery.Desktop --frames 5 --always-render
+          out/macos/Gallery.Desktop --cpu --shot out/gallery-macos.png
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macos-validation
+          path: |
+            tests/EclipseUI.Platform.MacOS.Tests/TestResults/*.trx
+            out/gallery-macos.png

@@ -101,8 +101,8 @@ public class GeneratorContractTests
             </StackPanel>
             """;
 
-        var first = Run("C:\\templates\\Probe.ui", ui);
-        var second = Run("C:\\templates\\Probe.ui", ui);
+        var first = Run("/templates/Probe.ui", ui);
+        var second = Run("/templates/Probe.ui", ui);
 
         var firstSource = first.GeneratedSources.Single();
         var secondSource = second.GeneratedSources.Single();
@@ -121,7 +121,7 @@ public class GeneratorContractTests
             </StackPanel>
             """;
 
-        var code = Generated(Run("C:\\templates\\Probe.ui", ui));
+        var code = Generated(Run("/templates/Probe.ui", ui));
 
         Assert.Contains("partial class Probe : global::EclipseUI.Elements.StackPanel", code);
         Assert.DoesNotContain("new global::EclipseUI.Elements.StackPanel()", code);
@@ -129,8 +129,8 @@ public class GeneratorContractTests
         Assert.Contains("protected override void Render()", code);
         Assert.Contains("private void U0()", code);
         Assert.Contains("private void U1()", code);
-        Assert.Matches(@"#line \(2, \d+\) - \(\d+, \d+\) ""C:\\templates\\Probe\.ui""", code);
-        Assert.Matches(@"#line \(3, \d+\) - \(\d+, \d+\) ""C:\\templates\\Probe\.ui""", code);
+        Assert.Matches(@"#line \(2, \d+\) - \(\d+, \d+\) ""/templates/Probe\.ui""", code);
+        Assert.Matches(@"#line \(3, \d+\) - \(\d+, \d+\) ""/templates/Probe\.ui""", code);
         Assert.Contains("using (this.BeginTemplateValues()) this.Gap = gap;", code);
         Assert.Contains("__run2.Text = $\"{(message)}\";", code);
     }
@@ -138,7 +138,7 @@ public class GeneratorContractTests
     [Fact]
     public void TypeError_InDynamicBinding_MapsBackToUiLine()
     {
-        const string uiPath = "C:\\templates\\Probe.ui";
+        const string uiPath = "/templates/Probe.ui";
         const string ui = """
             @using EclipseUI.Elements
             <StackPanel Gap={gap}>
@@ -189,7 +189,7 @@ public class GeneratorContractTests
         const string ui = "@using EclipseUI.Elements\n<StackPanel><Button OnClick={() => Bump()}>go</Button></StackPanel>";
         const string codeBehind = "public partial class Probe { private void Bump() { } }";
 
-        var code = Generated(Run("C:\\templates\\Probe.ui", ui, codeBehind));
+        var code = Generated(Run("/templates/Probe.ui", ui, codeBehind));
 
         Assert.Contains("var h2 = (global::System.Action)(() => Bump());", code);
         Assert.Contains(
@@ -209,7 +209,7 @@ public class GeneratorContractTests
             </StackPanel>
             """;
 
-        var code = Generated(Run("C:\\templates\\Probe.ui", ui));
+        var code = Generated(Run("/templates/Probe.ui", ui));
 
         Assert.Contains("((global::EclipseUI.ITextContentHost)el1).AddRun(\"Hi \");", code);
         Assert.Contains("private global::EclipseUI.Elements.TextRun __run2 = null!;", code);
@@ -238,7 +238,7 @@ public class GeneratorContractTests
             }
             """;
 
-        var code = Generated(RunWithReferences("C:\\templates\\Probe.ui", ui, codeBehind));
+        var code = Generated(RunWithReferences("/templates/Probe.ui", ui, codeBehind));
 
         Assert.Contains("private global::EclipseUI.ConditionalBlock __blk1 = null!;", code);
         Assert.Contains("__blk1.SetCondition(() => show);", code);
@@ -265,7 +265,7 @@ public class GeneratorContractTests
             }
             """;
 
-        var code = Generated(RunWithReferences("C:\\templates\\Probe.ui", ui, codeBehind));
+        var code = Generated(RunWithReferences("/templates/Probe.ui", ui, codeBehind));
 
         Assert.Contains("private global::EclipseUI.ConditionalBlock __blk1 = null!;", code);
         Assert.Contains("__blk1.SetCondition(() => show);", code);
@@ -297,7 +297,7 @@ public class GeneratorContractTests
             }
             """;
 
-        var code = Generated(RunWithReferences("C:\\templates\\Probe.ui", ui, codeBehind));
+        var code = Generated(RunWithReferences("/templates/Probe.ui", ui, codeBehind));
 
         Assert.Contains($"private global::EclipseUI.ForEachBlock<global::{Fx}.Item> __blk1 = null!;", code);
         Assert.Contains("__blk1.SetItems(() => items);", code);
@@ -333,7 +333,7 @@ public class GeneratorContractTests
             }
             """;
 
-        var code = Generated(RunWithReferences("C:\\templates\\Probe.ui", ui, codeBehind));
+        var code = Generated(RunWithReferences("/templates/Probe.ui", ui, codeBehind));
 
         Assert.Contains($"ForEachBlock<global::{Fx}.Item>", code);
         Assert.DoesNotContain("SetKeySelector", code);
@@ -370,7 +370,7 @@ public class GeneratorContractTests
             }
             """;
 
-        var code = Generated(RunWithReferences("C:\\templates\\Probe.ui", ui, codeBehind));
+        var code = Generated(RunWithReferences("/templates/Probe.ui", ui, codeBehind));
 
         Assert.Equal(3, code.Split($"private global::EclipseUI.ForEachBlock<global::{Fx}.Item>").Length - 1);
         Assert.Contains(".SetItems(() => items);", code);
@@ -404,7 +404,7 @@ public class GeneratorContractTests
             }
             """;
 
-        var code = Generated(RunWithReferences("C:\\templates\\Probe.ui", ui, codeBehind));
+        var code = Generated(RunWithReferences("/templates/Probe.ui", ui, codeBehind));
 
         Assert.Contains($"ForEachBlock<global::{Fx}.Group>", code);
         Assert.Contains($"ForEachBlock<global::{Fx}.Item>", code);
@@ -426,7 +426,7 @@ public class GeneratorContractTests
             }
             """;
 
-        var code = Generated(RunWithReferences("C:\\templates\\Probe.ui", ui, codeBehind));
+        var code = Generated(RunWithReferences("/templates/Probe.ui", ui, codeBehind));
 
         Assert.Contains("private global::EclipseUI.UiBinding __bind2 = null!;", code);
         Assert.Contains(
@@ -462,7 +462,7 @@ public class GeneratorContractTests
             }
             """;
 
-        var code = Generated(RunWithReferences("C:\\templates\\Probe.ui", ui, codeBehind));
+        var code = Generated(RunWithReferences("/templates/Probe.ui", ui, codeBehind));
 
         Assert.Contains(
             "var bind4 = global::EclipseUI.UiBinding.TwoWay(el3, " +
@@ -486,7 +486,7 @@ public class GeneratorContractTests
             }
             """;
 
-        var result = RunWithReferences("C:\\templates\\Probe.ui", ui, codeBehind);
+        var result = RunWithReferences("/templates/Probe.ui", ui, codeBehind);
 
         Assert.Empty(result.GeneratedSources);
         var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI007");
@@ -517,7 +517,7 @@ public class GeneratorContractTests
     private static void AssertBindRejected(string expression)
     {
         var ui = "@using EclipseUI.Elements\n" + $"<StackPanel><CheckBox @bind-Checked={{{expression}}}>x</CheckBox></StackPanel>";
-        var result = RunWithReferences("C:\\templates\\Probe.ui", ui, BindFixtures);
+        var result = RunWithReferences("/templates/Probe.ui", ui, BindFixtures);
 
         Assert.Empty(result.GeneratedSources);
         var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI037");
@@ -550,7 +550,7 @@ public class GeneratorContractTests
     public void Bind_WritableSource_GeneratesBinding(string expression)
     {
         var ui = "@using EclipseUI.Elements\n" + $"<StackPanel><CheckBox @bind-Checked={{{expression}}}>x</CheckBox></StackPanel>";
-        var code = Generated(RunWithReferences("C:\\templates\\Probe.ui", ui, BindFixtures));
+        var code = Generated(RunWithReferences("/templates/Probe.ui", ui, BindFixtures));
 
         Assert.Contains($"writeSource: v => {expression} = v", code);
     }
@@ -558,7 +558,7 @@ public class GeneratorContractTests
     [Fact]
     public void BindNewSyntax_IsDiagnosticFree()
     {
-        var modern = RunWithReferences("C:\\templates\\Probe.ui",
+        var modern = RunWithReferences("/templates/Probe.ui",
             "@using EclipseUI.Elements\n<StackPanel><CheckBox @bind-Checked={flag}>x</CheckBox></StackPanel>", BindFixtures);
 
         Assert.Matches(@"#line \(\d+, \d+\) - \(\d+, \d+\)", Generated(modern));
@@ -569,7 +569,7 @@ public class GeneratorContractTests
     public void LegacyBind_ReportsEUI046Error_AndGeneratesNothing()
     {
         // K27（Q7-B）：P:bind 本波移除——EUI046 Error，且错误诊断阻断生成输出。
-        var result = RunWithReferences("C:\\templates\\Probe.ui",
+        var result = RunWithReferences("/templates/Probe.ui",
             "@using EclipseUI.Elements\n<StackPanel><CheckBox Checked:bind={flag}>x</CheckBox></StackPanel>", BindFixtures);
 
         var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI046");
@@ -581,7 +581,7 @@ public class GeneratorContractTests
     [Fact]
     public void LegacyValue_ReportsEUI046Error_AndGeneratesNothing()
     {
-        var result = RunWithReferences("C:\\templates\\Probe.ui",
+        var result = RunWithReferences("/templates/Probe.ui",
             "@using EclipseUI.Elements\n<StackPanel Gap:value=\"8\" />", BindFixtures);
 
         var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI046");
@@ -593,7 +593,7 @@ public class GeneratorContractTests
     [Fact]
     public void Bind_InvalidTarget_ReportsEUI040_AndGeneratesNothing()
     {
-        var result = RunWithReferences("C:\\templates\\Probe.ui",
+        var result = RunWithReferences("/templates/Probe.ui",
             "@using EclipseUI.Elements\n<StackPanel><Button @bind-OnClick={() => flag}>x</Button></StackPanel>", BindFixtures);
 
         Assert.Empty(result.GeneratedSources);
@@ -620,7 +620,7 @@ public class GeneratorContractTests
             public class Row { public bool Done { get; set; } }
             """;
 
-        var result = RunWithReferences("C:\\templates\\Probe.ui", ui, codeBehind);
+        var result = RunWithReferences("/templates/Probe.ui", ui, codeBehind);
         var code = Generated(result);
 
         Assert.Empty(result.Diagnostics);
@@ -642,7 +642,7 @@ public class GeneratorContractTests
             </StackPanel>
             """;
 
-        var result = RunWithReferences("C:\\templates\\Probe.ui", ui, BindFixtures);
+        var result = RunWithReferences("/templates/Probe.ui", ui, BindFixtures);
 
         Assert.Empty(result.GeneratedSources);
         var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI037");
@@ -672,7 +672,7 @@ public class GeneratorContractTests
             }
             """;
 
-        var result = RunWithReferences("C:\\templates\\Probe.ui", ui, codeBehind);
+        var result = RunWithReferences("/templates/Probe.ui", ui, codeBehind);
         Assert.Empty(result.Diagnostics);
         var code = Generated(result);
 
@@ -702,7 +702,7 @@ public class GeneratorContractTests
         var ui = "@using EclipseUI.Elements\n" + $"<{tag} {attribute}={{() => Bump()}} />";
         const string codeBehind = "public partial class Probe { private void Bump() { } }";
 
-        var result = RunWithReferences("C:\\templates\\Probe.ui", ui, codeBehind);
+        var result = RunWithReferences("/templates/Probe.ui", ui, codeBehind);
         Assert.Empty(result.Diagnostics);
         Assert.Contains($"AddHandler({fieldReference},", Generated(result));
     }
@@ -867,7 +867,7 @@ public class GeneratorContractTests
             </StackPanel>
             """;
 
-        var result = RunWithReferences("C:\\templates\\Probe.ui", ui, ComponentFixtures);
+        var result = RunWithReferences("/templates/Probe.ui", ui, ComponentFixtures);
         Assert.Empty(result.Diagnostics);
         var code = Generated(result);
 
@@ -888,7 +888,7 @@ public class GeneratorContractTests
     {
         const string ui = "@using EclipseUI.Elements\n<StackPanel><ProbeCard Count={gap} Title=\"Hi\" /></StackPanel>";
 
-        var code = Generated(RunWithReferences("C:\\templates\\Probe.ui", ui, ComponentFixtures));
+        var code = Generated(RunWithReferences("/templates/Probe.ui", ui, ComponentFixtures));
 
         Assert.Contains("private void U0()", code);
         Assert.Contains("var v = (global::System.Int32)(gap);", code);
@@ -904,7 +904,7 @@ public class GeneratorContractTests
     {
         const string ui = "@using EclipseUI.Elements\n<StackPanel><ProbeCard Count={gap} @bind-Color={color} /></StackPanel>";
 
-        var code = Generated(RunWithReferences("C:\\templates\\Probe.ui", ui, ComponentFixtures));
+        var code = Generated(RunWithReferences("/templates/Probe.ui", ui, ComponentFixtures));
 
         Assert.Contains("__el1.ColorChanged = value =>", code);
         Assert.Contains("if (!global::System.Collections.Generic.EqualityComparer<global::System.String>.Default.Equals(color, value))", code);
@@ -947,7 +947,7 @@ public class GeneratorContractTests
             public class Item { public int N; public string? Name; }
             """;
 
-        var result = RunWithReferences("C:\\templates\\Probe.ui", ui, codeBehind);
+        var result = RunWithReferences("/templates/Probe.ui", ui, codeBehind);
         Assert.Empty(result.Diagnostics);
         var code = Generated(result);
 
@@ -973,7 +973,7 @@ public class GeneratorContractTests
             </StackPanel>
             """;
 
-        var result = RunWithReferences("C:\\templates\\Probe.ui", ui, ComponentFixtures);
+        var result = RunWithReferences("/templates/Probe.ui", ui, ComponentFixtures);
         Assert.Empty(result.Diagnostics);
         var code = Generated(result);
 
@@ -988,7 +988,7 @@ public class GeneratorContractTests
     {
         const string ui = "@using EclipseUI.Elements\n<StackPanel><ProbeCard Count={gap} Closed={() => Close()} /></StackPanel>";
 
-        var code = Generated(RunWithReferences("C:\\templates\\Probe.ui", ui, ComponentFixtures));
+        var code = Generated(RunWithReferences("/templates/Probe.ui", ui, ComponentFixtures));
 
         Assert.Contains("var h2 = (global::System.Action)(() => Close());", code);
         Assert.Contains("__el1.Closed = () => { h2(); Invalidate(); };", code);
@@ -997,7 +997,7 @@ public class GeneratorContractTests
     [Fact]
     public void ComponentBindWithoutChanged_EUI040_BlocksGeneration()
     {
-        var result = RunWithReferences("C:\\templates\\Probe.ui",
+        var result = RunWithReferences("/templates/Probe.ui",
             "@using EclipseUI.Elements\n<StackPanel><ProbeCard Count={gap} @bind-Title={color} /></StackPanel>", ComponentFixtures);
 
         Assert.Empty(result.GeneratedSources);
@@ -1008,7 +1008,7 @@ public class GeneratorContractTests
     [Fact]
     public void ComponentRequiredParameterMissing_EUI027_BlocksGeneration()
     {
-        var result = RunWithReferences("C:\\templates\\Probe.ui",
+        var result = RunWithReferences("/templates/Probe.ui",
             "@using EclipseUI.Elements\n<StackPanel><ProbeCard Title=\"x\" /></StackPanel>", ComponentFixtures);
 
         Assert.Empty(result.GeneratedSources);
@@ -1019,7 +1019,7 @@ public class GeneratorContractTests
     [Fact]
     public void ComponentContentViaAttribute_EUI021_BlocksGeneration()
     {
-        var result = RunWithReferences("C:\\templates\\Probe.ui",
+        var result = RunWithReferences("/templates/Probe.ui",
             "@using EclipseUI.Elements\n<StackPanel><ProbeCard Count={gap} Body={color} /></StackPanel>", ComponentFixtures);
 
         Assert.Empty(result.GeneratedSources);
@@ -1029,7 +1029,7 @@ public class GeneratorContractTests
     [Fact]
     public void ComponentLiteralDelegateParameter_EUI004_BlocksGeneration()
     {
-        var result = RunWithReferences("C:\\templates\\Probe.ui",
+        var result = RunWithReferences("/templates/Probe.ui",
             "<StackPanel><ProbeCard Count={gap} Closed=\"Close\" /></StackPanel>", ComponentFixtures);
 
         Assert.Empty(result.GeneratedSources);
@@ -1048,7 +1048,7 @@ public class GeneratorContractTests
             </StackPanel>
             """;
 
-        var result = RunWithReferences("C:\\templates\\Probe.ui", ui, ComponentFixtures);
+        var result = RunWithReferences("/templates/Probe.ui", ui, ComponentFixtures);
         // EUI049 预检警告（Gap 是 double 而 color 是 string）允许出现；Error 仍必须为零。
         Assert.Empty(result.Diagnostics.Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error));
         var code = Generated(result);
@@ -1075,7 +1075,7 @@ public class GeneratorContractTests
     public void Ref_OnElement_AssignsCodeBehindFieldAtBuildTime()
     {
         const string ui = "@using EclipseUI.Elements\n<StackPanel Ref={savePanel} />";
-        var result = Run("C:\\templates\\Probe.ui", ui,
+        var result = Run("/templates/Probe.ui", ui,
             "public partial class Probe { public global::EclipseUI.Elements.StackPanel savePanel = null!; }");
 
         Assert.Empty(result.Diagnostics);
@@ -1098,7 +1098,7 @@ public class GeneratorContractTests
             }
             """;
 
-        var result = RunWithReferences("C:\\templates\\Probe.ui", ui, codeBehind);
+        var result = RunWithReferences("/templates/Probe.ui", ui, codeBehind);
         Assert.Empty(result.Diagnostics);
         var code = Generated(result);
         Assert.Contains($"partial class Probe : global::{Fx}.ProbeCard", code);
@@ -1109,7 +1109,7 @@ public class GeneratorContractTests
     [Fact]
     public void Ref_MissingField_EUI029_BlocksGeneration()
     {
-        var result = Run("C:\\templates\\Probe.ui", "@using EclipseUI.Elements\n<StackPanel Ref={nowhere} />");
+        var result = Run("/templates/Probe.ui", "@using EclipseUI.Elements\n<StackPanel Ref={nowhere} />");
 
         Assert.Empty(result.GeneratedSources);
         var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI029");
@@ -1120,7 +1120,7 @@ public class GeneratorContractTests
     [Fact]
     public void Ref_TypeMismatch_EUI029_BlocksGeneration()
     {
-        var result = Run("C:\\templates\\Probe.ui", "@using EclipseUI.Elements\n<StackPanel Ref={size} />",
+        var result = Run("/templates/Probe.ui", "@using EclipseUI.Elements\n<StackPanel Ref={size} />",
             "public partial class Probe { public int size = 4; }");
 
         Assert.Empty(result.GeneratedSources);
@@ -1131,7 +1131,7 @@ public class GeneratorContractTests
     [Fact]
     public void Ref_ReadonlyField_EUI029_BlocksGeneration()
     {
-        var result = Run("C:\\templates\\Probe.ui", "@using EclipseUI.Elements\n<StackPanel Ref={locked} />",
+        var result = Run("/templates/Probe.ui", "@using EclipseUI.Elements\n<StackPanel Ref={locked} />",
             "public partial class Probe { public readonly global::EclipseUI.Elements.StackPanel locked = null!; }");
 
         Assert.Empty(result.GeneratedSources);
@@ -1142,7 +1142,7 @@ public class GeneratorContractTests
     [Fact]
     public void Ref_StaticField_EUI029_BlocksGeneration()
     {
-        var result = Run("C:\\templates\\Probe.ui", "@using EclipseUI.Elements\n<StackPanel Ref={shared} />",
+        var result = Run("/templates/Probe.ui", "@using EclipseUI.Elements\n<StackPanel Ref={shared} />",
             "public partial class Probe { public static global::EclipseUI.Elements.StackPanel shared = null!; }");
 
         Assert.Empty(result.GeneratedSources);
@@ -1151,7 +1151,7 @@ public class GeneratorContractTests
     }    [Fact]
     public void Ref_NonIdentifier_EUI029_AnalyzerLevel()
     {
-        var result = Run("C:\\templates\\Probe.ui", "@using EclipseUI.Elements\n<StackPanel Ref={handler.Do} />");
+        var result = Run("/templates/Probe.ui", "@using EclipseUI.Elements\n<StackPanel Ref={handler.Do} />");
 
         Assert.Empty(result.GeneratedSources);
         var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI029");
@@ -1161,7 +1161,7 @@ public class GeneratorContractTests
     [Fact]
     public void Ref_QuotedLiteral_EUI029_AnalyzerLevel()
     {
-        var result = Run("C:\\templates\\Probe.ui", "@using EclipseUI.Elements\n<StackPanel Ref=\"savePanel\" />");
+        var result = Run("/templates/Probe.ui", "@using EclipseUI.Elements\n<StackPanel Ref=\"savePanel\" />");
 
         Assert.Empty(result.GeneratedSources);
         var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI029");
@@ -1183,7 +1183,7 @@ public class GeneratorContractTests
             }
             """);
 
-        var result = Run("C:\\templates\\Probe.ui", "@using ProbeLib\n@using EclipseUI.Elements\n<BrokenBox Size=\"4\" />",
+        var result = Run("/templates/Probe.ui", "@using ProbeLib\n@using EclipseUI.Elements\n<BrokenBox Size=\"4\" />",
             referencedLibrary: lib);
 
         Assert.Empty(result.GeneratedSources);
@@ -1204,7 +1204,7 @@ public class GeneratorContractTests
             }
             """);
 
-        var result = Run("C:\\templates\\Probe.ui", "@using ProbeLib\n@using EclipseUI.Elements\n<FaultyBox OnClick={Handle} />",
+        var result = Run("/templates/Probe.ui", "@using ProbeLib\n@using EclipseUI.Elements\n<FaultyBox OnClick={Handle} />",
             referencedLibrary: lib);
 
         Assert.Empty(result.GeneratedSources);
@@ -1225,7 +1225,7 @@ public class GeneratorContractTests
             }
             """);
 
-        var result = Run("C:\\templates\\Probe.ui",
+        var result = Run("/templates/Probe.ui",
             "@using ProbeLib\n@using EclipseUI.Elements\n<StackPanel><BrokenCard><StackPanel /></BrokenCard></StackPanel>",
             referencedLibrary: lib);
 
@@ -1247,7 +1247,7 @@ public class GeneratorContractTests
             }
             """);
 
-        var result = Run("C:\\templates\\Probe.ui",
+        var result = Run("/templates/Probe.ui",
             "@using ProbeLib\n@using EclipseUI.Elements\n<StackPanel><BrokenCard /></StackPanel>",
             referencedLibrary: lib);
 
@@ -1265,7 +1265,7 @@ public class GeneratorContractTests
     {
         const string ui = "@using EclipseUI.Elements\n<StackPanel><Button OnClick={(async () => Say())} /></StackPanel>";
 
-        var code = Generated(Run("C:\\templates\\Probe.ui", ui, TokenizerCodeBehind));
+        var code = Generated(Run("/templates/Probe.ui", ui, TokenizerCodeBehind));
 
         Assert.Contains("(global::System.Action)", code);
         Assert.DoesNotContain("RoutedEventArgs>", code);
@@ -1277,7 +1277,7 @@ public class GeneratorContractTests
     {
         const string ui = "@using EclipseUI.Elements\n<StackPanel><Button OnClick={(e => Say())} /></StackPanel>";
 
-        var code = Generated(Run("C:\\templates\\Probe.ui", ui, TokenizerCodeBehind));
+        var code = Generated(Run("/templates/Probe.ui", ui, TokenizerCodeBehind));
 
         Assert.Contains("(global::System.Action<global::EclipseUI.RoutedEventArgs>)", code);
         Assert.Contains("AddHandler(global::EclipseUI.Elements.Button.ClickEvent, e => { h2(e); Invalidate(); });", code);
@@ -1288,12 +1288,12 @@ public class GeneratorContractTests
     public void Event_AnonymousMethod_ParamsDecideHandlerType()
     {
         const string withoutParams = "@using EclipseUI.Elements\n<StackPanel><Button OnClick={delegate { Say(); }} /></StackPanel>";
-        var code = Generated(Run("C:\\templates\\Probe.ui", withoutParams, TokenizerCodeBehind));
+        var code = Generated(Run("/templates/Probe.ui", withoutParams, TokenizerCodeBehind));
         Assert.Contains("(global::System.Action)", code);
         Assert.DoesNotContain("RoutedEventArgs>", code);
 
         const string withParams = "@using EclipseUI.Elements\n<StackPanel><Button OnClick={delegate (global::EclipseUI.RoutedEventArgs e) { Say(); }} /></StackPanel>";
-        var code2 = Generated(Run("C:\\templates\\Probe.ui", withParams, TokenizerCodeBehind));
+        var code2 = Generated(Run("/templates/Probe.ui", withParams, TokenizerCodeBehind));
         Assert.Contains("(global::System.Action<global::EclipseUI.RoutedEventArgs>)", code2);
     }
 
@@ -1303,7 +1303,7 @@ public class GeneratorContractTests
     {
         const string ui = "@using EclipseUI.Elements\n<StackPanel><Button OnClick={new global::System.Action(() => Say())} /></StackPanel>";
 
-        var code = Generated(Run("C:\\templates\\Probe.ui", ui, TokenizerCodeBehind));
+        var code = Generated(Run("/templates/Probe.ui", ui, TokenizerCodeBehind));
 
         Assert.Contains("(global::System.Action)", code);
         Assert.DoesNotContain("RoutedEventArgs>", code);
@@ -1362,7 +1362,7 @@ public class GeneratorContractTests
             </StackPanel>
             """;
 
-        var code = Generated(Run("C:\\templates\\Probe.ui", ui, SlotFixtures));
+        var code = Generated(Run("/templates/Probe.ui", ui, SlotFixtures));
 
         Assert.Matches(@"var slot\d+ = new global::System\.Collections\.Generic\.List<global::EclipseUI\.Element>\(\);", code);
         Assert.Matches(@"el\d+\.Header = slot\d+\.Count == 0 \? null : slot\d+\[0\];", code);
@@ -1384,7 +1384,7 @@ public class GeneratorContractTests
             </StackPanel>
             """;
 
-        var code = Generated(Run("C:\\templates\\Probe.ui", ui, SlotFixtures));
+        var code = Generated(Run("/templates/Probe.ui", ui, SlotFixtures));
 
         var assignments = System.Text.RegularExpressions.Regex.Matches(code, @"el\d+\.Rows = slot\d+;");
         Assert.Single(assignments); // 同槽多填充共享一个列表，一次赋值
@@ -1397,7 +1397,7 @@ public class GeneratorContractTests
     {
         const string ui = "@using EclipseUI.Elements\n" + """<StackPanel><ContentSlot Name="Header" /></StackPanel>""";
 
-        var code = Generated(Run("C:\\templates\\Probe.ui", ui, SlotFixtures));
+        var code = Generated(Run("/templates/Probe.ui", ui, SlotFixtures));
 
         Assert.Contains("partial class Probe : global::EclipseUI.Elements.StackPanel", code);
         Assert.Matches(@"if \(Header is \{ \} slot\d+\)", code);
@@ -1411,7 +1411,7 @@ public class GeneratorContractTests
     {
         const string ui = "@using EclipseUI.Elements\n" + """<StackPanel><ContentSlot Name="Rows" /></StackPanel>""";
 
-        var code = Generated(Run("C:\\templates\\Probe.ui", ui, SlotFixtures));
+        var code = Generated(Run("/templates/Probe.ui", ui, SlotFixtures));
 
         Assert.Matches(@"foreach \(var slot\d+ in Rows\)", code);
         Assert.Matches(@"this\.Children\.Add\(slot\d+\);", code);
@@ -1430,7 +1430,7 @@ public class GeneratorContractTests
             </StackPanel>
             """;
 
-        var result = Run("C:\\templates\\Probe.ui", ui, SlotFixtures);
+        var result = Run("/templates/Probe.ui", ui, SlotFixtures);
 
         var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI022");
         Assert.Contains("unknown slot 'Heade'", diag.GetMessage());
@@ -1444,7 +1444,7 @@ public class GeneratorContractTests
     {
         const string ui = "@using EclipseUI.Elements\n" + """<StackPanel><ContentSlot Name="Heade" /></StackPanel>""";
 
-        var result = Run("C:\\templates\\Probe.ui", ui, SlotFixtures);
+        var result = Run("/templates/Probe.ui", ui, SlotFixtures);
 
         var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI022");
         Assert.Contains("unknown slot 'Heade'", diag.GetMessage());
@@ -1458,7 +1458,7 @@ public class GeneratorContractTests
     {
         const string ui = "@using EclipseUI.Elements\n" + """<StackPanel><ContentSlot /></StackPanel>""";
 
-        var result = Run("C:\\templates\\Probe.ui", ui, SlotFixtures);
+        var result = Run("/templates/Probe.ui", ui, SlotFixtures);
 
         var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI022");
         Assert.Contains("Name", diag.GetMessage());
@@ -1493,7 +1493,7 @@ public class GeneratorContractTests
         """)]
     public void SlotCode_GeneratedCompilation_HasNoCSharpErrors(string ui)
     {
-        var errors = CompileGenerated("C:\\templates\\Probe.ui", ui, SlotFixtures);
+        var errors = CompileGenerated("/templates/Probe.ui", ui, SlotFixtures);
         Assert.Empty(string.Join(Environment.NewLine, errors));
     }
 
@@ -1509,7 +1509,7 @@ public class GeneratorContractTests
             </StackPanel>
             """;
 
-        var result = Run("C:\\templates\\Probe.ui", ui, SlotFixtures);
+        var result = Run("/templates/Probe.ui", ui, SlotFixtures);
 
         Assert.Contains(result.Diagnostics, d => d.Id == "EUI022");
         Assert.Empty(result.GeneratedSources);
@@ -1529,7 +1529,7 @@ public class GeneratorContractTests
             </StackPanel>
             """;
 
-        var code = Generated(Run("C:\\templates\\Probe.ui", ui, SlotFixtures));
+        var code = Generated(Run("/templates/Probe.ui", ui, SlotFixtures));
 
         // el0 = 根 StackPanel，组件实例取到 cmp1。
         var parameter = code.IndexOf("el1.Title = ", StringComparison.Ordinal);
@@ -1572,7 +1572,7 @@ public class GeneratorContractTests
             </StackPanel>
             """;
 
-        var result = Run("C:\\templates\\Probe.ui", ui, SwitchFixtures);
+        var result = Run("/templates/Probe.ui", ui, SwitchFixtures);
 
         Assert.DoesNotContain(result.Diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
         var code = Generated(result);
@@ -1600,7 +1600,7 @@ public class GeneratorContractTests
             </StackPanel>
             """;
 
-        var result = Run("C:\\templates\\Probe.ui", ui, SwitchFixtures);
+        var result = Run("/templates/Probe.ui", ui, SwitchFixtures);
 
         var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI047");
         Assert.Equal(Microsoft.CodeAnalysis.DiagnosticSeverity.Error, diag.Severity);
@@ -1620,7 +1620,7 @@ public class GeneratorContractTests
             </StackPanel>
             """;
 
-        var code = Generated(Run("C:\\templates\\Probe.ui", ui, "namespace Demo;\npublic partial class Probe { }"));
+        var code = Generated(Run("/templates/Probe.ui", ui, "namespace Demo;\npublic partial class Probe { }"));
 
         var nullable = code.IndexOf("#nullable enable", StringComparison.Ordinal);
         var first = code.IndexOf("using System.Text;", StringComparison.Ordinal);
@@ -1641,7 +1641,7 @@ public class GeneratorContractTests
             <StackPanel><TextBlock>x</TextBlock></StackPanel>
             """;
 
-        var code = Generated(Run("C:\\templates\\Probe.ui", ui));
+        var code = Generated(Run("/templates/Probe.ui", ui));
 
         Assert.Contains("using EclipseUI.Elements;", code);
         Assert.DoesNotContain("using System;", code);
@@ -1668,7 +1668,7 @@ public class GeneratorContractTests
             <StackPanel><Btn /></StackPanel>
             """;
 
-        var code = Generated(Run("C:\\templates\\Probe.ui", ui, AltButtonCodeBehind));
+        var code = Generated(Run("/templates/Probe.ui", ui, AltButtonCodeBehind));
 
         // 别名目标必须全限定：否则被生成类所在命名空间的同名类型劫持
         Assert.Contains("using Btn = global::Alt.Controls.Button;", code);
@@ -1687,7 +1687,7 @@ public class GeneratorContractTests
             <StackPanel><Button /></StackPanel>
             """;
 
-        var code = Generated(Run("C:\\templates\\Probe.ui", ui, AltButtonCodeBehind));
+        var code = Generated(Run("/templates/Probe.ui", ui, AltButtonCodeBehind));
 
         Assert.Contains("new global::Alt.Controls.Button()", code);
         Assert.DoesNotContain("new global::EclipseUI.Elements.Button()", code);
@@ -1706,7 +1706,7 @@ public class GeneratorContractTests
             </StackPanel>
             """;
 
-        var result = Run("C:\\templates\\Probe.ui", ui, AltButtonCodeBehind);
+        var result = Run("/templates/Probe.ui", ui, AltButtonCodeBehind);
 
         Assert.DoesNotContain(result.Diagnostics,
             d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
@@ -1723,7 +1723,7 @@ public class GeneratorContractTests
             <StackPanel><Btn /></StackPanel>
             """;
 
-        var result = Run("C:\\templates\\Probe.ui", ui, AltButtonCodeBehind);
+        var result = Run("/templates/Probe.ui", ui, AltButtonCodeBehind);
 
         Assert.Contains(result.Diagnostics, d => d.Id == "EUI048");
         Assert.Empty(result.GeneratedSources); // Error 阻断生成，与其它诊断口径一致
@@ -1746,7 +1746,7 @@ public class GeneratorContractTests
             }
             """;
 
-        var result = Run("C:\\templates\\Probe.ui", ui, codeBehind: "");
+        var result = Run("/templates/Probe.ui", ui, codeBehind: "");
 
         Assert.DoesNotContain(result.Diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
         var code = Generated(result);
@@ -1770,7 +1770,7 @@ public class GeneratorContractTests
             }
             """;
 
-        var result = Run("C:\\templates\\Probe.ui", ui, codeBehind: "");
+        var result = Run("/templates/Probe.ui", ui, codeBehind: "");
 
         Assert.Contains(result.Diagnostics, d => d.Id == "EUI045");
         Assert.Single(result.GeneratedSources); // EUI045 不阻断输出（spec/02 §10）

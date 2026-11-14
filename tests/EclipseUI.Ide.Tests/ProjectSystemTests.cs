@@ -320,6 +320,21 @@ public class ProjectSystemTests
         Assert.Equal(expected, DocumentStore.UriToPath(uri));
     }
 
+    [Theory]
+    [InlineData("Sample.ui")]
+    [InlineData("folder with spaces/中文.ui")]
+    [InlineData("folder/#100%.ui")]
+    public void UriConversion_RoundTripsNativePathsAndFileNames(string relative)
+    {
+        var path = Path.Combine(Path.GetTempPath(), "eclipseui-uri-tests", relative);
+        var uri = DocumentStore.PathToUri(path);
+        Assert.Equal(Path.GetFullPath(path), DocumentStore.UriToPath(uri));
+        var documents = new DocumentStore();
+        documents.Open(uri, "", 1);
+        Assert.True(documents.TryGet(uri, out var document));
+        Assert.Equal(Path.GetFileName(path), document.FileName);
+    }
+
     /// <summary>
     /// 夹具 7：**按编辑器的真实 URI 形态**走一遍——归属、标签跳转、属性跳转、诊断都得活。
     /// 之前所有用例都用 PathToUri 自己拼 URI，恰好绕开了编码分支，所以 119 例全绿而用户在
@@ -525,6 +540,6 @@ public class ProjectSystemTests
         var full = Path.GetFullPath(path).Replace('\\', '/');
         if (full.Length > 2 && full[1] == ':')
             full = char.ToLowerInvariant(full[0]) + "%3A" + full[2..];
-        return "file:///" + full;
+        return full.StartsWith('/') ? new Uri(full).AbsoluteUri : "file:///" + full;
     }
 }

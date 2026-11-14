@@ -16,7 +16,7 @@ namespace EclipseUI.Compiler.Tests;
 /// </summary>
 public class ExpressionSemanticTests
 {
-    private const string UiPath = "C:\\templates\\Probe.ui";
+    private const string UiPath = "/templates/Probe.ui";
 
     private const string CodeBehind = """
         using EclipseUI;

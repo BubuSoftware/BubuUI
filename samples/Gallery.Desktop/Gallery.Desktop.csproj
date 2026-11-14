@@ -6,7 +6,7 @@
     <RootNamespace>Gallery.Desktop</RootNamespace>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Description>EclipseUI 画廊桌面入口：Windows (Win32) / Linux (SDL3 X11/Wayland)，支持窗口与离屏截图。</Description>
+    <Description>EclipseUI 画廊桌面入口：Windows (Win32) / Linux (SDL3 X11/Wayland) / macOS (SDL3 Cocoa/Metal)，支持窗口与离屏截图。</Description>
     <!-- S5 AOT/裁剪试点（D95）：PublishTrimmed 放项目属性而非 -p: 命令行——命令行全局属性
          会传染到 netstandard2.0 的源生成器项目（PublishTrimmed=true → NETSDK1124）。 -->
     <PublishTrimmed Condition="'$(Configuration)' == 'Release'">true</PublishTrimmed>
@@ -20,6 +20,7 @@
     <ProjectReference Include="..\Gallery\Gallery.csproj" />
     <ProjectReference Include="..\..\src\EclipseUI.Platform.Windows\EclipseUI.Platform.Windows.csproj" />
     <ProjectReference Include="..\..\src\EclipseUI.Platform.Linux\EclipseUI.Platform.Linux.csproj" />
+    <ProjectReference Include="..\..\src\EclipseUI.Platform.MacOS\EclipseUI.Platform.MacOS.csproj" />
     <ProjectReference Include="..\..\src\EclipseUI.Rendering.Vello\EclipseUI.Rendering.Vello.csproj" />
   </ItemGroup>
 

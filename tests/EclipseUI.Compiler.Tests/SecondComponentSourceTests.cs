@@ -255,7 +255,7 @@ public class SecondComponentSourceTests
         Assert.DoesNotContain(result.Diagnostics, d => d.Id == "EUI057");
         Assert.Single(result.GeneratedSources);
 
-        var def = Assert.IsType<UiElementDef>(Find(CatalogOf("C:\\templates\\Card.ui", ui), "Card"));
+        var def = Assert.IsType<UiElementDef>(Find(CatalogOf("/templates/Card.ui", ui), "Card"));
         var title = Assert.IsType<UiParameterDef>(def.Parameters.GetValueOrDefault("Title"));
         Assert.Equal("global::Gallery.Card", def.ClrTypeDisplayName);
         Assert.True(title.CanWrite);
@@ -316,7 +316,7 @@ public class SecondComponentSourceTests
     [Fact]
     public void CodeBlockMembers_ParametersSlotsContentAndRejections()
     {
-        var def = Assert.IsType<UiElementDef>(Find(CatalogOf("C:\\templates\\Card.ui", CodeMemberUi), "Card"));
+        var def = Assert.IsType<UiElementDef>(Find(CatalogOf("/templates/Card.ui", CodeMemberUi), "Card"));
 
         var title = def.Parameters["Title"];
         Assert.Equal("global::System.String", title.ClrTypeDisplayName);
@@ -359,7 +359,7 @@ public class SecondComponentSourceTests
             }
             """;
 
-        var def = Assert.IsType<UiElementDef>(Find(CatalogOf("C:\\templates\\Card.ui", ui), "Card"));
+        var def = Assert.IsType<UiElementDef>(Find(CatalogOf("/templates/Card.ui", ui), "Card"));
 
         // 只读参数照进目录（CanWrite=false，使用点由 EUI040 解释）——与符号路径一致；
         // static 与字段不进参数表，声明问题记 EUI028。
@@ -370,7 +370,7 @@ public class SecondComponentSourceTests
         Assert.Contains(def.Problems, p => p.MemberName == "stat");
         Assert.Contains(def.Problems, p => p.Message.Contains("must be on a property", StringComparison.Ordinal));
         // 问题定位在 .ui 文件里（纯数据 Source，构建期由目录级出口报告）
-        Assert.All(def.Problems, p => Assert.Equal("C:\\templates\\Card.ui", p.Source!.Path));
+        Assert.All(def.Problems, p => Assert.Equal("/templates/Card.ui", p.Source!.Path));
     }
 
     [Fact]
@@ -388,7 +388,7 @@ public class SecondComponentSourceTests
             }
             """;
 
-        var def = Assert.IsType<UiElementDef>(Find(CatalogOf("C:\\templates\\Card.ui", ui), "Card"));
+        var def = Assert.IsType<UiElementDef>(Find(CatalogOf("/templates/Card.ui", ui), "Card"));
 
         Assert.Empty(def.Slots);
         Assert.DoesNotContain(def.Parameters.Keys, name => name is "noName" or "wrongType" or "wrongContent");
@@ -465,7 +465,7 @@ public class SecondComponentSourceTests
     public void TemplateComponents_ChangingBodyOnly_KeepsCatalogValueStable()
     {
         // 清单只含 (Tag, @namespace)：改正文不该让目录重建，否则每敲一个字都要重算整个标签表。
-        var file = new TextFile("C:\\templates\\Counter.ui", CounterUi);
+        var file = new TextFile("/templates/Counter.ui", CounterUi);
         var compilation = Compile(("CodeBehind.cs", ShowcaseCodeBehind));
         var driver = (CSharpGeneratorDriver)CSharpGeneratorDriver.Create(
             new[] { new TemplateGenerator().AsSourceGenerator() },
