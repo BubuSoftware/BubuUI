@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
   <Metadata>
-    <Identity Id="EclipseUI.VisualStudio" Version="0.1.1" Language="en-US" Publisher="EclipseUI" />
+    <Identity Id="EclipseUI.VisualStudio" Version="0.2.0" Language="en-US" Publisher="EclipseUI" />
     <DisplayName>EclipseUI</DisplayName>
     <Description xml:space="preserve">EclipseUI .ui and .eustyle language support: highlighting, completion, diagnostics, hover, navigation, rename and formatting through the shared EclipseUI language server. Requires .NET SDK 10 or later.</Description>
   </Metadata>

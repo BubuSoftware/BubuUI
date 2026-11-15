@@ -469,6 +469,8 @@ public sealed class LanguageServerHost
     /// （与偏移同源的原文——工作区扫描/仓库源码目标从此不再错位）；反编译虚拟文档
     /// （eui-decompiled:）用缓存的反编译文本，uri 原样透传给客户端内容提供器。
     /// </summary>
+    public bool MaterializeDecompiled { get; init; }
+
     private JsonNode? Definition(JsonNode? parameters)
     {
         var (uri, offset) = Position(parameters);
@@ -495,7 +497,7 @@ public sealed class LanguageServerHost
         {
             var decompiled = _service.DecompiledContent(definition.Uri);
             if (decompiled is null) return null;
-            targetUri = definition.Uri;
+            targetUri = MaterializeDecompiled ? DecompiledFileCache.Materialize(definition.Uri, decompiled) : definition.Uri;
             positions = new PositionMap(decompiled);
         }
         else if (definition.Text is not null)

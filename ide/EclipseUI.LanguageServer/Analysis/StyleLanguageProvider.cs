@@ -10,11 +10,12 @@ using Node = EclipseUI.LanguageServer.Analysis.StyleDocument.Node;
 namespace EclipseUI.LanguageServer.Analysis;
 
 /// <summary>Project-scoped stylesheet editing. Semantic types come from the compiler catalog.</summary>
-internal sealed class StyleLanguageProvider
+internal sealed partial class StyleLanguageProvider
 {
     private readonly UiCatalog _catalog;
     private readonly Compilation? _compilation;
     private readonly ProjectSnapshot? _project;
+    private readonly ProjectWorkspace? _workspace;
     private readonly Dictionary<string, string> _files;
     private readonly StyleDocument _document;
     private readonly StyleDocument[] _styles;
@@ -25,13 +26,13 @@ internal sealed class StyleLanguageProvider
     private static readonly string[] States = ["hover", "pressed", "active", "focus", "focus-visible", "focus-within", "disabled"];
 
     public StyleLanguageProvider(string path, string text, UiCatalog catalog, Compilation? compilation,
-        Dictionary<string, string> files, ProjectSnapshot? project = null)
+        Dictionary<string, string> files, ProjectSnapshot? project = null, StyleDocument? document = null, ProjectWorkspace? workspace = null)
     {
         _catalog = catalog; _compilation = compilation;
-        _project = project; _files = files;
-        _document = new(path, text);
-        _styles = files.Where(f => f.Key.EndsWith(".eustyle", StringComparison.OrdinalIgnoreCase))
-            .Select(f => string.Equals(f.Key, path, StringComparison.OrdinalIgnoreCase) ? _document : new StyleDocument(f.Key, f.Value)).ToArray();
+        _project = project; _files = files; _workspace = workspace;
+        _document = document ?? new(path, text);
+        _styles = files.SelectMany(f => StyleDocuments(f.Key, f.Value, includeInline: false))
+            .Select(d => string.Equals(d.Path, path, StringComparison.OrdinalIgnoreCase) && d.Region == _document.Region ? _document : d).ToArray();
         _themes = _styles.SelectMany(d => d.Nodes.Where(n => n.Header.Count >= 4 && n.Header[0].Value == "@theme" && n.Header[2].Value == "for")
             .Select(n => new Theme(n.Header[1].Value, n.Header[3].Value, d, n, n.Header[1]))).ToArray();
         var templates = new List<Template>();
@@ -87,7 +88,7 @@ internal sealed class StyleLanguageProvider
         return header.Count > 0 && header[0].Value != "." ? Resolve(header[0].Value, document) : Resolve("TemplatedControl", document);
     }
     private UiPropDef? Property(Node? node) => node is not null && !node.Block && node.Header.Count >= 2 && node.Header[1].Value == ":"
-        ? Target(node)?.Properties.GetValueOrDefault(node.Header[0].Value) : null;
+        && !Legacy(node) ? Target(node)?.Properties.GetValueOrDefault(node.Header[0].Value) : null;
     private static string Qualified(Template t) => t.Namespace.Length == 0 ? t.Name : t.Namespace + "." + t.Name;
     private Template? FindTemplate(string name, StyleDocument? document = null) => Unique(_templates.Where(t => Qualified(t) == name || t.Name == name && (document ?? _document).Imports.Contains(t.Namespace)));
     private Theme? FindTheme(string name) => Unique(_themes.Where(t => t.Name == name));
@@ -113,6 +114,7 @@ internal sealed class StyleLanguageProvider
         var header = node?.Header.Where(t => t.Span.Start < start).ToArray() ?? [];
         var items = new List<UiCompletionItem>();
         var replacement = new TextSpan(start, end - start);
+        if (LegacyComplete(offset, start, end, node) is { } legacy) return legacy;
         void Add(string name, UiCompletionKind kind, string? detail = null, UiTextEdit? import = null, string? insertion = null) =>
             items.Add(new(name, kind, detail, InsertText: insertion, AdditionalEdits: import is null ? null : [import]));
         void Types(bool templated)
@@ -159,6 +161,7 @@ internal sealed class StyleLanguageProvider
             if (start > 0 && text[start - 1] == '@') { start--; replacement = new(start, end - start); prefix = text[start..offset]; }
             Add("@using", UiCompletionKind.Directive, "Import control and template namespaces", insertion: "@using ");
             Add("@theme", UiCompletionKind.Directive, "@theme Name for ControlType { ... }", insertion: "@theme ");
+            Add("@states", UiCompletionKind.Directive, "Declare custom states", insertion: "@states { ");
         }
         else if (node is { Block: false, Parent: not null } && node.Header.Count > 1 && node.Header[1].Value == ":" && start >= node.Header[1].Span.End && node.Header[0].Value != "&")
         {
@@ -174,7 +177,7 @@ internal sealed class StyleLanguageProvider
             }
         }
         else if (start > 0 && text[start - 1] == ':' && (node?.Block == true || node?.Parent is null || node?.Header.FirstOrDefault()?.Value == "&"))
-            foreach (var state in States) Add(state, UiCompletionKind.Keyword, "Control state");
+            foreach (var state in StateNames()) Add(state, UiCompletionKind.Keyword, "Control state");
         else if (start > 0 && text[start - 1] == '.')
         {
             var partType = PartSelectorType(node);
@@ -190,8 +193,6 @@ internal sealed class StyleLanguageProvider
                 var target = node?.Block == true ? Target(node) : Target(node?.Parent);
                 foreach (var property in target?.Properties.Values ?? Enumerable.Empty<UiPropDef>())
                     Add(property.Name, UiCompletionKind.StyleProperty, TypeNames.Short(property.ClrTypeDisplayName), insertion: property.Name);
-                if (!_document.Advanced)
-                    foreach (var property in _catalog.StyleProperties.SortedNames()) Add(property, UiCompletionKind.StyleProperty);
                 Add("&:hover", UiCompletionKind.Keyword, "Nested state rule");
             }
             else
@@ -199,6 +200,7 @@ internal sealed class StyleLanguageProvider
                 Types(false);
                 Add("/template/", UiCompletionKind.Keyword, "Select inside this control's template");
                 Add("@theme", UiCompletionKind.Directive); Add("@using", UiCompletionKind.Directive);
+                Add("@states", UiCompletionKind.Directive);
             }
         }
         return new(replacement, items.Where(i => i.Label.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
@@ -218,7 +220,7 @@ internal sealed class StyleLanguageProvider
     private IEnumerable<Part> Parts(UiElementDef? owner)
     {
         foreach (var template in _templates.Where(t => t.Ast is not null && Compatible(owner, t.Target)))
-            foreach (var element in Elements(template.Ast!.Nodes))
+            foreach (var element in Elements(template.Ast!.Nodes, _catalog))
                 foreach (var attr in element.Attributes.Where(a => a.Name == "Class" && a.Kind == AttrValueKind.Literal))
                     foreach (Match match in Regex.Matches(attr.Value, @"[A-Za-z_][\w-]*"))
                     {
@@ -226,24 +228,24 @@ internal sealed class StyleLanguageProvider
                         if (valueStart >= 0) yield return new(match.Value, element.Tag, template.Path!, template.Text!, new(valueStart + match.Index, match.Length));
                     }
     }
-    private IEnumerable<UiElement> Elements(IEnumerable<UiNode> nodes)
+    private static IEnumerable<UiElement> Elements(IEnumerable<UiNode> nodes, UiCatalog? boundaryCatalog = null)
     {
         foreach (var node in nodes)
         {
             if (node is UiElement element)
             {
                 yield return element;
-                if (_catalog.Elements.Any(t => t.Tag == element.Tag && t.Properties.ContainsKey("Template")) || element.Tag == "ContentPresenter") continue;
-                foreach (var child in Elements(element.Children)) yield return child;
+                if (boundaryCatalog is not null && (boundaryCatalog.Elements.Any(t => t.Tag == element.Tag && t.Properties.ContainsKey("Template")) || element.Tag == "ContentPresenter")) continue;
+                foreach (var child in Elements(element.Children, boundaryCatalog)) yield return child;
             }
             else if (node is UiIf condition)
             {
-                foreach (var child in Elements(condition.Children)) yield return child;
-                foreach (var branch in condition.ElseIfs) foreach (var child in Elements(branch.Children)) yield return child;
-                foreach (var child in Elements(condition.ElseChildren ?? [])) yield return child;
+                foreach (var child in Elements(condition.Children, boundaryCatalog)) yield return child;
+                foreach (var branch in condition.ElseIfs) foreach (var child in Elements(branch.Children, boundaryCatalog)) yield return child;
+                foreach (var child in Elements(condition.ElseChildren ?? [], boundaryCatalog)) yield return child;
             }
-            else if (node is UiForeach loop) foreach (var child in Elements(loop.Children)) yield return child;
-            else if (node is UiSwitch choice) foreach (var section in choice.Sections) foreach (var child in Elements(section.Children)) yield return child;
+            else if (node is UiForeach loop) foreach (var child in Elements(loop.Children, boundaryCatalog)) yield return child;
+            else if (node is UiSwitch choice) foreach (var section in choice.Sections) foreach (var child in Elements(section.Children, boundaryCatalog)) yield return child;
         }
     }
 
@@ -312,6 +314,7 @@ internal sealed class StyleLanguageProvider
     }
     public UiHoverResult? Hover(int offset)
     {
+        if (LegacyHover(offset) is { } legacy) return legacy;
         var (token, node, function, argument) = Context(offset);
         if (token is null) return null;
         string? description = token.Value switch
@@ -337,6 +340,8 @@ internal sealed class StyleLanguageProvider
 
     public UiDefinition? Definition(int offset)
     {
+        if (ClassDefinitionAt(offset) is { } styleClass) return styleClass;
+        if (LegacyDefinition(offset) is { } legacy) return legacy;
         var (token, node, function, argument) = Context(offset);
         if (token is null) return null;
         if (function == "resource" && FindTheme(argument) is { } theme)
@@ -366,7 +371,8 @@ internal sealed class StyleLanguageProvider
         if (symbol is null) return null;
         ISymbol? target = member is null ? symbol : symbol.GetMembers(member).FirstOrDefault();
         if (target is null) return null;
-        var analysis = DocumentAnalysis.Create("@namespace __StyleProbe\n@using EclipseUI.Elements\n<Border />", "StyleProbe.ui", _catalog, _compilation);
+        var analysis = DocumentAnalysis.Create("@namespace __StyleProbe\n@using EclipseUI.Elements\n<Border />", "StyleProbe.ui", _catalog, _compilation,
+            project: _project, workspace: _workspace, documentPath: _document.Path);
         return DefinitionProvider.SymbolDefinition(analysis, target);
     }
 
@@ -378,10 +384,11 @@ internal sealed class StyleLanguageProvider
             node?.Header.FirstOrDefault()?.Value == "@theme" && node.Header.ElementAtOrDefault(1) == token ? FindTheme(token.Value) : null;
         return theme is null ? null : (theme, token);
     }
-    public UiPrepareRename? PrepareRename(int offset) => ThemeAt(offset) is { } hit ? new(hit.Token.Span, hit.Theme.Name) : null;
+    public UiPrepareRename? PrepareRename(int offset) => ClassPrepareRename(offset) ?? LegacyPrepareRename(offset) ?? (ThemeAt(offset) is { } hit ? new(hit.Token.Span, hit.Theme.Name) : null);
     public UiRenameResult? Rename(int offset, string newName)
     {
-        return ThemeAt(offset) is { } hit ? RenameCore(hit.Theme, newName) : null;
+        if (ClassPrepareRename(offset) is not null) return RenameClassAt(offset, newName);
+        return LegacyPrepareRename(offset) is not null ? LegacyRename(offset, newName) : ThemeAt(offset) is { } hit ? RenameCore(hit.Theme, newName) : null;
     }
     private UiRenameResult? RenameCore(Theme theme, string newName)
     {
@@ -424,7 +431,8 @@ internal sealed class StyleLanguageProvider
         }
         return new(files);
     }
-    public IReadOnlyList<UiSymbol> Symbols() => _document.Nodes.Where(n => n.Block).Select(Symbol).ToArray();
+    public IReadOnlyList<UiSymbol> Symbols() => _document.Inline ? [] : _document.Nodes
+        .Where(n => n.Block || n.Header.FirstOrDefault()?.Value.StartsWith('$') == true).Select(Symbol).ToArray();
 
     public UiSignatureHelp? SignatureHelp(int offset)
     {
@@ -460,6 +468,14 @@ internal sealed class StyleLanguageProvider
         {
             if (!node.Block && node.Parent is not null && node.Header.Count >= 2 && node.Header[1].Value == ":")
             {
+                if (Legacy(node))
+                {
+                    var token = node.Header[0];
+                    if (_catalog.StyleProperties.Find(token.Value) is null)
+                        foreach (var name in _catalog.StyleProperties.SortedNames().Where(n => Distance(n, token.Value) <= 2).Take(3))
+                            result.Add(new($"Replace with '{name}'", "quickfix", null, [new(token.Span, name)], "EUI051"));
+                    continue;
+                }
                 if (Target(node) is not { } target || target.Properties.ContainsKey(node.Header[0].Value)) continue;
                 var misspelled = node.Header[0];
                 foreach (var name in target.Properties.Keys.Where(n => Distance(n, misspelled.Value) <= 2).OrderBy(n => Distance(n, misspelled.Value)).Take(3))
@@ -467,6 +483,7 @@ internal sealed class StyleLanguageProvider
                 continue;
             }
             if (!node.Block) continue;
+            if (Legacy(node)) continue;
             var names = node.Header.FirstOrDefault()?.Value == "@theme" ? node.Header.Skip(3).Take(1) : node.Header.Take(1);
             var boundary = node.Header.FindIndex(t => t.Value == "/template/");
             if (boundary >= 0) names = names.Concat(node.Header.Skip(boundary + 1).Take(1));
@@ -498,7 +515,7 @@ internal sealed class StyleLanguageProvider
 
     private UiSymbol Symbol(Node node)
     {
-        var header = _document.Text[node.Start..node.Open].Trim();
+        var header = _document.Text[node.Start..(node.Block ? node.Open : node.End)].Trim();
         var selected = node.Header.FirstOrDefault(t => t.Value != "@theme")?.Span ?? new(node.Start, 0);
         return new(header, node.Header.FirstOrDefault()?.Value == "@theme" ? "Control theme" : "Style rule", UiSymbolKind.Block,
             new(node.Start, node.End - node.Start), selected, node.Children.Where(n => n.Block).Select(Symbol).ToArray());
@@ -514,7 +531,8 @@ internal sealed class StyleLanguageProvider
                 function == "resource" && FindTheme(argument) is not null ? "variable" :
                 function == "template" && FindTemplate(argument) is not null ? "class" :
                 node?.Header.FirstOrDefault()?.Value == "@theme" && node.Header.ElementAtOrDefault(1) == token ? "variable" :
-                node?.Header.FirstOrDefault() == token && Property(node) is not null ? "property" :
+                token.Value.StartsWith('$') || StateToken(node, token) && StateNames().Contains(token.Value) ? "variable" :
+                node?.Header.FirstOrDefault() == token && (Property(node) is not null || LegacyProperty(node) is not null) ? "property" :
                 Resolve(token.Value) is not null ? "class" : null;
             if (kind is null) continue;
             var (line, character) = map.ToPosition(token.Span.Start);
@@ -524,6 +542,7 @@ internal sealed class StyleLanguageProvider
     }
     public IReadOnlyList<UiTextEdit> Format()
     {
+        if (_document.Inline) return [];
         // Indentation only: preserve literals, comments, line endings and incomplete input.
         var edits = new List<UiTextEdit>();
         var offset = 0;
@@ -531,11 +550,12 @@ internal sealed class StyleLanguageProvider
         {
             var indent = line.TakeWhile(c => c is ' ' or '\t').Count();
             var first = offset + indent;
-            if (indent < line.TrimEnd('\r').Length && !_document.InCommentOrString(first))
+            if (first >= _document.Region.Start && first < _document.Region.End && offset >= _document.Region.Start &&
+                indent < line.TrimEnd('\r').Length && !_document.InCommentOrString(first))
             {
                 var depth = _document.AllNodes.Count(n => n.Block && n.Open < first && n.End > first);
                 if (line[indent] == '}') depth = Math.Max(0, depth - 1);
-                var desired = new string(' ', depth * 4);
+                var desired = new string(' ', depth * 4 + (_document.Embedded ? 4 : 0));
                 if (line[..indent] != desired) edits.Add(new(new(offset, indent), desired));
             }
             offset += line.Length + 1;

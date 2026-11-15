@@ -4,7 +4,7 @@
     <TargetFramework>net472</TargetFramework>
     <RootNamespace>EclipseUI.VisualStudio</RootNamespace>
     <AssemblyName>EclipseUI.VisualStudio</AssemblyName>
-    <Version>0.1.1</Version>
+    <Version>0.2.0</Version>
     <ImplicitUsings>disable</ImplicitUsings>
     <GeneratePkgDefFile>false</GeneratePkgDefFile>
     <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>

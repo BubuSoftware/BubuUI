@@ -18,16 +18,24 @@ internal sealed class StyleDocument
     }
     public string Path { get; }
     public string Text { get; }
+    public TextSpan Region { get; }
+    public bool Embedded { get; }
+    public bool Inline { get; }
     public List<Token> Tokens { get; } = new();
     public List<Node> Nodes { get; } = new();
     public string[] Imports => Nodes.Where(n => n.Header.FirstOrDefault()?.Value == "@using")
         .Select(n => string.Concat(n.Header.Skip(1).Select(t => t.Value))).ToArray();
-    public bool Advanced => Tokens.Any(t => !t.Trivia && t.Value is "@theme" or "@using");
+    public bool Advanced => !Embedded && Nodes.Any(n => n.Header.FirstOrDefault()?.Value is "@theme" or "@using" ||
+        n.Block && n.Header.FirstOrDefault()?.Value is not "." and not "@states");
 
-    public StyleDocument(string path, string text)
+    public StyleDocument(string path, string text, TextSpan? region = null, bool inline = false)
     {
         Path = path; Text = text;
-        for (var i = 0; i < text.Length;)
+        Region = region ?? new(0, text.Length); Embedded = region is not null; Inline = inline;
+        // Keep host offsets and newlines intact; the parser only sees this language island.
+        if (region is { } span)
+            text = new string(text[..span.End].Select((c, i) => i >= span.Start || c is '\r' or '\n' ? c : ' ').ToArray());
+        for (var i = Region.Start; i < Region.End;)
         {
             if (char.IsWhiteSpace(text[i])) { i++; continue; }
             var start = i;
@@ -64,13 +72,18 @@ internal sealed class StyleDocument
         }
         var active = Tokens.Where(t => !t.Trivia).ToArray();
         var index = 0;
-        Read(Nodes, null);
+        if (inline)
+        {
+            var root = new Node { Start = Region.Start, Open = Region.Start - 1, End = Region.End };
+            Nodes.Add(root); Read(root.Children, root);
+        }
+        else Read(Nodes, null);
         void Read(List<Node> nodes, Node? parent)
         {
             while (index < active.Length)
             {
                 if (active[index].Value == "}") { if (parent is not null) parent.End = active[index].Span.End; index++; return; }
-                var node = new Node { Start = active[index].Span.Start, End = text.Length, Parent = parent };
+                var node = new Node { Start = active[index].Span.Start, End = Region.End, Parent = parent };
                 nodes.Add(node);
                 var parens = 0;
                 while (index < active.Length)
@@ -96,7 +109,7 @@ internal sealed class StyleDocument
     public Token? TokenAt(int offset) => Tokens.FirstOrDefault(t => t.Span.Start <= offset && offset < t.Span.End)
         ?? Tokens.LastOrDefault(t => t.Span.End == offset);
     public bool InCommentOrString(int offset) => Tokens.Any(t => (t.Trivia || t.Quoted) && offset > t.Span.Start &&
-        (offset < t.Span.End || offset == Text.Length && t.Span.End == offset &&
+        (offset < t.Span.End || t.Value.StartsWith("//", StringComparison.Ordinal) && offset == t.Span.End || offset == Region.End && t.Span.End == offset &&
             (t.Value.StartsWith("//", StringComparison.Ordinal) || t.Trivia && !t.Value.EndsWith("*/", StringComparison.Ordinal) ||
              t.Quoted && (t.Value.Length == 1 || t.Value[^1] != t.Value[0]))));
 }

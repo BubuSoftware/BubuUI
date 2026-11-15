@@ -19,6 +19,7 @@ public sealed class ServerArguments
     public bool ShowHelp { get; init; }
 
     public bool ShowVersion { get; init; }
+    public bool MaterializeDecompiled { get; init; }
 
     public static ServerArguments Parse(string[] args)
     {
@@ -30,6 +31,7 @@ public sealed class ServerArguments
         var help = false;
         var version = false;
         var logToStderr = false;
+        var materializeDecompiled = false;
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -37,6 +39,9 @@ public sealed class ServerArguments
             {
                 case "--stdio":
                     break; // 默认就是 stdio；保留是为了兼容编辑器侧的通用启动模板
+                case "--materialize-decompiled":
+                    materializeDecompiled = true;
+                    break;
                 case "--runtime":
                 case "-r":
                     runtime = Next(args, ref i);
@@ -83,6 +88,7 @@ public sealed class ServerArguments
             LogToStandardError = logToStderr,
             ShowHelp = help,
             ShowVersion = version,
+            MaterializeDecompiled = materializeDecompiled,
         };
     }
 
@@ -95,6 +101,7 @@ public sealed class ServerArguments
         usage: EclipseUI.LanguageServer [options]
 
           --stdio                      talk LSP over stdin/stdout (default)
+          --materialize-decompiled     use cached .cs files for metadata navigation (Rider)
           --runtime, -r <path>         EclipseUI.Runtime.dll or the directory containing it
           --assembly, -a <path>        extra assembly to scan for components (repeatable)
           --workspace, -w <path>       start probing for the repository layout here

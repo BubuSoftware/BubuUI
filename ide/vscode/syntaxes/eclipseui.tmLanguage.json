@@ -148,7 +148,7 @@
         "3": { "name": "punctuation.section.block.begin.eclipseui" }
       },
       "endCaptures": { "1": { "name": "punctuation.section.block.end.eclipseui" } },
-      "patterns": [{ "include": "source.eustyle" }]
+      "patterns": [{ "include": "#style-nested-block" }, { "include": "source.eustyle" }]
     },
 
     "namespace-directive": {
@@ -239,6 +239,7 @@
         "2": { "name": "punctuation.definition.tag.end.eclipseui" }
       },
       "patterns": [
+        { "include": "#style-attribute-value" },
         { "include": "#tag-attribute-value" },
         { "include": "#expression" },
         { "include": "#bind-attribute" },
@@ -246,6 +247,57 @@
         { "include": "#equals" },
         { "include": "#attribute-name" },
         { "include": "#comment" }
+      ]
+    },
+
+    "style-attribute-value": {
+      "begin": "\\b(Style)(\\s*)(=)(\\s*)(\")",
+      "end": "\"",
+      "name": "meta.style-attribute.eclipseui",
+      "contentName": "meta.embedded.block.eustyle.eclipseui",
+      "beginCaptures": {
+        "1": {
+          "name": "entity.other.attribute-name.eclipseui"
+        },
+        "3": {
+          "name": "punctuation.separator.key-value.eclipseui"
+        },
+        "5": {
+          "name": "punctuation.definition.string.begin.eclipseui"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.string.end.eclipseui"
+        }
+      },
+      "patterns": [
+        {
+          "include": "source.eustyle"
+        }
+      ]
+    },
+
+    "style-nested-block": {
+      "begin": "\\{",
+      "end": "\\}",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.section.block.eustyle"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.block.eustyle"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#style-nested-block"
+        },
+        {
+          "include": "source.eustyle"
+        }
       ]
     },
 

@@ -24,31 +24,19 @@ if ($LASTEXITCODE -ne 0) {
 # load) and style properties from EclipseUI.Rendering.dll. Neither is a build dependency of
 # the server, so publish does NOT copy them. Bundle them so a packaged extension also works
 # when the open workspace is not this repository.
-function Copy-LatestAssembly($projectName, $fileName) {
-    $bin = Join-Path $here "..\src\$projectName\bin"
-    if (-not (Test-Path $bin)) { return $false }
-    $found = Get-ChildItem -Path $bin -Filter $fileName -Recurse -File -ErrorAction SilentlyContinue |
-        Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
-    if (-not $found) { return $false }
-    Copy-Item -Path $found.FullName -Destination (Join-Path $serverOutput $fileName) -Force
-    Write-Host "  bundled $fileName" -ForegroundColor DarkGray
-    return $true
-}
-
-$runtimeOk = Copy-LatestAssembly 'EclipseUI.Runtime' 'EclipseUI.Runtime.dll'
-$renderingOk = Copy-LatestAssembly 'EclipseUI.Rendering' 'EclipseUI.Rendering.dll'
-if (-not $runtimeOk) {
-    Write-Host 'WARNING: EclipseUI.Runtime.dll not found. Build the solution first; otherwise tag completion and semantic diagnostics are disabled.' -ForegroundColor Yellow
-}
-if (-not $renderingOk) {
-    Write-Host 'WARNING: EclipseUI.Rendering.dll not found. Style= property validation will be incomplete.' -ForegroundColor Yellow
+dotnet build (Join-Path $here '..\src\EclipseUI.Rendering') -c $Configuration --nologo
+if ($LASTEXITCODE -ne 0) { throw "Runtime/rendering build failed ($LASTEXITCODE)." }
+foreach ($name in @('EclipseUI.Runtime', 'EclipseUI.Rendering')) {
+    $assembly = Join-Path $here "..\src\$name\bin\$Configuration\net10.0\$name.dll"
+    if (-not (Test-Path -LiteralPath $assembly)) { throw "Required metadata assembly not found: $assembly" }
+    Copy-Item -LiteralPath $assembly -Destination $serverOutput -Force
 }
 
 if (-not $SkipNpm) {
     Write-Host '[2/4] npm install (VS Code shell dependencies)' -ForegroundColor Cyan
     Push-Location $extensionRoot
     try {
-        npm install --no-audit --no-fund
+        npm ci --no-audit --no-fund
         if ($LASTEXITCODE -ne 0) { throw "npm install failed ($LASTEXITCODE)" }
     }
     finally { Pop-Location }

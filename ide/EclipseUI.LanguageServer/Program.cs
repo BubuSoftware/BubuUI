@@ -47,6 +47,7 @@ var connection = new JsonRpcConnection(Console.OpenStandardInput(), Console.Open
 var host = new LanguageServerHost(connection, service, catalogs, Log)
 {
     ExitRequested = shutdown.Cancel,
+    MaterializeDecompiled = arguments.MaterializeDecompiled,
 };
 connection.RequestHandler = host.HandleRequestAsync;
 connection.NotificationHandler = host.HandleNotificationAsync;

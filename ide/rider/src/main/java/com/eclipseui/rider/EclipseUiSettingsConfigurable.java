@@ -35,7 +35,7 @@ public final class EclipseUiSettingsConfigurable implements Configurable {
                 .addLabeledComponent("Runtime DLL (optional):", runtimeDll)
                 .addLabeledComponent("Extra catalog assemblies (optional):", extraAssemblies)
                 .addComponent(new JBLabel(
-                        "<html>Server DLL empty = auto-discover <code>ide/vscode/server</code> or the repository build output. "
+                        "<html>Server DLL empty = use the bundled server, then repository build output. "
                                 + "Run <code>ide/build.ps1</code> to publish it. "
                                 + "Changes take effect after restarting the language server.</html>"))
                 .getPanel();

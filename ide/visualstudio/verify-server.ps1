@@ -1,4 +1,4 @@
-param([Parameter(Mandatory = $true)][string]$ServerPath)
+param([Parameter(Mandatory = $true)][string]$ServerPath, [switch]$MaterializeDecompiled)
 
 # Exercise the actual published process and stdio framing, not an in-process test double.
 $ErrorActionPreference = 'Stop'
@@ -11,6 +11,7 @@ $text = "@namespace Smoke`n@using EclipseUI.Elements`n`n<But"
 $start = New-Object Diagnostics.ProcessStartInfo
 $start.FileName = 'dotnet'
 $start.Arguments = '"' + $server + '" --stdio --workspace "' + $workspace + '" --log "' + (Join-Path $workspace 'server.log') + '"'
+if ($MaterializeDecompiled) { $start.Arguments += ' --materialize-decompiled' }
 $start.WorkingDirectory = $workspace
 $start.UseShellExecute = $false
 $start.CreateNoWindow = $true
@@ -97,10 +98,17 @@ try {
     }
     Send-Message @{ jsonrpc = '2.0'; id = 4; method = 'textDocument/definition'; params = $attributePosition }
     $definition = Read-Response 4
-    if (-not $definition -or $definition.uri -notlike 'eui-decompiled:*') { throw 'Attribute-start definition did not resolve the Label member.' }
-    Send-Message @{ jsonrpc = '2.0'; id = 5; method = 'eclipseui/decompiledContent'; params = @{ uri = $definition.uri } }
-    $decompiled = Read-Response 5
-    if (-not $decompiled.content -or $decompiled.content -notmatch 'Label') { throw 'Attribute definition did not provide decompiled source.' }
+    if ($MaterializeDecompiled) {
+        if (-not $definition -or $definition.uri -notlike 'file:*') { throw 'Rider metadata navigation did not return a file URI.' }
+        $cachedSource = ([Uri]$definition.uri).LocalPath
+        if (-not (Test-Path -LiteralPath $cachedSource) -or [IO.File]::ReadAllText($cachedSource) -notmatch 'Label') { throw 'Rider metadata source is not readable.' }
+    }
+    else {
+        if (-not $definition -or $definition.uri -notlike 'eui-decompiled:*') { throw 'Attribute-start definition did not resolve the Label member.' }
+        Send-Message @{ jsonrpc = '2.0'; id = 5; method = 'eclipseui/decompiledContent'; params = @{ uri = $definition.uri } }
+        $decompiled = Read-Response 5
+        if (-not $decompiled.content -or $decompiled.content -notmatch 'Label') { throw 'Attribute definition did not provide decompiled source.' }
+    }
     $skinUri = ([Uri](Join-Path $workspace 'Skin.ui')).AbsoluteUri
     $skinText = "@namespace Smoke`n@using EclipseUI.Elements`n@template Button`n<Border Background={Owner.Background} />"
     Send-Message @{ jsonrpc = '2.0'; method = 'textDocument/didOpen'; params = @{
@@ -118,12 +126,31 @@ try {
     Send-Message @{ jsonrpc = '2.0'; id = 7; method = 'textDocument/definition'; params = $resourcePosition }
     $resourceDefinition = Read-Response 7
     if (-not $resourceDefinition -or $resourceDefinition.uri -ne $styleUri -or $resourceDefinition.range.start.line -ne 2) { throw 'Theme definition did not map to its stylesheet declaration.' }
+    $embeddedText = '@namespace Smoke' + "`n" + '@using EclipseUI.Elements' + "`n" + '@style {' + "`n" + '$accent: #112233;' + "`n" + '.primary { Background: $accent; }' + "`n" + '}' + "`n" + '<Border Style="Background: th" />'
+    Send-Message @{ jsonrpc = '2.0'; method = 'textDocument/didChange'; params = @{
+        textDocument = @{ uri = $uri; version = 3 }; contentChanges = @(@{ text = $embeddedText })
+    } }
+    Send-Message @{ jsonrpc = '2.0'; id = 9; method = 'textDocument/definition'; params = @{
+        textDocument = @{ uri = $uri }; position = @{ line = 4; character = 26 }
+    } }
+    $variableDefinition = Read-Response 9
+    if (-not $variableDefinition -or $variableDefinition.uri -ne $uri -or $variableDefinition.range.start.line -ne 3) { throw 'Embedded variable navigation failed.' }
+    Send-Message @{ jsonrpc = '2.0'; id = 10; method = 'textDocument/completion'; params = @{
+        textDocument = @{ uri = $uri }; position = @{ line = 6; character = 28 }
+    } }
+    $inlineCompletion = Read-Response 10
+    if (-not ($inlineCompletion.items | Where-Object { $_.label -eq 'theme' })) { throw 'Inline Style function completion failed.' }
+    Send-Message @{ jsonrpc = '2.0'; id = 11; method = 'textDocument/rename'; params = @{
+        textDocument = @{ uri = $uri }; position = @{ line = 4; character = 26 }; newName = 'ink'
+    } }
+    $renamedVariable = Read-Response 11
+    if (-not $renamedVariable -or ($renamedVariable | ConvertTo-Json -Depth 30 -Compress) -notmatch 'ink') { throw 'Embedded variable rename failed.' }
     Send-Message @{ jsonrpc = '2.0'; id = 8; method = 'shutdown'; params = $null }
     $null = Read-Response 8
     Send-Message @{ jsonrpc = '2.0'; method = 'exit'; params = $null }
     if (-not $process.WaitForExit(5000)) { throw 'Server did not exit after shutdown.' }
     if ($process.ExitCode -ne 0) { throw "Server exited with code $($process.ExitCode)." }
-    Write-Host "Published server verified: initialize, completion, attribute navigation, decompiled source, control template/theme resources, shutdown. Log: $workspace\server.log" -ForegroundColor Green
+    Write-Host "Published server verified: completion, navigation, decompilation, control themes, embedded styles, variable rename, shutdown. Log: $workspace\server.log" -ForegroundColor Green
 }
 finally {
     if ($started) {

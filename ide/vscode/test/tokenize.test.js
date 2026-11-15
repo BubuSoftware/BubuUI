@@ -305,6 +305,13 @@ $accent: theme(#ffffff, #000000);
   expectNotAt(switchDoc, 7, 'break', 0, 'keyword.control.switch.eclipseui', 'plain-text break');
   expectNotAt(switchDoc, 7, 'default', 0, 'keyword.control.switch.eclipseui', 'plain-text default');
 
+  const embeddedStyle = await tokenize('source.eclipseui', '@style {\n.a { &:hover { Background: #fff; } }\n.b { Background: theme(#111, #eee); }\n}\n<Border Style="Background: theme(#111, #fff); CornerRadius: 4;" />');
+  expectAt(embeddedStyle, 2, 'Background', 1, 'support.type.property-name.eustyle', 'second rule stays inside @style');
+  expectAt(embeddedStyle, 2, 'theme(', 1, 'support.function.eustyle', 'nested style function');
+  expectAt(embeddedStyle, 4, 'Border', 1, 'entity.name.tag.eclipseui', 'leaving @style restores UI grammar');
+  expectAt(embeddedStyle, 4, 'Background', 1, 'support.type.property-name.eustyle', 'inline Style property');
+  expectAt(embeddedStyle, 4, '#fff', 1, 'constant.other.color.eustyle', 'inline Style color');
+
   if (failures.length > 0) {
     console.error(`\n${failures.length} grammar assertion(s) failed:`);
     for (const failure of failures) console.error('  - ' + failure);

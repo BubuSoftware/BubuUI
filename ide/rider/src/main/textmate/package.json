@@ -2,7 +2,7 @@
   "name": "eclipseui-textmate",
   "displayName": "EclipseUI TextMate bundle",
   "description": "Shared TextMate grammars for EclipseUI .ui templates and .eustyle stylesheets (assembled from ide/vscode at build time).",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "contributes": {
     "languages": [
       {

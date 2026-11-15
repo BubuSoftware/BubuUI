@@ -1,4 +1,5 @@
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
+import org.jetbrains.intellij.platform.gradle.tasks.PrepareSandboxTask
 
 plugins {
     id("java")
@@ -81,10 +82,15 @@ tasks.named<ProcessResources>("processResources") {
     dependsOn(syncTextMateBundle)
 }
 
-// The server DLL is deliberately NOT embedded here. Both shells point at the
-// same published output (ide/vscode/server) or the repository dev build; see
-// ServerCommand. For a marketplace release, drop the published server/ folder
-// next to the plugin (or set the DLL path in the EclipseUI settings page).
+// Use the same published server as VS Code, placed where ServerCommand resolves it.
+tasks.withType<PrepareSandboxTask>().configureEach {
+    from(vscodeDir.dir("server")) { into(pluginName.map { "$it/server" }) }
+    doFirst {
+        check(vscodeDir.file("server/EclipseUI.LanguageServer.dll").asFile.isFile) {
+            "Publish the shared server first: pwsh -File ../build.ps1"
+        }
+    }
+}
 
 // `gradle verifyShell` runs the same checks as `node test/plugin.test.js`.
 // Plain node needs no JVM at all; the Gradle task is just a convenient entry

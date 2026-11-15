@@ -17,6 +17,38 @@ ide/
 Rider 走 lsp4ij、Visual Studio 走内置 LSP 客户端接**同一个** server，所以补全/诊断共用实现，
 差别只在壳的接线方式。
 
+## 0.2.0 本地发布与样式覆盖
+
+```powershell
+pwsh -File ide/package.ps1
+```
+
+产物统一放在 `out/ide-release/0.2.0/`：VS Code VSIX、Visual Studio VSIX、Rider ZIP 和
+`SHA256SUMS.txt`。脚本运行共享语言服务测试、客户端测试、真实 stdio 进程验证，
+并检查三个包里的服务器依赖逐文件 SHA-256 一致、语法文件一致、版本一致。
+只生成本地包，不安装插件，也不上传商店。已经验证测试时可用 `-SkipTests`；依赖已安装可用 `-SkipNpm`。
+
+三个插件都携带同一版语言服务器和元数据目录，目标机器需要 .NET 10 SDK；Rider 还需要
+LSP4IJ 和 TextMate 插件。VS Code 使用“Install from VSIX”，Rider 使用“Install Plugin from Disk”，
+Visual Studio 双击对应 VSIX 安装。
+
+| 编译器已实现的语法 | 三个 IDE 共用的支持 |
+|---|---|
+| `.eustyle` 旧类规则、子级/后代选择器、组合伪类 | 高亮、属性/状态/类型补全、属性悬停和定义、编译器诊断、格式化 |
+| `$variable` | 声明顺序和单样式块作用域内补全、悬停、跳转、重命名、大纲；正确处理重新赋值 |
+| `@states` | 本项目样式来源的状态补全、悬停、定义与重命名；保留内置状态 |
+| `.ui` 的 `@style` | 上述旧样式能力，宿主源码坐标保持不变；未闭合块仍可补全 |
+| `Style="..."` | 目录驱动的属性/枚举/`theme()` 补全、悬停、定义、参数帮助、拼写修复和高亮 |
+| `Class="..."` | 未保存的本项目样式类补全和定义，样式声明与 UI 字面量引用的重命名；组件局部类优先 |
+| `@using`、`@theme ... for ...`、类型化 setter | 导入、按类型补全、悬停、定义、编译器诊断、符号、语义着色及格式化 |
+| `template()`、`resource()`、`theme()`、`/template/` | 类型过滤、函数参数帮助、模板/主题/部件导航；主题重命名同步可绑定的 C# 引用 |
+| `@template`、`Owner`、`Part`、`ContentPresenter` | UI 目录及嵌入式 C# 类型服务 |
+
+边界遵循编译器：内联 `Style` 不支持变量或规则；组件 `@style` 不支持控件主题模块；
+`resource()` 只解析同模块控件主题，并非通用动态资源。类/状态重命名只改可识别的样式语法和
+`Class` 字面量，不猜测 C# 动态构造的字符串；无法唯一解析的类/主题不提供重命名。
+缩进格式化保留字面量和注释，内联 `Style` 不重排。安装包构建与协议测试不等同于三个 IDE 的人工 GUI 验收。
+
 ## Visual Studio 插件
 
 ```powershell
@@ -225,16 +257,13 @@ lsp4ij → Settings → Languages & Frameworks → Language Servers → `+` User
 
 - 插件是 Java/Gradle 工程：**已在 Temurin JDK 17 + Gradle 9.0.0 wrapper 下真实编译
   并打包**（`compileJava` 产出 11 个 class；`buildPlugin` 产出
-  `build/distributions/eclipseui-rider-0.1.0.zip`，包内含共享 grammar、`since-build=242`
-  与两条 languageMapping）。接线类错误另有 `node test/plugin.test.js` 的 12 项静态契约
+  `build/distributions/eclipseui-rider-0.2.0.zip`，包内含共享 grammar、`since-build=242`
+  与两条 languageMapping）。接线类错误另有 `node test/plugin.test.js` 的 13 项静态契约
   交叉比对（扩展点/类名/grammar scopeName/watcher/启动参数/wrapper）。
   **仍未做** Rider 内人工冒烟（`runIde` 打开 `.ui` 看高亮与补全）：构建期的
   `buildSearchableOptions` 确实启动过 Rider 沙箱并成功释放 bundle，但那不是交互验证。
-- 插件 zip **不内嵌 server dll**（锁步发版要求两壳指向同一份产物）。发布时把
-  `ide/vscode/server/` 放进插件目录，或在设置页指定 DLL 路径。
-- 跳转到只有 dll/元数据、没有源码的控件时 server 返回 `eui-decompiled:` 虚拟文档；
-  VS Code 壳注册了 `TextDocumentContentProvider`，Rider 侧尚未接，故这类跳转在 Rider
-  上打不开内容（有源码的跳转正常）。这是 P2 的后续片。
+- 插件 ZIP 内嵌 `server/`，与 VS Code / Visual Studio 使用同一份发布输出。设置页仍可指定 DLL 覆盖。
+- Rider 启动 server 时传入 `--materialize-decompiled`：无源码的控件/属性跳转到系统临时目录里的只读 C# 文件；文件按 URI 与内容散列区分版本，保留定义范围。VS Code / Visual Studio 仍使用原有虚拟文档通道。
 - `@code` 块内补全/悬停/重命名由共享 server 提供；`#line` 调试器接线仍未实现。
 
 ## 5. 测试
@@ -270,7 +299,7 @@ grammar 测试值得单说：TextMate 写错不会报错，只会「某个地方
 - **补全编辑边界**：主替换和附加编辑使用原 `.ui` 坐标；全部编辑必须可完整回映，或有明确的
   `@using` 指令插入规则。无法精确转换的生成独有编辑不交付。自动导入按文件已有换行符生成且去重，
   不把 C# `using` 放入 `@code`。机制和验收见 [design/18 §12.15](../design/18-razor-csharp-intellisense.md#1215-补全完整编辑与指令命名空间2026-11-13)。
-- **`#line` 调试映射**未做；语义着色只覆盖内嵌 C# 区间，模板表面仍由 TextMate 着色。
+- **`#line` 调试映射**未做；语义着色覆盖内嵌 C# 与样式区间，其他模板表面由 TextMate 着色。
 - **URI 必须按编辑器格式解析**：VS Code 发 `file:///d%3A/repo/x.ui`（盘符冒号编码、盘符小写）。
   这种写法下 .NET 的 `Uri.LocalPath` 返回 `/d:/repo/x.ui`，再经 `GetFullPath` 就永远匹配不到
   项目里的真实路径——2026-11-11 的「脚本全绿、编辑器全废」就是这个分支。`DocumentStore.UriToPath`

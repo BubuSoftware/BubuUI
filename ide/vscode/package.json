@@ -1,8 +1,8 @@
 {
   "name": "eclipseui",
   "displayName": "EclipseUI",
-  "description": "EclipseUI .ui templates: syntax highlighting, diagnostics, completion, hover and outline (shared language server, ready for Rider via lsp4ij).",
-  "version": "0.1.0",
+  "description": "EclipseUI templates, styles and control themes: completion, diagnostics, navigation, rename and embedded C#.",
+  "version": "0.2.0",
   "publisher": "eclipseui",
   "license": "MIT",
   "engines": {
@@ -125,13 +125,20 @@
     "build:server": "dotnet publish ../EclipseUI.LanguageServer -c Release -o server",
     "test": "node test/tokenize.test.js && node test/extension.test.js",
     "test:grammar": "node test/tokenize.test.js",
-    "test:shell": "node test/extension.test.js"
+    "test:shell": "node test/extension.test.js",
+    "package": "vsce package"
   },
   "dependencies": {
     "vscode-languageclient": "9.0.1"
   },
   "devDependencies": {
+    "@vscode/vsce": "3.6.2",
     "vscode-oniguruma": "^2.0.1",
     "vscode-textmate": "^9.3.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/CeSun/EclipseUI.git",
+    "directory": "ide/vscode"
   }
 }

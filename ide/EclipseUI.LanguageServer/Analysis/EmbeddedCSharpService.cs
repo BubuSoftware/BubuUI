@@ -607,6 +607,7 @@ public static class EmbeddedCSharpService
         var edits = new List<UiTextEdit>();
         var codeRanges = analysis.Ast?.Nodes.OfType<UiCodeBlock>()
             .Select(static b => (Start: b.CodeSpan.Start, End: b.CodeSpan.Start + b.CodeSpan.Length))
+            .Concat(analysis.Ast.Nodes.OfType<UiStyleBlock>().Select(static b => (Start: b.CodeSpan.Start, End: b.CodeSpan.End)))
             .ToArray() ?? Array.Empty<(int Start, int End)>();
 
         var depth = 0;
@@ -621,7 +622,7 @@ public static class EmbeddedCSharpService
                 contentStart++;
             var trimmed = contentStart < lineEnd ? text.Substring(contentStart, lineEnd - contentStart).Trim() : "";
 
-            var inCode = codeRanges.Any(r => lineStart >= r.Start && lineStart <= r.End);
+            var inCode = codeRanges.Any(r => contentStart >= r.Start && contentStart < r.End);
             if (!inCode && trimmed.Length > 0)
             {
                 if (trimmed.StartsWith("</", StringComparison.Ordinal) ||

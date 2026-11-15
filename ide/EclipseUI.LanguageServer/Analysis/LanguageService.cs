@@ -219,7 +219,7 @@ public sealed class LanguageService
 
     private UiCatalog CatalogFor(string uri) => CatalogForUri(uri);
 
-    private StyleLanguageProvider? StyleFor(string uri)
+    private StyleLanguageProvider? StyleFor(string uri, StyleDocument? embedded = null)
     {
         if (!_documents.TryGet(uri, out var document)) return null;
         var path = DocumentStore.UriToPath(uri);
@@ -227,7 +227,22 @@ public sealed class LanguageService
         var (catalog, compilation, unowned) = Current(uri, project);
         if (unowned) return null;
         var files = StyleFiles(uri, project);
-        return new(path, document.Text, catalog, compilation, files, project);
+        return new(path, document.Text, catalog, compilation, files, project, embedded, _projects);
+    }
+
+    private IEnumerable<StyleLanguageProvider> EmbeddedStylesFor(string uri)
+    {
+        if (!_documents.TryGet(uri, out var document)) yield break;
+        foreach (var region in StyleLanguageProvider.StyleDocuments(DocumentStore.UriToPath(uri), document.Text))
+            if (StyleFor(uri, region) is { } provider) yield return provider;
+    }
+
+    private StyleLanguageProvider? EmbeddedStyleFor(string uri, int offset)
+    {
+        if (!_documents.TryGet(uri, out var document)) return null;
+        var region = StyleLanguageProvider.StyleDocuments(DocumentStore.UriToPath(uri), document.Text)
+            .FirstOrDefault(d => offset >= d.Region.Start && offset <= d.Region.End);
+        return region is null ? null : StyleFor(uri, region);
     }
 
     private Dictionary<string, string> StyleFiles(string uri, ProjectSnapshot? project)
@@ -249,21 +264,25 @@ public sealed class LanguageService
 
     public IReadOnlyList<UiTextEdit> Format(string uri) => !IsTemplate(uri)
         ? StyleFor(uri)?.Format() ?? []
-        : Analyze(uri) is { } analysis ? EmbeddedCSharpService.Format(analysis) : [];
+        : (Analyze(uri) is { } analysis ? EmbeddedCSharpService.Format(analysis) : [])
+            .Concat(EmbeddedStylesFor(uri).SelectMany(s => s.Format())).OrderBy(e => e.Span.Start).ToArray();
 
     public UiSignatureHelp? SignatureHelp(string uri, int offset) => !IsTemplate(uri)
         ? StyleFor(uri)?.SignatureHelp(offset)
+        : EmbeddedStyleFor(uri, offset) is { } style ? style.SignatureHelp(offset)
         : Analyze(uri) is { } analysis ? EmbeddedCSharpService.SignatureHelp(analysis, offset) : null;
 
     public IReadOnlyList<UiCodeAction> CodeActions(string uri) => !IsTemplate(uri)
         ? StyleFor(uri)?.CodeActions() ?? []
-        : Analyze(uri) is { } analysis ? EmbeddedCSharpService.CodeActions(analysis, CatalogForUri(uri), GetDiagnostics(uri)) : [];
+        : (Analyze(uri) is { } analysis ? EmbeddedCSharpService.CodeActions(analysis, CatalogForUri(uri), GetDiagnostics(uri)) : [])
+            .Concat(EmbeddedStylesFor(uri).SelectMany(s => s.CodeActions())).ToArray();
 
     public UiCompletionList Complete(string uri, int offset)
     {
         if (!IsTemplate(uri)) return StyleFor(uri)?.Complete(offset) ?? UiCompletionList.Empty;
+        if (EmbeddedStyleFor(uri, offset) is { } embedded) return embedded.Complete(offset);
         var analysis = Analyze(uri);
-        return analysis is null ? UiCompletionList.Empty : CompletionProvider.Complete(analysis, CatalogFor(uri), offset);
+        return analysis is null ? UiCompletionList.Empty : CompleteMarkup(uri, analysis, offset);
     }
 
     /// <summary>
@@ -275,6 +294,7 @@ public sealed class LanguageService
         string uri, int offset, char? triggerCharacter = null, CancellationToken cancellationToken = default)
     {
         if (!IsTemplate(uri)) return StyleFor(uri)?.Complete(offset) ?? UiCompletionList.Empty;
+        if (EmbeddedStyleFor(uri, offset) is { } embedded) return embedded.Complete(offset);
         var analysis = Analyze(uri);
         if (analysis is null) return UiCompletionList.Empty;
         var context = CursorScanner.Scan(analysis.Text, offset);
@@ -283,12 +303,20 @@ public sealed class LanguageService
             return await EmbeddedCSharpCompletionProvider.CompleteAsync(
                 analysis, DocumentStore.UriToPath(uri), offset, triggerCharacter, cancellationToken)
                 .ConfigureAwait(false);
-        return CompletionProvider.Complete(analysis, CatalogFor(uri), offset);
+        return CompleteMarkup(uri, analysis, offset);
+    }
+
+    private UiCompletionList CompleteMarkup(string uri, DocumentAnalysis analysis, int offset)
+    {
+        var result = CompletionProvider.Complete(analysis, CatalogFor(uri), offset);
+        if (StyleFor(uri)?.ClassCompletion(offset) is not { Items.Count: > 0 } classes) return result;
+        return classes with { Items = classes.Items.Concat(result.Items).DistinctBy(i => i.Label).ToArray() };
     }
 
     public UiHoverResult? Hover(string uri, int offset)
     {
         if (!IsTemplate(uri)) return StyleFor(uri)?.Hover(offset);
+        if (EmbeddedStyleFor(uri, offset) is { } embedded) return embedded.Hover(offset);
         var analysis = Analyze(uri);
         return analysis is null ? null : HoverProvider.Hover(analysis, CatalogFor(uri), offset);
     }
@@ -297,6 +325,8 @@ public sealed class LanguageService
     public UiDefinition? Definition(string uri, int offset)
     {
         if (!IsTemplate(uri)) return StyleFor(uri)?.Definition(offset);
+        if (EmbeddedStyleFor(uri, offset) is { } embedded) return embedded.Definition(offset);
+        if (StyleFor(uri)?.ClassDefinitionAt(offset) is { } styleClass) return styleClass;
         var style = StyleFor(uri);
         if (style?.CSharpThemeAt(offset) is { } theme) return style.ThemeDefinition(theme.Name);
         var analysis = Analyze(uri);
@@ -336,14 +366,18 @@ public sealed class LanguageService
         if (!IsTemplate(uri)) return StyleFor(uri)?.SemanticTokens() ?? [];
         var analysis = Analyze(uri);
         if (analysis is null) return Array.Empty<UiSemanticToken>();
-        return await EmbeddedCSharpService.SemanticTokensAsync(
+        var tokens = await EmbeddedCSharpService.SemanticTokensAsync(
             analysis, DocumentStore.UriToPath(uri), cancellationToken).ConfigureAwait(false);
+        return tokens.Concat(EmbeddedStylesFor(uri).SelectMany(s => s.SemanticTokens()))
+            .OrderBy(t => t.Line).ThenBy(t => t.Character).ToArray();
     }
 
     /// <summary>legacy 入口（同步）：探针扫描路径。项目模式的 Roslyn 重命名走异步版本。</summary>
     public UiPrepareRename? PrepareRename(string uri, int offset)
     {
         if (!IsTemplate(uri)) return StyleFor(uri)?.PrepareRename(offset);
+        if (EmbeddedStyleFor(uri, offset) is { } embedded) return embedded.PrepareRename(offset);
+        if (StyleFor(uri)?.ClassPrepareRename(offset) is { } styleClass) return styleClass;
         if (StyleFor(uri)?.CSharpThemeAt(offset) is { } theme) return new(theme.Span, theme.Name);
         var analysis = Analyze(uri);
         return analysis is null ? null : RenameProvider.Prepare(analysis, offset);
@@ -353,6 +387,8 @@ public sealed class LanguageService
     public UiRenameResult? Rename(string uri, int offset, string newName)
     {
         if (!IsTemplate(uri)) return StyleFor(uri)?.Rename(offset, newName);
+        if (EmbeddedStyleFor(uri, offset) is { } embedded) return embedded.Rename(offset, newName);
+        if (StyleFor(uri) is { } classProvider && classProvider.ClassPrepareRename(offset) is not null) return classProvider.RenameClassAt(offset, newName);
         var style = StyleFor(uri);
         if (style?.CSharpThemeAt(offset) is { } theme) return style.RenameTheme(theme.Name, newName);
         var analysis = Analyze(uri);
@@ -371,6 +407,8 @@ public sealed class LanguageService
         string uri, int offset, CancellationToken cancellationToken = default)
     {
         if (!IsTemplate(uri)) return StyleFor(uri)?.PrepareRename(offset);
+        if (EmbeddedStyleFor(uri, offset) is { } embedded) return embedded.PrepareRename(offset);
+        if (StyleFor(uri)?.ClassPrepareRename(offset) is { } styleClass) return styleClass;
         if (StyleFor(uri)?.CSharpThemeAt(offset) is { } theme) return new(theme.Span, theme.Name);
         var analysis = Analyze(uri);
         if (analysis is null) return null;
@@ -384,6 +422,8 @@ public sealed class LanguageService
         string uri, int offset, string newName, CancellationToken cancellationToken = default)
     {
         if (!IsTemplate(uri)) return StyleFor(uri)?.Rename(offset, newName);
+        if (EmbeddedStyleFor(uri, offset) is { } embedded) return embedded.Rename(offset, newName);
+        if (StyleFor(uri) is { } classProvider && classProvider.ClassPrepareRename(offset) is not null) return classProvider.RenameClassAt(offset, newName);
         var style = StyleFor(uri);
         if (style?.CSharpThemeAt(offset) is { } theme) return style.RenameTheme(theme.Name, newName);
         var analysis = Analyze(uri);
@@ -405,6 +445,7 @@ public sealed class LanguageService
     {
         if (!IsTemplate(uri)) return StyleFor(uri)?.Symbols() ?? [];
         var analysis = Analyze(uri);
-        return analysis is null ? Array.Empty<UiSymbol>() : SymbolProvider.Build(analysis, CatalogFor(uri));
+        return (analysis is null ? Array.Empty<UiSymbol>() : SymbolProvider.Build(analysis, CatalogFor(uri)))
+            .Concat(EmbeddedStylesFor(uri).SelectMany(s => s.Symbols())).ToArray();
     }
 }

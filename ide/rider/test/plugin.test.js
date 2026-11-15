@@ -236,4 +236,10 @@ check('gradle wrapper pins a reproducible Gradle 9 distribution', () => {
     has(properties, 'org.gradle.jvmargs=-Xmx2g');
 });
 
+check('release bundles the shared server and enables readable metadata navigation', () => {
+    has(gradle, 'tasks.withType<PrepareSandboxTask>()');
+    has(gradle, 'from(vscodeDir.dir("server"))');
+    has(rider('src/main/java/com/eclipseui/rider/ServerCommand.java'), '--materialize-decompiled');
+});
+
 console.log('\n' + passed + ' checks passed' + (process.exitCode ? ' (with failures)' : ''));

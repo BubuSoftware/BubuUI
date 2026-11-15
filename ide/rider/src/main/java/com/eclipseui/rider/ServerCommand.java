@@ -17,10 +17,9 @@ import java.util.List;
 /**
  * Resolves the shared language server DLL and builds its command line.
  *
- * <p>The Rider shell does NOT ship its own copy of the server: it reuses the very
- * same published output as the VS Code extension (ide/vscode/server), plus the
- * repository dev builds. This keeps the "grammar + server + two shells lock-step
- * release" rule in design/06 section 6.7 literal -- there is only one DLL.
+ * <p>Release packages embed the same published server as VS Code in server/.
+ * Explicit settings and the environment override it; repository builds remain
+ * a fallback for extension development.
  */
 public final class ServerCommand {
 
@@ -73,6 +72,8 @@ public final class ServerCommand {
         args.add(blank(state.dotnet) ? "dotnet" : state.dotnet.trim());
         args.add(server.toAbsolutePath().toString());
         args.add("--stdio");
+        // LSP4IJ opens file URIs; the shared server supplies a read-only C# cache.
+        args.add("--materialize-decompiled");
 
         String basePath = project.getBasePath();
         if (basePath != null && !basePath.isBlank()) {
