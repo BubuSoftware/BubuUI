@@ -20,6 +20,11 @@
 
 ## 2. 文件与类
 
+控件模板模式例外：带 `@template T` 的文件生成同名 `ControlTemplate<T>` 工厂和
+`名称__TemplateView : 根类型`。视图有强类型 Owner，仍复用现有初始化、更新、块和源映射；
+工厂每次构造新视图并返回 TemplateInstance。模板内部属性写 skin 层，不写 local/template 层。
+普通文件继续采用下述根类型继承规则。详见 [design/28](../design/28-lookless-controls.md)。
+
 - 文件名去扩展名就是类名，必须为合法 C# 标识符。`@namespace` 必填，必须与同名 code-behind 一致。
 - `.ui` 本身是类型来源；没有 `.cs`、没有 `@code` 也合法。
 - 生成 `partial class Name : RootClrType`。可访问性沿用同名源类型，独立模板默认 public。

@@ -1,0 +1,36 @@
+@namespace EclipseUI.Themes.Fluent
+@using EclipseUI.Elements
+@using EclipseUI.Rendering
+@template Button
+
+<Border Class="chrome"
+        Background={ResolveBackground()}
+        BorderColor={Owner.BorderBrush}
+        BorderGradient={EdgeGradient()}
+        BorderThickness="1"
+        CornerRadius={Visual.GetCornerRadius(Owner) ?? Owner.CornerRadius}>
+    <ContentPresenter Part="PART_ContentPresenter"
+                      Content={Owner.Content}
+                      Label={Owner.Label}
+                      HorizontalPadding={Owner.HorizontalPadding - 1}
+                      VerticalPadding={Owner.VerticalPadding - 1}
+                      TextAlignment={Owner.LabelAlignment}
+                      Foreground={ResolveForeground()} />
+</Border>
+
+@code {
+    private static UiColor ColorOf(Color color) => new(color.R, color.G, color.B, color.A);
+    private ElementTheme Palette => Owner.ThemeDefaults as ElementTheme ?? FluentTheme.Light;
+    private UiColor ResolveBackground() => Visual.GetBackgroundResource(Owner) is { } resource
+        ? ColorOf(resource.Resolve(Palette)) : Visual.GetBackground(Owner) is { } color ? ColorOf(color) : Owner.Background;
+    private UiColor ResolveForeground() => Visual.GetForegroundResource(Owner) is { } resource
+        ? ColorOf(resource.Resolve(Palette)) : Visual.GetForeground(Owner) is { } color ? ColorOf(color) : Owner.Foreground;
+    private UiLinearGradient? EdgeGradient()
+    {
+        if (!Owner.IsEffectiveEnabled || Owner.IsPressed) return null;
+        var bottom = Owner.IsLightTheme;
+        var point = new Point(0, bottom ? 1 : 0);
+        return new UiLinearGradient(ColorOf(Palette.ControlSecondaryBorder), Owner.BorderBrush,
+            point, point, new(0, bottom ? .5 : -.5), new(0, bottom ? -2.5 : 2.5), .33);
+    }
+}

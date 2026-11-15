@@ -56,7 +56,7 @@ public static class UiCatalogFactory
 
 
     /// <summary>保留属性名（design/01 §4.13）；控件暴露它们会与语法冲突 → 元数据问题。</summary>
-    private static readonly string[] ReservedNames = { "Key", "Ref", "Class", "Style" };
+    private static readonly string[] ReservedNames = { "Key", "Ref", "Class", "Style", "Part" };
 
     /// <summary>
     /// 构建模板目录。<paramref name="declarations"/> 是模板类型声明（spec/02 §2.3）：
@@ -95,9 +95,15 @@ public static class UiCatalogFactory
             foreach (var import in declaration.Usings) text.Append("using ").Append(import).AppendLine(";");
             if (declaration.Namespace.Length > 0)
                 text.Append("namespace ").Append(declaration.Namespace).Append(" { ");
-            text.Append(existing?.DeclaredAccessibility == Accessibility.Internal ? "internal" : "public")
-                .Append(" partial class ").Append(declaration.Tag).Append(" : ")
+            if (declaration.TemplateTarget is { } target)
+                text.Append("public partial class ").Append(declaration.Tag)
+                    .Append(" : global::EclipseUI.ControlTemplate<").Append(target).Append("> { protected override global::EclipseUI.TemplateInstance Build(")
+                    .Append(target).AppendLine(" owner) => throw new global::System.NotImplementedException(); }");
+            text.Append(declaration.TemplateTarget is not null || existing?.DeclaredAccessibility == Accessibility.Internal ? "internal" : "public")
+                .Append(" partial class ").Append(declaration.Tag).Append(declaration.TemplateTarget is null ? "" : "__TemplateView").Append(" : ")
                 .Append(declaration.RootTag).AppendLine(" {");
+            if (declaration.TemplateTarget is { } ownerType)
+                text.Append("public ").Append(ownerType).AppendLine(" Owner { get; set; } = null!;");
             foreach (var block in declaration.CodeBlocks)
             {
                 text.Append("#line ").Append(block.StartLine + 1).Append(" \"")

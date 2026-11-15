@@ -17,6 +17,8 @@ public sealed class Parser
     private string? _namespace;
     private TextSpan _namespaceSpan;
     private bool _namespaceSeen;
+    private string? _templateTarget;
+    private TextSpan _templateTargetSpan;
 
     public Parser(string text, List<UiDiagnostic> diags)
     {
@@ -30,7 +32,8 @@ public sealed class Parser
     {
         var nodes = ParseNodeList(Terminator.Document, null);
         NormalizeChildren(nodes);
-        return new UiDocument(fileName, _text, nodes, _namespace, _namespaceSpan);
+        return new UiDocument(fileName, _text, nodes, _namespace, _namespaceSpan)
+        { TemplateTarget = _templateTarget, TemplateTargetSpan = _templateTargetSpan };
     }
 
     private List<UiNode> ParseNodeList(Terminator terminator, string? endTag)
@@ -282,6 +285,12 @@ public sealed class Parser
 
         switch (directive.Text)
         {
+            case "template":
+                Advance();
+                if (!topLevel || _templateTarget is not null)
+                    Diag(UiDiagnostics.Syntax, "@template must occur once at document level", directive.Span);
+                else { _templateTarget = directive.Aux; _templateTargetSpan = directive.InnerSpan; }
+                break;
             // spec/02 §2.2：@namespace 必填、只能出现在顶层、只能一个。解析层只负责收集与
             // 形状校验；「缺失」与「与 code-behind 不一致」由生成器报（EUI055/EUI056），
             // 这样内存态解析（IDE 的 Tier1、单测内联模板）不会被强制。

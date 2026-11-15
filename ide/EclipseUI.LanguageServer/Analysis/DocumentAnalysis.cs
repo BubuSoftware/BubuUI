@@ -322,14 +322,15 @@ public sealed class DocumentAnalysis
         {
             var usings = TemplateAnalyzer.CollectUsingLines(Ast.Nodes).ToImmutableArray();
             var compilation = _baseCompilation;
+            var probeClassName = Ast.ClassName + (Ast.TemplateTarget is null ? "" : "__TemplateView");
 
             // ---- 项目模式（L2/L3）：只查符号，不加树 ----
             // 项目 Compilation 已含 code-behind 源码、@code 生成树、.ui 派生组件。
             // 再 AddSyntaxTrees 会造成 partial 类成员重复（CS0111）与类型歧义。
             if (_project is not null)
             {
-                var tree = FindProbeTree(compilation, Ast.ClassName, _codeBehindPath);
-                var projectType = tree is null ? null : FindTypeSymbol(compilation, tree, Ast.ClassName);
+                var tree = FindProbeTree(compilation, probeClassName, _codeBehindPath);
+                var projectType = tree is null ? null : FindTypeSymbol(compilation, tree, probeClassName);
                 var projectNamespace = projectType?.ContainingNamespace is { IsGlobalNamespace: false } ns
                     ? ns.ToDisplayString()
                     : "";
@@ -340,7 +341,7 @@ public sealed class DocumentAnalysis
                 // @code 块体在生成树里逐字透传（Emitter.EmitCodeBlock）——用它做 span 回映，
                 // 但绝不把它再次加进编译。
                 _memberTree = FindGeneratedCodeTree(_project.GeneratedTrees, Ast);
-                return new ExpressionProbe(compilation, projectType, Ast.ClassName, projectNamespace, usings);
+                return new ExpressionProbe(compilation, projectType, probeClassName, projectNamespace, usings);
             }
 
             // 独立文档也使用与编译器相同的根类型符号视图。code-behind 是该输入编译的普通源码，
@@ -376,11 +377,12 @@ public sealed class DocumentAnalysis
                 RootTag = declaration.RootTag ?? "global::EclipseUI.UiObject",
             };
             compilation = UiCatalogFactory.WithTemplateTypes(compilation, new[] { declaration });
-            var metadataName = namespaceName.Length == 0 ? Ast.ClassName : namespaceName + "." + Ast.ClassName;
+            var className = Ast.ClassName + (Ast.TemplateTarget is null ? "" : "__TemplateView");
+            var metadataName = namespaceName.Length == 0 ? className : namespaceName + "." + className;
             var type = compilation.GetTypeByMetadataName(metadataName);
             _memberTree = compilation.SyntaxTrees.FirstOrDefault(t =>
                 t.FilePath == declaration.Path + ".catalog.cs" && declaration.CodeBlocks.Count > 0);
-            return new ExpressionProbe(compilation, type, Ast.ClassName, namespaceName, usings);
+            return new ExpressionProbe(compilation, type, className, namespaceName, usings);
         }
         catch (Exception)
         {

@@ -272,6 +272,8 @@ public sealed class UiSwitchSection
 
 public sealed class UiDocument
 {
+    public string? TemplateTarget { get; set; }
+    public TextSpan TemplateTargetSpan { get; set; }
     public UiDocument(string fileName, string text, List<UiNode> nodes,
         string? namespaceDeclaration = null, TextSpan namespaceSpan = default)
     {

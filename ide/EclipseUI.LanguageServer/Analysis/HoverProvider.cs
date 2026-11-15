@@ -16,6 +16,12 @@ public static class HoverProvider
         var context = CursorScanner.Scan(analysis.Text, offset);
         switch (context.Kind)
         {
+            case CursorKind.DirectiveArgument when context.Directive == "template":
+            {
+                var (name, span) = WordAt(analysis.Text, context.TokenStart);
+                var element = analysis.ResolveAny(catalog, name);
+                return element is null ? null : new UiHoverResult(span, ElementMarkdown(element));
+            }
             case CursorKind.TagName:
             case CursorKind.EndTagName:
             {
@@ -177,6 +183,7 @@ public static class HoverProvider
 
     private static string? AttributeMarkdown(DocumentAnalysis analysis, UiCatalog catalog, CursorContext context)
     {
+        if (context.AttributeName == "Part") return "**Part** — named part of a control template, available through `TemplateInstance.FindPart<T>()`. Names must be unique within the template.";
         var candidate = analysis.FindAttribute(catalog, context);
         if (candidate is null) return null;
 
@@ -262,6 +269,7 @@ public static class HoverProvider
         "using" => "**@using** — namespace import (or `@using Alias = Ns.Type`)\n\nTags resolve only inside imported namespaces (K22).",
         "code" => "**@code** — class member block\n\nMembers merge into the partial class, exactly like the code-behind file.",
         "style" => "**@style** — component style block\n\nEustyle rules scoped to this component (`{Component}__{class}`).",
+        "template" => "**@template ControlType** — reusable control template. `Owner` has the target control type; each application builds a fresh visual tree.",
         "else" => "**else** — continuation of the preceding `@if` branch (written without `@`).",
         _ => null,
     };

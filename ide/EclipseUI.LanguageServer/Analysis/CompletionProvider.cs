@@ -11,7 +11,7 @@ namespace EclipseUI.LanguageServer.Analysis;
 /// </summary>
 public static class CompletionProvider
 {
-    private static readonly string[] ReservedAttributes = { "Class", "Style", "Ref", "Key" };
+    private static readonly string[] ReservedAttributes = { "Class", "Style", "Ref", "Key", "Part" };
 
     public static UiCompletionList Complete(DocumentAnalysis analysis, UiCatalog catalog, int offset)
     {
@@ -26,9 +26,30 @@ public static class CompletionProvider
             CursorKind.AttributeValue => Values(analysis, catalog, context, replacement),
             CursorKind.Expression => Expressions(analysis, catalog, context, offset),
             CursorKind.Directive => Directives(replacement),
+            CursorKind.DirectiveArgument when context.Directive == "template" => TemplateTargets(analysis, catalog, context, replacement),
             CursorKind.DirectiveArgument => Namespaces(analysis, catalog, context, replacement),
             _ => UiCompletionList.Empty,
         };
+    }
+
+    private static UiCompletionList TemplateTargets(DocumentAnalysis analysis, UiCatalog catalog, CursorContext context, TextSpan replacement)
+    {
+        var end = replacement.End;
+        while (end < analysis.Text.Length && (char.IsLetterOrDigit(analysis.Text[end]) || analysis.Text[end] is '_' or '.')) end++;
+        replacement = new(replacement.Start, end - replacement.Start);
+        var aliases = analysis.Aliases.Where(a => a.Value is not null &&
+            catalog.FindByTypeDisplayName(a.Value)?.Properties.ContainsKey("Template") == true &&
+            a.Key.StartsWith(context.Prefix, StringComparison.OrdinalIgnoreCase))
+            .Select(a => new UiCompletionItem(a.Key, UiCompletionKind.Class, a.Value, "Control template target alias."));
+        var types = catalog.Elements.Where(e => e.Properties.ContainsKey("Template") && !analysis.Aliases.ContainsKey(e.Tag) &&
+            e.Tag.StartsWith(context.Prefix, StringComparison.OrdinalIgnoreCase)).Select(e =>
+        {
+            var ns = TypeNames.NamespaceOf(e.ClrTypeDisplayName);
+            var edit = ns is null ? null : UiImportService.CreateImportEdit(analysis, ns);
+            return new UiCompletionItem(e.Tag, UiCompletionKind.Class, e.ClrTypeDisplayName,
+                "Control template target; Owner has this type.", AdditionalEdits: edit is null ? null : new[] { edit });
+        });
+        return new(replacement, aliases.Concat(types).ToArray());
     }
 
     // ---- 表达式（C# 投影，design/06 §6.3）----
@@ -433,6 +454,9 @@ public static class CompletionProvider
             new("@using", UiCompletionKind.Directive, "import a namespace",
                 "tags resolve only inside imported namespaces (K22)",
                 "@using ${1:EclipseUI.Elements}", IsSnippet: true),
+            new("@template", UiCompletionKind.Directive, "declare a control template factory",
+                "Owner is the typed templated control; each application creates a fresh visual tree",
+                "@template ${1:Button}", IsSnippet: true),
             new("@code", UiCompletionKind.Directive, "class member block",
                 "members merge into the partial class, same as code-behind",
                 "@code {\n\t$0\n}", IsSnippet: true),
@@ -576,6 +600,7 @@ public static class CompletionProvider
         "Style" => "inline declarations: `CornerRadius: 8; FontSize: 14`",
         "Ref" => "assigns the element/component instance to a code-behind field (EUI029)",
         "Key" => "item identity for `@foreach` reuse — first element of the item template only (EUI010)",
+        "Part" => "named visual part of a control template; resolved by TemplateInstance.FindPart<T>()",
         _ => "reserved",
     };
 }

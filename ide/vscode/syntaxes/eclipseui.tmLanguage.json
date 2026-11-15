@@ -41,6 +41,7 @@
         { "include": "#code-block" },
         { "include": "#style-block" },
         { "include": "#namespace-directive" },
+        { "include": "#template-directive" },
         { "include": "#using-directive" },
         { "include": "#else-directive" },
         { "include": "#unknown-directive" }
@@ -187,6 +188,14 @@
       ]
     },
 
+    "template-directive": {
+      "match": "(@)(template)\\b\\s+([A-Za-z_][A-Za-z0-9_.]*)",
+      "captures": {
+        "1": { "name": "punctuation.definition.directive.eclipseui" },
+        "2": { "name": "keyword.control.directive.eclipseui" },
+        "3": { "name": "entity.name.type.eclipseui" }
+      }
+    },
     "unknown-directive": {
       "match": "(@)([A-Za-z_][A-Za-z0-9_]*)",
       "captures": {

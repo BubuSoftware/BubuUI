@@ -3,9 +3,9 @@ using System;
 namespace EclipseUI.Elements;
 
 [UiContent(UiContentKind.Text, Target = nameof(Label))]
-public class Button : Panel
+public class Button : TemplatedControl
 {
-    public override Rect? GetContentClip() => GetLabelBounds();
+    public override Rect? GetContentClip() => TemplateRoot is null ? GetLabelBounds() : null;
     /// <summary>Label/content area; compound buttons can reserve space for an icon.</summary>
     public virtual Rect GetLabelBounds() => new(HorizontalPadding, VerticalPadding, Math.Max(0, FinalRect.Width - HorizontalPadding * 2), Math.Max(0, FinalRect.Height - VerticalPadding * 2));
     public static readonly RoutedEvent ClickEvent = new RoutedEvent("Click", RoutingStrategy.Bubble);
@@ -45,7 +45,30 @@ public class Button : Panel
     }
 
     [UiSlot("Content")]
-    public Element? Content { get => Children.Count == 0 ? null : Children[0]; set => Children.ReplaceAll(value is null ? [] : [value]); }
+    public Element? Content
+    {
+        get => _content;
+        set
+        {
+            if (ReferenceEquals(_content, value)) return;
+            if (_content?.Parent is Panel old) old.Children.Remove(_content);
+            _content = value;
+            if (TemplateRoot is null && value is not null) Children.Add(value);
+            InvalidateMeasure(); Invalidate();
+            if (TemplateRoot is not null) ApplyTemplate();
+        }
+    }
+    private Element? _content;
+    public override void Dispose()
+    {
+        try { base.Dispose(); }
+        finally { _content?.Dispose(); }
+    }
+    protected override void OnTemplateRemoving()
+    {
+        if (_content?.Parent is Panel old) old.Children.Remove(_content);
+        base.OnTemplateRemoving();
+    }
 
     public void Click() => RaiseEvent(new RoutedEventArgs(ClickEvent));
 
@@ -65,6 +88,8 @@ public class Button : Panel
 
     protected internal override Size MeasureCore(Size available)
     {
+        if (TemplateRoot is not null) return base.MeasureCore(available);
+        if (Content is not null && Content.Parent is null) Children.Add(Content);
         if (Content is not null)
         {
             Content.Measure(new(Math.Max(0, available.Width - HPad * 2), Math.Max(0, available.Height - VPad * 2)));
@@ -74,7 +99,11 @@ public class Button : Panel
         return new Size(metrics.Width + HPad * 2, metrics.Height + VPad * 2);
     }
 
-    protected internal override void ArrangeCore(Rect final) => Content?.Arrange(new(HPad, VPad, Math.Max(0, final.Width - HPad * 2), Math.Max(0, final.Height - VPad * 2)));
+    protected internal override void ArrangeCore(Rect final)
+    {
+        if (TemplateRoot is not null) base.ArrangeCore(final);
+        else Content?.Arrange(new(HPad, VPad, Math.Max(0, final.Width - HPad * 2), Math.Max(0, final.Height - VPad * 2)));
+    }
 }
 
 [UiContent(UiContentKind.Text, Target = nameof(Label))]

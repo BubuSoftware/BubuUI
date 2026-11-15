@@ -15,6 +15,28 @@ namespace EclipseUI.Ide.Tests;
 /// </summary>
 public class ProtocolTests
 {
+    [Fact]
+    public async Task Session_StylesheetFeaturesUseRealLspRanges()
+    {
+        const string uri = "file:///workspace/control-theme.eustyle";
+        const string text = "@using EclipseUI.Elements;\nButton { Background: #ffffff; }";
+        var transcript = await RunSession(
+            Request(1, "initialize"), Notification("initialized", new JsonObject()), DidOpen(uri, text),
+            Request(2, "textDocument/completion", Position(uri, 1, 14)),
+            Request(3, "textDocument/hover", Position(uri, 1, 14)),
+            Request(4, "textDocument/definition", Position(uri, 1, 14)),
+            Request(5, "textDocument/documentSymbol", new JsonObject { ["textDocument"] = new JsonObject { ["uri"] = uri } }),
+            Request(6, "textDocument/semanticTokens/full", new JsonObject { ["textDocument"] = new JsonObject { ["uri"] = uri } }));
+        var completion = transcript.Single(m => m["id"]?.ToString() == "2")["result"]!["items"]!.AsArray();
+        var background = Assert.Single(completion, n => n!["label"]!.GetValue<string>() == "Background");
+        Assert.Equal(9, background!["textEdit"]!["range"]!["start"]!["character"]!.GetValue<int>());
+        Assert.Equal(19, background["textEdit"]!["range"]!["end"]!["character"]!.GetValue<int>());
+        Assert.NotNull(transcript.Single(m => m["id"]?.ToString() == "3")["result"]);
+        Assert.NotNull(transcript.Single(m => m["id"]?.ToString() == "4")["result"]);
+        Assert.NotEmpty(transcript.Single(m => m["id"]?.ToString() == "5")["result"]!.AsArray());
+        Assert.NotEmpty(transcript.Single(m => m["id"]?.ToString() == "6")["result"]!["data"]!.AsArray());
+    }
+
     private static JsonObject Request(int id, string method, JsonObject? parameters = null) => new()
     {
         ["jsonrpc"] = "2.0",

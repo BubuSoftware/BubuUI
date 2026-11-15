@@ -239,6 +239,16 @@ public abstract class Element : UiObject
     private Dictionary<StyledProperty, IValueBox>? _templateValues;
     private int _templateValueDepth;
     private Dictionary<StyledProperty, IValueBox>? _styleValues;
+    private Dictionary<StyledProperty, IValueBox>? _skinValues;
+    private Dictionary<StyledProperty, IValueBox>? _controlThemeValues;
+    private Dictionary<StyledProperty, IValueBox>? _ruleValues;
+    private int _skinValueDepth;
+    private int _valueBatchDepth;
+    private HashSet<StyledProperty>? _batchedChanges;
+    [UiIgnore] public string? Part { get; set; }
+    [UiIgnore] public Elements.TemplatedControl? TemplatedParent { get; internal set; }
+    public void SetTemplatedParent(Elements.TemplatedControl owner) => TemplatedParent = owner;
+    public bool IsLightTheme => ThemeDefaults?.IsLight ?? true;
     private IReadOnlyList<string>? _classes;
     private IReadOnlyList<string>? _templateClasses;
     private IReadOnlyList<string>? _localClasses;
@@ -331,6 +341,12 @@ public abstract class Element : UiObject
             _styleValues.TryGetValue(property, out var styleBox) &&
             styleBox is ValueBox<T> styleTyped)
             return styleTyped.Value;
+        if (_ruleValues?.TryGetValue(property, out var ruleBox) == true && ruleBox is ValueBox<T> ruleTyped)
+            return ruleTyped.Value;
+        if (_controlThemeValues?.TryGetValue(property, out var themeBox) == true && themeBox is ValueBox<T> themeTyped)
+            return themeTyped.Value;
+        if (_skinValues?.TryGetValue(property, out var skinBox) == true && skinBox is ValueBox<T> skinTyped)
+            return skinTyped.Value;
         if (property.Inherits && _parent is not null)
             return _parent.GetValue(property);
         return ThemeDefaults is { } theme ? theme.GetDefault(this, property) : property.DefaultValue;
@@ -339,6 +355,7 @@ public abstract class Element : UiObject
     public void SetValue<T>(StyledProperty<T> property, T value)
     {
         UiThreadGuard.AssertUiThread(this, nameof(SetValue));
+        if (_skinValueDepth > 0) { SetSkinValue(property, value); return; }
         if (_templateValueDepth > 0)
         {
             SetTemplateValue(property, value);
@@ -366,6 +383,7 @@ public abstract class Element : UiObject
     /// <summary>Initializes a template root value without replacing a caller's local override.</summary>
     public void SetTemplateValue<T>(StyledProperty<T> property, T value)
     {
+        if (_skinValueDepth > 0) { SetSkinValue(property, value); return; }
         UiThreadGuard.AssertUiThread(this, nameof(SetTemplateValue));
         var previous = GetValue(property);
         if (_templateValues is not null &&
@@ -460,6 +478,7 @@ public abstract class Element : UiObject
 
     private void ApplyValueChange(StyledProperty property)
     {
+        if (_valueBatchDepth > 0) { (_batchedChanges ??= new()).Add(property); return; }
         PropertyChanged?.Invoke(this, property);
         InvalidateRender();
         switch (property.Invalidate)
@@ -470,6 +489,75 @@ public abstract class Element : UiObject
         if (property.Inherits)
             NotifyInheritedChange(property);
         if (property == IsVisibleProperty) NotifyFocusTreeChanged();
+    }
+
+    public IDisposable BeginSkinValues()
+    {
+        _skinValueDepth++;
+        return new SkinValueScope(this);
+    }
+    private sealed class SkinValueScope(Element owner) : IDisposable
+    {
+        private Element? _owner = owner;
+        public void Dispose() { if (_owner is { } e) { _owner = null; e._skinValueDepth--; } }
+    }
+    public void SetSkinValue<T>(StyledProperty<T> property, T value)
+    {
+        var old = GetValue(property);
+        (_skinValues ??= new())[property] = new ValueBox<T>(value);
+        if (!EqualityComparer<T>.Default.Equals(old, GetValue(property)))
+        {
+            var depth = _skinValueDepth;
+            _skinValueDepth = 0;
+            try { ApplyValueChange(property); }
+            finally { _skinValueDepth = depth; }
+        }
+    }
+    internal void SetControlThemeValue<T>(StyledProperty<T> property, T value)
+    {
+        var old = GetValue(property);
+        (_controlThemeValues ??= new())[property] = new ValueBox<T>(value);
+        if (!EqualityComparer<T>.Default.Equals(old, GetValue(property))) ApplyValueChange(property);
+    }
+    public void SetRuleValue<T>(StyledProperty<T> property, T value)
+    {
+        var old = GetValue(property);
+        (_ruleValues ??= new())[property] = new ValueBox<T>(value);
+        if (!EqualityComparer<T>.Default.Equals(old, GetValue(property))) ApplyValueChange(property);
+    }
+    public void ReplaceRuleValues(IReadOnlyDictionary<StyledProperty, ThemeSetter> setters)
+    {
+        using var batch = BeginValueBatch();
+        if (_ruleValues is not null)
+            foreach (var property in _ruleValues.Keys.Where(p => !setters.ContainsKey(p)).ToArray())
+            { _ruleValues.Remove(property); ApplyValueChange(property); }
+        foreach (var setter in setters.Values) setter.ApplyStyle(this);
+    }
+    internal void ReplaceControlThemeValues(IReadOnlyDictionary<StyledProperty, ThemeSetter> setters)
+    {
+        using var batch = BeginValueBatch();
+        if (_controlThemeValues is not null)
+            foreach (var property in _controlThemeValues.Keys.Where(p => !setters.ContainsKey(p)).ToArray())
+            { _controlThemeValues.Remove(property); ApplyValueChange(property); }
+        foreach (var setter in setters.Values) setter.Apply(this);
+    }
+    private IDisposable BeginValueBatch()
+    {
+        _valueBatchDepth++;
+        return new ValueBatch(this);
+    }
+    private sealed class ValueBatch(Element owner) : IDisposable
+    {
+        private Element? _owner = owner;
+        public void Dispose()
+        {
+            if (_owner is not { } element) return;
+            _owner = null;
+            if (--element._valueBatchDepth != 0 || element._batchedChanges is null) return;
+            var changes = element._batchedChanges;
+            element._batchedChanges = null;
+            foreach (var property in changes) element.ApplyValueChange(property);
+        }
     }
 
     /// <summary>
@@ -651,12 +739,18 @@ public abstract class Element : UiObject
     private void ReapplyStyles()
     {
         var provider = Styling.Provider;
-        if (provider is null) return;
-        provider.ClearStyles(this);
-        if (_classes is null) return;
-        foreach (var cls in _classes)
-            provider.ApplyClass(this, cls);
+        if (provider is not null)
+        {
+            provider.ClearStyles(this);
+            provider.ApplyRules(this);
+            if (_classes is not null)
+                foreach (var cls in _classes) provider.ApplyClass(this, cls);
+        }
+        OnStylesChanged();
     }
+
+    protected virtual void OnStylesChanged() { }
+    protected virtual void PrepareLayout() => Styling.Provider?.ApplyRules(this);
 
     private void NotifyInheritedChange(StyledProperty property)
     {
@@ -731,6 +825,7 @@ public abstract class Element : UiObject
             available.Width < 0 || available.Height < 0)
             throw new ArgumentOutOfRangeException(nameof(available), "Measure constraints must be non-negative or positive infinity.");
         EnsureInitialized();
+        PrepareLayout();
         if (!IsVisible || this is Elements.Popup { IsOpen: false })
         {
             _desired = _coreDesired = Size.Empty;

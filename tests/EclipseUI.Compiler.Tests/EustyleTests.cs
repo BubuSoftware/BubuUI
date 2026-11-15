@@ -430,7 +430,7 @@ public class EustyleTests
         var code = SourceOf(result, hint => hint.Contains("StyleBootstrap.g.cs"));
         AssertGeneratedCodeParses(code);
 
-        Assert.Contains("public static class StyleBootstrap", code);
+        Assert.Contains("public static partial class StyleBootstrap", code);
         Assert.Contains("public static void Apply(global::EclipseUI.Rendering.StyleRegistry registry)", code);
         Assert.Contains("registry.Define(\"primary\", s =>", code);
         Assert.Contains(".Hover(s =>", code);

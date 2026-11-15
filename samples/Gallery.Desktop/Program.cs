@@ -24,7 +24,7 @@ var builder = AppBuilder.Configure<GalleryApp>()
     .UseVello(new VelloSurfaceOptions { PreferVsync = options.Vsync })
     .UseHarfBuzzText()
     .UseFluentTheme(options.Theme)
-    .UseStyles(StyleRegistry.Instance, StyleBootstrap.Apply)
+    .UseStyles(StyleRegistry.Instance, Gallery.StyleBootstrap.Apply)
     .ConfigureServices(s => s.AddSingleton(options));
 
 // --cpu / --shot：离屏 CPU 快照路径（不开窗口）——Build() 装配后直接 measure/arrange 出图。

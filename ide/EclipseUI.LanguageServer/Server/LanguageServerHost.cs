@@ -629,7 +629,7 @@ public sealed class LanguageServerHost
         if (uri is null) return null;
         var analysis = _service.Analyze(uri);
         if (analysis is null) return null;
-        var help = EmbeddedCSharpService.SignatureHelp(analysis, offset);
+        var help = _service.SignatureHelp(uri, offset);
         if (help is null || help.Signatures.Count == 0) return null;
 
         var signatures = new JsonArray();
@@ -687,8 +687,7 @@ public sealed class LanguageServerHost
         var analysis = _service.Analyze(uri);
         if (analysis is null) return new JsonArray();
 
-        var actions = EmbeddedCSharpService.CodeActions(analysis,
-            _service.CatalogForUri(uri), _service.GetDiagnostics(uri));
+        var actions = _service.CodeActions(uri);
         var result = new JsonArray();
         foreach (var action in actions)
         {
@@ -727,7 +726,7 @@ public sealed class LanguageServerHost
         var analysis = _service.Analyze(uri);
         return analysis is null
             ? new JsonArray()
-            : ToTextEdits(analysis.Positions, EmbeddedCSharpService.Format(analysis));
+            : ToTextEdits(analysis.Positions, _service.Format(uri));
     }
 
     private JsonNode? RangeFormatting(JsonNode? parameters)
@@ -741,7 +740,7 @@ public sealed class LanguageServerHost
         var start = ToOffset(analysis.Positions, range?["start"]);
         var end = ToOffset(analysis.Positions, range?["end"]);
         return ToTextEdits(analysis.Positions,
-            EmbeddedCSharpService.Format(analysis)
+            _service.Format(uri)
                 .Where(edit => edit.Span.Start >= start && edit.Span.Start <= end));
     }
 
@@ -792,6 +791,16 @@ public sealed class LanguageServerHost
             await Task.Delay(400, source.Token).ConfigureAwait(false);
             if (CurrentVersion(uri) != version) return;
             await PublishDiagnosticsAsync(uri).ConfigureAwait(false);
+            // Theme/template edits change diagnostics in their consumers even before save.
+            foreach (var related in _service.RelatedDocuments(uri))
+            {
+                source.Token.ThrowIfCancellationRequested();
+                if (CurrentVersion(uri) != version) return;
+                var relatedVersion = CurrentVersion(related);
+                var diagnostics = _service.GetDiagnostics(related);
+                if (CurrentVersion(related) == relatedVersion)
+                    await PublishDiagnosticsAsync(related, diagnostics, relatedVersion).ConfigureAwait(false);
+            }
         }
         catch (OperationCanceledException)
         {

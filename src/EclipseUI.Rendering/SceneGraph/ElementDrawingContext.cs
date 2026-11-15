@@ -84,6 +84,14 @@ internal sealed class ElementDrawingContext : IElementDrawingContext
         if (rect.Size.IsEmpty || width <= 0 || color.A == 0) return;
         _list.Add(new StrokePath(PathGeometry.RoundedRectangle(At(rect), Math.Max(0, radius)), Convert(color), width));
     }
+    public void StrokeRectangle(Rect rect, UiLinearGradient gradient, double width = 1, double radius = 0)
+    {
+        if (rect.Size.IsEmpty || width <= 0) return;
+        Point Resolve(Point relative, Point offset) => At(new Point(rect.X + rect.Width * relative.X + offset.X, rect.Y + rect.Height * relative.Y + offset.Y));
+        var brush = new LinearGradient(Resolve(gradient.Start, gradient.StartOffset), Resolve(gradient.End, gradient.EndOffset),
+            [new(Math.Clamp(gradient.StartStop, 0, 1), Convert(gradient.StartColor)), new(1, Convert(gradient.EndColor))]);
+        _list.Add(new StrokePath(PathGeometry.RoundedRectangle(At(rect), Math.Max(0, radius)), brush, width));
+    }
     public void Ellipse(Rect rect, UiColor fill, UiColor stroke, double strokeWidth = 0)
     {
         if (rect.Size.IsEmpty) return;

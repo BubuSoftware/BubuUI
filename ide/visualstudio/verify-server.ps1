@@ -101,12 +101,29 @@ try {
     Send-Message @{ jsonrpc = '2.0'; id = 5; method = 'eclipseui/decompiledContent'; params = @{ uri = $definition.uri } }
     $decompiled = Read-Response 5
     if (-not $decompiled.content -or $decompiled.content -notmatch 'Label') { throw 'Attribute definition did not provide decompiled source.' }
-    Send-Message @{ jsonrpc = '2.0'; id = 6; method = 'shutdown'; params = $null }
-    $null = Read-Response 6
+    $skinUri = ([Uri](Join-Path $workspace 'Skin.ui')).AbsoluteUri
+    $skinText = "@namespace Smoke`n@using EclipseUI.Elements`n@template Button`n<Border Background={Owner.Background} />"
+    Send-Message @{ jsonrpc = '2.0'; method = 'textDocument/didOpen'; params = @{
+        textDocument = @{ uri = $skinUri; languageId = 'eclipseui'; version = 1; text = $skinText }
+    } }
+    $styleUri = ([Uri](Join-Path $workspace 'controls.eustyle')).AbsoluteUri
+    $styleText = "@using EclipseUI.Elements;`n@using Smoke;`n@theme Rounded for Button { Template: template(Skin); }`nButton { Theme: resource(Rounded); }"
+    Send-Message @{ jsonrpc = '2.0'; method = 'textDocument/didOpen'; params = @{
+        textDocument = @{ uri = $styleUri; languageId = 'eustyle'; version = 1; text = $styleText }
+    } }
+    $resourcePosition = @{ textDocument = @{ uri = $styleUri }; position = @{ line = 3; character = 27 } }
+    Send-Message @{ jsonrpc = '2.0'; id = 6; method = 'textDocument/completion'; params = $resourcePosition }
+    $resources = Read-Response 6
+    if (-not ($resources.items | Where-Object { $_.label -eq 'Rounded' })) { throw 'Control theme resource completion failed.' }
+    Send-Message @{ jsonrpc = '2.0'; id = 7; method = 'textDocument/definition'; params = $resourcePosition }
+    $resourceDefinition = Read-Response 7
+    if (-not $resourceDefinition -or $resourceDefinition.uri -ne $styleUri -or $resourceDefinition.range.start.line -ne 2) { throw 'Theme definition did not map to its stylesheet declaration.' }
+    Send-Message @{ jsonrpc = '2.0'; id = 8; method = 'shutdown'; params = $null }
+    $null = Read-Response 8
     Send-Message @{ jsonrpc = '2.0'; method = 'exit'; params = $null }
     if (-not $process.WaitForExit(5000)) { throw 'Server did not exit after shutdown.' }
     if ($process.ExitCode -ne 0) { throw "Server exited with code $($process.ExitCode)." }
-    Write-Host "Published server verified: initialize, open, completion, attribute-start hover/definition, decompiled source, shutdown. Log: $workspace\server.log" -ForegroundColor Green
+    Write-Host "Published server verified: initialize, completion, attribute navigation, decompiled source, control template/theme resources, shutdown. Log: $workspace\server.log" -ForegroundColor Green
 }
 finally {
     if ($started) {

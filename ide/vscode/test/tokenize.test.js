@@ -228,6 +228,17 @@ $accent: theme(#ffffff, #000000);
   expectAt(styleDoc, 6, '@states', 2, 'keyword.control.directive.eustyle', '@states');
   expectAt(styleDoc, 7, '$accent', 1, 'variable.other.eustyle', '$variable');
 
+  const templateDoc = await tokenize('source.eclipseui', '@template Button\n<Border Part="PART_Chrome" />');
+  expectAt(templateDoc, 0, '@template', 2, 'keyword.control.directive.eclipseui', 'template directive');
+  expectAt(templateDoc, 0, 'Button', 1, 'entity.name.type.eclipseui', 'template target');
+  const themeDoc = await tokenize('source.eustyle', '@using Demo;\n@theme Rounded for Button {\nTemplate: template(ButtonSkin);\n}\nButton /template/ Border.chrome { Theme: resource(Rounded); }\nButton { Label: "resource(fake)"; }');
+  expectAt(themeDoc, 0, '@using', 2, 'keyword.control.directive.eustyle', 'theme import');
+  expectAt(themeDoc, 1, 'Rounded', 2, 'entity.name.type.eustyle', 'theme declaration');
+  expectAt(themeDoc, 2, 'template(', 2, 'support.function.eustyle', 'template factory');
+  expectAt(themeDoc, 4, '/template/', 3, 'keyword.operator.template.eustyle', 'template boundary');
+  expectAt(themeDoc, 4, 'resource(', 3, 'support.function.eustyle', 'theme reference');
+  expectAt(themeDoc, 5, 'resource(fake)', 3, 'string.quoted.double.eustyle', 'string remains literal');
+
   // 回归：块定界符独占一行（Showcase.ui 的真实写法）。
   // 曾经的 bug：directive 的 end 要求 `) {` 同行，换行写 `{` 时规则永不结束，
   // 之后整个文件被吞进 meta.directive 里（没有任何补色）。

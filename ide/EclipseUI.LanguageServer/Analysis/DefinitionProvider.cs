@@ -33,6 +33,8 @@ public static class DefinitionProvider
         var context = CursorScanner.Scan(analysis.Text, offset);
         return context.Kind switch
         {
+            CursorKind.DirectiveArgument when context.Directive == "template" && catalog is not null =>
+                TagDefinition(analysis, catalog, analysis.Ast?.TemplateTarget ?? context.Prefix, workspaceRoot, compilation),
             CursorKind.Expression => ExpressionDefinition(analysis, context, offset),
             CursorKind.CodeBlock => CodeBlockDefinition(analysis, offset),
 
@@ -776,7 +778,7 @@ public static class DefinitionProvider
     /// 再反编译（<see cref="DecompileProvider"/>）。局部/参数恒有源码位置，走①映不回即 null，
     /// 不会落到②拿 ContainingType 误跳。找不到真实位置就 null，不猜（design/06 §6.3）。
     /// </summary>
-    private static UiDefinition? SymbolDefinition(DocumentAnalysis analysis, ISymbol symbol)
+    internal static UiDefinition? SymbolDefinition(DocumentAnalysis analysis, ISymbol symbol)
     {
         var source = symbol.Locations.FirstOrDefault(static l => l.IsInSource);
         if (source is not null)

@@ -537,7 +537,7 @@ public sealed class Lexer
     /// <c>@namespace Foo.Bar</c>：显式命名空间声明（spec/02 §2.2）。只接受一个点分名，
     /// 写到行尾为止；不接受分号（与 <c>@using</c> 同口径），也不接受第二个名字。
     /// </summary>
-    private Token ParseNamespaceDirective(int start)
+    private Token ParseNamespaceDirective(int start, string directiveName = "namespace")
     {
         while (_i < _s.Length && (_s[_i] == ' ' || _s[_i] == '\t')) _i++;
         int nameBegin = _i;
@@ -566,7 +566,7 @@ public sealed class Lexer
         return new Token
         {
             Kind = TokenKind.Directive,
-            Text = "namespace",
+            Text = directiveName,
             Aux = name,
             Span = new TextSpan(start, _i - start),
             InnerSpan = new TextSpan(nameBegin, name.Length),
@@ -639,6 +639,8 @@ public sealed class Lexer
         // 且必须与同名 code-behind 的命名空间一致（生成器侧校验）。与 @using 同口径——不带分号。
         if (name == "namespace")
             return ParseNamespaceDirective(start);
+        if (name == "template")
+            return ParseNamespaceDirective(start, "template");
 
         // @code { ... }（K21，D86）与 @style { ... }（E1，design/17 §4.8）：块体整块捕获
         //（C# 感知的括号匹配——注释/字符串安全，样式块的 /* */ 注释同样覆盖），原文透传。

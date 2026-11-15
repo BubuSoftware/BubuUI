@@ -12,6 +12,8 @@ namespace EclipseUI;
 /// </summary>
 public interface IStyleProvider
 {
+    void ApplyRules(Element element) { }
+    void ApplyTemplateStyles(Elements.TemplatedControl owner) { }
     /// <summary>应用一个样式类的 setter 序列（按 <see cref="Element.SetStyleValue"/> 写 class 层）。</summary>
     void ApplyClass(Element element, string className);
 

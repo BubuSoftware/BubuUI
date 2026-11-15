@@ -58,6 +58,9 @@ design/06 §6.9 之后，目录不再是「扫 dll 元数据」，所有能力�
 | 诊断 Tier 1 | ✅ | 每次按键跑 `FrontEnd.Parse + Analyze`，与 `dotnet build` 同码同 span |
 | 诊断 Tier 2 | ✅ | 真生成器 + 项目 Compilation 的 CS/EUI 诊断经 `#line` 映回 `.ui`；400ms debounce，只在文档版本未变时发布 |
 | `.eustyle` 诊断 | ✅ | `.eustyle` 进 `documentSelector`，`ExecuteStylesheet` 的 EUI050–052 有 LSP 红波浪线 |
+| 控件模板 `@template` / `Owner` | ✅ | 目标类型补全、导入、悬停、定义导航；类型化 Owner 接入 C# 服务，错误恢复视图保留模板宿主类型 |
+| `.eustyle` 控件主题 | ✅ | `@using`、`@theme`、typed setter、状态、`/template/`、`resource()`、`template()` 的补全/悬停/导航；按类型过滤候选，支持未保存文件及未完成输入 |
+| 主题编辑辅助 | ✅ | 同模块主题重命名（含本项目 `.cs/.ui` 可绑定引用）、大纲、语义着色、函数参数提示、导入与属性拼写快速修复、缩进及范围格式化；详见 [design/28](../design/28-lookless-controls.md) |
 | `@namespace` 契约 | ✅ | 必填；生成器报 EUI055（缺失）/ EUI056（与 code-behind 不一致），经 Tier 2 映回 `.ui`。补全提供 `@namespace` 指令与命名空间候选（自身命名空间排首位） |
 | 无 code-behind 的 `.ui` 组件 | ✅ | 目录把「同名同命名空间的 `.ui`」当组件证据（spec/02 §2.7），`<Tag />` 在编辑器与 `dotnet build` 里一致。K34：`@code` 里的 `[UiParameter]`/`[UiSlot]`/`[UiContent]` 由目录语法级提取为对外表面——补全、`@bind-` 校验与 `dotnet build` 同口径；有同名 `.cs` 时这些特性只对本文件可见（`EUI057` Warning）。`Ref={…}` 指向 `@code` 字段时 F12 落在本文档的字段声明 |
 | 标签补全 | ✅ | 来自项目目录；未 build 的自家控件、`.ui` 派生组件都在；选择链外未导入类型时，以同一补全项的附加编辑补入去重的 `@using`（`@namespace` 链内不需要，K33） |
@@ -70,7 +73,7 @@ design/06 §6.9 之后，目录不再是「扫 dll 元数据」，所有能力�
 | 跳转定义 | ✅ | 标签与**属性/事件/参数/附加属性**都走 Roslyn 符号查询，落在成员声明；有源码跳源码（含仓库里以源码编译的框架工程），无源码走成员级反编译（`eui-decompiled:`） |
 | 重命名 | ✅ | 可从 `{expr}` 或 `@code` 发起；项目模式通过 Roslyn Renamer 修改同项目 `.cs/.ui` 成员引用，`@foreach` 变量保留文档内路径。改不全、映不回或发生冲突时整体拒绝 |
 | signature help | ✅ | `textDocument/signatureHelp`，重载与当前参数位从同一份 Compilation 取 |
-| 语义着色 | ✅ | `textDocument/semanticTokens/full`，只着色 `{expr}` 与 `@code` 区间（模板表面仍归 TextMate）；项目模式走 Roslyn `Classifier` 对生成文档分类再经统一映射回映，legacy 回落探针投影（design/18 §12.12） |
+| 语义着色 | ✅ | `textDocument/semanticTokens/full`，`.ui` 着色 `{expr}` 与 `@code` 区间（模板表面仍归 TextMate）；项目模式走 Roslyn `Classifier` 对生成文档分类再经统一映射回映，legacy 回落探针投影；`.eustyle` 着色类型、属性、主题与模板引用 |
 | 代码操作 | ✅ | `EUI001` 补 `@using`、`EUI002` 最近属性替换、`CS0103` 把缺失成员生成到 `@code` 块（触发点仍是属性表达式，`@code` 块内不产生快速修复）；映不回的编辑丢弃 |
 | 格式化 / 区间格式化 | ✅ | 模板缩进按 AST 做最小行编辑；`@code` 块体交 Roslyn `Formatter` |
 | watcher 自动失效 | ✅ | `.cs/.ui/.eustyle/.csproj/Directory.Build.props/obj/project.assets.json` 变更 → 重建快照 + 重发诊断，无需手动 Reload |

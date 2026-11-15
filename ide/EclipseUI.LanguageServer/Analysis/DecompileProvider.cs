@@ -118,11 +118,15 @@ public static class DecompileProvider
     {
         var lazy = Decompilers.GetOrAdd(assemblyPath, static path =>
             new Lazy<CSharpDecompiler?>(() => CreateDecompiler(path), LazyThreadSafetyMode.ExecutionAndPublication));
-        if (lazy.Value is null) return null;
+        var decompiler = lazy.Value;
+        if (decompiler is null) return null;
 
         try
         {
-            var text = lazy.Value.DecompileTypeAsString(new FullTypeName(fullTypeName));
+            // ILSpy transforms keep mutable state; serialize use of each cached instance.
+            string text;
+            lock (decompiler)
+                text = decompiler.DecompileTypeAsString(new FullTypeName(fullTypeName));
             var key = Key(uri);
             Texts[key] = text;
             Sources[key] = (assemblyPath, fullTypeName);

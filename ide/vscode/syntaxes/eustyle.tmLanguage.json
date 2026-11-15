@@ -6,6 +6,9 @@
   "comment": "Eustyle：SCSS 子集，编译成 StyleRegistry 调用（design/17 §4.8）。同一份 grammar 也嵌在 .ui 的 @style 块里。",
   "patterns": [
     { "include": "#comment" },
+    { "include": "#string" },
+    { "include": "#theme-declaration" },
+    { "include": "#template-boundary" },
     { "include": "#directive" },
     { "include": "#variable" },
     { "include": "#function" },
@@ -18,6 +21,21 @@
     { "include": "#punctuation" }
   ],
   "repository": {
+    "string": {
+      "begin": "\"", "end": "\"", "name": "string.quoted.double.eustyle",
+      "patterns": [{ "match": "\\\\.", "name": "constant.character.escape.eustyle" }]
+    },
+    "theme-declaration": {
+      "match": "(@)(theme)\\b\\s+([A-Za-z_][A-Za-z0-9_]*)\\s+(for)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+      "captures": {
+        "1": { "name": "punctuation.definition.directive.eustyle" },
+        "2": { "name": "keyword.control.directive.eustyle" },
+        "3": { "name": "entity.name.type.eustyle" },
+        "4": { "name": "keyword.control.eustyle" },
+        "5": { "name": "entity.name.tag.eustyle" }
+      }
+    },
+    "template-boundary": { "match": "/template/", "name": "keyword.operator.template.eustyle" },
     "comment": {
       "patterns": [
         { "match": "//.*$", "name": "comment.line.double-slash.eustyle" },
@@ -26,7 +44,7 @@
     },
 
     "directive": {
-      "match": "(@)(states|style)\\b",
+      "match": "(@)(states|style|using|theme)\\b",
       "captures": {
         "1": { "name": "punctuation.definition.directive.eustyle" },
         "2": { "name": "keyword.control.directive.eustyle" }
@@ -56,7 +74,7 @@
     },
 
     "function": {
-      "match": "\\b(theme|rgb|rgba)\\b(?=\\s*\\()",
+      "match": "\\b(theme|template|resource|rgb|rgba)\\b(?=\\s*\\()",
       "name": "support.function.eustyle"
     },
 

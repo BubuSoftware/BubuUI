@@ -34,6 +34,17 @@ public static class TemplateAnalyzer
         var imports = CollectImports(doc.Nodes);
         var scope = new TagScope(imports, CollectAliases(doc.Nodes, imports, catalog, diags),
             EnclosingNamespaces(doc.Namespace));
+        if (doc.TemplateTarget is { } targetName)
+        {
+            var target = scope.Resolve(catalog, targetName).Element;
+            var current = target;
+            while (current is not null && current.ClrTypeDisplayName != "global::EclipseUI.Elements.TemplatedControl")
+                current = current.BaseTypeDisplayName is { } parent ? catalog.FindByTypeDisplayName(parent) : null;
+            if (current is null)
+                diags.Add(UiDiagnostics.Error(UiDiagnostics.Syntax, "@template requires an imported TemplatedControl type.", doc.TemplateTargetSpan));
+            if (doc.Nodes.OfType<UiElement>().FirstOrDefault() is { } templateRoot && catalog.Resolve(templateRoot.Tag, imports, EnclosingNamespaces(doc.Namespace)).Element is { IsEmbeddable: false })
+                diags.Add(UiDiagnostics.Error(UiDiagnostics.Syntax, "A control template root must be an Element.", templateRoot.TagSpan));
+        }
 
         // 具名插槽宿主（spec/02 §4.12.5）：自身模板中的 <ContentSlot> 按 code-behind 类的
         // [UiSlot] 属性解析。生成器/探针调用带 ownSlots（code-behind 符号扫描，权威——code-behind
@@ -848,6 +859,12 @@ public static class TemplateAnalyzer
 
             // 解析按 §14.5.3 分支：控件 = 保留 → 事件 → 属性；组件 = 保留 → 参数
             // （委托参数就是事件，不做 On* 推断；组件不解析 Events，design/14 §14.6.2）。
+            if (attr.Name == "Part")
+            {
+                if (attr.Kind != AttrValueKind.Literal || attr.IsBind || !IsValidIdentifier(attr.Value))
+                    diags.Add(UiDiagnostics.Error(UiDiagnostics.Syntax, "Part requires a literal identifier.", attr.ValueSpan));
+                continue;
+            }
             UiEventDef? eventDef = def.Events.TryGetValue(attr.Name, out var evt) ? evt : null;
             UiParameterDef? paramDef = def.Parameters.TryGetValue(attr.Name, out var prm) ? prm : null;
             UiPropDef? propDef = null;

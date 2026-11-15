@@ -1,0 +1,24 @@
+@using EclipseUI.Elements
+@using EclipseUI.Themes.Fluent
+
+@theme FluentButton for Button {
+    Template: template(FluentButtonTemplate);
+    Background: theme(#ffffff0f, #ffffffb3);
+    Foreground: theme(#ffffff, #000000e4);
+    BorderBrush: theme(#ffffff12, #0000000f);
+    CornerRadius: 4;
+    HorizontalPadding: 12;
+    VerticalPadding: 5;
+
+    &:hover {
+        Background: theme(#ffffff15, #f9f9f980);
+    }
+    &:pressed {
+        Background: theme(#ffffff08, #f9f9f94d);
+        Foreground: theme(#ffffffc5, #0000009e);
+    }
+    &:disabled {
+        Background: theme(#ffffff0b, #f9f9f94d);
+        Foreground: theme(#ffffff5d, #0000005c);
+    }
+}

@@ -40,6 +40,7 @@ public static class UiTemplateScanner
         return new UiTemplateDeclaration(tag, doc.Namespace)
         {
             Path = path,
+            TemplateTarget = doc.TemplateTarget,
             CodeBlocks = blocks,
             RootTag = doc.Nodes.OfType<UiElement>().FirstOrDefault()?.Tag,
             Usings = TemplateAnalyzer.CollectUsingLines(doc.Nodes),

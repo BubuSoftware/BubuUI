@@ -12,6 +12,33 @@ namespace EclipseUI.Rendering;
 /// </summary>
 public sealed class StyleRegistry : IStyleProvider
 {
+    private readonly List<(Func<Element, bool> Owner, Func<Element, bool>? Part, int Specificity, ThemeSetter[] Setters)> _rules = [];
+    private readonly HashSet<Type> _modules = [];
+    public bool InstallModule(Type module) => _modules.Add(module);
+    public void AddRule(Func<Element, bool> owner, Func<Element, bool>? part, params ThemeSetter[] setters) => AddRule(owner, part, 0, setters);
+    public void AddRule(Func<Element, bool> owner, Func<Element, bool>? part, int specificity, params ThemeSetter[] setters) => _rules.Add((owner, part, specificity, setters.ToArray()));
+    public void ApplyRules(Element element)
+    {
+        if (_rules.Count == 0 || element.TemplatedParent is not null) return;
+        var values = new Dictionary<StyledProperty, ThemeSetter>();
+        foreach (var rule in _rules.OrderBy(r => r.Specificity))
+            if (rule.Part is null && element.TemplatedParent is null && rule.Owner(element))
+                foreach (var setter in rule.Setters) values[setter.TargetProperty] = setter;
+        element.ReplaceRuleValues(values);
+    }
+    public void ApplyTemplateStyles(TemplatedControl owner)
+    {
+        if (_rules.Count == 0 || owner.TemplateRoot is null) return;
+        foreach (var part in new[] { owner.TemplateRoot }.Concat(owner.TemplateRoot.Descendants()))
+        {
+            if (!ReferenceEquals(part.TemplatedParent, owner)) continue;
+            var values = new Dictionary<StyledProperty, ThemeSetter>();
+            foreach (var rule in _rules.OrderBy(r => r.Specificity))
+                if (rule.Part is not null && rule.Owner(owner) && rule.Part(part))
+                    foreach (var setter in rule.Setters) values[setter.TargetProperty] = setter;
+            part.ReplaceRuleValues(values);
+        }
+    }
     public static StyleRegistry Instance { get; } = new();
 
     private readonly Dictionary<string, ClassStyle> _styles = new(StringComparer.Ordinal);

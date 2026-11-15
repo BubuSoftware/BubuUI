@@ -54,7 +54,13 @@ public static class Eustyle
     /// </summary>
     public static EustyleStylesheet Parse(string text, string filePath, List<UiDiagnostic> diagnostics,
         StylePropertyCatalog properties, int spanOffset = 0, IReadOnlyCollection<string>? externalStates = null)
-        => new Impl(text, diagnostics, spanOffset, externalStates, properties).Document();
+    {
+        var themeModule = ControlThemeSyntax.Parse(text, diagnostics);
+        if (spanOffset > 0 && themeModule.Nodes.Count > 0)
+            diagnostics.Add(UiDiagnostics.Error(UiDiagnostics.StyleSyntax,
+                "Control themes and typed rules must be declared in a .eustyle module, not an inline @style block.", new TextSpan(spanOffset, text.Length)));
+        return new Impl(themeModule.LegacyText, diagnostics, spanOffset, externalStates, properties).Document();
+    }
 
     /// <summary>
     /// 只收集 <c>@states</c> 声明（E5 第一级目录收集）：预扫全文——不做规则解析，

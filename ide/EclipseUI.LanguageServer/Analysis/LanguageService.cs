@@ -68,6 +68,14 @@ public sealed class LanguageService
     public IReadOnlyList<ProjectSnapshot> Snapshots(string uri) =>
         _projects?.ResolveAll(DocumentStore.UriToPath(uri)) ?? Array.Empty<ProjectSnapshot>();
 
+    public IReadOnlyList<string> RelatedDocuments(string uri)
+    {
+        var projects = Snapshots(uri);
+        return _documents.All.Where(d => d.Uri != uri &&
+            (_projects is null || projects.Any(p => p.Evaluation.Owns(DocumentStore.UriToPath(d.Uri)))))
+            .Select(d => d.Uri).ToArray();
+    }
+
     /// <summary>取（或重算）当前文档的分析结果：版本 + 文本 + code-behind + 项目快照都不变才复用。</summary>
     public DocumentAnalysis? Analyze(string uri)
     {
@@ -157,6 +165,23 @@ public sealed class LanguageService
                 foreach (var project in projects)
                     foreach (var diagnostic in project.Diagnostics)
                         if (SamePath(diagnostic.Path, path)) result.Add(diagnostic.Diagnostic);
+            if (projects.Count == 0 && _documents.TryGet(uri, out var styleDocument))
+            {
+                if (includeTier2 && _legacy.Compilation is { } compilation)
+                {
+                    var files = StyleFiles(uri, null).Select(f => (Path: f.Key, Text: f.Value));
+                    var generated = GeneratorHost.Run(compilation, files, Microsoft.CodeAnalysis.CSharp.CSharpParseOptions.Default, "StandaloneStyles");
+                    foreach (var diagnostic in generated.Diagnostics.Where(d => d.Id.StartsWith("EUI", StringComparison.Ordinal) && SamePath(d.Location.GetLineSpan().Path, path)))
+                        result.Add(new(diagnostic.Id, diagnostic.GetMessage(),
+                            diagnostic.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error ? Compiler.DiagnosticSeverity.Error : Compiler.DiagnosticSeverity.Warning,
+                            new(diagnostic.Location.SourceSpan.Start, diagnostic.Location.SourceSpan.Length)));
+                }
+                else
+                {
+                    var theme = ControlThemeSyntax.Parse(styleDocument.Text, result);
+                    Eustyle.Parse(theme.LegacyText, path, result, properties: _legacy.Catalog.StyleProperties);
+                }
+            }
         }
         else if (projects.Count > 0)
         {
@@ -194,9 +219,49 @@ public sealed class LanguageService
 
     private UiCatalog CatalogFor(string uri) => CatalogForUri(uri);
 
+    private StyleLanguageProvider? StyleFor(string uri)
+    {
+        if (!_documents.TryGet(uri, out var document)) return null;
+        var path = DocumentStore.UriToPath(uri);
+        var project = Snapshots(uri).FirstOrDefault();
+        var (catalog, compilation, unowned) = Current(uri, project);
+        if (unowned) return null;
+        var files = StyleFiles(uri, project);
+        return new(path, document.Text, catalog, compilation, files, project);
+    }
+
+    private Dictionary<string, string> StyleFiles(string uri, ProjectSnapshot? project)
+    {
+        var files = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        // A real project is authoritative. Standalone mode only shares explicitly opened documents.
+        var paths = project?.Evaluation.AdditionalFiles ?? _documents.All.Select(d => DocumentStore.UriToPath(d.Uri)).ToArray();
+        foreach (var path in paths)
+        {
+            if (!path.EndsWith(".ui", StringComparison.OrdinalIgnoreCase) && !path.EndsWith(".eustyle", StringComparison.OrdinalIgnoreCase)) continue;
+            var opened = _documents.All.FirstOrDefault(d => SamePath(DocumentStore.UriToPath(d.Uri), path));
+            if (opened is not null) files[path] = opened.Text;
+            else if (_projects?.TryBuffer(path, out var buffered) == true) files[path] = buffered;
+            else try { if (File.Exists(path)) files[path] = File.ReadAllText(path); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
+        if (_documents.TryGet(uri, out var current)) files[DocumentStore.UriToPath(uri)] = current.Text;
+        return files;
+    }
+
+    public IReadOnlyList<UiTextEdit> Format(string uri) => !IsTemplate(uri)
+        ? StyleFor(uri)?.Format() ?? []
+        : Analyze(uri) is { } analysis ? EmbeddedCSharpService.Format(analysis) : [];
+
+    public UiSignatureHelp? SignatureHelp(string uri, int offset) => !IsTemplate(uri)
+        ? StyleFor(uri)?.SignatureHelp(offset)
+        : Analyze(uri) is { } analysis ? EmbeddedCSharpService.SignatureHelp(analysis, offset) : null;
+
+    public IReadOnlyList<UiCodeAction> CodeActions(string uri) => !IsTemplate(uri)
+        ? StyleFor(uri)?.CodeActions() ?? []
+        : Analyze(uri) is { } analysis ? EmbeddedCSharpService.CodeActions(analysis, CatalogForUri(uri), GetDiagnostics(uri)) : [];
+
     public UiCompletionList Complete(string uri, int offset)
     {
-        if (!IsTemplate(uri)) return UiCompletionList.Empty;
+        if (!IsTemplate(uri)) return StyleFor(uri)?.Complete(offset) ?? UiCompletionList.Empty;
         var analysis = Analyze(uri);
         return analysis is null ? UiCompletionList.Empty : CompletionProvider.Complete(analysis, CatalogFor(uri), offset);
     }
@@ -209,7 +274,7 @@ public sealed class LanguageService
     public async Task<UiCompletionList> CompleteAsync(
         string uri, int offset, char? triggerCharacter = null, CancellationToken cancellationToken = default)
     {
-        if (!IsTemplate(uri)) return UiCompletionList.Empty;
+        if (!IsTemplate(uri)) return StyleFor(uri)?.Complete(offset) ?? UiCompletionList.Empty;
         var analysis = Analyze(uri);
         if (analysis is null) return UiCompletionList.Empty;
         var context = CursorScanner.Scan(analysis.Text, offset);
@@ -223,7 +288,7 @@ public sealed class LanguageService
 
     public UiHoverResult? Hover(string uri, int offset)
     {
-        if (!IsTemplate(uri)) return null;
+        if (!IsTemplate(uri)) return StyleFor(uri)?.Hover(offset);
         var analysis = Analyze(uri);
         return analysis is null ? null : HoverProvider.Hover(analysis, CatalogFor(uri), offset);
     }
@@ -231,13 +296,25 @@ public sealed class LanguageService
     /// <summary>跳转定义（L6）：标签与属性都走项目 Compilation 的符号查询（§6.9.3）。</summary>
     public UiDefinition? Definition(string uri, int offset)
     {
-        if (!IsTemplate(uri)) return null;
+        if (!IsTemplate(uri)) return StyleFor(uri)?.Definition(offset);
+        var style = StyleFor(uri);
+        if (style?.CSharpThemeAt(offset) is { } theme) return style.ThemeDefinition(theme.Name);
         var analysis = Analyze(uri);
         if (analysis is null) return null;
         var project = Snapshots(uri).FirstOrDefault();
         var (catalog, compilation, _) = Current(uri, project);
-        return DefinitionProvider.Definition(analysis, offset,
+        var definition = DefinitionProvider.Definition(analysis, offset,
             project?.Evaluation.Directory ?? _legacy.WorkspaceRoot, catalog, compilation);
+        if (definition is not null) return definition;
+        var context = CursorScanner.Scan(analysis.Text, offset);
+        if (context.Kind == CursorKind.AttributeValue && context.AttributeName == "Class")
+        {
+            var start = offset; var end = offset;
+            while (start > 0 && (char.IsLetterOrDigit(analysis.Text[start - 1]) || analysis.Text[start - 1] is '_' or '-')) start--;
+            while (end < analysis.Text.Length && (char.IsLetterOrDigit(analysis.Text[end]) || analysis.Text[end] is '_' or '-')) end++;
+            return StyleFor(uri)?.ClassDefinition(analysis.Text[start..end], context.TagName);
+        }
+        return null;
     }
 
     /// <summary>反编译虚拟文档内容（eui-decompiled: scheme，客户端内容提供器取回）。</summary>
@@ -256,7 +333,7 @@ public sealed class LanguageService
     public async Task<IReadOnlyList<UiSemanticToken>> SemanticTokensAsync(
         string uri, CancellationToken cancellationToken = default)
     {
-        if (!IsTemplate(uri)) return Array.Empty<UiSemanticToken>();
+        if (!IsTemplate(uri)) return StyleFor(uri)?.SemanticTokens() ?? [];
         var analysis = Analyze(uri);
         if (analysis is null) return Array.Empty<UiSemanticToken>();
         return await EmbeddedCSharpService.SemanticTokensAsync(
@@ -266,7 +343,8 @@ public sealed class LanguageService
     /// <summary>legacy 入口（同步）：探针扫描路径。项目模式的 Roslyn 重命名走异步版本。</summary>
     public UiPrepareRename? PrepareRename(string uri, int offset)
     {
-        if (!IsTemplate(uri)) return null;
+        if (!IsTemplate(uri)) return StyleFor(uri)?.PrepareRename(offset);
+        if (StyleFor(uri)?.CSharpThemeAt(offset) is { } theme) return new(theme.Span, theme.Name);
         var analysis = Analyze(uri);
         return analysis is null ? null : RenameProvider.Prepare(analysis, offset);
     }
@@ -274,7 +352,9 @@ public sealed class LanguageService
     /// <summary>legacy 入口（同步）：探针扫描路径。项目模式的 Roslyn 重命名走异步版本。</summary>
     public UiRenameResult? Rename(string uri, int offset, string newName)
     {
-        if (!IsTemplate(uri)) return null;
+        if (!IsTemplate(uri)) return StyleFor(uri)?.Rename(offset, newName);
+        var style = StyleFor(uri);
+        if (style?.CSharpThemeAt(offset) is { } theme) return style.RenameTheme(theme.Name, newName);
         var analysis = Analyze(uri);
         var project = Snapshots(uri).FirstOrDefault();
         var root = project?.Evaluation.Directory ?? _legacy.WorkspaceRoot;
@@ -290,7 +370,8 @@ public sealed class LanguageService
     public async Task<UiPrepareRename?> PrepareRenameAsync(
         string uri, int offset, CancellationToken cancellationToken = default)
     {
-        if (!IsTemplate(uri)) return null;
+        if (!IsTemplate(uri)) return StyleFor(uri)?.PrepareRename(offset);
+        if (StyleFor(uri)?.CSharpThemeAt(offset) is { } theme) return new(theme.Span, theme.Name);
         var analysis = Analyze(uri);
         if (analysis is null) return null;
         if (UseWorkspaceRename(analysis, offset))
@@ -302,7 +383,9 @@ public sealed class LanguageService
     public async Task<UiRenameResult?> RenameAsync(
         string uri, int offset, string newName, CancellationToken cancellationToken = default)
     {
-        if (!IsTemplate(uri)) return null;
+        if (!IsTemplate(uri)) return StyleFor(uri)?.Rename(offset, newName);
+        var style = StyleFor(uri);
+        if (style?.CSharpThemeAt(offset) is { } theme) return style.RenameTheme(theme.Name, newName);
         var analysis = Analyze(uri);
         if (analysis is null) return null;
         if (UseWorkspaceRename(analysis, offset) && _projects is not null)
@@ -320,7 +403,7 @@ public sealed class LanguageService
 
     public IReadOnlyList<UiSymbol> GetSymbols(string uri)
     {
-        if (!IsTemplate(uri)) return Array.Empty<UiSymbol>();
+        if (!IsTemplate(uri)) return StyleFor(uri)?.Symbols() ?? [];
         var analysis = Analyze(uri);
         return analysis is null ? Array.Empty<UiSymbol>() : SymbolProvider.Build(analysis, CatalogFor(uri));
     }

@@ -1,0 +1,8 @@
+@namespace EclipseUI.Headless.Tests.Fixtures
+@using EclipseUI.Elements
+@template Button
+
+<StackPanel>
+    <TextBlock>Alternative layout</TextBlock>
+    <ContentPresenter Part="PART_ContentPresenter" Content={Owner.Content} Label={Owner.Label} />
+</StackPanel>

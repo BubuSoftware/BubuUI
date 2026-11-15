@@ -140,7 +140,7 @@ public class AppBuilderTests
             var options = GalleryLaunchOptions.Parse([]);
             var app = AppBuilder.Configure<GalleryApp>()
                 .UseTheme(ElementTheme.Dark)
-                .UseStyles(StyleRegistry.Instance, StyleBootstrap.Apply)
+                .UseStyles(StyleRegistry.Instance, Gallery.StyleBootstrap.Apply)
                 .ConfigureServices(s => s.AddSingleton(options))
                 .Build();
 
@@ -172,7 +172,7 @@ public class AppBuilderTests
         {
             var app = AppBuilder.Configure<GalleryApp>()
                 .ConfigureServices(s => s.AddSingleton(GalleryLaunchOptions.Parse(["--legacy"])))
-                .UseStyles(StyleRegistry.Instance, StyleBootstrap.Apply)
+                .UseStyles(StyleRegistry.Instance, Gallery.StyleBootstrap.Apply)
                 .Build();
 
             Assert.True(StyleRegistry.Instance.IsDefined("badge"));

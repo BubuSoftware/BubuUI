@@ -27,7 +27,7 @@
 
   <!-- 测试自有 .ui 夹具（S1Probe 原在 samples/CounterApp，2026-11-09 移入，画廊不再承担测试职责） -->
   <ItemGroup>
-    <AdditionalFiles Include="Fixtures\**\*.ui" />
+    <AdditionalFiles Include="Fixtures\**\*.ui;Fixtures\**\*.eustyle" />
   </ItemGroup>
 
   <ItemGroup>

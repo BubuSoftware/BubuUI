@@ -303,7 +303,7 @@ public static class CursorScanner
 
                 // @using |（命名空间 / 别名目标）与 @namespace |（spec/02 §2.2 的必填声明）：
                 // 光标在指令名之后、行尾之前时都按「指令参数」处理，补全器按 Directive 分流。
-                if (word is "using" or "namespace")
+                if (word is "using" or "namespace" or "template")
                 {
                     int lineEnd = text.IndexOf('\n', i);
                     if (lineEnd < 0) lineEnd = text.Length;

@@ -17,5 +17,6 @@ public interface IHostThemeSource : IHostTheme
 /// <summary>Scoped defaults below explicit, template, class and inherited values.</summary>
 public interface IElementThemeDefaults
 {
+    bool IsLight => true;
     T GetDefault<T>(Element element, StyledProperty<T> property);
 }

@@ -60,8 +60,9 @@ public sealed record EditingCSharpDocument(Document Document, DocumentMappingSer
             && !original.SyntaxTrees.Contains(candidate));
         if (tree is null) return null;
 
+        var viewName = declaration.Tag + (declaration.TemplateTarget is null ? "" : "__TemplateView");
         var typeName = namespaceName.Length == 0
-            ? declaration.Tag : namespaceName + "." + declaration.Tag;
+            ? viewName : namespaceName + "." + viewName;
         // Do not invent a root for an unresolved/invalid root tag: completion must retain
         // the same CLR inheritance rules as the compiler, even while other markup is bad.
         var type = editing.GetTypeByMetadataName(typeName);

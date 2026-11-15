@@ -9,6 +9,30 @@ namespace EclipseUI.Ide.Tests;
 public class MirrorDecompileTests
 {
     [Fact]
+    public async Task ConcurrentDefinitionsFromOneAssemblyKeepTheirOwnText()
+    {
+        var provider = new CatalogProvider(new CatalogOptions
+        {
+            RuntimePath = typeof(UiObject).Assembly.Location,
+            IncludeSiblingAssemblies = false,
+        });
+        using var start = new Barrier(4);
+        var tasks = new[] { "TextBlock", "Border", "Button", "StackPanel" }.Select(name =>
+            Task.Factory.StartNew(() =>
+            {
+                var analysis = DocumentAnalysis.Create("<TextBlock />", "ProbeDoc.ui",
+                    provider.Catalog, provider.Compilation, null);
+                var probe = analysis.Probe;
+                Assert.True(start.SignalAndWait(TimeSpan.FromSeconds(30)));
+                Assert.NotNull(probe);
+                var definition = DecompileProvider.Definition(analysis, "EclipseUI.Elements." + name);
+                Assert.NotNull(definition);
+                Assert.Contains("class " + name, definition.Text, StringComparison.Ordinal);
+            }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default)).ToArray();
+        await Task.WhenAll(tasks);
+    }
+
+    [Fact]
     public void Decompile_WithCurrentServerRuntimeMetadata()
     {
         // Test the currently built runtime, rather than an ignored, possibly stale local publish.

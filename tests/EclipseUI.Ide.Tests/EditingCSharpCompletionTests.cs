@@ -93,6 +93,20 @@ public class EditingCSharpCompletionTests
     }
 
     [Fact]
+    public async Task InvalidControlTemplateRetainsTypedOwnerInCodeCompletion()
+    {
+        const string text = "@namespace Demo\n@using EclipseUI.Elements\n@template Button\n<Border MissingProperty=\"1\" />\n@code { void Tick() { Owner. } }";
+        var (analysis, _, path) = Create(text);
+        var editing = Assert.IsType<EditingCSharpDocument>(EditingCSharpDocument.For(analysis, path));
+        var offset = text.IndexOf("Owner.", StringComparison.Ordinal) + "Owner.".Length;
+        Assert.True(editing.Mappings.TryMapPositionToGenerated(offset, out var generatedOffset));
+        var completions = await CompletionService.GetService(editing.Document)!.GetCompletionsAsync(editing.Document, generatedOffset);
+        Assert.NotNull(completions);
+        Assert.Contains(completions.ItemsList, item => item.DisplayText == "Background");
+        Assert.Contains(completions.ItemsList, item => item.DisplayText == "Label");
+    }
+
+    [Fact]
     public async Task RepeatedCodeBlockTextHasDistinctExactMappings()
     {
         const string text = """

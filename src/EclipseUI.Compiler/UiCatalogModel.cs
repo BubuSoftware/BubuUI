@@ -186,6 +186,7 @@ public sealed record UiHiddenTag(
 /// </summary>
 public sealed record UiTemplateDeclaration(string Tag, string? Namespace)
 {
+    public string? TemplateTarget { get; init; }
     /// <summary>The declared root type is the generated class's base type.</summary>
     public string? RootTag { get; init; }
 
@@ -203,6 +204,7 @@ public sealed record UiTemplateDeclaration(string Tag, string? Namespace)
         && Namespace == other.Namespace
         && Path == other.Path
         && RootTag == other.RootTag
+        && TemplateTarget == other.TemplateTarget
         && CatalogValueEq.Sequence(Usings, other.Usings)
         && CatalogValueEq.Sequence(CodeBlocks, other.CodeBlocks);
 
@@ -212,6 +214,7 @@ public sealed record UiTemplateDeclaration(string Tag, string? Namespace)
         hash = CatalogValueEq.Add(hash, Namespace ?? "");
         hash = CatalogValueEq.Add(hash, Path);
         hash = CatalogValueEq.Add(hash, RootTag);
+        hash = CatalogValueEq.Add(hash, TemplateTarget);
         hash = CatalogValueEq.AddSequence(hash, Usings);
         return CatalogValueEq.AddSequence(hash, CodeBlocks);
     }

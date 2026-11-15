@@ -26,6 +26,8 @@ public class ContentControl : Panel
 
 public class Border : ContentControl
 {
+    public static readonly StyledProperty<UiLinearGradient?> BorderGradientProperty = StyledProperty<UiLinearGradient?>.Register<Border>(nameof(BorderGradient), null, new() { Invalidate = InvalidateKind.Render });
+    public UiLinearGradient? BorderGradient { get => GetValue(BorderGradientProperty); set => SetValue(BorderGradientProperty, value); }
     public override Rect? GetContentClip()
     {
         var inset = Padding + BorderThickness;
@@ -50,7 +52,9 @@ public class Border : ContentControl
     public override void Render(IElementDrawingContext c)
     {
         c.FillRectangle(new(0, 0, FinalRect.Width, FinalRect.Height), Background, CornerRadius);
-        c.StrokeRectangle(new(BorderThickness / 2, BorderThickness / 2, Math.Max(0, FinalRect.Width - BorderThickness), Math.Max(0, FinalRect.Height - BorderThickness)), BorderColor, BorderThickness, CornerRadius);
+        var borderRect = new Rect(BorderThickness / 2, BorderThickness / 2, Math.Max(0, FinalRect.Width - BorderThickness), Math.Max(0, FinalRect.Height - BorderThickness));
+        if (BorderGradient is { } gradient) c.StrokeRectangle(borderRect, gradient, BorderThickness, Math.Max(0, CornerRadius - BorderThickness / 2));
+        else c.StrokeRectangle(borderRect, BorderColor, BorderThickness, Math.Max(0, CornerRadius - BorderThickness / 2));
     }
 }
 

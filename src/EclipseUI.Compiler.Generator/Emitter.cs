@@ -150,9 +150,26 @@ public sealed class Emitter
             _sb.AppendLine($"namespace {_namespace};");
             _sb.AppendLine();
         }
-        _sb.AppendLine($"{_accessibility} partial class {_className} : " +
+        if (_doc.TemplateTarget is { } ownerType)
+        {
+            _sb.AppendLine($"{_accessibility} partial class {_className} : global::EclipseUI.ControlTemplate<{ownerType}>");
+            _sb.AppendLine("{");
+            _sb.AppendLine($"    protected override global::EclipseUI.TemplateInstance Build({ownerType} owner)");
+            _sb.AppendLine("    {");
+            _sb.AppendLine($"        var view = new {_className}__TemplateView {{ Owner = owner }};");
+            _sb.AppendLine("        try { view.EnsureInitialized(); return new global::EclipseUI.TemplateInstance(view, view.UpdateTemplate); }");
+            _sb.AppendLine("        catch { new global::EclipseUI.TemplateInstance(view).Dispose(); throw; }");
+            _sb.AppendLine("    }");
+            _sb.AppendLine("}");
+        }
+        _sb.AppendLine($"{(_doc.TemplateTarget is null ? _accessibility : "internal")} partial class {_className}{(_doc.TemplateTarget is null ? "" : "__TemplateView")} : " +
                        root.ResolvedDef!.ClrTypeDisplayName);
         _sb.AppendLine("{");
+        if (_doc.TemplateTarget is { } templateOwner)
+        {
+            _sb.AppendLine($"    public {templateOwner} Owner {{ get; set; }} = null!;");
+            _sb.AppendLine("    public void UpdateTemplate() => Render();");
+        }
 
         // K21/K23 ④（D86）：@code 成员按块源码顺序透传（spec/02 §2.3 白名单第五类），
         // 整块一个 span 型 #line 区间映射回 .ui（K25：原文不改写、不注入 using）。
@@ -603,6 +620,7 @@ public sealed class Emitter
         // The existing instance occupies the root ordinal; child identifiers remain stable.
         if (receiver is not null) _varCounter++;
         var v = receiver ?? DeclareElement(element, ctx);
+        if (_doc.TemplateTarget is not null) Line($"{v}.SetTemplatedParent(Owner);");
         if (def.Content == UiContentModel.Children && !def.ContentIsSingle && def.ContentTarget is { } contentTarget)
             _contentTargets[v] = contentTarget;
         var contentParameter = def.Parameters.Values.FirstOrDefault(p => p.IsContent);
@@ -620,6 +638,7 @@ public sealed class Emitter
         foreach (var attr in element.Attributes)
         {
             if (attr.Name == "Key") continue;
+            if (attr.Name == "Part") { Line($"{v}.Part = {StaticStringLiteral(attr.Value)};"); continue; }
             var span = AttrSpan(attr);
 
             // C5：Ref（spec/02 §4.14）——Build 时把元素实例赋给 code-behind 字段（源码顺序位置）。
@@ -643,7 +662,7 @@ public sealed class Emitter
             if (attr.Name == "Style" && attr.StyleSetters is { Count: > 0 } setters)
             {
                 foreach (var (statement, valueSpan) in EustyleGenerator.EmitLocalSetters(setters, v, _styleProperties))
-                    Mapped(valueSpan, receiver is null ? statement : $"using (this.BeginTemplateValues()) {statement}");
+                    Mapped(valueSpan, _doc.TemplateTarget is not null ? $"using ({v}.BeginSkinValues()) {statement}" : receiver is null ? statement : $"using (this.BeginTemplateValues()) {statement}");
                 continue;
             }
 
@@ -655,7 +674,7 @@ public sealed class Emitter
                 {
                     if (attr.ConvertedLiteral is not null)        // EUI003 已报
                         MappedToken(span,
-                            (receiver is null ? "" : "using (this.BeginTemplateValues()) ") +
+                            (_doc.TemplateTarget is not null ? $"using ({v}.BeginSkinValues()) " : receiver is null ? "" : "using (this.BeginTemplateValues()) ") +
                             $"{attached.OwnerClrName}.{attached.SetterMethod}({v}, {attr.ConvertedLiteral});",
                             attr.ConvertedLiteral);
                 }
@@ -690,7 +709,7 @@ public sealed class Emitter
             }
             else if (attr.Kind == AttrValueKind.Literal)
             {
-                var statement = receiver is null
+                var statement = _doc.TemplateTarget is not null ? $"using ({v}.BeginSkinValues()) {v}.{attr.Name} = {attr.ConvertedLiteral};" : receiver is null
                     ? $"{v}.{attr.Name} = {attr.ConvertedLiteral};"
                     : $"using (this.BeginTemplateValues()) {v}.{attr.Name} = {attr.ConvertedLiteral};";
                 MappedToken(span, statement, attr.ConvertedLiteral ?? "");
@@ -1151,6 +1170,8 @@ public sealed class Emitter
         var bodyOffset = interpolate ? 4 : 0;
         var prefix = propertyField is not null ? $"using (this.BeginTemplateValues()) {target} = " :
             call ? $"{target}(" : $"{target} = ";
+        if (_doc.TemplateTarget is not null && !call)
+            prefix = $"using ({target.Substring(0, target.LastIndexOf('.'))}.BeginSkinValues()) {target} = ";
         var suffix = call ? ")" : "";
         var statement = $"{prefix}{body}{suffix}";
 
@@ -1175,7 +1196,7 @@ public sealed class Emitter
         string expression, TextSpan span, EmitContext ctx, bool templateRoot = false)
     {
         var trimmed = expression.Trim();
-        var prefix = (templateRoot ? "using (this.BeginTemplateValues()) " : "") +
+        var prefix = (_doc.TemplateTarget is not null ? $"using ({v}.BeginSkinValues()) " : templateRoot ? "using (this.BeginTemplateValues()) " : "") +
             $"{attached.OwnerClrName}.{attached.SetterMethod}({v}, ";
         var statement = $"{prefix}{trimmed})";
 

@@ -12,7 +12,7 @@ using var shaper = TextShaperFactory.TryCreate();
 using var textPainter = shaper is null ? null : new HarfBuzzTextPainter(shaper);
 ITextPainter text = textPainter is null ? new MeasuringTextPainter() : textPainter;
 if (textPainter is not null) TextMeasurer.Current = textPainter;
-StyleBootstrap.Apply(StyleRegistry.Instance);
+Gallery.StyleBootstrap.Apply(StyleRegistry.Instance);
 Styling.Provider = StyleRegistry.Instance;
 
 foreach (var theme in new[] { FluentTheme.Light, FluentTheme.Dark })

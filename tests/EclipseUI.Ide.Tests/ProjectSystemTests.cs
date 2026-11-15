@@ -27,6 +27,56 @@ public class ProjectSystemTests
     // 求值 + 构建全部项目快照只做一次；只读夹具共用，改缓冲区的用例另建实例。
     private static readonly Lazy<Fixture> Shared = new(Create);
 
+    [Fact]
+    public async Task ControlThemeProjectUsesUnsavedTemplatesAndExcludesOtherProjects()
+    {
+        var fixture = Create();
+        var skinPath = fixture.Gallery("Counter.ui");
+        var stylePath = fixture.Gallery("styles.eustyle");
+        var snapshot = Assert.Single(fixture.Workspace.ResolveAll(skinPath));
+        stylePath = snapshot.Evaluation.AdditionalFiles.First(p => p.EndsWith(".eustyle", StringComparison.OrdinalIgnoreCase));
+        var skinUri = DocumentStore.PathToUri(skinPath);
+        var styleUri = DocumentStore.PathToUri(stylePath);
+        var skin = "@namespace Gallery\n@using EclipseUI.Elements\n@template Button\n<Border Class=\"newChrome\" Background={Owner.Background} />";
+        var style = "@using EclipseUI.Elements;\n@using Gallery;\n@theme ProjectButton for Button { Template: template(Counter); }\nButton /template/ Border.newChrome { BorderThickness: 2; }";
+        fixture.Service.Documents.Open(skinUri, skin, 1); fixture.Service.ApplyBuffer(skinUri, skin);
+        fixture.Service.Documents.Open(styleUri, style, 1); fixture.Service.ApplyBuffer(styleUri, style);
+        var foreign = DocumentStore.PathToUri(Path.Combine(fixture.Root, "src/EclipseUI.Themes.Fluent/controls.eustyle"));
+        fixture.Service.Documents.Open(foreign, "@using EclipseUI.Elements; @theme ProjectButton for Button { }", 1);
+        fixture.Service.ApplyBuffer(foreign, fixture.Service.Documents.All.Single(d => d.Uri == foreign).Text);
+        Assert.Empty(fixture.Service.GetDiagnostics(styleUri));
+        var offset = style.IndexOf("Counter", StringComparison.Ordinal) + 3;
+        var candidates = await fixture.Service.CompleteAsync(styleUri, offset);
+        Assert.Contains(candidates.Items, i => i.Label == "Counter");
+        Assert.Equal(skinPath, fixture.Service.Definition(styleUri, offset)!.Uri);
+        var part = fixture.Service.Definition(styleUri, style.IndexOf("newChrome", StringComparison.Ordinal) + 2)!;
+        Assert.Equal("newChrome", part.Text!.Substring(part.Span.Start, part.Span.Length));
+        var rename = fixture.Service.Rename(styleUri, style.IndexOf("ProjectButton", StringComparison.Ordinal) + 2, "RenamedButton");
+        Assert.NotNull(rename);
+        Assert.DoesNotContain(rename.Files, f => f.Path == DocumentStore.UriToPath(foreign));
+        var consumerPath = fixture.Gallery("Showcase.ui");
+        Assert.Contains(consumerPath, snapshot.Evaluation.AdditionalFiles);
+        var consumerUri = DocumentStore.PathToUri(consumerPath);
+        var consumer = "@namespace Gallery\n@using EclipseUI.Elements\n<Button Theme={StyleBootstrap.ProjectButton} />";
+        fixture.Service.Documents.Open(consumerUri, consumer, 1); fixture.Service.ApplyBuffer(consumerUri, consumer);
+        var resourceOffset = consumer.IndexOf("ProjectButton", StringComparison.Ordinal) + 3;
+        Assert.Equal(stylePath, fixture.Service.Definition(consumerUri, resourceOffset)!.Uri);
+        Assert.Equal("ProjectButton", (await fixture.Service.PrepareRenameAsync(consumerUri, resourceOffset))!.Placeholder);
+        var resourceRename = await fixture.Service.RenameAsync(consumerUri, resourceOffset, "UpdatedTheme");
+        Assert.NotNull(resourceRename);
+        Assert.Contains(resourceRename.Files, f => f.Path == stylePath);
+        var consumerEdits = Assert.Single(resourceRename.Files, f => f.Path == consumerPath);
+        Assert.Equal("ProjectButton", consumer.Substring(consumerEdits.Edits[0].Span.Start, consumerEdits.Edits[0].Span.Length));
+        Assert.Contains(consumerUri, fixture.Service.RelatedDocuments(styleUri));
+        Assert.DoesNotContain(foreign, fixture.Service.RelatedDocuments(styleUri));
+        skin = skin.Replace("newChrome", "editedChrome", StringComparison.Ordinal);
+        fixture.Service.Documents.Change(skinUri, skin, 2); fixture.Service.ApplyBuffer(skinUri, skin);
+        Assert.Null(fixture.Service.Definition(styleUri, style.IndexOf("newChrome", StringComparison.Ordinal) + 2));
+        style = style.Replace("template(Counter)", "template(Missing)", StringComparison.Ordinal);
+        fixture.Service.Documents.Change(styleUri, style, 2); fixture.Service.ApplyBuffer(styleUri, style);
+        Assert.Contains(fixture.Service.GetDiagnostics(styleUri), d => d.Message.Contains("Missing", StringComparison.Ordinal));
+    }
+
     private static Fixture Create()
     {
         var root = FindRepositoryRoot();

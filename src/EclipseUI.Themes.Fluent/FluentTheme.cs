@@ -92,6 +92,8 @@ public sealed class FluentTheme : ElementTheme, IElementThemeDefaults
 
     public T GetDefault<T>(Element element, StyledProperty<T> property)
     {
+        if (ReferenceEquals(property, TemplatedControl.ThemeProperty) && element.GetType() == typeof(Button))
+            return (T)(object)StyleBootstrap.FluentButton;
         if (ReferenceEquals(property, Button.LabelAlignmentProperty) && element.Parent is ComboBox)
             return (T)(object)HorizontalAlignment.Left;
         if (ReferenceEquals(property, Element.MinHeightProperty) && element is Button or TextBox or ComboBox or DatePicker or CheckBox)

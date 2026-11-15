@@ -25,6 +25,8 @@ public interface IRasterImage
 /// <summary>Local coordinates; implementations participate in retained painting and damage tracking.</summary>
 public interface IElementDrawingContext
 {
+    void StrokeRectangle(Rect rect, UiLinearGradient gradient, double width = 1, double radius = 0) =>
+        StrokeRectangle(rect, gradient.StartColor, width, radius);
     UiColor Foreground { get; }
     UiColor Background { get; }
     UiColor Border { get; }
