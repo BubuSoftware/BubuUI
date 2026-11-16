@@ -5,7 +5,7 @@ namespace EclipseUI.Ide.Tests;
 
 public class ControlThemeLanguageTests
 {
-    private const string Imports = "@using EclipseUI.Elements;\n@using Demo;\n";
+    private const string Imports = "@using EclipseUI.Elements;\n@using Demo\n";
     private const string Skin = """
         @namespace Demo
         @using EclipseUI.Elements
@@ -166,16 +166,33 @@ public class ControlThemeLanguageTests
     [Fact]
     public void StyleQuickFixesProduceValidImportsAndPropertyNames()
     {
-        var (service, uri, _) = Open("@using Demo;\nButton { Backgroun: #ffffff; }");
+        var (service, uri, _) = Open("@using Demo\nButton { Backgroun: #ffffff; }");
         var import = Assert.Single(service.CodeActions(uri), a => a.Title == "Add @using EclipseUI.Elements");
         var doc = service.Documents.All.Single(d => d.Uri == uri);
         var edit = Assert.Single(import.Edits);
+        Assert.Equal("@using EclipseUI.Elements\n", edit.NewText);
         var text = doc.Text.Insert(edit.Span.Start, edit.NewText);
         service.Documents.Change(uri, text, 2);
         var fix = Assert.Single(service.CodeActions(uri), a => a.Title == "Replace with 'Background'");
         edit = Assert.Single(fix.Edits);
         service.Documents.Change(uri, text.Remove(edit.Span.Start, edit.Span.Length).Insert(edit.Span.Start, edit.NewText), 3);
         Assert.Empty(service.GetDiagnostics(uri));
+    }
+
+    [Theory]
+    [InlineData("\n")]
+    [InlineData("\r\n")]
+    public void TypeCompletionAddsALineImportWithoutSemicolon(string newline)
+    {
+        var (service, uri, offset) = Open("@using Demo" + newline + "But|ton { Background: #ffffff; }");
+        var item = Assert.Single(service.Complete(uri, offset).Items, i => i.Label == "Button");
+        var edit = Assert.Single(item.AdditionalEdits!);
+        Assert.Equal("@using EclipseUI.Elements" + newline, edit.NewText);
+        var doc = service.Documents.All.Single(d => d.Uri == uri);
+        service.Documents.Change(uri, doc.Text.Insert(edit.Span.Start, edit.NewText), 2);
+        Assert.Empty(service.GetDiagnostics(uri));
+        item = Assert.Single(service.Complete(uri, offset + edit.NewText.Length).Items, i => i.Label == "Button");
+        Assert.Null(item.AdditionalEdits);
     }
 
     [Fact]
@@ -198,8 +215,8 @@ public class ControlThemeLanguageTests
     [InlineData("Button { Theme: resource(Rou|", "Rounded")]
     [InlineData("@theme NewTheme for Button { Template: template(But|", "ButtonSkin")]
     [InlineData("@theme NewTheme for Button { &:hover /template/ Bor|", "Border")]
-    [InlineData("@us|ing EclipseUI.Elements;", "@using")]
-    [InlineData("@using EclipseUI.El|ements;", "EclipseUI.Elements")]
+    [InlineData("@us|ing EclipseUI.Elements", "@using")]
+    [InlineData("@using EclipseUI.El|ements", "EclipseUI.Elements")]
     public void IncompleteInputStillOffersUsefulCandidates(string marked, string expected)
     {
         var (service, uri, offset) = Open(Imports + marked);
@@ -219,8 +236,8 @@ public class ControlThemeLanguageTests
     }
 
     [Theory]
-    [InlineData("@using Demo; Button { Label: template.Na|")]
-    [InlineData("@using Demo; Button { Theme: resource.| }")]
+    [InlineData("@using Demo\nButton { Label: template.Na|")]
+    [InlineData("@using Demo\nButton { Theme: resource.| }")]
     public void MalformedFunctionReferencesDoNotCrashCompletion(string marked)
     {
         var (service, uri, offset) = Open(marked);

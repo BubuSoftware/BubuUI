@@ -30,7 +30,7 @@ public sealed class LegacyStyleLanguageTests
     [Fact]
     public void LegacyPropertiesRemainLegacyInsideMixedThemeModules()
     {
-        var (service, uri, offset) = Open("@using EclipseUI.Elements;\n@theme Rounded for Button {}\n.old { CornerRadius: th|; }");
+        var (service, uri, offset) = Open("@using EclipseUI.Elements\n@theme Rounded for Button {}\n.old { CornerRadius: th|; }");
         Assert.Empty(service.Complete(uri, offset).Items);
     }
 

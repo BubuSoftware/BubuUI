@@ -240,9 +240,11 @@ bind-attr  ::= "@bind-" attr-base
   `@using Ns`、`@using Alias = Ns.Type`；`else` / `else if (...)` 是不带 `@` 的续接（紧接前一分支的 `}`，
   由词法一次性识别）。
 - `@using` 只接受两种形态，**同一行内写完**：命名空间导入与类型别名。`@using (...)`、`@using static`、
-  `@using Ns;`（尾分号）、泛型别名、`A.B = ...`（别名必须是单个标识符）都在词法层报 `EUI100` 专属消息，
+  泛型别名、`A.B = ...`（别名必须是单个标识符）都在词法层报 `EUI100` 专属消息，
   且错误 token 吞掉整行——绝不把残余字符交回文本模式（否则会报成与写法无关的 `EUI006`）。
   别名语法与语义见 §4.17。
+- `@using`（含别名）、`@namespace`、`@template` 是单行声明指令，结尾分号可选，分号前后允许空格和制表符；
+  名称与源码名称范围不包含分号。`.eustyle` 的 `@using` 遵循同一规则。
 - `@switch` 的块体形态见 §4.16；`EUI008` 随其转实现而停用，停用码保持停用。
 - `@bind-属性名` 只在标记模式属性位置识别，不是指令；文本模式写 `@bind` 仍是未知指令 `EUI009`。
 - 其它 `@name`：`EUI009`（收窄到明确拒绝清单：`@for`/`@while`/`@do` 给 `@foreach` 改写建议，K24；
@@ -312,8 +314,8 @@ foreach-block ::= "@foreach" "(" "var" ident "in" csharp-expression ")" "{" node
 switch-block  ::= "@switch" "(" csharp-expression ")" "{" section* "}"
 section       ::= ( "case" csharp-expression ":" | "default" ":" ) node* "break" ";"
 
-using-directive ::= "@using" namespace
-                 |  "@using" ident "=" type-name      // K31：类型别名（同时是标签别名）
+using-directive ::= "@using" namespace [ ";" ]
+                 |  "@using" ident "=" type-name [ ";" ] // K31：类型别名（同时是标签别名）
 type-name      ::= [ "global::" ] ident ( "." ident )*
 code-block      ::= "@code" "{" csharp-member* "}"
 
@@ -705,7 +707,7 @@ Element 的 `FocusVisualMode` 是可赋值、可样式化的枚举属性，取�
 
 ### 4.17 `@using Alias = Namespace.Type`（K31）
 
-形态：`@using Btn = ThirdParty.Controls.Button`（整条一行，无分号）。
+形态：`@using Btn = ThirdParty.Controls.Button`（整条一行，结尾分号可选）。
 
 一条指令两个效果，缺一不可：
 
@@ -734,7 +736,7 @@ Element 的 `FocusVisualMode` 是可赋值、可样式化的枚举属性，取�
 - **别名不参与命名空间可见性集合**：`CollectImports` 只收命名空间形态。否则别名会被当成命名空间
   去匹配候选，导致所有标签静默不可见。
 - 词法上只支持单行、非泛型、右侧点分类型名（可带 `global::`）；`@using static`、`@using (...)`、
-  尾分号、`A.B = …`、`List<string>` 都在词法层报 `EUI100` 专属消息，错误 token 吞掉整行。
+  `A.B = …`、`List<string>` 都在词法层报 `EUI100` 专属消息，错误 token 吞掉整行。
 - 生成形态见 spec/02 §4.18。
 
 ## 5. 字面量
@@ -891,7 +893,7 @@ Element 的 `FocusVisualMode` 是可赋值、可样式化的枚举属性，取�
 |---|---|
 | **K21 / K22 / K23** | **✅ S6 已实现（2026-11-08）**：`@code` 位置不限且单文件可用（K21/K23 ④）；模板 `@using`、标签按导入命名空间解析（内置控件无豁免；**@namespace 链已由 K33/D111 修订为隐式可见**）、生成代码保留 `using Ns;`（K22）；流程控制与 Web 指令清单按 K23 ③/②。偏差 D85–D88 已全部关闭 |
 | **S6 语法对齐** | G3 之后 / G4 之前（K23 ⑦）；阶段 P0–P6 见 design/16；出口标准 = D85–D88 关闭 + 样例/golden 迁移 + 全量测试绿（2026-11-08 达成：用例 497 → 548，新增 `S6SyntaxTests` 26 / `ExpressionCaptureTests` 13 / `SwitchBlock` 运行时 6 / 生成器契约 6，全部通过；唯一红为既有像素 golden `PixelGoldens_MatchBaseline`，与 S6 无关） |
-| **K31** | **✅ 已实现（2026-11-09）**：`@using Alias = Ns.Type` 一体两用——生成 `using Alias = global::Ns.Type;`（服务 `@code`/表达式）并把 `<Alias/>` 解析为该类型（优先于目录 tag，绕过命名空间可见性）。`EUI048` 覆盖目标缺失/重复/撞命名空间；词法层把 `@using static`、`(...)`、尾分号、泛型、`A.B =` 从误导性的 `EUI006` 改为专属 `EUI100`。回归见 `UsingAliasTests` 15 例 + 生成器契约 4 例 |
+| **K31** | **✅ 已实现（2026-11-09）**：`@using Alias = Ns.Type` 一体两用——生成 `using Alias = global::Ns.Type;`（服务 `@code`/表达式）并把 `<Alias/>` 解析为该类型（优先于目录 tag，绕过命名空间可见性）。`EUI048` 覆盖目标缺失/重复/撞命名空间；词法层把 `@using static`、`(...)`、泛型、`A.B =` 从误导性的 `EUI006` 改为专属 `EUI100`。2026-11-16 修订：结尾分号可选。回归见 `UsingAliasTests` 与生成器契约测试 |
 | ✅ 当前可用 | 元素/自闭合；属性字面量（string/bool/double/int 及 C3 扩展类型）；控件 `On*` 事件；`Text`/`TextRuns`/`Children` 文本与内容；`@if`/`else if`/`@switch`/`@foreach` 与 `Key`；`@using`、`@using Alias = Ns.Type`、`@code`、`@* *@` 与 `<!-- -->`；控件与组件 `@bind-P`（含 item 源）；组件标签（参数/委托事件/必填/默认内容）、`Ref={field}`、具名插槽 `<Slot>`/`<ContentSlot>`；空白规范化；code-behind 诊断 |
 | **S1** ✅ | `UiObject.Invalidate/ProcessInvalidations/Render/ShouldRender`；失效队列与合并；生成字段与 `U{N}`；根级 `P=`/文本重算；控件事件自动失效（2026-10-30 通过） |
 | **S2** ✅ | 块 v4：`BlockScope.RenderActions`；`@if` 分支刷新；`@foreach` 任意 `IEnumerable<T>`、null=空、Keyed 复用；嵌套块；`EUI007`/`EUI010`/`EUI033`（文本 + 显式目标）（2026-10-30 通过） |

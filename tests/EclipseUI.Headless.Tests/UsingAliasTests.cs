@@ -38,12 +38,15 @@ public class UsingAliasTests
     // 语法：两种形态落在同一指令节点的不同字段
     // ------------------------------------------------------------------
 
-    [Fact]
-    public void Alias_ParsesIntoAliasAndTarget_AndStaysOutOfNamespaceImports()
+    [Theory]
+    [InlineData("")]
+    [InlineData(";")]
+    [InlineData(" \t; \t")]
+    public void Alias_ParsesIntoAliasAndTarget_AndStaysOutOfNamespaceImports(string ending)
     {
-        const string ui = """
-            @using EclipseUI.Elements
-            @using Btn = Alt.Controls.Button
+        var ui = $$"""
+            @using EclipseUI.Elements{{ending}}
+            @using Btn = Alt.Controls.Button{{ending}}
 
             <StackPanel><Btn /></StackPanel>
             """;
@@ -55,6 +58,7 @@ public class UsingAliasTests
         var alias = Assert.Single(aliases);
         Assert.Equal("Btn", alias.Alias);
         Assert.Equal("Alt.Controls.Button", alias.AliasTarget);
+        Assert.Equal("Alt.Controls.Button", ui.Substring(alias.NamespaceSpan.Start, alias.NamespaceSpan.Length));
         Assert.Equal("", alias.Namespace); // 别名不得混进命名空间集合（否则可见性过滤会静默失配）
 
         // K22 回归钉：命名空间的可见性集合只含真正的 @using 导入
@@ -224,7 +228,8 @@ public class UsingAliasTests
     // ------------------------------------------------------------------
 
     [Theory]
-    [InlineData("@using EclipseUI.Elements;\n\n<StackPanel />", "takes no trailing ';'")]
+    [InlineData("@using EclipseUI.Elements;;\n\n<StackPanel />", "accepts a namespace")]
+    [InlineData("@using Btn = Alt.Controls.Button;;\n\n<StackPanel />", "accepts a namespace")]
     [InlineData("@using static System.Math\n@using EclipseUI.Elements\n\n<StackPanel />", "'@using static' is not supported")]
     [InlineData("@using Btn = System.Collections.Generic.List<string>\n\n<StackPanel />", "generic type aliases are not supported")]
     [InlineData("@using Btn =\n\n<StackPanel />", "requires a type name after '='")]

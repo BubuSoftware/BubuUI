@@ -58,6 +58,25 @@ public class NamespaceDirectiveTests
 
     // ---- 解析 ----
 
+    [Theory]
+    [InlineData("@namespace Demo", "namespace", "Demo")]
+    [InlineData("@template Button", "template", "Button")]
+    [InlineData("@using EclipseUI.Elements", "using", "EclipseUI.Elements")]
+    [InlineData("@using Btn = global::EclipseUI.Elements.Button", "using", "global::EclipseUI.Elements.Button")]
+    public void LineDirectivesAcceptOptionalSemicolonsAndKeepNameSpans(string directive, string name, string value)
+    {
+        foreach (var ending in new[] { "", ";", " \t; \t" })
+        foreach (var newline in new[] { "", "\n", "\r\n" })
+        {
+            var text = directive + ending + newline;
+            var token = new Lexer(text).Next();
+            Assert.Equal(TokenKind.Directive, token.Kind);
+            Assert.Equal(name, token.Text);
+            Assert.Equal(value, text.Substring(token.InnerSpan.Start, token.InnerSpan.Length));
+            Assert.Equal(directive.Length + ending.Length, token.Span.Length);
+        }
+    }
+
     [Fact]
     public void Parse_CapturesNamespaceAndSpan()
     {
@@ -100,7 +119,7 @@ public class NamespaceDirectiveTests
     }
 
     [Theory]
-    [InlineData("@namespace Gallery;\n<StackPanel />\n")]  // 分号：与 @using 同口径，不接受
+    [InlineData("@namespace Gallery;;\n<StackPanel />\n")] // 多余分号
     [InlineData("@namespace\n<StackPanel />\n")]           // 缺值
     [InlineData("@namespace 9Bad\n<StackPanel />\n")]      // 非标识符起始
     public void Malformed_ReportsSyntax(string ui)

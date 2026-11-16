@@ -258,7 +258,7 @@
 
 | 项 | 决定 |
 |---|---|
-| 指令形态 | `@using {Namespace}`（不带分号，与 Razor 一致），支持多条；**不做** compound `@using (...)`、`@using static`。类型别名 `@using Alias = Ns.Type` 在 S6 之后由 **K31** 放开（原文「不做别名 using」仅指当时范围） |
+| 指令形态 | `@using {Namespace}`（2026-11-16 修订：结尾分号可选），支持多条；**不做** compound `@using (...)`、`@using static`。类型别名 `@using Alias = Ns.Type` 在 S6 之后由 **K31** 放开（原文「不做别名 using」仅指当时范围） |
 | 生成代码 | 全部 `@using` 在 `#nullable enable` 之后、`namespace` 之前输出为普通 `using {Ns};`；**不生成 `global using`、不生成模板未声明的 using**；其余生成代码的 `global::` 全限定规则不变 |
 | 标签解析 | `UiCatalog.Resolve(tag)` 改为按导入命名空间过滤；只有导入命名空间中的控件/组件可被短名解析 |
 | 内置控件 | **无豁免**：内置控件在 `EclipseUI.Elements`（`Controls.cs` / `Panels.cs` / `TextBlock.cs`），必须 `@using EclipseUI.Elements` |

@@ -19,7 +19,7 @@ public class ProtocolTests
     public async Task Session_StylesheetFeaturesUseRealLspRanges()
     {
         const string uri = "file:///workspace/control-theme.eustyle";
-        const string text = "@using EclipseUI.Elements;\nButton { Background: #ffffff; }";
+        const string text = "@using EclipseUI.Elements\nButton { Background: #ffffff; }";
         var transcript = await RunSession(
             Request(1, "initialize"), Notification("initialized", new JsonObject()), DidOpen(uri, text),
             Request(2, "textDocument/completion", Position(uri, 1, 14)),

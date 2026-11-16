@@ -27,7 +27,11 @@ public static class ControlThemeSyntax
         var chars = text.ToCharArray();
         foreach (var node in nodes)
         {
-            if (node.Header.StartsWith("@using ", StringComparison.Ordinal)) imports.Add(node.Header.Substring(7).Trim());
+            if (node.Header.StartsWith("@using ", StringComparison.Ordinal))
+            {
+                var import = node.Header.Substring(7).Trim();
+                if (import.Length > 0) imports.Add(import);
+            }
             else rules.Add(node);
             for (var i = node.Span.Start; i < node.Span.End; i++) if (chars[i] is not '\r' and not '\n') chars[i] = ' ';
         }
@@ -51,6 +55,13 @@ public static class ControlThemeSyntax
                     return result;
                 }
                 var start = _i;
+                // Imports are line directives, just like in .ui; they must not consume the next rule.
+                if (!nested && text.Length - _i >= 6 && string.CompareOrdinal(text, _i, "@using", 0, 6) == 0 &&
+                    (_i + 6 == text.Length || !(char.IsLetterOrDigit(text[_i + 6]) || text[_i + 6] == '_')))
+                {
+                    result.Add(ReadUsing());
+                    continue;
+                }
                 var parens = 0;
                 char quote = '\0';
                 while (_i < text.Length)
@@ -76,12 +87,27 @@ public static class ControlThemeSyntax
             if (nested) Error("Unterminated style block", Math.Max(0, _i - 1));
             return result;
         }
+        private ThemeStyleNode ReadUsing()
+        {
+            var start = _i;
+            while (_i < text.Length && text[_i] is not '\r' and not '\n') _i++;
+            var span = new TextSpan(start, _i - start);
+            var token = new Lexer(text.Substring(start, span.Length)).Next();
+            string? import = null;
+            if (token.Kind == TokenKind.Error)
+                diagnostics.Add(UiDiagnostics.Error("EUI050", token.Aux!, span));
+            else if (token.Aux2 is not null)
+                diagnostics.Add(UiDiagnostics.Error("EUI050", "Style modules support namespace imports: @using Namespace", span));
+            else
+                import = token.Aux;
+            return new("@using " + import, "", Array.Empty<ThemeStyleNode>(), span);
+        }
         private void Trivia()
         {
             while (_i < text.Length)
             {
                 if (char.IsWhiteSpace(text[_i])) { _i++; continue; }
-                if (_i + 1 < text.Length && text[_i] == '/' && text[_i + 1] == '/') { while (_i < text.Length && text[_i] != '\n') _i++; continue; }
+                if (_i + 1 < text.Length && text[_i] == '/' && text[_i + 1] == '/') { while (_i < text.Length && text[_i] is not '\r' and not '\n') _i++; continue; }
                 if (_i + 1 < text.Length && text[_i] == '/' && text[_i + 1] == '*')
                 {
                     var end = text.IndexOf("*/", _i + 2, StringComparison.Ordinal);

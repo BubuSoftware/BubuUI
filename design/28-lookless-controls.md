@@ -24,8 +24,8 @@
 `controls.eustyle`：
 
 ```scss
-@using EclipseUI.Elements;
-@using MyApp.Themes;
+@using EclipseUI.Elements
+@using MyApp.Themes
 
 @theme RoundedButton for Button {
     Template: template(ButtonSkin);
@@ -72,6 +72,7 @@ local > 普通组件的 template > 旧 class 样式 > 类型化应用规则
 
 包含 `@using` 或 `@theme` 的 `.eustyle` 文件使用控件主题模块语法；旧样式表保持原解析/注册路径。主题模块支持：
 
+- `@using Namespace` 与 `.ui` 一致，整条指令写在一行，结尾分号可选。
 - 导入的类型名、类名、平台状态及其组合；嵌套 `&:state`。
 - 一次显式 `/template/ Type.class` 边界，按 TemplatedParent 限定，不穿透嵌套控件自己的模板，也不将借入内容变成模板部件。
 - 类型化 setter：复用 UI 目录的 StyledProperty 身份和字面量解析器；不执行用户程序集进行编译期转换。

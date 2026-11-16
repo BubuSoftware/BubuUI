@@ -38,11 +38,11 @@ public class ProjectSystemTests
         var skinUri = DocumentStore.PathToUri(skinPath);
         var styleUri = DocumentStore.PathToUri(stylePath);
         var skin = "@namespace Gallery\n@using EclipseUI.Elements\n@template Button\n<Border Class=\"newChrome\" Background={Owner.Background} />";
-        var style = "@using EclipseUI.Elements;\n@using Gallery;\n@theme ProjectButton for Button { Template: template(Counter); }\nButton /template/ Border.newChrome { BorderThickness: 2; }";
+        var style = "@using EclipseUI.Elements\n@using Gallery\n@theme ProjectButton for Button { Template: template(Counter); }\nButton /template/ Border.newChrome { BorderThickness: 2; }";
         fixture.Service.Documents.Open(skinUri, skin, 1); fixture.Service.ApplyBuffer(skinUri, skin);
         fixture.Service.Documents.Open(styleUri, style, 1); fixture.Service.ApplyBuffer(styleUri, style);
         var foreign = DocumentStore.PathToUri(Path.Combine(fixture.Root, "src/EclipseUI.Themes.Fluent/controls.eustyle"));
-        fixture.Service.Documents.Open(foreign, "@using EclipseUI.Elements; @theme ProjectButton for Button { }", 1);
+        fixture.Service.Documents.Open(foreign, "@using EclipseUI.Elements\n@theme ProjectButton for Button { }", 1);
         fixture.Service.ApplyBuffer(foreign, fixture.Service.Documents.All.Single(d => d.Uri == foreign).Text);
         Assert.Empty(fixture.Service.GetDiagnostics(styleUri));
         var offset = style.IndexOf("Counter", StringComparison.Ordinal) + 3;

@@ -50,7 +50,7 @@ public class WindowHostTests
             if (e.Iteration == 3) host.SetTheme(ElementTheme.Light);
         };
         Assert.Equal(3, host.Run(4));
-        Assert.Equal(1, host.SkippedFrames);
+        Assert.Equal(2, host.SkippedFrames); // Expose presents synchronously before the next tick.
         Assert.Equal(800, presenter.Width);
         Assert.Equal(new Size(400, 300), root.FinalRect.Size);
         Assert.False(root.IsDisposed);

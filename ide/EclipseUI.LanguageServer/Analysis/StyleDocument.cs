@@ -24,7 +24,7 @@ internal sealed class StyleDocument
     public List<Token> Tokens { get; } = new();
     public List<Node> Nodes { get; } = new();
     public string[] Imports => Nodes.Where(n => n.Header.FirstOrDefault()?.Value == "@using")
-        .Select(n => string.Concat(n.Header.Skip(1).Select(t => t.Value))).ToArray();
+        .Select(n => string.Concat(n.Header.Skip(1).TakeWhile(t => t.Value != ";").Select(t => t.Value))).ToArray();
     public bool Advanced => !Embedded && Nodes.Any(n => n.Header.FirstOrDefault()?.Value is "@theme" or "@using" ||
         n.Block && n.Header.FirstOrDefault()?.Value is not "." and not "@states");
 
@@ -85,6 +85,14 @@ internal sealed class StyleDocument
                 if (active[index].Value == "}") { if (parent is not null) parent.End = active[index].Span.End; index++; return; }
                 var node = new Node { Start = active[index].Span.Start, End = Region.End, Parent = parent };
                 nodes.Add(node);
+                if (parent is null && active[index].Value == "@using")
+                {
+                    var lineEnd = text.IndexOfAny(['\r', '\n'], node.Start);
+                    node.End = lineEnd < 0 ? Region.End : Math.Min(lineEnd, Region.End);
+                    while (index < active.Length && active[index].Span.Start < node.End)
+                        node.Header.Add(active[index++]);
+                    continue;
+                }
                 var parens = 0;
                 while (index < active.Length)
                 {

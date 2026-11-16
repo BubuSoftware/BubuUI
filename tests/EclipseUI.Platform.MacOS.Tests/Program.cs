@@ -19,6 +19,7 @@ internal static class Program
             switch (scenario)
             {
                 case "window": WindowScenario(); break;
+                case "live-resize": LiveResizeScenario(); break;
                 case "lifetime": LifetimeScenario(); break;
                 case "thread": ThreadScenario(); break;
                 default: throw new ArgumentException("Unknown native scenario.");
@@ -31,6 +32,57 @@ internal static class Program
             Console.Error.WriteLine(error);
             return 1;
         }
+    }
+
+    private static void LiveResizeScenario()
+    {
+        using var window = new MacOSWindow("Cocoa live resize", 500, 360);
+        using var other = new MacOSWindow("Other window", 200, 100);
+        using var presenter = VelloSurfaceBackend.Create(window.SurfaceHandle,
+            Math.Max(1, window.ClientWidth), Math.Max(1, window.ClientHeight));
+        using var root = new StackPanel();
+        var text = new TextBlock { TextWrapping = TextWrapping.Wrap };
+        text.AddRun(string.Join(" ", Enumerable.Repeat("live resize content", 30)));
+        root.Children.Add(text);
+        using var host = new WindowHost(window, presenter, root);
+        host.FrameTicked += (_, e) =>
+        {
+            if (e.Iteration != 1) return;
+            var lines = text.TextLines.Count;
+            foreach (var width in new[] { 240, 420, 300 })
+            {
+                window.SetClientSize(width, 360);
+                var before = presenter.PresentedFrames;
+                // SDL's Cocoa tracking timer emits this event inside its nested loop.
+                // Do not poll: the watcher must finish the frame before PushEvent returns.
+                var expose = new SdlNative.Event { Type = SdlNative.WindowExposed, WindowId = window.Id };
+                SdlNative.Check(SdlNative.SDL_PushEvent(ref expose));
+                Assert.True(presenter.PresentedFrames > before);
+                Assert.Equal(window.LogicalClientSize, root.FinalRect.Size);
+                Assert.Equal((window.ClientWidth, window.ClientHeight), (presenter.Width, presenter.Height));
+                Assert.Equal(1, host.Ticks);
+                if (width == 240) Assert.True(text.TextLines.Count > lines);
+            }
+            var previous = presenter.PresentedFrames;
+            var unrelated = new SdlNative.Event { Type = SdlNative.WindowExposed, WindowId = other.Id };
+            SdlNative.Check(SdlNative.SDL_PushEvent(ref unrelated));
+            Assert.Equal(previous, presenter.PresentedFrames);
+            Exception? failure = null;
+            var worker = new Thread(() =>
+            {
+                try
+                {
+                    var expose = new SdlNative.Event { Type = SdlNative.WindowExposed, WindowId = window.Id };
+                    SdlNative.Check(SdlNative.SDL_PushEvent(ref expose));
+                }
+                catch (Exception error) { failure = error; }
+            });
+            worker.Start();
+            Assert.True(worker.Join(TimeSpan.FromSeconds(5)));
+            Assert.Null(failure);
+            Assert.Equal(previous, presenter.PresentedFrames);
+        };
+        host.Run(2);
     }
 
     private static void WindowScenario()
@@ -84,7 +136,7 @@ internal static class Program
                     PushText(window, SdlNative.TextInput, "替换 ✅");
                 }
             };
-            Assert.Equal(4, host.Run(4));
+            Assert.True(host.Run(4) >= 4); // Native callbacks can present between outer ticks.
             Assert.Equal("替换 ✅", editor.Text);
             Assert.True(presenter.PresentedFrames >= 4);
             Assert.True(window.ScaleFactor >= 1);

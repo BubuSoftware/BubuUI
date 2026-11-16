@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using EclipseUI.Rendering;
 
 namespace EclipseUI.Platform.MacOS;
@@ -8,6 +9,12 @@ public sealed class MacOSWindow : IMacOSWindow, ISystemThemeProvider
     // SDL video is initialized by this window; query only on its UI thread.
     ThemeVariant ISystemThemeProvider.Variant => SdlNative.SDL_GetSystemTheme() == 2 ? ThemeVariant.Dark : ThemeVariant.Light;
     private static readonly Dictionary<uint, MacOSWindow> Windows = new();
+    // Keep the delegate rooted until SDL_RemoveEventWatch has completed.
+    private readonly SdlNative.EventFilter _eventWatch;
+    private readonly int _uiThreadId = Environment.CurrentManagedThreadId;
+    private bool _watchRegistered;
+    private bool _watchingEvent;
+    private ExceptionDispatchInfo? _eventWatchFailure;
     private nint _window;
     private nint _metalView;
     private uint _id;
@@ -20,6 +27,7 @@ public sealed class MacOSWindow : IMacOSWindow, ISystemThemeProvider
 
     public MacOSWindow(string title, int width, int height)
     {
+        _eventWatch = WatchEvent;
         SdlNative.VerifyMainThread();
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
@@ -39,6 +47,8 @@ public sealed class MacOSWindow : IMacOSWindow, ISystemThemeProvider
             Windows.Add(_id, this);
             UpdateMetrics();
             SetClientSize(width, height);
+            SdlNative.Check(SdlNative.SDL_AddEventWatch(_eventWatch, 0));
+            _watchRegistered = true;
         }
         catch (DllNotFoundException error)
         {
@@ -121,8 +131,10 @@ public sealed class MacOSWindow : IMacOSWindow, ISystemThemeProvider
     public bool PumpMessages()
     {
         VerifyAccess();
+        _eventWatchFailure?.Throw();
         while (SdlNative.SDL_PollEvent(out var message))
         {
+            _eventWatchFailure?.Throw();
             if (message.Type == SdlNative.Quit)
             {
                 foreach (var window in Windows.Values.ToArray()) window.Close();
@@ -133,8 +145,34 @@ public sealed class MacOSWindow : IMacOSWindow, ISystemThemeProvider
             }
             if (_window == 0 || IsClosed) break;
         }
+        _eventWatchFailure?.Throw();
         foreach (var window in Windows.Values.ToArray()) window.FinishCompositionIfPending();
         return !IsClosed;
+    }
+
+    private bool WatchEvent(nint userdata, ref SdlNative.Event message)
+    {
+        // Cocoa's nested tracking loop sends expose events before SDL_PollEvent returns.
+        // Other threads may push SDL events: leave those for normal UI-thread dispatch.
+        if (Environment.CurrentManagedThreadId != _uiThreadId ||
+            message.Type != SdlNative.WindowExposed || message.WindowId != _id ||
+            IsClosed || _window == 0 || _watchingEvent || _eventWatchFailure is not null) return true;
+        _watchingEvent = true;
+        try
+        {
+            var previous = (ClientWidth, ClientHeight, ScaleFactor);
+            UpdateMetrics();
+            // A changed size already requests a frame through Resized.
+            if (!IsClosed && previous == (ClientWidth, ClientHeight, ScaleFactor))
+                PaintRequested?.Invoke(this, EventArgs.Empty);
+        }
+        catch (Exception error)
+        {
+            // Never unwind a managed exception through SDL/AppKit.
+            _eventWatchFailure = ExceptionDispatchInfo.Capture(error);
+        }
+        finally { _watchingEvent = false; }
+        return true;
     }
 
     private void Dispatch(SdlNative.Event message)
@@ -279,6 +317,11 @@ public sealed class MacOSWindow : IMacOSWindow, ISystemThemeProvider
     {
         SdlNative.VerifyMainThread();
         IsClosed = true;
+        if (_watchRegistered)
+        {
+            SdlNative.SDL_RemoveEventWatch(_eventWatch, 0);
+            _watchRegistered = false;
+        }
         Windows.Remove(_id);
         if (_metalView != 0)
         {

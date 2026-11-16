@@ -94,7 +94,7 @@ internal sealed partial class StyleLanguageProvider
     private Theme? FindTheme(string name) => Unique(_themes.Where(t => t.Name == name));
     private static T? Unique<T>(IEnumerable<T> items) where T : class { var list = items.Take(2).ToArray(); return list.Length == 1 ? list[0] : null; }
     private UiTextEdit? Import(string ns) => ns.Length == 0 || _document.Imports.Contains(ns) ? null :
-        new(new(_document.Text.StartsWith('\uFEFF') ? 1 : 0, 0), "@using " + ns + ";" + (_document.Text.Contains("\r\n") ? "\r\n" : "\n"));
+        new(new(_document.Text.StartsWith('\uFEFF') ? 1 : 0, 0), "@using " + ns + (_document.Text.Contains("\r\n") ? "\r\n" : "\n"));
 
     public UiCompletionList Complete(int offset)
     {

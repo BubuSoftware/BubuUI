@@ -197,6 +197,16 @@ internal static class SdlNative
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
     internal static extern void SDL_free(nint memory);
 
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    internal delegate bool EventFilter(nint userdata, ref Event value);
+
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    internal static extern bool SDL_AddEventWatch(EventFilter filter, nint userdata);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void SDL_RemoveEventWatch(EventFilter filter, nint userdata);
+
     internal static string Utf8(nint value) => Marshal.PtrToStringUTF8(value) ?? "";
     internal static void Check(bool result)
     {

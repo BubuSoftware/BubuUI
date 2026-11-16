@@ -26,6 +26,10 @@ public class NativeDesktopTests
     public Task NativeWindowRejectsWorkerThreadCreationAndAccess()
         => RunNativeScenario("thread");
 
+    [MacOSDesktopFact]
+    public Task ExposeWatchReflowsAndPresentsWithoutPollingAndIgnoresOtherThreadsAndWindows()
+        => RunNativeScenario("live-resize");
+
     private static async Task RunNativeScenario(string scenario)
     {
         var start = new ProcessStartInfo

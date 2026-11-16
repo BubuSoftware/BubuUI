@@ -496,6 +496,9 @@ public sealed class Lexer
             if (_i < _s.Length && _s[_i] == '<')
                 return DirectiveError(start,
                     "generic type aliases are not supported; alias a non-generic control type");
+            if (!ReadDirectiveTerminator())
+                return DirectiveError(start,
+                    "'@using' accepts a namespace name or an alias: '@using My.Controls' / '@using Btn = My.Controls.Button'");
 
             return new Token
             {
@@ -504,18 +507,12 @@ public sealed class Lexer
                 Aux = head,
                 Aux2 = target,
                 Span = new TextSpan(start, _i - start),
-                InnerSpan = new TextSpan(targetBegin, _i - targetBegin),
+                InnerSpan = new TextSpan(targetBegin, target.Length),
             };
         }
 
-        if (_i < _s.Length && _s[_i] == ';')
-            return DirectiveError(start,
-                "'@using' takes no trailing ';': write '@using System.Collections.Generic'");
-
         // 同一行还有残留（如 '@using Foo Bar'）说明写法有误，就地报错而不是留给文本模式
-        int rest = _i;
-        while (rest < _s.Length && (_s[rest] == ' ' || _s[rest] == '\t')) rest++;
-        if (rest < _s.Length && _s[rest] != '\r' && _s[rest] != '\n')
+        if (!ReadDirectiveTerminator())
             return DirectiveError(start,
                 "'@using' accepts a namespace name or an alias: '@using My.Controls' / '@using Btn = My.Controls.Button'");
 
@@ -529,13 +526,13 @@ public sealed class Lexer
             Text = "using",
             Aux = head,
             Span = new TextSpan(start, _i - start),
-            InnerSpan = new TextSpan(nameBegin, _i - nameBegin),
+            InnerSpan = new TextSpan(nameBegin, head.Length),
         };
     }
 
     /// <summary>
     /// <c>@namespace Foo.Bar</c>：显式命名空间声明（spec/02 §2.2）。只接受一个点分名，
-    /// 写到行尾为止；不接受分号（与 <c>@using</c> 同口径），也不接受第二个名字。
+    /// 写到行尾为止；允许可选的结尾分号（与 <c>@using</c> 同口径），不接受第二个名字。
     /// </summary>
     private Token ParseNamespaceDirective(int start, string directiveName = "namespace")
     {
@@ -549,13 +546,7 @@ public sealed class Lexer
             return DirectiveError(start,
                 "'@namespace' requires a namespace name: @namespace My.App");
 
-        if (_i < _s.Length && _s[_i] == ';')
-            return DirectiveError(start,
-                "'@namespace' takes no trailing ';': write '@namespace My.App'");
-
-        int rest = _i;
-        while (rest < _s.Length && (_s[rest] == ' ' || _s[rest] == '\t')) rest++;
-        if (rest < _s.Length && _s[rest] != '\r' && _s[rest] != '\n')
+        if (!ReadDirectiveTerminator())
             return DirectiveError(start,
                 "'@namespace' accepts a single dotted namespace name: '@namespace My.App'");
 
@@ -571,6 +562,15 @@ public sealed class Lexer
             Span = new TextSpan(start, _i - start),
             InnerSpan = new TextSpan(nameBegin, name.Length),
         };
+    }
+
+    /// <summary>Line directives accept one optional semicolon, with horizontal whitespace around it.</summary>
+    private bool ReadDirectiveTerminator()
+    {
+        while (_i < _s.Length && (_s[_i] == ' ' || _s[_i] == '\t')) _i++;
+        if (_i < _s.Length && _s[_i] == ';') _i++;
+        while (_i < _s.Length && (_s[_i] == ' ' || _s[_i] == '\t')) _i++;
+        return _i == _s.Length || _s[_i] is '\r' or '\n';
     }
 
     /// <summary>
@@ -631,12 +631,12 @@ public sealed class Lexer
         }
 
         // @using {Namespace}（K22，D85）与 @using Alias = Namespace.Type（K31）：
-        // 都不带分号；不做 @using(...) / @using static / 泛型别名。
+        // 都允许可选的结尾分号；不做 @using(...) / @using static / 泛型别名。
         if (name == "using")
             return ParseUsingDirective(start);
 
         // @namespace {Dotted.Name}（spec/02 §2.2）：显式声明生成类的命名空间。必填，
-        // 且必须与同名 code-behind 的命名空间一致（生成器侧校验）。与 @using 同口径——不带分号。
+        // 且必须与同名 code-behind 的命名空间一致（生成器侧校验）。与 @using 同口径——结尾分号可选。
         if (name == "namespace")
             return ParseNamespaceDirective(start);
         if (name == "template")

@@ -18,7 +18,7 @@
 下面假定第三方 Badge 已公开 Glow、Tone、Caption 属性，Tone 的类型是包含 Success 的枚举：
 
 ```scss
-@using Acme.Controls;
+@using Acme.Controls
 
 .card {
     Background: theme(#202020, #ffffff);
@@ -240,8 +240,8 @@ public class Button : Element { /* 测量和绘制读取上述属性 */ }
 `.eustyle` 引入与 `.ui` 一致的 namespace / using / using alias 查找能力：
 
 ```scss
-@using Acme.Controls;
-@using BadgeProps = Acme.Controls.Badge;
+@using Acme.Controls
+@using BadgeProps = Acme.Controls.Badge
 
 Badge.notice {
     Glow: 4;

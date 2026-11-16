@@ -214,10 +214,13 @@ public class DirectiveImportCompletionTests
         Assert.True(errors.Length == 0, string.Join("\n", errors.Select(static diagnostic => diagnostic.ToString())));
     }
 
-    [Fact]
-    public void GlobalQualifiedImportRequestsDoNotDuplicateAnExistingNamespaceImport()
+    [Theory]
+    [InlineData("")]
+    [InlineData(";")]
+    [InlineData(" \t; \t")]
+    public void GlobalQualifiedImportRequestsDoNotDuplicateAnExistingNamespaceImport(string ending)
     {
-        var (analysis, _) = Analyze("@namespace Demo\n@using System.Text\n@using EclipseUI.Elements\n<StackPanel />|");
+        var (analysis, _) = Analyze("@namespace Demo" + ending + "\n@using System.Text" + ending + "\n@using EclipseUI.Elements" + ending + "\n<StackPanel />|");
 
         Assert.Null(UiImportService.CreateImportEdit(analysis, "global::System.Text"));
         Assert.Null(UiImportService.CreateImportEdit(analysis, "global::EclipseUI.Elements"));

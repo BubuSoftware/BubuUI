@@ -37,8 +37,8 @@ public class LooklessTemplateTests
         </Border>
         """;
     private const string Theme = """
-        @using EclipseUI.Elements;
-        @using Probe;
+        @using EclipseUI.Elements
+        @using Probe
         @theme Rounded for Button {
             Template: template(ButtonSkin);
             Background: theme(#111111, #eeeeee);
@@ -47,14 +47,27 @@ public class LooklessTemplateTests
         Button.primary { Theme: resource(Rounded); }
         """;
 
-    [Fact]
-    public void TemplateThemeAndConsumerCompileTogether()
+    [Theory]
+    [InlineData("")]
+    [InlineData(";")]
+    [InlineData(" \t; \t")]
+    public void TemplateThemeAndConsumerCompileTogether(string ending)
     {
-        var (result, output) = Compile(("ButtonSkin.ui", Template), ("theme.eustyle", Theme), ("Page.ui", """
+        var template = Template.Replace("@namespace Probe", "@namespace Probe" + ending)
+            .Replace("@using EclipseUI.Elements", "@using EclipseUI.Elements" + ending)
+            .Replace("@template Button", "@template Button" + ending);
+        var theme = Theme.Replace("@using EclipseUI.Elements", "@using EclipseUI.Elements" + ending)
+            .Replace("@using Probe", "@using Probe" + ending);
+        var consumer = """
             @namespace Probe
             @using EclipseUI.Elements
-            <Button Class="primary">Save</Button>
-            """));
+            @using Btn = EclipseUI.Elements.Button
+            <Btn Class="primary">Save</Btn>
+            """;
+        consumer = consumer.Replace("@namespace Probe", "@namespace Probe" + ending)
+            .Replace("@using EclipseUI.Elements", "@using EclipseUI.Elements" + ending)
+            .Replace("@using Btn = EclipseUI.Elements.Button", "@using Btn = EclipseUI.Elements.Button" + ending);
+        var (result, output) = Compile(("ButtonSkin.ui", template), ("theme.eustyle", theme), ("Page.ui", consumer));
         Assert.Empty(result.Diagnostics.Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error));
         Assert.Empty(output.GetDiagnostics().Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error));
         var factory = output.GetTypeByMetadataName("Probe.ButtonSkin");
@@ -78,6 +91,8 @@ public class LooklessTemplateTests
     [InlineData("template(ButtonSkin)", "template(MissingSkin)", "Unknown or ambiguous template")]
     [InlineData("resource(Rounded)", "resource(Missing)", "Unknown or incompatible")]
     [InlineData("@theme Rounded", "@theme class", "valid C# identifier")]
+    [InlineData("@using EclipseUI.Elements", "@using EclipseUI.Elements;;", "accepts a namespace")]
+    [InlineData("@using Probe", "@using", "requires a namespace")]
     public void InvalidThemeValuesAreReportedInTheStylesheet(string oldText, string newText, string message)
     {
         var (result, _) = Compile(("ButtonSkin.ui", Template), ("theme.eustyle", Theme.Replace(oldText, newText)));
@@ -117,5 +132,58 @@ public class LooklessTemplateTests
         var parsed = ControlThemeSyntax.Parse("/* { } */\n" + Theme, errors);
         Assert.Empty(errors);
         Assert.Equal(2, parsed.Nodes.Count);
+    }
+
+    [Theory]
+    [InlineData("\n", "")]
+    [InlineData("\r\n", "")]
+    [InlineData("\r", "")]
+    [InlineData("\n", ";")]
+    [InlineData("\r\n", " \t; \t")]
+    public void ThemeImportsUseLineBoundariesAndPreserveFollowingRules(string newline, string ending)
+    {
+        var text = string.Join(newline,
+            "@using\tEclipseUI.Elements" + ending, "", "// imports do not consume the theme below",
+            "@using Probe" + ending, "@theme Rounded for Button { Template: template(ButtonSkin); }",
+            "Button.primary { Theme: resource(Rounded); }");
+        var errors = new List<UiDiagnostic>();
+        var parsed = ControlThemeSyntax.Parse(text, errors);
+        Assert.Empty(errors);
+        Assert.Equal(new[] { "EclipseUI.Elements", "Probe" }, parsed.Imports);
+        Assert.Equal(new[] { "@theme Rounded for Button", "Button.primary" }, parsed.Nodes.Select(n => n.Header));
+        Assert.Equal(text.Length, parsed.LegacyText.Length);
+        Assert.Equal(text.Where(c => c is '\r' or '\n'), parsed.LegacyText.Where(c => c is '\r' or '\n'));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(";")]
+    [InlineData(" \t; \t")]
+    public void ThemeImportCanEndAtEndOfFile(string ending)
+    {
+        var errors = new List<UiDiagnostic>();
+        var parsed = ControlThemeSyntax.Parse("@using EclipseUI.Elements" + ending, errors);
+        Assert.Empty(errors);
+        Assert.Equal(new[] { "EclipseUI.Elements" }, parsed.Imports);
+        Assert.Empty(parsed.Nodes);
+    }
+
+    [Theory]
+    [InlineData("@using EclipseUI.Elements;;", "accepts a namespace")]
+    [InlineData("@using", "requires a namespace")]
+    [InlineData("@using EclipseUI..Elements", "requires a namespace")]
+    [InlineData("@using static EclipseUI.Elements", "static")]
+    [InlineData("@using (EclipseUI.Elements)", "not supported")]
+    [InlineData("@using EclipseUI.Elements extra", "accepts a namespace")]
+    public void InvalidThemeImportReportsItsLineAndPreservesTheNextRule(string directive, string message)
+    {
+        var errors = new List<UiDiagnostic>();
+        var parsed = ControlThemeSyntax.Parse(directive + "\n@using Probe\nButton.primary { Background: #abcdef; }", errors);
+        var error = Assert.Single(errors);
+        Assert.Equal("EUI050", error.Code);
+        Assert.Contains(message, error.Message);
+        Assert.Equal(new TextSpan(0, directive.Length), error.Span);
+        Assert.Equal(new[] { "Probe" }, parsed.Imports);
+        Assert.Equal("Button.primary", Assert.Single(parsed.Nodes).Header);
     }
 }

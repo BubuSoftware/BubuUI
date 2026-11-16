@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.ExceptionServices;
 using EclipseUI.Rendering;
 using EclipseUI.Themes.Fluent;
 
@@ -77,6 +78,13 @@ public sealed class WindowHost : IDisposable, IWindowHost
     private bool _disposed;
     private bool _running;
     private IClipboard? _previousClipboard;
+    private UiSynchronizationContext? _activeContext;
+    private bool _renderingFrame;
+    private bool _pendingResize;
+    private bool _pendingFullFrame;
+    private long _animationTime;
+    private ExceptionDispatchInfo? _nativeFrameFailure;
+    private readonly record struct FrameResult(bool Presented, Size Size, FrameDamage Damage, double Milliseconds);
 
     public WindowHost(
         IMacOSWindow window,
@@ -198,6 +206,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
         }
         finally
         {
+            _activeContext = null;
             _running = false;
             RestoreClipboard();
             try { _uiRoot.DetachFromHost(this); }
@@ -218,71 +227,30 @@ public sealed class WindowHost : IDisposable, IWindowHost
         RenderedFrames = 0;
         SkippedFrames = 0;
         AverageFrameMilliseconds = 0;
+        _nativeFrameFailure = null;
+        _pendingFullFrame = true;
+        _activeContext = context;
 
         var frameInterval = _options.MaxFramesPerSecond > 0
             ? 1000.0 / _options.MaxFramesPerSecond
             : 0;
         var clock = Stopwatch.StartNew();
-        var animationTime = Stopwatch.GetTimestamp();
+        _animationTime = Stopwatch.GetTimestamp();
 
         while (!_disposed && !_uiRoot.IsDisposed && _window.PumpMessages())
         {
+            _nativeFrameFailure?.Throw();
             if (_disposed || _uiRoot.IsDisposed || _window.IsClosed || IsExiting) break;
-            _themeBinding.Update(_painter, Root);
-
-            // tick 顺序：PumpMessages → Drain →（自动失效）→ ProcessInvalidations → 布局 → present。
-            // drain 按快照批执行，回调里新 Post 的续体下一 tick 再跑；只要跑过回调就按批
-            // 整体失效当前 UI 子树一次，续体可能修改任意后代的普通 CLR 状态。
-            // 放在最小化分支之前：最小化时也不能把后台续体饿死。
-            if (context.Drain() > 0)
+            var result = RenderFrame(context);
+            if (result is not { } frame)
             {
-                _uiRoot.InvalidateSubtree();
-            }
-            if (_disposed || _uiRoot.IsDisposed || _window.IsClosed || IsExiting) break;
-
-            var size = _window.LogicalClientSize;
-            if (size.IsEmpty)
-            {
-                // 最小化：没有可绘制的客户区，等消息但不要空转。
                 Thread.Sleep(8);
                 continue;
             }
-
-            var start = Stopwatch.GetTimestamp();
-
-            // 卸载/摘除后焦点元素可能已离树：布局前修剪（G4/K33）。
-            Input.Focus.ClearFocusIfDetached();
-            _uiRoot.ProcessInvalidations();
-            if (_disposed || _uiRoot.IsDisposed) break;
-            var root = SyncRoot();
-            _painter.Prepare(root);
-            var animationNow = Stopwatch.GetTimestamp();
-            FrameAnimations.Advance(root, TimeSpan.FromSeconds((animationNow - animationTime) / (double)Stopwatch.Frequency));
-            animationTime = animationNow;
-            root.Measure(size);
-            root.Arrange(new Rect(Point.Zero, size));
-
-            UpdateTextInput();
-            var frame = _painter.BuildFrame(root, size, _window.ScaleFactor);
-            var presented = _options.AlwaysRender || !frame.Damage.IsEmpty;
-            if (presented)
-            {
-                _presenter.Render(frame.List);
-                RenderedFrames++;
-                LastDamage = frame.Damage;
-                LastFrameMilliseconds = Elapsed(start);
-                AverageFrameMilliseconds = RenderedFrames == 1
-                    ? LastFrameMilliseconds
-                    : AverageFrameMilliseconds + (LastFrameMilliseconds - AverageFrameMilliseconds) * 0.05;
-            }
-            else
-            {
-                SkippedFrames++;
-            }
-
             Ticks++;
             FrameTicked?.Invoke(this, new HostFrameEventArgs(
-                Ticks, presented, Elapsed(start), size, frame.Damage));
+                Ticks, frame.Presented, frame.Milliseconds, frame.Size, frame.Damage));
+            _nativeFrameFailure?.Throw();
 
             if (frameInterval > 0)
             {
@@ -290,7 +258,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
                 if (remaining > 2.0) Thread.Sleep((int)(remaining - 1.0));
                 while (clock.Elapsed.TotalMilliseconds < frameInterval) Thread.SpinWait(64);
             }
-            else if (!presented && _options.IdleSleepMilliseconds > 0)
+            else if (!frame.Presented && _options.IdleSleepMilliseconds > 0)
             {
                 // 无脏区时跳过上屏，sleep 避免空转；消息仍在下一轮及时处理。
                 Thread.Sleep(_options.IdleSleepMilliseconds);
@@ -300,20 +268,101 @@ public sealed class WindowHost : IDisposable, IWindowHost
             if (maxFrames is { } limit && Ticks >= limit) break;
         }
 
+        _nativeFrameFailure?.Throw();
         return RenderedFrames;
+    }
+
+    private bool CanRender => _running && !_disposed && !_uiRoot.IsDisposed && !_window.IsClosed && !IsExiting;
+
+    // The normal loop and nested Cocoa live-resize loop use the same UI-thread frame path.
+    // Callbacks never resize the surface while a frame still owns its texture/resources.
+    private FrameResult? RenderFrame(UiSynchronizationContext context)
+    {
+        if (_renderingFrame || !CanRender) return null;
+        _renderingFrame = true;
+        FrameResult? result = null;
+        try
+        {
+            // A layout callback or Present can synchronously dispatch another resize.
+            // Coalesce it and retry with the latest size after the current frame unwinds.
+            for (var attempt = 0; attempt < 3 && CanRender; attempt++)
+            {
+                _pendingResize = false;
+                if (context.Drain() > 0) _uiRoot.InvalidateSubtree();
+                if (!CanRender) return result;
+                _themeBinding.Update(_painter, Root);
+                Input.Focus.ClearFocusIfDetached();
+                _uiRoot.ProcessInvalidations();
+                if (!CanRender) return result;
+                var root = SyncRoot();
+                _painter.Prepare(root);
+                var now = Stopwatch.GetTimestamp();
+                FrameAnimations.Advance(root, TimeSpan.FromSeconds((now - _animationTime) / (double)Stopwatch.Frequency));
+                _animationTime = now;
+                var width = _window.ClientWidth;
+                var height = _window.ClientHeight;
+                var scale = _window.ScaleFactor;
+                var size = _window.LogicalClientSize;
+                if (size.IsEmpty || !CanRender) return result;
+                var start = Stopwatch.GetTimestamp();
+                root.Measure(size);
+                root.Arrange(new Rect(Point.Zero, size));
+                if (!CanRender) return result;
+                if (width != _window.ClientWidth || height != _window.ClientHeight || scale != _window.ScaleFactor) continue;
+                _pendingResize = false; // Layout already used the latest native size.
+                _presenter.Resize(width, height);
+                if (_pendingResize) continue;
+                if (_pendingFullFrame) { _painter.ResetDamage(); _pendingFullFrame = false; }
+                UpdateTextInput();
+                if (!CanRender) return result;
+                var frame = _painter.BuildFrame(root, size, scale);
+                if (_pendingResize) continue;
+                var presented = _options.AlwaysRender || !frame.Damage.IsEmpty;
+                if (presented)
+                {
+                    _presenter.Render(frame.List);
+                    RenderedFrames++;
+                    LastDamage = frame.Damage;
+                    LastFrameMilliseconds = Elapsed(start);
+                    AverageFrameMilliseconds = RenderedFrames == 1 ? LastFrameMilliseconds
+                        : AverageFrameMilliseconds + (LastFrameMilliseconds - AverageFrameMilliseconds) * 0.05;
+                }
+                else SkippedFrames++;
+                result = new(presented, size, frame.Damage, Elapsed(start));
+                if (!_pendingResize) return result;
+            }
+            return result;
+        }
+        finally { _renderingFrame = false; }
+    }
+
+    private void RenderNativeFrame()
+    {
+        if (_activeContext is null || _renderingFrame || !CanRender || _nativeFrameFailure is not null) return;
+        // Never let managed layout/render exceptions cross the reverse P/Invoke SDL callback.
+        // The outer managed loop rethrows with the original stack and performs normal cleanup.
+        try { RenderFrame(_activeContext); }
+        catch (Exception error) { _nativeFrameFailure = ExceptionDispatchInfo.Capture(error); }
     }
 
     /// <summary>下一次循环重新同步表面尺寸（例如窗口在 Show 之前创建）。</summary>
     public void SyncPresenterSize()
-        => _presenter.Resize(Math.Max(_window.ClientWidth, 1), Math.Max(_window.ClientHeight, 1));
+    {
+        if (_renderingFrame) { _pendingResize = _pendingFullFrame = true; return; }
+        _presenter.Resize(Math.Max(_window.ClientWidth, 1), Math.Max(_window.ClientHeight, 1));
+    }
 
     private void OnResized(object? sender, MacOSResizeEventArgs e)
     {
-        _presenter.Resize(Math.Max(e.Width, 1), Math.Max(e.Height, 1));
-        _painter.ResetDamage();
+        _pendingResize = _pendingFullFrame = true;
+        RenderNativeFrame();
     }
 
-    private void OnPaintRequested(object? sender, EventArgs e) => _painter.ResetDamage();
+    private void OnPaintRequested(object? sender, EventArgs e)
+    {
+        _pendingFullFrame = true;
+        RenderNativeFrame();
+    }
 
     private void OnPointerMoved(object? sender, MacOSPointerEventArgs e)
         => Input.PointerMove(e.LogicalPosition);
