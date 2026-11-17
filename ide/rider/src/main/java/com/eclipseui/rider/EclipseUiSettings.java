@@ -30,7 +30,7 @@ public final class EclipseUiSettings implements PersistentStateComponent<Eclipse
     }
 
     public static final class State {
-        /** dotnet executable; empty = "dotnet" from PATH. */
+        /** dotnet executable; empty = PATH, then standard .NET locations on macOS. */
         public String dotnet = "";
         /** Path to EclipseUI.LanguageServer.dll; empty = auto-discover in the repository. */
         public String serverDll = "";

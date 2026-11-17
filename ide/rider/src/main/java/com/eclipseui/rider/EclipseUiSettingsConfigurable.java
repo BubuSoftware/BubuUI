@@ -35,8 +35,10 @@ public final class EclipseUiSettingsConfigurable implements Configurable {
                 .addLabeledComponent("Runtime DLL (optional):", runtimeDll)
                 .addLabeledComponent("Extra catalog assemblies (optional):", extraAssemblies)
                 .addComponent(new JBLabel(
-                        "<html>Server DLL empty = use the bundled server, then repository build output. "
-                                + "Run <code>ide/build.ps1</code> to publish it. "
+                        "<html>dotnet executable empty = auto-detect (including standard macOS SDK locations). "
+                                + "Server DLL empty = use the bundled server, then repository build output. "
+                                + "Publish with <code>ide/rider/build.sh</code> on macOS/Linux "
+                                + "or <code>pwsh -File ide/build.ps1</code> on Windows. "
                                 + "Changes take effect after restarting the language server.</html>"))
                 .getPanel();
         return panel;

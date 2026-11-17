@@ -5,6 +5,7 @@ import com.intellij.ide.plugins.PluginManagerCore;
 import com.intellij.openapi.application.PathManager;
 import com.intellij.openapi.extensions.PluginId;
 import com.intellij.openapi.project.Project;
+import com.intellij.util.EnvironmentUtil;
 
 import java.io.IOException;
 import java.nio.file.DirectoryStream;
@@ -69,7 +70,7 @@ public final class ServerCommand {
         EclipseUiSettings.State state = EclipseUiSettings.getInstance().getState();
 
         List<String> args = new ArrayList<>();
-        args.add(blank(state.dotnet) ? "dotnet" : state.dotnet.trim());
+        args.add(DotnetExecutable.resolve(state.dotnet, EnvironmentUtil.getEnvironmentMap()));
         args.add(server.toAbsolutePath().toString());
         args.add("--stdio");
         // LSP4IJ opens file URIs; the shared server supplies a read-only C# cache.

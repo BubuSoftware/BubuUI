@@ -183,7 +183,9 @@ check('server launch command mirrors the VS Code client', () => {
     has(command, '"Debug").resolve("net10.0")');
     has(command, 'project.getBasePath()');
     has(provider, 'extends ProcessStreamConnectionProvider');
-    has(provider, 'super.setCommands(ServerCommand.build(project, server))');
+    has(command, 'DotnetExecutable.resolve(state.dotnet, EnvironmentUtil.getEnvironmentMap())');
+    has(provider, 'super.setCommands(commands)');
+    has(provider, 'super.setUserEnvironmentVariables(DotnetExecutable.serverEnvironment(commands.get(0)))');
     has(factory, 'implements LanguageServerFactory');
     has(factory, 'createConnectionProvider(@NotNull Project project)');
     has(pluginXml, '<applicationService serviceImplementation="com.eclipseui.rider.EclipseUiSettings"/>');

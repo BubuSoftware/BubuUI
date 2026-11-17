@@ -207,6 +207,23 @@ Rider 2024.2+），server 仍是同一个 `EclipseUI.LanguageServer`，不加第
 
 ### 跑起来
 
+macOS（Apple Silicon / Intel）与 Linux 可直接构建 Rider 插件，无需 PowerShell：
+
+```bash
+export JAVA_HOME=$(/usr/libexec/java_home -v 21)  # macOS：使用已安装的 JDK 21
+./ide/rider/build.sh
+# 已验证测试后，可用 ./ide/rider/build.sh --skip-tests
+```
+
+需要 .NET 10 SDK、Node.js 和 JDK 21–24（推荐 21；当前 Gradle 9.0 不支持 JDK 25）。
+脚本发布同一份语言服务器和 Runtime/Rendering 元数据，运行共享语言服务测试、
+Rider 壳断言和 Java 测试，再构建并检查插件结构。
+产物为 `ide/rider/build/distributions/eclipseui-rider-0.2.0.zip`；ZIP 可用于三种桌面系统，
+运行时需要本机架构的 .NET SDK。安装使用 Rider → Settings（macOS 也可按 `⌘,`）→
+Plugins → 齿轮 → Install Plugin from Disk，选中 ZIP 并重启。
+
+Windows：
+
 ```powershell
 powershell -ExecutionPolicy Bypass -File ide/build.ps1   # 发布共享 server + 两个壳的断言
 cd ide/rider
@@ -215,12 +232,15 @@ cd ide/rider
 .\gradlew.bat compileJava     # 只编译（CI / 换机后快速自检）
 ```
 
-只需本机装 JDK 17 并让 `JAVA_HOME` 指向它；Gradle 9.0.0 由仓库内的 wrapper 自举，
+本机装 JDK 21–24 并让 `JAVA_HOME` 指向它；编译产物与 Rider 2024.2 使用 Java 21。
+Gradle 9.0.0 由仓库内的 wrapper 自举，
 不必全局安装。`gradle/wrapper/gradle-wrapper.properties` 固定了版本和发行包
 SHA-256：默认 URL 走华为云镜像（国内可达且与官方包校验和一致），要换回官方源就把它
 改成 `https\://services.gradle.org/distributions/gradle-9.0.0-bin.zip`，校验和不用动。
 本机若靠 HTTP 代理上网，需给 Gradle 传 `-Dhttps.proxyHost=… -Dhttps.proxyPort=…`
 （Java 不读 `HTTPS_PROXY` 环境变量），否则平台依赖会连不上。
+已有解压的同版本 Rider SDK 时，可在 Gradle 命令后加
+`-PlocalPlatformPath=/path/to/rider-sdk` 复用本地 SDK；默认仍下载完整 Rider SDK。
 
 安装 zip（Settings → Plugins → Install Plugin from Disk）或直接用 `runIde`。
 server DLL 的查找顺序：Settings → Languages & Frameworks → EclipseUI 的 `Server DLL`
@@ -228,6 +248,11 @@ server DLL 的查找顺序：Settings → Languages & Frameworks → EclipseUI �
 `ide/vscode/server`（`build.ps1` 的产物）、`ide/EclipseUI.LanguageServer/bin/{Release,Debug}/net10.0`。
 也就是说开发机上打开本仓库即可用；找不到会弹通知并在 lsp4ij 的 LSP console 留下原因。
 设置页的四个字段与 VS Code 的 `eclipseui.server.*` 一一对应。
+
+macOS 从 Finder / Dock 打开 Rider 时，进程可能没有终端里的 `PATH`。插件会自动在
+`DOTNET_ROOT`、`~/.dotnet`、官方安装目录与 Homebrew 的常用目录查找 `dotnet`；
+也可在 EclipseUI 设置的 `dotnet` 字段填写其绝对路径，例如
+`/usr/local/share/dotnet/dotnet` 或 `/opt/homebrew/bin/dotnet`。
 
 **watcher 不需要在 lsp4ij 里手配**：server 在 `initialized` 之后发
 `client/registerCapability` 动态注册 `workspace/didChangeWatchedFiles`，glob 与
@@ -255,13 +280,14 @@ lsp4ij → Settings → Languages & Frameworks → Language Servers → `+` User
 
 ### 边界
 
-- 插件是 Java/Gradle 工程：**已在 Temurin JDK 17 + Gradle 9.0.0 wrapper 下真实编译
-  并打包**（`compileJava` 产出 11 个 class；`buildPlugin` 产出
+- 插件是 Java/Gradle 工程：JDK 21 + Gradle 9.0.0 wrapper 下使用 `buildPlugin` 产出
   `build/distributions/eclipseui-rider-0.2.0.zip`，包内含共享 grammar、`since-build=242`
-  与两条 languageMapping）。接线类错误另有 `node test/plugin.test.js` 的 13 项静态契约
+  与两条 languageMapping。接线类错误另有 `node test/plugin.test.js` 的静态契约
   交叉比对（扩展点/类名/grammar scopeName/watcher/启动参数/wrapper）。
-  **仍未做** Rider 内人工冒烟（`runIde` 打开 `.ui` 看高亮与补全）：构建期的
-  `buildSearchableOptions` 确实启动过 Rider 沙箱并成功释放 bundle，但那不是交互验证。
+  2026-11-17 在 macOS Apple Silicon / Temurin 21 上通过共享服务 392 项测试、Rider 23 项
+  Java 测试、壳断言与 ZIP 结构检查。本机使用官方 242 SDK 的 Java 部分，打包时用
+  `-x buildSearchableOptions` 跳过需要完整 Rider 插件的设置搜索索引；标准构建与 CI 仍使用
+  完整 SDK 并保留索引步骤。**仍未做** Rider 内人工冒烟（`runIde` 打开 `.ui` 看高亮与补全）。
 - 插件 ZIP 内嵌 `server/`，与 VS Code / Visual Studio 使用同一份发布输出。设置页仍可指定 DLL 覆盖。
 - Rider 启动 server 时传入 `--materialize-decompiled`：无源码的控件/属性跳转到系统临时目录里的只读 C# 文件；文件按 URI 与内容散列区分版本，保留定义范围。VS Code / Visual Studio 仍使用原有虚拟文档通道。
 - `@code` 块内补全/悬停/重命名由共享 server 提供；`#line` 调试器接线仍未实现。

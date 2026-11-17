@@ -1,0 +1,53 @@
+name: Rider on macOS
+
+on:
+  push:
+    paths:
+      - '.github/workflows/rider.yml'
+      - 'ide/**'
+      - 'src/**'
+      - 'tests/EclipseUI.Ide.Tests/**'
+      - 'Directory.Build.*'
+  pull_request:
+    paths:
+      - '.github/workflows/rider.yml'
+      - 'ide/**'
+      - 'src/**'
+      - 'tests/EclipseUI.Ide.Tests/**'
+      - 'Directory.Build.*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rider-macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rider:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test and package the Rider extension
+        run: ./ide/rider/build.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eclipseui-rider-macos
+          path: |
+            ide/rider/build/distributions/*.zip
+            ide/rider/build/test-results/test/*.xml
+            ide/rider/build/reports/tests/test/**

@@ -52,7 +52,7 @@ try {
 }
 finally { Pop-Location }
 
-# The Rider module is a Java/Gradle IntelliJ plugin. A real compile needs a JDK 17
+# The Rider module is a Java/Gradle IntelliJ plugin. A real compile needs JDK 21-24
 # plus a Rider SDK download (Gradle 9 comes from the repo wrapper), but every
 # wiring mistake is visible in text, so the static contract is checked here with
 # plain node (no JVM required).
@@ -71,4 +71,4 @@ Write-Host '  1) Open ide/vscode in VS Code and press F5 (Run Extension).'
 Write-Host '  2) code --extensionDevelopmentPath="<repo>\ide\vscode"'
 Write-Host ''
 Write-Host 'Rider: ide/rider is the lsp4ij plugin; see ide/README.md section 4.'
-Write-Host '  Build it with JDK 17: cd ide/rider; .\gradlew.bat buildPlugin'
+Write-Host '  Build with JDK 21-24: cd ide/rider; .\gradlew.bat buildPlugin (macOS/Linux: ./build.sh)'

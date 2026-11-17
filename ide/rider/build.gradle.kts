@@ -10,9 +10,14 @@ group = "com.eclipseui"
 version = providers.gradleProperty("pluginVersion").get()
 
 java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(17)
-    }
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+tasks.withType<JavaCompile>().configureEach {
+    // Rider 2024.2 requires Java 21. Use the current build JDK without requiring
+    // another toolchain installation, while checking against Java 21 APIs.
+    options.release.set(21)
 }
 
 repositories {
@@ -27,7 +32,12 @@ dependencies {
         // Rider (RD) is the target IDE. LSP4IJ and JetBrains TextMate are the only
         // platform dependencies: the plugin is a thin shell, all semantics live in
         // EclipseUI.LanguageServer (design/06 "one shared asset, two thin shells").
-        create(providers.gradleProperty("platformType"), providers.gradleProperty("platformVersion"))
+        val localPlatformPath = providers.gradleProperty("localPlatformPath")
+        if (localPlatformPath.isPresent) {
+            local(localPlatformPath.get())
+        } else {
+            create(providers.gradleProperty("platformType"), providers.gradleProperty("platformVersion"))
+        }
         bundledPlugin("org.jetbrains.plugins.textmate")
         plugin("com.redhat.devtools.lsp4ij", providers.gradleProperty("lsp4ijVersion").get())
         testFramework(TestFrameworkType.Platform)
