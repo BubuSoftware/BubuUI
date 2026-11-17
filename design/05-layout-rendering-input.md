@@ -211,6 +211,16 @@ Ticks/FrameTicked/MaxTicks 保留外层循环口径；RenderedFrames 包含原�
 
 ### Vello 集成设计
 
+当前 GPU 实现（2026-11-18）：平台将 `PaintedFrame` 及设备缩放交给 `ISurfacePresenter`。
+`VelloRetainedSceneBuilder` 缓存原生绘图片段，保留共享 clip、透明度和混合图层的组合边界；
+变换与图层作用域交叉时使用完整场景构建，保持显示列表语义。
+`GpuDamageRegion` 将逻辑脏区的包围矩形向外对齐到设备像素，并裁到表面。
+Vello 只向该尺寸的小纹理光栅化，然后覆盖到持久帧纹理；空脏区复用持久帧，
+首次呈现、尺寸变化及呈现失败后的下一帧重新完整光栅化。最终仍通过全屏纹理复制上屏，
+不声称消除完整表面的呈现带宽，也不做 CPU 回读。
+`LastRasterizedPixels` 与场景片段计数可用于诊断。像素一致性及本机 Metal 证据见
+[框架修复报告](./reports/framework-hardening-2026-11-18.md)。下述内容保留原集成方案背景。
+
 - **变体分工**：`vello_gpu` 为主力渲染路径（CPU 预处理路径 + GPU 栅格合成，
   wgpu/WebGL2 后端）；`vello_cpu`（多线程 + SIMD，官方称目前最成熟）用于
   headless 测试与无 GPU 兜底。

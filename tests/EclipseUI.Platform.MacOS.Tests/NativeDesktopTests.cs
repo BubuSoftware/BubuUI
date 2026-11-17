@@ -13,6 +13,10 @@ public sealed class MacOSDesktopFactAttribute : FactAttribute
 
 public class NativeDesktopTests
 {
+    [MacOSDesktopFact]
+    public Task MetalRetainsPixelsAndRasterizesOnlyDamagedRegions()
+        => RunNativeScenario("partial-raster");
+
     // Test runners use worker threads. A fresh executable gives Cocoa the real OS main thread.
     [MacOSDesktopFact]
     public Task CocoaWindowPresentsResizesAndRoutesUnicodeAndCommandInput()

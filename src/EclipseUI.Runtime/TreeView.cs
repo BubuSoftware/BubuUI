@@ -78,6 +78,7 @@ public class TreeView : StackPanel
     private TreeViewItem? _selected;
     private IEnumerable? _source;
     private System.Collections.Specialized.INotifyCollectionChanged? _observable;
+    private readonly HashSet<Element> _generatedRoots = new(ReferenceEqualityComparer.Instance);
     public TreeViewItem? SelectedItem { get => _selected; set => Select(value); }
     public Action<TreeViewItem?>? SelectedItemChanged { get; set; }
     public IEnumerable? ItemsSource
@@ -124,7 +125,14 @@ public class TreeView : StackPanel
     private void SourceChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e) => RefreshItems();
     public void RefreshItems()
     {
-        if (_source is null) return;
+        if (_source is null)
+        {
+            var removed = Children.Where(_generatedRoots.Contains).ToArray();
+            if (_selected is not null && removed.Any(root => ReferenceEquals(root, _selected) || root.Descendants().Contains(_selected))) Select(null);
+            foreach (var root in removed) { Children.Remove(root); root.Dispose(); }
+            _generatedRoots.Clear();
+            return;
+        }
         var active = new HashSet<object>(ReferenceEqualityComparer.Instance);
         TreeViewItem Build(object? item, int depth)
         {
@@ -138,7 +146,9 @@ public class TreeView : StackPanel
         var next = new List<Element>();
         try { foreach (var item in _source) next.Add(Build(item, 0)); }
         catch { foreach (var item in next) item.Dispose(); throw; }
-        Select(null); var old = Children.ToArray(); Children.ReplaceAll(next); foreach (var item in old) item.Dispose();
+        Select(null); var old = Children.ToArray(); Children.ReplaceAll(next);
+        _generatedRoots.Clear(); _generatedRoots.UnionWith(next);
+        foreach (var item in old) item.Dispose();
     }
     protected override void OnDispose() { if (_observable is not null) _observable.CollectionChanged -= SourceChanged; base.OnDispose(); }
 }

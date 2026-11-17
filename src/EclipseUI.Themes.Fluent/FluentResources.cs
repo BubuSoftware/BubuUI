@@ -1,13 +1,15 @@
 using EclipseUI.Rendering;
+using EclipseUI.Elements;
 
 namespace EclipseUI.Themes.Fluent;
 
 /// <summary>Typed shared palette resources used by every compiled Fluent skin.</summary>
 public static class FluentResources
 {
-    private static ThemeResource<UiColor> Color(Func<FluentTheme, Color> select) => new(element =>
+    private static ThemeResource<UiColor> Color(Func<FluentTheme, Color> select) => Color((_, theme) => select(theme));
+    private static ThemeResource<UiColor> Color(Func<Element, FluentTheme, Color> select) => new(element =>
     {
-        var color = select(element.ThemeDefaults as FluentTheme ?? FluentTheme.Light);
+        var color = select(element, element.ThemeDefaults as FluentTheme ?? FluentTheme.Light);
         return new(color.R, color.G, color.B, color.A);
     });
     public static readonly ThemeResource<UiColor> ControlBackground = Color(theme => theme.ControlBackground);
@@ -20,6 +22,13 @@ public static class FluentResources
     public static readonly ThemeResource<UiColor> DisabledForeground = Color(theme => theme.DisabledForeground);
     public static readonly ThemeResource<UiColor> InputActiveBackground = Color(theme => theme.InputActiveBackground);
     public static readonly ThemeResource<UiColor> PopupBackground = Color(theme => theme.PopupBackground);
+    public static readonly ThemeResource<UiColor> PopupBorder = Color(theme => theme.PopupBorder);
+    public static readonly ThemeResource<UiColor> ListItemBackground = Color((element, theme) =>
+        element is ListBoxItem { IsSelected: true } ? theme.SelectionBackground :
+        element.IsPressed ? theme.ItemPressedBackground : element.IsHovered ? theme.ItemHoverBackground : theme.ItemBackground);
+    public static readonly ThemeResource<UiColor> TreeItemBackground = Color((element, theme) =>
+        element is TreeViewItem { IsSelected: true } ? theme.SelectionBackground :
+        element.IsPressed ? theme.ItemPressedBackground : element.IsHovered ? theme.ItemHoverBackground : theme.ItemBackground);
     public static readonly ThemeResource<UiColor> ItemHoverBackground = Color(theme => theme.ItemHoverBackground);
     public static readonly ThemeResource<UiColor> ControlAltBackground = Color(theme => theme.ControlAltBackground);
     public static readonly ThemeResource<UiColor> ControlAltHoverBackground = Color(theme => theme.ControlAltHoverBackground);

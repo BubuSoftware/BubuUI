@@ -22,6 +22,7 @@ internal static class Program
                 case "live-resize": LiveResizeScenario(); break;
                 case "lifetime": LifetimeScenario(); break;
                 case "thread": ThreadScenario(); break;
+                case "partial-raster": PartialRasterScenario(); break;
                 default: throw new ArgumentException("Unknown native scenario.");
             }
             Console.WriteLine($"macOS native {scenario}: passed");
@@ -32,6 +33,32 @@ internal static class Program
             Console.Error.WriteLine(error);
             return 1;
         }
+    }
+
+    private static void PartialRasterScenario()
+    {
+        using var window = new MacOSWindow("Retained Metal raster", 400, 300);
+        using var presenter = VelloSurfaceBackend.Create(window.SurfaceHandle, window.ClientWidth, window.ClientHeight,
+            new() { ValidateDisplayList = true });
+        var width = presenter.Width; var height = presenter.Height;
+        DisplayList List(Color color) => new DisplayList(new(width, height))
+            .Add(new FillRect(new(0, 0, width, height), Color.White))
+            .Add(new FillRoundedRect(new(20, 20, 30, 30), 4, color));
+        var full = new FrameDamage(); full.AddFull();
+        presenter.Render(new PaintedFrame(List(Color.Black), full));
+        Assert.Equal((long)width * height, presenter.LastRasterizedPixels);
+        var damage = new FrameDamage(); damage.Add(new(20, 20, 30, 30));
+        presenter.Render(new PaintedFrame(List(new(30, 80, 220)), damage));
+        Assert.Equal(900, presenter.LastRasterizedPixels);
+        Assert.True(presenter.LastReusedSceneFragments > 0);
+        presenter.Render(new PaintedFrame(List(Color.Black), new FrameDamage()));
+        Assert.Equal(0, presenter.LastRasterizedPixels);
+        Assert.Equal(0, presenter.LastBuiltSceneFragments);
+        Assert.Equal(0, presenter.LastReusedSceneFragments);
+        Assert.Equal(3, presenter.PresentedFrames);
+        presenter.Resize(width + 20, height + 20);
+        presenter.Render(new PaintedFrame(List(Color.Black), new FrameDamage()));
+        Assert.Equal((long)(width + 20) * (height + 20), presenter.LastRasterizedPixels);
     }
 
     private static void LiveResizeScenario()

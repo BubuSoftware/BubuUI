@@ -77,6 +77,17 @@ HarfBuzzTextPainter 默认按 Unicode 字素选择字体，保留 emoji 的 ZWJ/
 
 ## 虚拟化与资源
 
+数据列表达到 128 项时，ListBox（包括 ComboBox 下拉列表）自动使用 VirtualizingStackPanel，
+在有限的 ScrollViewer 视口中仅为可见范围及缓冲行创建容器。选择和键盘导航按数据索引工作，
+Home/End、初始选中项和指针选择会将目标带入视口。调用方直接提供 Element、手工添加 Children、
+尚未启用虚拟化的小列表保持普通容器行为；无界布局会测量全部条目。可设置
+`IsVirtualizationEnabled=false` 关闭自动虚拟化。集合追加与移动按对象引用优先、相等值次之匹配容器，
+保留仍存在条目的编辑状态和焦点；重复值与 null 按各次出现匹配。
+达到阈值后缩小数据源仍维持虚拟模式，直到清空或显式关闭，以避免阈值附近反复切换。
+
+`GetItemBounds(index)` 返回已测量或估计的面板内条目区域；`BringIndexIntoView(index)`
+在后续行高测量完成后继续校正目标位置。DataGrid 的键盘定位使用该协议，不再按固定行高推算。
+
 默认等高模式保持既有 API/生命周期。IsVariableHeight=true 时，未知行高先用探针估计，已测高度写入前缀和树，后续布局更新 Extent；ItemHeightProvider 可直接提供精确高度，不创建所有容器。
 
 提供 ItemUpdater 后启用回收：离开视口的容器先从树摘除，再由更新器重新绑定索引，进入树时重新收到附加通知；未提供更新器的行按原契约释放。探针仍单独保留。Refresh、最终释放及异常清理覆盖探针、可见行与回收池；回收池上限 256。

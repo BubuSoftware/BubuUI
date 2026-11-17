@@ -118,12 +118,7 @@ public class DataGrid : Panel
             else if (k.Key == Key.Home) SelectedIndex = 0;
             else if (k.Key == Key.End) SelectedIndex = _view.Count - 1;
             else return;
-            var y = SelectedIndex * RowHeight;
-            if (_scroll is not null)
-            {
-                if (y < _scroll.VerticalOffset) _scroll.ScrollToVerticalOffset(y);
-                else if (y + RowHeight > _scroll.VerticalOffset + _scroll.ViewportHeight) _scroll.ScrollToVerticalOffset(y + RowHeight - _scroll.ViewportHeight);
-            }
+            _rows.BringIndexIntoView(SelectedIndex);
             e.Handled = true;
         });
     }

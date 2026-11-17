@@ -11,6 +11,7 @@ internal static class FluentCompositeDrawing
     internal static UiColor Foreground(Element owner, FluentTheme palette) => Visual.GetForegroundResource(owner)?.Resolve(palette) is { } resource ? Of(resource) : Visual.GetForeground(owner) is { } color ? Of(color) : owner.Foreground;
     internal static UiColor Accent(Element owner, FluentTheme palette) => Of(!owner.IsEffectiveEnabled ? palette.AccentDisabled : owner.IsPressed ? palette.AccentPressed : owner.IsHovered ? palette.AccentHover : palette.Accent);
     internal static UiColor Background(Element owner, FluentTheme palette) => Visual.GetBackgroundResource(owner)?.Resolve(palette) is { } resource ? Of(resource) : Visual.GetBackground(owner) is { } color ? Of(color) : owner.Background;
+    internal static double CornerRadius(Element owner) => Visual.GetCornerRadius(owner) ?? owner.CornerRadius;
     internal static void Chevron(IElementDrawingContext c, Point center, UiColor color, bool up = false, bool right = false, double size = 4)
     {
         if (right)
@@ -27,14 +28,15 @@ internal static class FluentCompositeDrawing
     }
     internal static void ButtonSurface(IElementDrawingContext c, Element owner, FluentTheme palette, Size size)
     {
-        c.FillRectangle(new(Point.Zero, size), Background(owner, palette), owner.CornerRadius);
+        var radius = CornerRadius(owner);
+        c.FillRectangle(new(Point.Zero, size), Background(owner, palette), radius);
         var rect = new Rect(.5, .5, Math.Max(0, size.Width - 1), Math.Max(0, size.Height - 1));
         if (owner.IsEffectiveEnabled && !owner.IsPressed)
         {
             var bottom = palette.IsLight; var point = new Point(0, bottom ? 1 : 0);
-            c.StrokeRectangle(rect, new UiLinearGradient(Of(palette.ControlSecondaryBorder), owner.BorderBrush, point, point, new(0, bottom ? .5 : -.5), new(0, bottom ? -2.5 : 2.5), .33), 1, Math.Max(0, owner.CornerRadius - .5));
+            c.StrokeRectangle(rect, new UiLinearGradient(Of(palette.ControlSecondaryBorder), owner.BorderBrush, point, point, new(0, bottom ? .5 : -.5), new(0, bottom ? -2.5 : 2.5), .33), 1, Math.Max(0, radius - .5));
         }
-        else c.StrokeRectangle(rect, owner.BorderBrush, 1, Math.Max(0, owner.CornerRadius - .5));
+        else c.StrokeRectangle(rect, owner.BorderBrush, 1, Math.Max(0, radius - .5));
     }
 }
 
@@ -63,7 +65,7 @@ public abstract class FluentCompositeFocusVisual<T> : FluentVisual<T> where T : 
     public override void Render(IElementDrawingContext c)
     {
         if (Owner.IsFocusWithin && Owner.IsEffectiveEnabled)
-            c.StrokeRectangle(new(.5, .5, Math.Max(0, FinalRect.Width - 1), Math.Max(0, FinalRect.Height - 1)), ColorOf(Palette.Accent), 1, Owner.CornerRadius);
+            c.StrokeRectangle(new(.5, .5, Math.Max(0, FinalRect.Width - 1), Math.Max(0, FinalRect.Height - 1)), ColorOf(Palette.Accent), 1, FluentCompositeDrawing.CornerRadius(Owner));
     }
 }
 
@@ -92,7 +94,7 @@ public class FluentMenuItemVisual : FluentVisual<MenuItem>
 {
     public override void Render(IElementDrawingContext c)
     {
-        c.FillRectangle(new(Point.Zero, FinalRect.Size), Owner.Background, Owner.CornerRadius);
+        c.FillRectangle(new(Point.Zero, FinalRect.Size), Owner.Background, FluentCompositeDrawing.CornerRadius(Owner));
         var fg = FluentCompositeDrawing.Foreground(Owner, Palette);
         if (Owner.Submenu is not null) FluentCompositeDrawing.Chevron(c, new(FinalRect.Width - 10, FinalRect.Height / 2), fg, right: true);
         c.PushClip(Owner.GetLabelBounds());
@@ -110,7 +112,7 @@ public class FluentTabControlVisual : FluentVisual<TabControl>
         {
             var width = Owner.HeaderWidths[i]; var selected = i == Owner.SelectedIndex;
             c.PushClip(new(x, 0, width, Owner.HeaderHeight));
-            c.FillRectangle(new(x, 0, width, Owner.HeaderHeight), selected ? ColorOf(Palette.SelectionBackground) : UiColor.Transparent, Palette.ItemRadius);
+            c.FillRectangle(new(x, 0, width, Owner.HeaderHeight), selected ? ColorOf(Palette.SelectionBackground) : UiColor.Transparent, FluentCompositeDrawing.CornerRadius(Owner));
             c.Text((Owner.Children[i] as TabItem)?.Header ?? "Tab", new(x + Owner.HeaderPadding, 7), fs, selected ? ColorOf(Palette.SelectionForeground) : FluentCompositeDrawing.Foreground(Owner, Palette));
             if (selected) c.FillRectangle(new(x + Owner.HeaderPadding, Owner.HeaderHeight - 3, Math.Max(0, width - Owner.HeaderPadding * 2), 3), FluentCompositeDrawing.Accent(Owner, Palette), 1.5);
             c.PopClip(); x += width;
@@ -123,7 +125,7 @@ public class FluentTreeViewItemVisual : FluentVisual<TreeViewItem>
     public override Rect? GetDrawingClip() => new Rect(0, 0, FinalRect.Width, Math.Min(Owner.HeaderHeight, FinalRect.Height));
     public override void Render(IElementDrawingContext c)
     {
-        c.FillRectangle(new(0, 0, FinalRect.Width, Owner.HeaderHeight), Owner.IsSelected ? ColorOf(Palette.SelectionBackground) : Owner.Background, Owner.CornerRadius);
+        c.FillRectangle(new(0, 0, FinalRect.Width, Owner.HeaderHeight), FluentCompositeDrawing.Background(Owner, Palette), FluentCompositeDrawing.CornerRadius(Owner));
         var fg = Owner.IsSelected ? ColorOf(!Owner.IsEffectiveEnabled ? Palette.DisabledForeground : Palette.SelectionForeground) : FluentCompositeDrawing.Foreground(Owner, Palette);
         if (Owner.IsSelected) c.FillRectangle(new(3, 6, 3, Math.Max(0, Owner.HeaderHeight - 12)), FluentCompositeDrawing.Accent(Owner, Palette), 1.5);
         if (Owner.Children.Count > 0) FluentCompositeDrawing.Chevron(c, new(Owner.Indent / 2, Owner.HeaderHeight / 2), fg, right: !Owner.IsExpanded);
@@ -137,7 +139,7 @@ public class FluentCalendarVisual : FluentVisual<Calendar>
     public override void Render(IElementDrawingContext c)
     {
         var fg = FluentCompositeDrawing.Foreground(Owner, Palette); var cell = FinalRect.Width / 7;
-        c.FillRectangle(new(Point.Zero, FinalRect.Size), Owner.Background, Owner.CornerRadius);
+        c.FillRectangle(new(Point.Zero, FinalRect.Size), Owner.Background, FluentCompositeDrawing.CornerRadius(Owner));
         var middle = Owner.HeaderHeight / 2;
         c.Line(new(18, middle - 6), new(12, middle), fg, 1.5); c.Line(new(12, middle), new(18, middle + 6), fg, 1.5);
         FluentCompositeDrawing.Chevron(c, new(FinalRect.Width - 16, middle), fg, right: true, size: 6);

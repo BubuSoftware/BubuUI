@@ -1,6 +1,6 @@
 # EclipseUI 内置模板表面（design/14 §14.11.1）。
 # 由 CatalogScannerTests.Surface_MatchesGoldenSnapshotFile 生成/比对；控件 API 变化时必须连同变更记录一起更新。
-# 标签 48 / 属性项 1135 / 事件项 693 / 附加属性项 7
+# 标签 48 / 属性项 1136 / 事件项 693 / 附加属性项 7
 
 [Border] global::EclipseUI.Elements.Border content=Children:Content
     prop   Background EclipseUI.UiColor declared=global::EclipseUI.Elements.Border field=BackgroundProperty writable=True
@@ -879,6 +879,7 @@
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
     prop   IsTabStop bool declared=global::EclipseUI.Element field=IsTabStopProperty writable=True
+    prop   IsVirtualizationEnabled bool declared=global::EclipseUI.Elements.ListBox field=IsVirtualizationEnabledProperty writable=True
     prop   IsVisible bool declared=global::EclipseUI.Element field=IsVisibleProperty writable=True
     prop   Margin double declared=global::EclipseUI.Element field=MarginProperty writable=True
     prop   MaxHeight double declared=global::EclipseUI.Element field=MaxHeightProperty writable=True

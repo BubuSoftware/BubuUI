@@ -95,11 +95,16 @@ public class TextBox : Element, IFrameAnimation
     {
         MoveCaret(IndexAt(PointFromRoot(p.Position)), p.Modifiers.HasFlag(KeyModifiers.Shift)); _dragging = true;
     }
-    private int Boundary(int index)
+    private int Boundary(int index, bool forward = false)
     {
         index = Math.Clamp(index, 0, Text.Length);
         if (index == Text.Length) return index;
         var boundaries = StringInfo.ParseCombiningCharacters(Text);
+        if (forward)
+        {
+            foreach (var boundary in boundaries) if (boundary >= index) return boundary;
+            return Text.Length;
+        }
         foreach (var boundary in boundaries.Reverse()) if (boundary <= index) return boundary;
         return 0;
     }
@@ -180,7 +185,12 @@ public class TextBox : Element, IFrameAnimation
     {
         _editing = true;
         try { Text = text; } finally { _editing = false; }
-        _anchor = Math.Clamp(anchor, 0, Text.Length); _caret = Math.Clamp(caret, 0, Text.Length); ChangedSelection();
+        // Inserting or removing text can join graphemes on both sides of the edit.
+        // Keep a collapsed caret after the joined character; selection endpoints expand
+        // to whole characters while preserving their direction when restoring history.
+        _anchor = Boundary(anchor, forward: anchor >= caret);
+        _caret = Boundary(caret, forward: caret >= anchor);
+        ChangedSelection();
     }
     public void Undo()
     {

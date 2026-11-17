@@ -40,7 +40,23 @@ dotnet publish samples/Gallery.Desktop -c Release -r osx-x64 --self-contained tr
 out/osx-arm64/Gallery.Desktop --frames 5 --always-render
 ```
 
-这生成命令行可执行的桌面程序；`.app` 打包、签名、公证与分发所需的依赖捆绑由应用发布流程处理。NativeAOT 继续受现有上游原生依赖限制。
+以上是普通发布输出。仓库提供标准 `.app` 打包流程：
+
+```bash
+# 默认按本机架构发布，并使用本地 ad hoc 签名。
+eng/package-macos.sh --output out/macos/Gallery.app
+eng/verify-macos-package.sh out/macos/Gallery.app
+open out/macos/Gallery.app
+
+# 也可以复用已有自包含发布输出；输出存在时用 --force 安全替换。
+eng/package-macos.sh --publish-dir out/osx-arm64 --rid osx-arm64 --output out/macos/Gallery.app --force
+```
+
+包内 `Contents/MacOS` 保存原生启动器，托管程序集和自包含运行时放在 `Contents/Resources/app`，外部原生依赖放在 `Contents/Frameworks`。打包器递归收集 SDL3、HarfBuzz 及其依赖，将非系统动态链接改写为包内相对路径，校验每个 Mach-O 的目标架构，再按依赖顺序签名并严格验证整个应用。`Contents/Resources/native-dependencies.json` 记录实际依赖。这样普通启动和 CPU 截图均使用包内依赖；运行机器不再需要 Homebrew 或 .NET SDK。
+
+`--rid osx-arm64` / `--rid osx-x64` 必须配套相同架构的原生库；可重复传 `--library-dir /path/to/target/lib`，或指定 `--sdl-library`。缺失、架构不符、包外链接及依赖重名会明确失败，不会把 Apple Silicon Homebrew 库混入 Intel 包。当前支持第三方 dylib 分发，第三方 `.framework` 需要先提供对应 dylib；系统框架保持系统引用。最低系统版本默认 macOS 13，可通过 `--minimum-system-version` 提高。NativeAOT 继续受现有上游原生依赖限制。
+
+默认 ad hoc 签名用于本机运行，不等于 Developer ID 分发签名。对外分发时传 `--sign-identity "Developer ID Application: …"`；有已配置的钥匙串公证凭据时，可再显式传 `--notary-profile PROFILE`，执行上传、公证与装订。未传该参数不会上传。打包器为 .NET JIT 设置所需 entitlement；原有输出仅在新包签名验证成功后替换。
 
 ## 平台契约
 
@@ -58,10 +74,14 @@ out/osx-arm64/Gallery.Desktop --frames 5 --always-render
 ```bash
 dotnet test tests/EclipseUI.Platform.MacOS.Tests
 dotnet build EclipseUI.slnx
+python3 eng/test_macos_bundle.py
+eng/verify-macos-package.sh out/macos/Gallery.app
 ```
 
 逻辑测试覆盖 SDL ABI、修饰键、Retina 坐标、滚轮、组合文字、宿主输入/焦点/主题/damage、Content 替换和异常恢复。原生测试启动同步入口的独立进程，确保窗口使用 Cocoa 主线程，验证真实窗口、SDL 队列 Unicode/IME 顺序、系统剪贴板、Metal 呈现、resize、默认字体与完整生命周期；非 macOS 显式跳过。
 
-`.github/workflows/macos.yml` 安装依赖并运行原生测试、发布的 Gallery 窗口与 CPU 截图。工作流尚未在远端执行。本机结果见 [验证报告](./reports/macos-platform-2026-11-14.md)。真实输入法候选窗口、死键交互、跨屏缩放和 Intel 运行应在对应设备验收。
+`.github/workflows/macos.yml` 安装依赖并运行原生测试、打包回归测试、已签名 `.app` 的 Gallery 窗口和 CPU 截图，上传保留签名与符号链接的压缩包、依赖清单和验证日志。打包回归会编译实际 dylib 依赖链，移走原始依赖后启动应用，并检查签名、架构拒绝和替换失败时保留旧包。工作流尚未在远端执行。本机结果见 [平台验证报告](./reports/macos-platform-2026-11-14.md) 与 [打包验证报告](./reports/macos-packaging-2026-11-18.md)。真实输入法候选窗口、死键交互、跨屏缩放和 Intel 运行应在对应设备验收。
+
+签名流程依据：[.NET macOS 部署](https://learn.microsoft.com/en-us/dotnet/core/deploying/macos)、[Apple 嵌套代码签名](https://developer.apple.com/library/archive/technotes/tn2206/)、[Apple 公证流程](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow)。
 
 实现依据：[SDL Metal NSView](https://wiki.libsdl.org/SDL3/SDL_Metal_CreateView)、[SDL 显示缩放](https://wiki.libsdl.org/SDL3/SDL_GetWindowDisplayScale)、[SDL 输入区域](https://wiki.libsdl.org/SDL3/SDL_SetTextInputArea)、[VelloSharp](https://github.com/wieslawsoltes/VelloSharp)。

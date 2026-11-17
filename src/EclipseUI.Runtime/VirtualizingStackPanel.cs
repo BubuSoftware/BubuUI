@@ -45,10 +45,53 @@ public class VirtualizingStackPanel : Panel
     public Func<int, Element>? ItemFactory { get; set; }
     /// <summary>Rebinds a detached recycled container to a new index. Without an updater rows are disposed.</summary>
     public Action<Element, int>? ItemUpdater { get; set; }
+    internal Action<Element>? ItemRetired { get; set; }
     public Func<int, double>? ItemHeightProvider { get; set; }
     public static readonly StyledProperty<bool> IsVariableHeightProperty = StyledProperty<bool>.Register<VirtualizingStackPanel>("IsVariableHeight", false, new() { Invalidate = InvalidateKind.Measure });
     public bool IsVariableHeight { get => GetValue(IsVariableHeightProperty); set => SetValue(IsVariableHeightProperty, value); }
     public Element? GetRealizedItem(int index) => _realized.GetValueOrDefault(index);
+    /// <summary>Returns the current measured or estimated item bounds in panel coordinates.</summary>
+    public Rect GetItemBounds(int index)
+    {
+        if (index < 0 || index >= ItemCount) throw new ArgumentOutOfRangeException(nameof(index));
+        var variable = Variable && _heights.Length == ItemCount;
+        return new(Padding, Padding + (variable ? Prefix(index) : index * (_itemHeight + Math.Max(0, Gap))),
+            Math.Max(0, FinalRect.Width - Padding * 2), variable ? _heights[index] : _itemHeight);
+    }
+    /// <summary>Shows an item using measured heights, refining the position when an estimated row is realized.</summary>
+    public void BringIndexIntoView(int index)
+    {
+        if (index < 0 || index >= ItemCount) throw new ArgumentOutOfRangeException(nameof(index));
+        _bringIndex = index;
+        _bringOffset = null;
+        if (FindScrollViewer() is { } owner) ApplyBringIntoView(owner);
+        InvalidateArrange();
+    }
+    private int? _bringIndex;
+    private double? _bringOffset;
+    private bool ApplyBringIntoView(ScrollViewer owner)
+    {
+        if (_bringIndex is not { } index || index >= ItemCount || _itemHeight <= 0 || owner.ViewportHeight <= 0) return false;
+        // A user scroll after this request takes precedence over a pending estimate correction.
+        if (_bringOffset is { } previous && Math.Abs(owner.GetValue(ScrollViewer.VerticalOffsetProperty) - previous) > .001)
+        { _bringIndex = null; _bringOffset = null; return false; }
+        var bounds = GetItemBounds(index);
+        var panelInOwner = owner.PointFromRoot(Point.Zero).Y - PointFromRoot(Point.Zero).Y;
+        var top = owner.VerticalOffset + panelInOwner + bounds.Y - owner.Padding;
+        var offset = owner.VerticalOffset;
+        if (top < offset || bounds.Height > owner.ViewportHeight) offset = top;
+        else if (top + bounds.Height > offset + owner.ViewportHeight) offset = top + bounds.Height - owner.ViewportHeight;
+        offset = Math.Max(0, offset);
+        var changed = Math.Abs(owner.VerticalOffset - offset) > .001;
+        if (changed)
+        {
+            // The new extent can exceed the previous ScrollableHeight while rows are measured.
+            owner.VerticalOffset = offset;
+            owner.InvalidateMeasure();
+        }
+        _bringOffset = owner.GetValue(ScrollViewer.VerticalOffsetProperty);
+        return changed;
+    }
     public int RecycledCount => _recycled.Count;
     private readonly Stack<Element> _recycled = new();
     private double[] _heights = [], _heightTree = [];
@@ -106,6 +149,7 @@ public class VirtualizingStackPanel : Panel
     public void Refresh()
     {
         if (IsDisposed) return;
+        _bringIndex = null; _bringOffset = null;
         var retired = new HashSet<Element>(_realized.Values, ReferenceEqualityComparer.Instance);
         if (_probe is not null) retired.Add(_probe);
         foreach (var row in _recycled) retired.Add(row);
@@ -118,15 +162,56 @@ public class VirtualizingStackPanel : Panel
         DisposeItems(retired);
     }
 
+    /// <summary>Refreshes item positions while retaining matched visible containers and their editor state.</summary>
+    public void Refresh(Func<Element, int?> indexOfItem)
+    {
+        ArgumentNullException.ThrowIfNull(indexOfItem);
+        if (IsDisposed) return;
+        var next = new Dictionary<int, Element>();
+        var retired = new HashSet<Element>(_realized.Values, ReferenceEqualityComparer.Instance);
+        if (_probe is not null) retired.Add(_probe);
+        foreach (var row in _recycled) retired.Add(row);
+        foreach (var row in _realized.Values)
+            if (indexOfItem(row) is { } index && index >= 0 && index < ItemCount && next.TryAdd(index, row)) retired.Remove(row);
+        _realized.Clear();
+        foreach (var pair in next) _realized.Add(pair.Key, pair.Value);
+        _recycled.Clear(); _heights = []; _heightTree = []; _heightWidth = double.NaN;
+        _probe = null; _itemHeight = 0; _probedForCount = -1;
+        _bringIndex = null; _bringOffset = null;
+        Children.ReplaceAll(next.OrderBy(pair => pair.Key).Select(pair => pair.Value));
+        InvalidateMeasure();
+        DisposeItems(retired);
+    }
+
+    // ItemsControl already owns these containers and can transfer them back to ordinary layout.
+    internal void AdoptItemContainers(IEnumerable<KeyValuePair<int, Element>> containers)
+    {
+        foreach (var pair in containers) _realized.Add(pair.Key, pair.Value);
+        Children.ReplaceAll(_realized.OrderBy(pair => pair.Key).Select(pair => pair.Value));
+        InvalidateMeasure();
+    }
+
+    internal void ReleaseItemContainers()
+    {
+        _realized.Clear(); _recycled.Clear(); _probe = null;
+        _heights = []; _heightTree = []; _heightWidth = double.NaN;
+        _itemHeight = 0; _probedForCount = -1; _bringIndex = null; _bringOffset = null;
+        Children.Clear(); InvalidateMeasure();
+    }
+
     protected internal override Size MeasureCore(Size available)
     {
         var padding = Padding;
         var availW = Math.Max(0, available.Width - padding * 2);
+        var infiniteWidth = double.IsPositiveInfinity(availW);
         var availH = Math.Max(0, available.Height - padding * 2);
         var count = Math.Max(0, ItemCount);
         var gap = Math.Max(0, Gap);
 
         var owner = FindScrollViewer();
+        // Grid's exploratory infinite measure must not discard the real viewport's
+        // measured heights on every pass. Keep that width until a new finite viewport arrives.
+        if (owner is not null && infiniteWidth && double.IsFinite(_heightWidth)) availW = _heightWidth;
 
         // 退化模式（无滚动祖先）：全量实例化，纵向堆叠（变高可用）。
         // 注意不能用 availH 判断——ScrollViewer 内容的可用高恒为无穷。
@@ -161,7 +246,7 @@ public class VirtualizingStackPanel : Panel
         if (Variable) PrepareHeights(count, availW, gap);
         var extent = count > 0 ? Variable ? Prefix(count) - gap : stride * count - gap : 0;
         return new Size(
-            double.IsPositiveInfinity(availW) ? widthOfProbe() + padding * 2 : availW + padding * 2,
+            infiniteWidth ? widthOfProbe() + padding * 2 : availW + padding * 2,
             extent + padding * 2);
 
         double widthOfProbe() => _probe?.DesiredSize.Width ?? 0;
@@ -187,8 +272,12 @@ public class VirtualizingStackPanel : Panel
         }
 
         // 虚拟模式：按 owner 当前偏移/视口同步窗口（含上下各 1 缓冲），再按绝对行位摆放。
-        var viewportH = Math.Max(0, owner.ViewportHeight - padding * 2);
-        var offset = Math.Clamp(owner.VerticalOffset, 0, Math.Max(0, owner.ScrollableHeight));
+        // Nested list padding and other content before this panel shift the viewport in
+        // panel coordinates. The owner's raw scroll offset is not an item offset.
+        var panelInOwner = owner.PointFromRoot(Point.Zero).Y - PointFromRoot(Point.Zero).Y;
+        var visibleTop = owner.Padding - panelInOwner - padding;
+        var offset = Math.Max(0, visibleTop);
+        var viewportH = Math.Max(0, visibleTop + owner.ViewportHeight - offset);
         var stride = _itemHeight + gap;
 
         int lo = 0, hi = -1;
@@ -201,13 +290,25 @@ public class VirtualizingStackPanel : Panel
         DiscardWindowExceptRange(lo, hi);
 
         var innerW = Math.Max(0, final.Width - padding * 2);
+        var heightChanged = false;
         for (int i = lo; i <= hi; i++)
         {
             var child = GetOrRealize(i);
             child.Measure(new Size(innerW, double.PositiveInfinity));
-            if (Variable && ItemHeightProvider is null) RecordHeight(i, child.DesiredSize.Height);
+            if (Variable && ItemHeightProvider is null)
+            {
+                heightChanged |= Math.Abs(_heights[i] - Math.Max(.1, child.DesiredSize.Height)) >= .001;
+                RecordHeight(i, child.DesiredSize.Height);
+            }
             child.Arrange(new Rect(padding, padding + (Variable ? Prefix(i) : i * stride), innerW, Variable ? _heights[i] : _itemHeight));
         }
+        if (_bringIndex is { } requested)
+        {
+            var adjusted = ApplyBringIntoView(owner);
+            if (!adjusted && !heightChanged && _realized.ContainsKey(requested))
+            { _bringIndex = null; _bringOffset = null; }
+        }
+        if (heightChanged) owner.InvalidateMeasure();
     }
 
     private ScrollViewer? FindScrollViewer()
@@ -237,10 +338,11 @@ public class VirtualizingStackPanel : Panel
             _probe = null;
             _realized.Remove(0);
             _probedForCount = -1;
-            retired?.Dispose();
+            if (retired is not null) DisposeItem(retired);
             _probe = ItemFactory(0);
         }
         _probe.EnsureInitialized();
+        _probe.SetThemeDefaults(ThemeDefaults);
         _probe.Measure(new Size(availW, double.PositiveInfinity));
         _probedForCount = count;
         _itemHeight = _probe.DesiredSize.Height;
@@ -264,7 +366,7 @@ public class VirtualizingStackPanel : Panel
         if (ItemUpdater is not null && _recycled.TryPop(out var recycled))
         {
             created = recycled;
-            try { ItemUpdater(created, index); } catch { created.Dispose(); throw; }
+            try { ItemUpdater(created, index); } catch { DisposeItem(created); throw; }
         }
         else created = ItemFactory!(index);
         _realized[index] = created;
@@ -288,7 +390,7 @@ public class VirtualizingStackPanel : Panel
             {
                 if (index == 0) Children.Remove(child);
                 else if (ItemUpdater is not null && _recycled.Count < 256) { Children.Remove(child); _recycled.Push(child); }
-                else child.Dispose();
+                else DisposeItem(child);
             }
             catch (Exception error) { (failures ??= new()).Add(error); }
         }
@@ -307,12 +409,18 @@ public class VirtualizingStackPanel : Panel
         finally { base.OnDispose(); }
     }
 
-    private static void DisposeItems(IEnumerable<Element> items)
+    private void DisposeItem(Element item)
+    {
+        try { item.Dispose(); }
+        finally { ItemRetired?.Invoke(item); }
+    }
+
+    private void DisposeItems(IEnumerable<Element> items)
     {
         List<Exception>? failures = null;
         foreach (var item in items.Reverse())
         {
-            try { item.Dispose(); }
+            try { DisposeItem(item); }
             catch (Exception error) { (failures ??= new()).Add(error); }
         }
         if (failures is not null)

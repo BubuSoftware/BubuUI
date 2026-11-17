@@ -266,7 +266,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
             var presented = _options.AlwaysRender || !frame.Damage.IsEmpty;
             if (presented)
             {
-                _presenter.Render(frame.List);
+                _presenter.Render(frame, _window.ScaleFactor);
                 RenderedFrames++;
                 LastDamage = frame.Damage;
                 LastFrameMilliseconds = Elapsed(start);

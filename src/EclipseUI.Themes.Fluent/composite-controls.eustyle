@@ -68,8 +68,7 @@
     HeaderHeight: 28;
     HeaderPadding: 28;
     Indent: 20;
-    Background: #00000000;
-    &:hover { Background: resource(FluentResources.ItemHoverBackground); }
+    Background: resource(FluentResources.TreeItemBackground);
     Foreground: resource(FluentResources.Foreground);
     CornerRadius: 4;
     &:disabled { Foreground: resource(FluentResources.DisabledForeground); }

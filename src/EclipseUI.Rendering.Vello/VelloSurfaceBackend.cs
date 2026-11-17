@@ -38,7 +38,7 @@ public sealed class VelloSurfaceOptions
 public sealed class VelloSurfaceBackend : ISurfacePresenter
 {
     private readonly VelloSurfaceOptions _options;
-    private readonly VelloSceneBuilder _builder = new();
+    private readonly VelloRetainedSceneBuilder _builder = new();
     private readonly Scene _scene = new();
 
     private WgpuInstance? _instance;
@@ -46,8 +46,8 @@ public sealed class VelloSurfaceBackend : ISurfacePresenter
     private WgpuDevice? _device;
     private WgpuRenderer? _renderer;
     private WgpuSurface? _surface;
+    private GpuRetainedFrame? _retained;
     private WgpuTextureFormat _format;
-    private RenderFormat _renderFormat = RenderFormat.Rgba8;
     private PresentMode _presentMode;
 
     private VelloSurfaceBackend(VelloSurfaceOptions options)
@@ -84,6 +84,9 @@ public sealed class VelloSurfaceBackend : ISurfacePresenter
 
     /// <summary>上一帧各阶段耗时（毫秒）：acquire 阻塞通常等于等待可用图像 / 垂直同步。</summary>
     public SurfaceFrameTimings LastTimings { get; private set; }
+    public long LastRasterizedPixels => _retained?.RasterizedPixels ?? 0;
+    public int LastReusedSceneFragments { get; private set; }
+    public int LastBuiltSceneFragments { get; private set; }
 
     public static VelloSurfaceBackend Create(nint hwnd, int width, int height, VelloSurfaceOptions? options = null)
         => Create(NativeWindowHandle.FromWin32(hwnd), width, height, options);
@@ -139,9 +142,6 @@ public sealed class VelloSurfaceBackend : ISurfacePresenter
 
         var capabilities = _surface!.GetCapabilities(_adapter);
         _format = SelectFormat(capabilities.Formats);
-        _renderFormat = _format is WgpuTextureFormat.Bgra8Unorm or WgpuTextureFormat.Bgra8UnormSrgb
-            ? RenderFormat.Bgra8
-            : RenderFormat.Rgba8;
         _presentMode = SelectPresentMode(capabilities.PresentModes);
         Diagnostics = $"formats=[{string.Join(",", capabilities.Formats)}] " +
                       $"present=[{string.Join(",", capabilities.PresentModes)}] " +
@@ -149,10 +149,12 @@ public sealed class VelloSurfaceBackend : ISurfacePresenter
                       $"usage={capabilities.Usage}";
 
         _renderer = new WgpuRenderer(_device);
+        _retained = new GpuRetainedFrame(_device, _renderer, _format);
         Configure(width, height);
 
         Width = width;
         Height = height;
+        _retained?.Reset();
     }
 
     private void CreateSurfaceAndAdapter(SurfaceDescriptor descriptor)
@@ -242,10 +244,25 @@ public sealed class VelloSurfaceBackend : ISurfacePresenter
         Configure(width, height);
         Width = width;
         Height = height;
+        _retained?.Reset();
     }
 
     public void Render(DisplayList list)
     {
+        var damage = new FrameDamage(); damage.AddFull();
+        Render(new PaintedFrame(list, damage));
+    }
+
+    public void Render(PaintedFrame frame, double scale = 1)
+    {
+        try { RenderCore(frame, scale); }
+        catch { _retained?.Reset(); throw; }
+    }
+
+    private void RenderCore(PaintedFrame frame, double scale)
+    {
+        LastReusedSceneFragments = LastBuiltSceneFragments = 0;
+        var list = frame.List;
         ArgumentNullException.ThrowIfNull(list);
         ObjectDisposedException.ThrowIf(_surface is null, this);
 
@@ -274,17 +291,15 @@ public sealed class VelloSurfaceBackend : ISurfacePresenter
         using (texture)
         using (var view = texture.CreateView())
         {
-            _scene.Reset();
-            _builder.Build(_scene, list, new Size(Width, Height));
-
-            var parameters = new RenderParams(
-                (uint)Width,
-                (uint)Height,
-                RgbaColor.FromBytes(0, 0, 0, 255),
-                _options.Antialiasing,
-                _renderFormat);
-
-            _renderer!.RenderSurface(_scene, view, parameters, _format);
+            var region = GpuDamageRegion.Resolve(frame.Damage, Width, Height, scale, _retained!.HasFrame);
+            if (region.Area > 0)
+            {
+                _scene.Reset();
+                _builder.Build(_scene, list, new Size(Width, Height));
+                LastReusedSceneFragments = _builder.ReusedFragments;
+                LastBuiltSceneFragments = _builder.BuiltFragments;
+            }
+            _retained.Render(_scene, region, view, Width, Height, _options.Antialiasing);
 
             var presentStart = Stopwatch.GetTimestamp();
             texture.Present();
@@ -303,6 +318,8 @@ public sealed class VelloSurfaceBackend : ISurfacePresenter
 
     public void Dispose()
     {
+        _retained?.Dispose();
+        _retained = null;
         _renderer?.Dispose();
         _renderer = null;
         _surface?.Dispose();

@@ -92,7 +92,12 @@ public class ComboBox : Panel
         _button = null; _list = null; _popup = null;
         base.OnTemplateRemoving();
     }
-    private void ButtonClicked(RoutedEventArgs e) { IsDropDownOpen = !IsDropDownOpen; e.Handled = true; }
+    private void ButtonClicked(RoutedEventArgs e)
+    {
+        // The popup restores the public control, rather than its template's implementation button.
+        if (!IsDropDownOpen) RequestFocus();
+        IsDropDownOpen = !IsDropDownOpen; e.Handled = true;
+    }
     private void PopupClosed(RoutedEventArgs e) { if (IsDropDownOpen) IsDropDownOpen = false; }
     private void ListSelectionChanged(RoutedEventArgs e) { if (!_sync && _list is not null) SelectedIndex = _list.SelectedIndex; e.Handled = true; }
     private void ListReleased(RoutedEventArgs e) => IsDropDownOpen = false;
@@ -101,7 +106,11 @@ public class ComboBox : Panel
     private void UpdateDropDown()
     {
         if (_popup is not null) _popup.IsOpen = IsDropDownOpen;
-        if (IsDropDownOpen && _list is not null) { _list.MinWidth = FinalRect.Width; _popup?.InvalidateMeasure(); _list.RequestFocus(); }
+        if (IsDropDownOpen && _list is not null)
+        {
+            _list.MinWidth = FinalRect.Width; _popup?.InvalidateMeasure(); _list.RequestFocus();
+            if (_list.SelectedIndex >= 0) _list.BringItemIntoView(_list.SelectedIndex);
+        }
     }
     private void UpdateSelection(bool notify = true)
     {

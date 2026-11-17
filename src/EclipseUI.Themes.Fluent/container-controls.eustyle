@@ -5,6 +5,7 @@
     Template: template(FluentListBoxItemTemplate);
     Padding: 8;
     CornerRadius: 4;
+    Background: resource(FluentResources.ListItemBackground);
 }
 @theme FluentItemsControl for ItemsControl {
     Template: template(FluentItemsControlTemplate);
@@ -20,4 +21,7 @@
 }
 @theme FluentPopup for Popup {
     Template: template(FluentPopupTemplate);
+    Background: resource(FluentResources.PopupBackground);
+    BorderBrush: resource(FluentResources.PopupBorder);
+    CornerRadius: 8;
 }

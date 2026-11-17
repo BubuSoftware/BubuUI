@@ -34,4 +34,7 @@ public interface ISurfacePresenter : IDisposable
 
     /// <summary>渲染并呈现一帧。调用方保证尺寸与 <see cref="Width"/>/<see cref="Height"/> 一致。</summary>
     void Render(DisplayList list);
+
+    /// <summary>Present a retained frame. Damage is in logical units and scale converts it to surface pixels.</summary>
+    void Render(PaintedFrame frame, double scale = 1) => Render(frame.List);
 }

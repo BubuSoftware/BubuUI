@@ -43,7 +43,7 @@ public sealed class InputRouter
         finally
         {
             for (var ancestor = target.Parent; ancestor is not null; ancestor = ancestor.Parent)
-                if (ancestor is Elements.Button or Elements.CheckBox) ancestor.IsPressed = false;
+                if (ancestor is Elements.Button or Elements.CheckBox or Elements.ListBoxItem or Elements.TreeViewItem) ancestor.IsPressed = false;
             target.IsPressed = false;
         }
     }
@@ -123,7 +123,7 @@ public sealed class InputRouter
         if (preview.Handled || !ReferenceEquals(Captured, pressed) || pressed.IsDisposed || !pressed.IsEffectivelyVisible) { Captured = null; return; }
         Captured.IsPressed = true;
         for (var ancestor = Captured.Parent; ancestor is not null; ancestor = ancestor.Parent)
-            if (ancestor is Elements.Button or Elements.CheckBox) ancestor.IsPressed = true;
+            if (ancestor is Elements.Button or Elements.CheckBox or Elements.ListBoxItem or Elements.TreeViewItem) ancestor.IsPressed = true;
         Captured.RaiseEvent(new PointerEventArgs(Element.PointerPressedEvent, point, modifiers, button) { Source = Captured });
     }
 

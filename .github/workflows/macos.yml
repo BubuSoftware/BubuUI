@@ -18,13 +18,16 @@ jobs:
         run: brew install sdl3 harfbuzz
       - name: Cocoa window, Metal presentation, Unicode and fonts
         run: dotnet test tests/EclipseUI.Platform.MacOS.Tests --logger "trx;LogFileName=macos.trx"
-      - name: Publish and run Gallery
+      - name: Verify dependency relocation and signing
+        run: python3 eng/test_macos_bundle.py
+      - name: Package and run Gallery
         shell: bash
         run: |
           if [ "$(uname -m)" = arm64 ]; then rid=osx-arm64; else rid=osx-x64; fi
-          dotnet publish samples/Gallery.Desktop -c Release -r "$rid" --self-contained true -o out/macos
-          out/macos/Gallery.Desktop --frames 5 --always-render
-          out/macos/Gallery.Desktop --cpu --shot out/gallery-macos.png
+          eng/package-macos.sh --rid "$rid" --output out/macos/Gallery.app
+          eng/verify-macos-package.sh out/macos/Gallery.app "$rid" > out/macos/verification.log
+          out/macos/Gallery.app/Contents/MacOS/Gallery.Desktop --cpu --shot out/gallery-macos.png
+          ditto -c -k --sequesterRsrc --keepParent out/macos/Gallery.app out/macos/Gallery.zip
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -32,3 +35,6 @@ jobs:
           path: |
             tests/EclipseUI.Platform.MacOS.Tests/TestResults/*.trx
             out/gallery-macos.png
+            out/macos/Gallery.zip
+            out/macos/verification.log
+            out/macos/Gallery.app/Contents/Resources/native-dependencies.json
