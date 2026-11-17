@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Numerics;
 using EclipseUI.Rendering;
 using VelloSharp;
@@ -19,6 +20,7 @@ namespace EclipseUI.Rendering.Vello;
 public sealed class VelloSceneBuilder : IDisposable
 {
     private readonly Dictionary<FontFace, Font> _fonts = new(ReferenceEqualityComparer.Instance);
+    private readonly HashSet<FontFace> _sbixFonts = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<ImageHandle, Image> _images = new(ReferenceEqualityComparer.Instance);
 
     /// <summary>把整个 display list 追加到 <paramref name="scene"/>。scene 须由调用方负责 Reset/Dispose。</summary>
@@ -154,6 +156,22 @@ public sealed class VelloSceneBuilder : IDisposable
             BrushAlpha = (float)Math.Clamp(command.Opacity, 0, 1),
         };
 
+        // The native sbix path scales bitmap images but leaves per-glyph positions
+        // untransformed. Put each position into its affine origin so Retina scale,
+        // rotation and shear apply to both the image and its placement.
+        if (_sbixFonts.Contains(command.Font) &&
+            (glyphOrigin.M11 != 1 || glyphOrigin.M12 != 0 || glyphOrigin.M21 != 0 || glyphOrigin.M22 != 1))
+        {
+            foreach (var glyph in glyphs)
+            {
+                var origin = Transform.Translation(command.Origin.X + glyph.X, command.Origin.Y + glyph.Y);
+                if (command.Transform is { } glyphLocal) origin *= glyphLocal;
+                options.Transform = Matrix(origin * transform);
+                scene.DrawGlyphRun(font, [new Glyph(glyph.Id, 0, 0)], options);
+            }
+            return;
+        }
+
         scene.DrawGlyphRun(font, glyphs, options);
     }
 
@@ -184,7 +202,28 @@ public sealed class VelloSceneBuilder : IDisposable
         if (_fonts.TryGetValue(face, out var font)) return font;
         font = Font.Load(face.Data.Span, (uint)face.FaceIndex);
         _fonts[face] = font;
+        if (HasSbixTable(face)) _sbixFonts.Add(face);
         return font;
+    }
+
+    private static bool HasSbixTable(FontFace face)
+    {
+        var data = face.Data.Span;
+        if (data.Length < 12) return false;
+        var offset = 0;
+        if (BinaryPrimitives.ReadUInt32BigEndian(data) == 0x74746366) // ttcf
+        {
+            var count = BinaryPrimitives.ReadUInt32BigEndian(data[8..]);
+            if (face.FaceIndex < 0 || (uint)face.FaceIndex >= count || face.FaceIndex > (data.Length - 16) / 4) return false;
+            var tableOffset = BinaryPrimitives.ReadUInt32BigEndian(data[(12 + face.FaceIndex * 4)..]);
+            if (tableOffset > data.Length - 12) return false;
+            offset = (int)tableOffset;
+        }
+        var tables = BinaryPrimitives.ReadUInt16BigEndian(data[(offset + 4)..]);
+        if (tables > (data.Length - offset - 12) / 16) return false;
+        for (var index = 0; index < tables; index++)
+            if (BinaryPrimitives.ReadUInt32BigEndian(data[(offset + 12 + index * 16)..]) == 0x73626978) return true; // sbix
+        return false;
     }
 
     private Image GetImage(ImageHandle handle)
@@ -334,6 +373,7 @@ public sealed class VelloSceneBuilder : IDisposable
     {
         foreach (var font in _fonts.Values) font.Dispose();
         _fonts.Clear();
+        _sbixFonts.Clear();
         foreach (var image in _images.Values) image.Dispose();
         _images.Clear();
     }

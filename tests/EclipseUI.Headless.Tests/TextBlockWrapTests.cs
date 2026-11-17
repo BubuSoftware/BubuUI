@@ -17,6 +17,48 @@ public class TextBlockWrapTests
 {
     private const double LineHeight = 19.6;   // 14 × 1.4
 
+    [Theory]
+    [InlineData("😀", 15)]
+    [InlineData("👩‍💻", 15)]
+    [InlineData("👍🏽", 15)]
+    [InlineData("❤️", 15)]
+    [InlineData("1️⃣", 15)]
+    [InlineData("👨‍👩‍👧‍👦", 1)]
+    public void WrapKeepsWholeTextElementsEvenWhenOneExceedsTheLine(string emoji, double width)
+    {
+        var previous = TextMeasurer.Current;
+        try
+        {
+            TextMeasurer.Current = new GraphemeMeasurer();
+            using var block = new TextBlock { TextWrapping = TextWrapping.Wrap };
+            block.AddRun(emoji + emoji + emoji);
+            block.Measure(new(width, double.PositiveInfinity));
+            Assert.Equal(new[] { emoji, emoji, emoji }, block.TextLines.Select(line => Assert.Single(line.Segments).Text));
+        }
+        finally { TextMeasurer.Current = previous; }
+    }
+
+    [Fact]
+    public void WrapMeasuresTheShapedPrefixInsteadOfSummingIndividualCharacters()
+    {
+        var previous = TextMeasurer.Current;
+        try
+        {
+            TextMeasurer.Current = new GraphemeMeasurer();
+            using var block = new TextBlock { TextWrapping = TextWrapping.Wrap };
+            block.AddRun("AVAV");
+            block.Measure(new(15, double.PositiveInfinity));
+            Assert.Equal(new[] { "AV", "AV" }, block.TextLines.Select(line => Assert.Single(line.Segments).Text));
+        }
+        finally { TextMeasurer.Current = previous; }
+    }
+
+    private sealed class GraphemeMeasurer : ITextMeasurer
+    {
+        public TextMetrics Measure(string text, double fontSize) => new(
+            text == "AV" ? 15 : System.Globalization.StringInfo.ParseCombiningCharacters(text).Length * 10, 20);
+    }
+
     [Fact]
     public void Wrap_BreaksAtWordBoundaries_AndStacksLines()
     {

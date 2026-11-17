@@ -262,7 +262,7 @@ public class TextBlock : Panel, ITextContentHost
 
         if (lineWidth == 0 && wordWidth > width)
         {
-            // 空行也放不下：字符级硬切，直到余量进得去。
+            // 空行也放不下：按完整字素切分，避免拆开 emoji 和组合序列。
             while (word.Length > 0 && wordWidth > width)
             {
                 var take = MaxCharsFitting(word, fontSize, width);
@@ -299,19 +299,18 @@ public class TextBlock : Panel, ITextContentHost
         lineHeight = Math.Max(lineHeight, runHeight);
     }
 
-    /// <summary>字符级硬切的容量：从头累加单字符宽度直到超宽（naive 测量器按字符加和，
-    /// 单字符测量即精确分量；至少切 1 字符防死循环）。</summary>
+    /// <summary>按字素边界测量完整前缀，保留 shaping 的连字与字距。
+    /// 即使一个字素超宽，也将它完整放到一行以保证向前推进。</summary>
     private static int MaxCharsFitting(string word, double fontSize, double width)
     {
-        double acc = 0;
+        var boundaries = System.Globalization.StringInfo.ParseCombiningCharacters(word);
         var count = 0;
-        for (var i = 0; i < word.Length; i++)
+        for (var i = 0; i < boundaries.Length; i++)
         {
-            var charWidth = TextMeasurer.Current.Measure(word[i].ToString(), fontSize).Width;
-            if (acc + charWidth > width) break;
-            acc += charWidth;
-            count++;
+            var end = i + 1 < boundaries.Length ? boundaries[i + 1] : word.Length;
+            if (TextMeasurer.Current.Measure(word[..end], fontSize).Width > width) break;
+            count = end;
         }
-        return Math.Max(1, count);
+        return count > 0 ? count : boundaries.Length > 1 ? boundaries[1] : word.Length;
     }
 }
