@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.ExceptionServices;
 using EclipseUI.Rendering;
-using EclipseUI.Themes.Fluent;
 
 namespace EclipseUI.Platform.MacOS;
 
@@ -101,7 +100,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
         root.EnsureInitialized();
         _options = options ?? new WindowHostOptions();
 
-        _themeBinding = new ThemeBinding(_options.Theme ?? FluentTheme.System, _options.SystemTheme ?? window as ISystemThemeProvider);
+        _themeBinding = new ThemeBinding(_options.Theme ?? ElementTheme.Light, _options.SystemTheme ?? window as ISystemThemeProvider);
         _painter = new ElementPainter(_themeBinding.Current, _options.TextPainter);
         _themeBinding.Update(_painter, root);
         _input = new InputRouter(root);

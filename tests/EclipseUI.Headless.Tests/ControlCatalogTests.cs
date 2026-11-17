@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using EclipseUI.Elements;
+using EclipseUI.Themes.Fluent;
 using Xunit;
 
 namespace EclipseUI.Headless.Tests;
@@ -41,7 +42,7 @@ public class ControlCatalogTests
     [Fact]
     public void SliderDragClampsAndSnapsAndKeyboardAdjustsValue()
     {
-        var slider = new Slider { Width = 120, Minimum = 10, Maximum = 20, TickFrequency = 2 };
+        var slider = new Slider { Width = 120, Height = 24, ThumbSize = 14, Minimum = 10, Maximum = 20, TickFrequency = 2 };
         using var host = new HeadlessRoot(slider); host.UpdateLayout();
         host.PointerPress(new(60, 12)); Assert.Equal(16, slider.Value); host.PointerMove(new(300, 12)); host.PointerRelease(new(300, 12)); Assert.Equal(20, slider.Value);
         host.KeyPress(Key.Home); Assert.Equal(10, slider.Value); host.KeyPress(Key.Right); Assert.Equal(11, slider.Value);
@@ -58,6 +59,7 @@ public class ControlCatalogTests
     public void ComboBoxKeyboardSelectsAndDropdownTracksOutsideDismissal()
     {
         var combo = new ComboBox { ItemsSource = new[] { "first", "second" } };
+        combo.SetThemeDefaults(FluentTheme.Light);
         using var host = new HeadlessRoot(combo); host.UpdateLayout(); host.Focus.Focus(combo);
         host.KeyPress(Key.Down); Assert.Equal("first", combo.SelectedItem);
         host.Input.KeyPress(Key.Down, KeyModifiers.Alt); host.UpdateLayout(); Assert.True(combo.IsDropDownOpen);
@@ -99,6 +101,7 @@ public class ControlCatalogTests
     {
         var data = Enumerable.Range(0, 10000).Select(i => new Row { Name = $"row {i}", Count = i }).ToArray();
         var grid = new DataGrid { ItemsSource = data, Height = 200, Width = 400 }; var column = new DataGridColumn { Header = "Count", Binding = "Count" }; grid.Columns.Add(column);
+        grid.SetThemeDefaults(FluentTheme.Light);
         using var host = new HeadlessRoot(grid); host.UpdateLayout(); host.UpdateLayout(); Assert.InRange(grid.RealizedRowCount, 1, 30); Assert.True(grid.Descendants().OfType<ScrollViewer>().Single().ViewportHeight > 100);
         Assert.True(column.TrySetValue(data[0], "42")); Assert.Equal(42, data[0].Count); Assert.False(column.TrySetValue(data[0], "bad")); Assert.Equal(42, data[0].Count);
     }
@@ -113,7 +116,10 @@ public class ControlCatalogTests
     public void DatePickerSynchronizesEditorAndCalendar()
     {
         var picker = new DatePicker { SelectedDate = new(2026, 11, 14) };
-        Assert.Equal("2026-11-14", picker.Children.OfType<TextBox>().Single().Text);
+        Assert.Empty(picker.Children);
+        picker.SetThemeDefaults(FluentTheme.Light);
+        using var host = new HeadlessRoot(picker); host.UpdateLayout();
+        Assert.Equal("2026-11-14", picker.Descendants().OfType<TextBox>().Single().Text);
         var calendar = picker.Descendants().OfType<EclipseUI.Elements.Calendar>().Single(); calendar.SelectDate(new(2026, 12, 1)); Assert.Equal(new DateTime(2026, 12, 1), picker.SelectedDate);
     }
     [Fact]

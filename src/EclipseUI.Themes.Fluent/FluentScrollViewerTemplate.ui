@@ -1,0 +1,8 @@
+@namespace EclipseUI.Themes.Fluent
+@using EclipseUI.Elements
+@template ScrollViewer
+
+<Grid>
+    <ItemsPresenter Owner={Owner} />
+    <FluentScrollBarVisual Owner={Owner} />
+</Grid>

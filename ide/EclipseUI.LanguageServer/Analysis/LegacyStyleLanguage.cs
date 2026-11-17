@@ -40,6 +40,9 @@ internal sealed partial class StyleLanguageProvider
     private bool Legacy(Node? node)
     {
         if (_document.Embedded) return true;
+        // Imports/themes select the typed parser for the entire module, including
+        // class-only rules. Keep completion and navigation on that same surface.
+        if (_document.Nodes.Any(n => n.Header.FirstOrDefault()?.Value is "@theme" or "@using")) return false;
         if (node is null) return false;
         while (node.Parent is not null) node = node.Parent;
         return node.Header.FirstOrDefault()?.Value is "." or "@states" || node.Header.FirstOrDefault()?.Value.StartsWith('$') == true;

@@ -17,7 +17,7 @@ public class DamageTests
 
     private static void Layout(Element root)
     {
-        using var host = new HeadlessRoot(root) { AvailableSize = DefaultSize };
+        using var host = new HeadlessRoot(FluentTest.Skin(root)) { AvailableSize = DefaultSize };
         host.UpdateLayout();
     }
 
@@ -66,7 +66,7 @@ public class DamageTests
         root.Children.Add(Text("static"));
         Layout(root);
 
-        var painter = new ElementPainter();
+        var painter = new ElementPainter(FluentTheme.Dark);
 
         var first = painter.BuildFrame(root, DefaultSize);
         Assert.True(first.Damage.IsFull);
@@ -86,7 +86,7 @@ public class DamageTests
         root.Children.Add(checkBox);
         Layout(root);
 
-        var painter = new ElementPainter();
+        var painter = new ElementPainter(FluentTheme.Dark);
         painter.BuildFrame(root, DefaultSize);
 
         checkBox.Checked = true;
@@ -104,7 +104,7 @@ public class DamageTests
         root.Children.Add(block);
         Layout(root);
 
-        var painter = new ElementPainter();
+        var painter = new ElementPainter(FluentTheme.Dark);
         painter.BuildFrame(root, DefaultSize);
         var oldBounds = Absolute(block.Runs[0]);
 
@@ -125,7 +125,7 @@ public class DamageTests
         root.Children.Add(mover);
         Layout(root);
 
-        var painter = new ElementPainter();
+        var painter = new ElementPainter(FluentTheme.Dark);
         painter.BuildFrame(root, DefaultSize);
         var before = Absolute(mover);
 
@@ -147,7 +147,7 @@ public class DamageTests
         root.Children.Add(gone);
         Layout(root);
 
-        var painter = new ElementPainter();
+        var painter = new ElementPainter(FluentTheme.Dark);
         painter.BuildFrame(root, DefaultSize);
         var bounds = Absolute(gone);
 
@@ -191,7 +191,7 @@ public class DamageTests
         Layout(root);
 
         var input = new InputRouter(root);
-        var painter = new ElementPainter();
+        var painter = new ElementPainter(FluentTheme.Dark);
         painter.BuildFrame(root, DefaultSize);
 
         var center = new Point(
@@ -212,13 +212,13 @@ public class DamageTests
         root.Children.Add(Text("resize"));
         Layout(root);
 
-        var painter = new ElementPainter();
+        var painter = new ElementPainter(FluentTheme.Dark);
         painter.BuildFrame(root, DefaultSize);
         Assert.True(painter.BuildFrame(root, DefaultSize).Damage.IsEmpty);
 
         Assert.True(painter.BuildFrame(root, new Size(800, 600)).Damage.IsFull);
 
-        var painter2 = new ElementPainter();
+        var painter2 = new ElementPainter(FluentTheme.Dark);
         painter2.BuildFrame(root, DefaultSize, scale: 1.0);
         var scaled = painter2.BuildFrame(root, DefaultSize, scale: 1.5);
         Assert.True(scaled.Damage.IsFull);
@@ -231,7 +231,7 @@ public class DamageTests
         Layout(root);
         Layout(root);
 
-        var painter = new ElementPainter();
+        var painter = new ElementPainter(FluentTheme.Dark);
         painter.BuildFrame(root, DefaultSize);
         painter.ResetDamage();
 
@@ -244,7 +244,7 @@ public class DamageTests
         var root = new StackPanel();
         Layout(root);
 
-        var painter = new ElementPainter();
+        var painter = new ElementPainter(FluentTheme.Dark);
         painter.BuildFrame(root, DefaultSize);
         painter.Build(root, DefaultSize);
 

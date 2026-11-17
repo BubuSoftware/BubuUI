@@ -5,9 +5,10 @@ public enum Placement { Bottom, Top, Left, Right, Pointer }
 /// <summary>Content remains in the owner tree; hosts paint/hit-test open popups above normal content.</summary>
 public class Popup : ContentControl
 {
+    protected override bool UsesTemplateLayout => false;
     // Popup is a zero-size anchor; its real content is arranged outside the anchor.
     public override Rect? GetDrawingClip() => null;
-    public override Rect? GetContentClip() => Content?.FinalRect ?? new Rect(Point.Zero, Size.Empty);
+    public override Rect? GetContentClip() => (TemplateRoot ?? Content)?.FinalRect ?? new Rect(Point.Zero, Size.Empty);
     public static readonly StyledProperty<bool> IsOpenProperty = StyledProperty<bool>.Register<Popup>("IsOpen", false, new() { Invalidate = InvalidateKind.Measure });
     public static readonly StyledProperty<bool> StaysOpenProperty = StyledProperty<bool>.Register<Popup>("StaysOpen", false, new() { Invalidate = InvalidateKind.Render });
     public static readonly StyledProperty<Placement> PlacementProperty = StyledProperty<Placement>.Register<Popup>("Placement", Placement.Bottom, new() { Invalidate = InvalidateKind.Arrange });
@@ -53,18 +54,19 @@ public class Popup : ContentControl
     protected internal override Size MeasureCore(Size available)
     {
         var root = this as Element; while (root.Parent is not null) root = root.Parent;
-        Content?.Measure(new(Math.Min(root.FinalRect.Width > 0 ? root.FinalRect.Width : 480, MaxWidth),
+        (TemplateRoot ?? Content)?.Measure(new(Math.Min(root.FinalRect.Width > 0 ? root.FinalRect.Width : 480, MaxWidth),
             Math.Min(root.FinalRect.Height > 0 ? root.FinalRect.Height : 480, MaxHeight)));
         return Size.Empty;
     }
     protected internal override void ArrangeCore(Rect final)
     {
-        if (!IsOpen || Content is null) return;
+        var body = TemplateRoot ?? Content;
+        if (!IsOpen || body is null) return;
         var root = this as Element;
         while (root.Parent is not null) root = root.Parent;
         var target = PlacementTarget ?? Parent;
         var origin = target is null ? Point.Zero : RootOrigin(target);
-        var size = Content.DesiredSize;
+        var size = body.DesiredSize;
         var p = Placement switch
         {
             Placement.Top => new Point(origin.X, origin.Y - size.Height),
@@ -75,7 +77,7 @@ public class Popup : ContentControl
         };
         var local = PointFromRoot(new(Math.Clamp(p.X + HorizontalOffset, 0, Math.Max(0, root.FinalRect.Width - size.Width)),
             Math.Clamp(p.Y + VerticalOffset, 0, Math.Max(0, root.FinalRect.Height - size.Height))));
-        Content.Arrange(new(local, size));
+        body.Arrange(new(local, size));
     }
     internal static Point RootOrigin(Element element)
     {
@@ -83,8 +85,8 @@ public class Popup : ContentControl
         for (Element? e = element; e is not null; e = e.Parent) { x += e.FinalRect.X; y += e.FinalRect.Y; }
         return new(x, y);
     }
-    public bool ContainsRootPoint(Point point) => IsOpen && Content is not null &&
-        new Rect(Point.Zero, Content.FinalRect.Size).Contains(Content.PointFromRoot(point));
+    public bool ContainsRootPoint(Point point) => IsOpen && (TemplateRoot ?? Content) is { } body &&
+        new Rect(Point.Zero, body.FinalRect.Size).Contains(body.PointFromRoot(point));
 }
 
 public class ToolTip : Popup

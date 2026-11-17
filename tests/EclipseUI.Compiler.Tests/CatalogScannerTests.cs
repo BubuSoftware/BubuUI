@@ -590,7 +590,7 @@ public class CatalogScannerTests
     [Fact]
     public void BuiltInSurface_MatchesEnumeratedSnapshot()
     {
-        string[] tags = ["Border", "Button", "Calendar", "Canvas", "CheckBox", "ComboBox", "ContentControl", "ContentPresenter", "ContextMenu", "DataGrid", "DatePicker", "DockPanel", "Ellipse", "Grid", "Image", "ItemsControl", "Line", "ListBox", "ListBoxItem", "Menu", "MenuItem", "NumericUpDown", "PasswordBox", "Path", "Popup", "ProgressBar", "RadioButton", "Rectangle", "ScrollViewer", "Slider", "StackPanel", "TabControl", "TabItem", "TemplatedControl", "TextBlock", "TextBox", "ToggleButton", "ToggleSwitch", "ToolTip", "TreeView", "TreeViewItem", "VirtualizingStackPanel", "Window", "WrapPanel"];
+        string[] tags = ["Border", "Button", "Calendar", "Canvas", "CheckBox", "ComboBox", "ContentControl", "ContentPresenter", "ContextMenu", "DataGrid", "DataGridColumnHeader", "DatePicker", "DockPanel", "DropDownButton", "Ellipse", "Grid", "Image", "ItemsControl", "ItemsPresenter", "Line", "ListBox", "ListBoxItem", "Menu", "MenuItem", "NumericUpDown", "PasswordBox", "Path", "Popup", "ProgressBar", "RadioButton", "Rectangle", "ScrollViewer", "Slider", "StackPanel", "TabControl", "TabItem", "TemplatedControl", "TextBlock", "TextBox", "TextPresenter", "ToggleButton", "ToggleSwitch", "ToolTip", "TreeView", "TreeViewItem", "VirtualizingStackPanel", "Window", "WrapPanel"];
         var catalog = BuiltIn();
         Assert.Equal(tags.OrderBy(t => t, StringComparer.Ordinal), catalog.Elements.Select(e => e.Tag).OrderBy(t => t, StringComparer.Ordinal));
         Assert.Empty(catalog.Problems);

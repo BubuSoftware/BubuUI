@@ -81,7 +81,8 @@ public class TextEditingTests
     public void PointerDragSelectsTextAndCaretCanReachEnd()
     {
         var (editor, host) = Create("abcd"); using var lifetime = host;
-        host.PointerPress(new(7, 12)); host.PointerMove(new(200, 12)); host.PointerRelease(new(200, 12));
+        var start = new Point(editor.HorizontalPadding, editor.VerticalPadding + 2);
+        host.PointerPress(start); host.PointerMove(new(200, start.Y)); host.PointerRelease(new(200, start.Y));
         Assert.Equal("abcd", editor.SelectedText); Assert.Equal(4, editor.CaretIndex);
     }
     [Fact]

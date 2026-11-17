@@ -30,22 +30,7 @@ public interface IElementDrawingContext
     UiColor Foreground { get; }
     UiColor Background { get; }
     UiColor Border { get; }
-    UiColor Accent { get; }
-    UiColor OnAccent { get; }
-    UiColor SelectionBackground => Accent;
-    UiColor SelectionForeground => OnAccent;
-    UiColor MutedForeground => Foreground with { A = 160 };
-    double CornerRadius => 4;
-    /// <summary>Opt-in layered control chrome; flat/custom drawing contexts retain their defaults.</summary>
-    bool HasLayeredChrome => false;
-    UiColor StrongBorder => Border;
-    UiColor AltBackground => Background;
-    UiColor ThumbBackground => OnAccent;
-    void ControlSurface(Rect rect, double radius, bool input = false, bool focused = false, bool selected = false)
-    {
-        FillRectangle(rect, selected ? Accent : Background, radius);
-        StrokeRectangle(new(rect.X + .5, rect.Y + .5, Math.Max(0, rect.Width - 1), Math.Max(0, rect.Height - 1)), Border, 1, radius);
-    }
+    double CornerRadius => 0;
     void FillRectangle(Rect rect, UiColor color, double radius = 0);
     void StrokeRectangle(Rect rect, UiColor color, double width = 1, double radius = 0);
     void Ellipse(Rect rect, UiColor fill, UiColor stroke, double strokeWidth = 0);
@@ -54,6 +39,7 @@ public interface IElementDrawingContext
     void Text(string text, Point origin, double fontSize, UiColor color);
     void Image(IRasterImage image, Rect destination, double opacity = 1);
     void PushClip(Rect rect);
+    void PushRoundedClip(Rect rect, double radius) => PushClip(rect);
     void PopClip();
 }
 

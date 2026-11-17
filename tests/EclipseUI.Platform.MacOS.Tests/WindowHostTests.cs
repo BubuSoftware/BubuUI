@@ -17,7 +17,7 @@ public class WindowHostTests
         using var window = new TestWindow(); using var presenter = new TestPresenter();
         using var root = new StackPanel();
         var preference = new ThemePreference { Variant = ThemeVariant.Light };
-        using var host = new WindowHost(window, presenter, root, new WindowHostOptions { SystemTheme = preference });
+        using var host = new WindowHost(window, presenter, root, new WindowHostOptions { SystemTheme = preference, Theme = EclipseUI.Themes.Fluent.FluentTheme.System });
         Assert.Same(EclipseUI.Themes.Fluent.FluentTheme.Light, host.Painter.Theme);
         host.FrameTicked += (_, e) =>
         {

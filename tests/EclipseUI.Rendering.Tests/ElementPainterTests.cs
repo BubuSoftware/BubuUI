@@ -33,7 +33,7 @@ public class ElementPainterTests
 
     private static void Layout(Element root)
     {
-        using var host = new HeadlessRoot(root) { AvailableSize = DefaultSize };
+        using var host = new HeadlessRoot(FluentTest.Skin(root)) { AvailableSize = DefaultSize };
         host.UpdateLayout();
     }
 
@@ -63,7 +63,7 @@ public class ElementPainterTests
         var root = new StackPanel();
         Layout(root);
 
-        var theme = new ElementTheme();
+        var theme = FluentTheme.Dark;
         var list = new ElementPainter(theme).Build(root, DefaultSize);
 
         Assert.Equal(DefaultSize, list.Size);
@@ -74,14 +74,14 @@ public class ElementPainterTests
     }
 
     [Fact]
-    public void Build_Button_PaintsAccentChromeAndCenteredLabel()
+    public void Build_Button_PaintsThemedChromeAndCenteredLabel()
     {
         var root = new StackPanel();
         var button = new Button { Label = "OK" };
         root.Children.Add(button);
         Layout(root);
 
-        var theme = new ElementTheme();
+        var theme = FluentTheme.Dark;
         var text = new FakeTextPainter();
         var list = new ElementPainter(theme, text).Build(root, DefaultSize);
 
@@ -89,11 +89,11 @@ public class ElementPainterTests
         var body = list.Commands.OfType<FillRoundedRect>().Single();
         Assert.Equal(rect, body.Rect);
         Assert.Equal(theme.ButtonRadius, body.Radius);
-        Assert.Equal(theme.Accent, BrushColor(body.Brush));
+        Assert.Equal(theme.ButtonBackground, BrushColor(body.Brush));
 
         var label = Assert.Single(text.Painted);
         Assert.Equal("OK", label.Text);
-        Assert.Equal(theme.OnAccent, label.Color);
+        Assert.Equal(theme.ButtonForeground, label.Color);
         Assert.InRange(label.Origin.X, rect.X, rect.X + rect.Width);
         Assert.InRange(label.Origin.Y, rect.Y, rect.Y + rect.Height);
 
@@ -108,10 +108,10 @@ public class ElementPainterTests
         root.Children.Add(button);
         Layout(root);
 
-        var theme = new ElementTheme();
+        var theme = FluentTheme.Dark;
         var painter = new ElementPainter(theme, new FakeTextPainter());
 
-        // 按下未释放：绘制按下态（不经过平台宿主，直接走 InputRouter）
+        // Keep the pointer down to exercise the theme's pressed-state rule.
         var input = new InputRouter(root);
         input.PointerPress(new Point(
             button.FinalRect.X + button.FinalRect.Width / 2,
@@ -119,7 +119,7 @@ public class ElementPainterTests
 
         var list = painter.Build(root, DefaultSize);
         var body = list.Commands.OfType<FillRoundedRect>().Single();
-        Assert.Equal(theme.AccentPressed, BrushColor(body.Brush));
+        Assert.Equal(theme.ButtonPressedBackground, BrushColor(body.Brush));
         Assert.True(button.IsPressed);
     }
 
@@ -131,7 +131,7 @@ public class ElementPainterTests
         root.Children.Add(checkBox);
         Layout(root);
 
-        var theme = new ElementTheme();
+        var theme = FluentTheme.Dark;
         var text = new FakeTextPainter();
         var list = new ElementPainter(theme, text).Build(root, DefaultSize);
 
@@ -159,33 +159,35 @@ public class ElementPainterTests
         root.Children.Add(checkBox);
         Layout(root);
 
-        var theme = new ElementTheme();
+        var theme = FluentTheme.Dark;
         var list = new ElementPainter(theme, new FakeTextPainter()).Build(root, DefaultSize);
 
         var box = list.Commands.OfType<FillRoundedRect>().Single();
-        Assert.Equal(theme.ControlBackground, BrushColor(box.Brush));
+        Assert.Equal(theme.ControlAltBackground, BrushColor(box.Brush));
 
         var border = Assert.Single(list.Commands.OfType<StrokePath>());
-        Assert.Equal(theme.ControlBorder, BrushColor(border.Brush));
+        Assert.Equal(theme.ControlStrongBorder, BrushColor(border.Brush));
         Assert.Equal(theme.BorderWidth, border.Width);
-        Assert.DoesNotContain(list.Commands.OfType<StrokePath>(), s => BrushColor(s.Brush) == theme.OnAccent);
+        Assert.DoesNotContain(list.Commands.OfType<StrokePath>(), s => s.Brush is SolidColorBrush { Color: var color } && color == theme.OnAccent);
     }
 
     [Fact]
-    public void Build_TextBlock_PaintsRunsWithMutedColorBelowThreshold()
+    public void Build_TextBlock_UsesExplicitForegroundAtAnyFontSize()
     {
         var root = new StackPanel();
         root.Children.Add(Text("Title", 20));
-        root.Children.Add(Text("hint", 12));
+        var hint = Text("hint", 12);
+        hint.Foreground = new(120, 130, 140);
+        root.Children.Add(hint);
         Layout(root);
 
-        var theme = new ElementTheme();
+        var theme = FluentTheme.Dark;
         var text = new FakeTextPainter();
         new ElementPainter(theme, text).Build(root, DefaultSize);
 
         Assert.Equal(2, text.Painted.Count);
         Assert.Equal(theme.Foreground, text.Painted[0].Color);
-        Assert.Equal(theme.MutedForeground, text.Painted[1].Color);
+        Assert.Equal(new Color(120, 130, 140), text.Painted[1].Color);
         Assert.True(text.Painted[1].Origin.Y > text.Painted[0].Origin.Y);
     }
 
@@ -199,7 +201,7 @@ public class ElementPainterTests
         root.Children.Add(inner);
         Layout(root);
 
-        var list = new ElementPainter(new ElementTheme(), new FakeTextPainter()).Build(root, DefaultSize);
+        var list = new ElementPainter(FluentTheme.Dark, new FakeTextPainter()).Build(root, DefaultSize);
 
         var innerRect = Absolute(inner);
         var buttonRect = Absolute(button);
@@ -221,11 +223,11 @@ public class ElementPainterTests
         root.Children.Add(button);
         Layout(root);
 
-        var theme = new ElementTheme();
+        var theme = FluentTheme.Dark;
         (FocusManager.GetFor(root) ?? new FocusManager(root)).Focus(button, FocusOrigin.Keyboard);
         var list = new ElementPainter(theme, new FakeTextPainter()).Build(root, DefaultSize);
 
-        var ring = list.Commands.OfType<StrokePath>().Single(s => BrushColor(s.Brush) == theme.FocusRing);
+        var ring = list.Commands.OfType<StrokePath>().Single(s => s.Brush is SolidColorBrush { Color: var color } && color == theme.FocusRing && s.Width == theme.FocusRingWidth);
         Assert.Equal(theme.FocusRingWidth, ring.Width);
 
         var rect = Absolute(button);
@@ -242,7 +244,7 @@ public class ElementPainterTests
         root.Children.Add(new Button { Label = "scaled" });
         Layout(root);
 
-        var list = new ElementPainter(new ElementTheme()).Build(root, DefaultSize, scale: 1.5);
+        var list = new ElementPainter(FluentTheme.Dark).Build(root, DefaultSize, scale: 1.5);
 
         var push = Assert.IsType<PushTransform>(list.Commands[0]);
         Assert.Equal(Transform.Scale(1.5), push.Transform);
@@ -257,7 +259,7 @@ public class ElementPainterTests
         var root = new StackPanel();
         Layout(root);
 
-        var list = new ElementPainter(new ElementTheme()).Build(root, DefaultSize, scale: 1.0);
+        var list = new ElementPainter(FluentTheme.Dark).Build(root, DefaultSize, scale: 1.0);
 
         Assert.DoesNotContain(list.Commands, c => c is PushTransform or PopTransform);
         Assert.Empty(list.Validate());
@@ -275,7 +277,7 @@ public class ElementPainterTests
         block.Refresh();
         Layout(root);
 
-        var theme = new ElementTheme();
+        var theme = FluentTheme.Dark;
         var text = new FakeTextPainter();
         var list = new ElementPainter(theme, text).Build(root, DefaultSize);
 
@@ -297,7 +299,7 @@ public class ElementPainterTests
         root.Children.Add(button);
         Layout(root);
 
-        var list = new ElementPainter(new ElementTheme()).Build(root, DefaultSize);
+        var list = new ElementPainter(FluentTheme.Dark).Build(root, DefaultSize);
         var body = list.Commands.OfType<FillRoundedRect>().Single();
         Assert.Equal(12, body.Rect.X, 3);
         Assert.Equal(12, body.Rect.Y, 3);
@@ -317,7 +319,7 @@ public class ElementPainterTests
 
         using var shaper = new HarfBuzzTextShaper(fontPath);
         using var textPainter = new HarfBuzzTextPainter(shaper);
-        var list = new ElementPainter(new ElementTheme(), textPainter).Build(root, DefaultSize);
+        var list = new ElementPainter(FluentTheme.Dark, textPainter).Build(root, DefaultSize);
 
         var glyphs = Assert.Single(list.Commands.OfType<DrawGlyphs>());
         Assert.Equal("Hi", glyphs.Glyphs.Text);
@@ -353,12 +355,12 @@ public class ElementPainterTests
         var viewer = new ScrollViewer();
         viewer.Children.Add(content);
 
-        var root = new HeadlessRoot(viewer) { AvailableSize = new Size(400, 800) };
+        var root = new HeadlessRoot(FluentTest.Skin(viewer)) { AvailableSize = new Size(400, 800) };
         root.UpdateLayout();
         viewer.ScrollToEnd();
         root.UpdateLayout();
 
-        var list = new ElementPainter().Build(viewer, new Size(400, 800));
+        var list = new ElementPainter(FluentTheme.Dark).Build(viewer, new Size(400, 800));
 
         // 视口裁剪：即使 ClipToBounds 未开，ScrollViewer 也必须 PushClip 视口矩形。
         Assert.Contains(list.Commands, c => c is PushClip push && push.Rect == new Rect(0, 0, 400, 800));
@@ -379,10 +381,10 @@ public class ElementPainterTests
         var viewer = new ScrollViewer();
         viewer.Children.Add(content);
 
-        var root = new HeadlessRoot(viewer) { AvailableSize = new Size(400, 800) };
+        var root = new HeadlessRoot(FluentTest.Skin(viewer)) { AvailableSize = new Size(400, 800) };
         root.UpdateLayout();
 
-        var list = new ElementPainter().Build(viewer, new Size(400, 800));
+        var list = new ElementPainter(FluentTheme.Dark).Build(viewer, new Size(400, 800));
 
         Assert.DoesNotContain(list.Commands, c => c is FillRoundedRect f && Math.Abs(f.Rect.Width - 6) < 0.5);
     }
@@ -396,9 +398,10 @@ public class ElementPainterTests
     {
         var viewer = new ScrollViewer { HorizontalScrollBarVisibility = mode };
         viewer.Children.Add(new FixedBox(800, 40));
+        FluentTest.Skin(viewer);
         viewer.Measure(new Size(300, 100));
         viewer.Arrange(new Rect(0, 0, 300, 100));
-        var list = new ElementPainter().Build(viewer, new Size(300, 100));
+        var list = new ElementPainter(FluentTheme.Dark).Build(viewer, new Size(300, 100));
         var thumbs = list.Commands.OfType<FillRoundedRect>().Where(f => Math.Abs(f.Rect.Height - 6) < 0.5);
         Assert.Equal(showThumb ? 1 : 0, thumbs.Count());
         Assert.Empty(list.Validate());
@@ -409,11 +412,12 @@ public class ElementPainterTests
     {
         var viewer = new ScrollViewer { Padding = 10 };
         viewer.Children.Add(new FixedBox(300, 600));
+        FluentTest.Skin(viewer);
         viewer.Measure(new Size(300, 100));
         viewer.Arrange(new Rect(0, 0, 300, 100));
         viewer.ScrollToVerticalOffset(25);
         viewer.Arrange(new Rect(0, 0, 300, 100));
-        var list = new ElementPainter().Build(viewer, new Size(300, 100));
+        var list = new ElementPainter(FluentTheme.Dark).Build(viewer, new Size(300, 100));
         Assert.Contains(list.Commands, command => command is PushClip { Rect: var rect } && rect == new Rect(10, 10, 280, 80));
         Assert.Empty(list.Validate());
     }
@@ -429,9 +433,10 @@ public class ElementPainterTests
             VerticalScrollBarVisibility = ScrollBarVisibility.Visible,
         };
         if (!empty) viewer.Children.Add(new FixedBox(40, 30));
+        FluentTest.Skin(viewer);
         viewer.Measure(new Size(300, 100));
         viewer.Arrange(new Rect(0, 0, 300, 100));
-        var list = new ElementPainter().Build(viewer, new Size(300, 100));
+        var list = new ElementPainter(FluentTheme.Dark).Build(viewer, new Size(300, 100));
         var vertical = Assert.Single(list.Commands.OfType<FillRoundedRect>(), command => command.Rect.Width == 6);
         var horizontal = Assert.Single(list.Commands.OfType<FillRoundedRect>(), command => command.Rect.Height == 6);
         Assert.Equal(new Rect(290, 4, 6, 92), vertical.Rect);
@@ -446,7 +451,7 @@ public class ElementPainterTests
         panel.Children.Add(new Button { Width = 200, Height = 40 });
         panel.Measure(new Size(0, 0));
         panel.Arrange(new Rect(10, 10, 0, 0));
-        var list = new ElementPainter().Build(panel, new Size(300, 100));
+        var list = new ElementPainter(FluentTheme.Dark).Build(panel, new Size(300, 100));
         Assert.Contains(list.Commands, command => command is PushClip { Rect: var rect } && rect == new Rect(10, 10, 0, 0));
         Assert.Empty(list.Validate());
     }

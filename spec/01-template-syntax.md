@@ -46,7 +46,7 @@
 
 ### 控件模板扩展（2026-11-14）
 
-显式声明 `@template T` 的文件采用控件模板工厂模式，T 必须为导入的 TemplatedControl 类型。
+显式声明 `@template T` 的文件采用控件模板工厂模式，T 必须为导入的 Element 类型。
 文件名标识 `ControlTemplate<T>`，根元素标识每个实例的视觉根；强类型 `Owner` 指向宿主。
 普通 `.ui` 不受此扩展影响。`Part="名称"` 提供实例内部件身份，`Ref` 保持代码字段语义。
 控件模板中的 StyledProperty 赋值进入可覆盖的 skin 层；完整实现范围及样式语法见

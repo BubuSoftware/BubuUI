@@ -95,7 +95,7 @@ public class LooklessControlTests
         using var host = new HeadlessRoot(root); host.UpdateLayout();
         Assert.NotNull(first.TemplateRoot);
         Assert.NotSame(first.TemplateRoot, second.TemplateRoot);
-        Assert.False(first.UsesDefaultDrawing);
+        Assert.Same(first.TemplateRoot, Assert.Single(first.VisualChildren));
         var presenter = first.Descendants().OfType<ContentPresenter>().Single();
         Assert.Equal("First", presenter.Label);
         first.Label = "Changed";

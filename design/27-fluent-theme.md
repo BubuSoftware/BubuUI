@@ -1,72 +1,85 @@
-# 27 · Fluent 默认皮肤
+# 27 · Fluent 主题包
 
-2026-11-14。已实施。设计参考 [Fluent 2 设计令牌](https://fluent2.microsoft.design/design-tokens)及[语义颜色](https://fluent2.microsoft.design/color-tokens)；当前实现为 EclipseUI 的 Fluent 风格桌面皮肤。
+2026-11-17。当前契约以 [spec/05](../spec/05-control-themes.md) 为准。`EclipseUI.Themes.Fluent` 提供 EclipseUI 的 Fluent 风格控件模板、属性和状态规则、共享资源及亮暗配色。早期的默认皮肤和仅 Button 模板化方案已由本文描述的实现替代。
 
-后续外观修订已改以 Windows 11 / WinUI 控件资源为基准，新增渐变边框、输入底线和可配置控件几何。当前实现、验证范围、仍有差距及底层改造方案见[WinUI 对齐报告](./reports/fluent-winui-fidelity-2026-11-14.md)。下文的初版验证数字保留为历史记录，不能作为逐像素一致的证明。
+## 显式接入
 
-## 接入
-
-`EclipseUI.Themes.Fluent` 是独立可打包项目，只依赖 Rendering（及其 Runtime 依赖），不引用平台或渲染后端。Windows/Linux/macOS 桌面宿主在窗口和应用都未指定主题时默认采用 `FluentTheme.System`。
+Runtime、通用渲染器及 Windows/Linux/macOS 平台包均不引用 Fluent。应用引用主题包后显式配置：
 
 ```csharp
 using EclipseUI.Themes.Fluent;
 
-builder.UseFluentTheme(); // System
-builder.UseFluentTheme(ThemeVariant.Light);
-builder.UseFluentTheme(ThemeVariant.Dark);
+builder.UseFluentTheme(); // System；也可传 ThemeVariant.Light / Dark
 
-// Application 子类内：
+// Application 子类内，运行时切换：
 SetTheme(FluentTheme.System);
 SetTheme(FluentTheme.Light);
 SetTheme(FluentTheme.Dark);
 ```
 
-窗口初始优先级：Window.Theme > Application.DefaultTheme > FluentTheme.System。显式传入原有 ElementTheme 或自定义主题继续生效。运行期 SetTheme 替换当前来源；换回 System 后恢复跟随。
+窗口初始主题按 `Window.Theme > Application.DefaultTheme > ElementTheme.Light` 选择。平台的默认来源保持中性，不自动安装控件皮肤。未安装主题时，交互控件保留行为、状态和显式属性，不回退到框架内置的 Fluent 外观。基础视觉元素如 Border、Shape 和文本元素仍能通用绘制。
 
-Windows 读取 AppsUseLightTheme，每秒至多读取一次。Linux/macOS 原生窗口通过 [SDL_GetSystemTheme](https://wiki.libsdl.org/SDL3/SDL_GetSystemTheme) 读取偏好；仅真实 LinuxWindow/MacOSWindow 查询已初始化的 SDL，模拟窗口可注入 ISystemThemeProvider，无需安装 SDL。未知偏好回落浅色；无窗口的 Linux 离屏路径可使用 GTK_THEME 的 dark 标记或显式指定明暗。
+`UseFluentTheme()` 设置应用默认主题来源；它不负责注册应用自己的选择器规则。应用的 `.eustyle` 仍通过 `UseStyles(registry, MyApp.StyleBootstrap.Apply)` 安装。
 
-ThemeBinding 在 UI 线程解析来源，系统偏好改变时替换具体不可变色板，清除 retained 段和 damage 历史。明暗未变时复用同一实例，空闲帧仍跳过上屏。没有后台线程、事件订阅或额外生命周期资源。
+## 配色与默认主题映射
 
-## 外观与控件
+`FluentTheme.Light` 和 `Dark` 为共享的具体配色实例；`System` 是按系统偏好解析到二者之一的来源对象。Windows 读取 `AppsUseLightTheme` 并限制读取频率；Linux/macOS 原生窗口提供 SDL 系统偏好，离屏或无原生偏好提供者时采用回退来源。未知偏好回落浅色。
 
-- 普通按钮使用中性背景和细边框；颜色令牌覆盖 normal、hover、pressed、disabled。应用的 Background/Foreground 类样式及 local 值继续优先生效。
-- 复选框、单选框、开关、滑块、进度条使用语义强调色；禁用状态同时处理背景、边框和标记颜色。
-- 输入框、密码框、数值输入及复合下拉使用控件背景/边框、次要文本色和自身焦点边框。
-- 列表、树和页签使用独立选中背景/前景；列表和树有选中标记，页签有强调色底线。表格行复用列表容器，编辑单元格复用输入框。
-- 菜单和树的普通行保持透明，悬停使用中性填充。命中内容子元素时最近的交互控件也获得悬停反馈，进入嵌套树行不会点亮所有祖先行。
-- 浮层有不透明表面、边框、圆角和分层阴影；阴影范围计入 damage 膨胀，关闭后重绘旧范围。普通结构性 StackPanel 保持透明，显式设置的卡片背景仍绘制。
-- 使用现有 focus-visible/focus-within 契约；键盘外圈和输入框自身边框保持分工，控件自身焦点边框使用有效圆角。
+`ThemeBinding` 在 UI 线程把解析结果同时交给绘制器和元素树默认值来源。明暗改变时刷新布局、模板表达式和绘制缓存；模板定义未改变时保留现有视觉树。未改变的具体配色实例不会反复清除 retained 缓存。
 
-共享默认字号 14 DIP，普通控件圆角 4 DIP，面板圆角 8 DIP；按钮和输入控件默认最小高度 32 DIP，按钮横向/纵向内边距 12/5 DIP。字体文件和回退仍由文本管线选择。布局面板、图像和形状保留其布局语义与调用方设置的填充/描边。
+`FluentTheme.GetDefault()` 为元素的 `Theme` 属性提供对应 `ControlTheme`，沿 CLR 类型链选择最具体的已注册类型。普通控件、纯 C# 子类和 `.ui` 生成子类使用同一机制；ToggleButton、PasswordBox、NumericUpDown、MenuItem、下拉按钮和表格列标题等具有独立外观契约的类型单独注册。
 
-Button 新增 HorizontalPadding/VerticalPadding StyledProperty 和 CLR 属性，Measure/Arrange 共用它们。该 API 变化已同步 BuiltInSurface.golden.txt，42 个标签不变，属性项从 715 增至 721。
+控件尺寸、颜色和交互状态主要定义在主题包的 `.eustyle` 中；字号、通用前景和焦点参数由应用主题默认值提供。常见 Fluent 尺寸包括字号 14、按钮及输入控件最小高度 32、按钮内边距 12/5、复选标记 20、滑块 22、进度条高度 3。显式属性和应用样式可覆盖这些值。
 
-## 默认值层与离屏
+## 控件模板覆盖
 
-优先级为 local > template > class > inherited > theme default > property default。主题默认值提供者沿真实 Parent 树查找，不写入其他属性层，不依赖全局样式注册表；新增、迁移和替换内容使用所在树的主题。更换提供者使布局和绘制失效，不产生属性写入通知。
+| 控件范围 | 主题实现 |
+|---|---|
+| Button、ToggleButton | Border 和 ContentPresenter 组成的编译模板 |
+| CheckBox、RadioButton、ToggleSwitch | 编译模板、文字呈现与主题包中的标记视觉元素 |
+| TextBox、PasswordBox、NumericUpDown | 输入表面模板、TextPresenter 及主题内的输入装饰和数值箭头 |
+| Slider、ProgressBar | 编译模板创建轨道、滑块和进度视觉元素；控件保留值和交互状态 |
+| ComboBox、DatePicker | 编译模板创建按钮、列表或编辑器、日历和浮层；控件通过命名部件接入行为 |
+| Calendar、TreeViewItem、TabControl | 主题视觉元素负责日期格、树标题和页签标题；布局所需尺寸为 StyledProperty |
+| DataGrid | 模板安排列标题和滚动区域；核心保留列、数据、选择、排序、编辑和行虚拟化 |
+| 列表、树、滚动视口和浮层 | 主题模板通过 ItemsPresenter 投影行为内容，主题负责选中表面、滚动条、浮层边框和阴影 |
+
+交互控件的 Runtime 实现不绘制主题外观。复杂的形状或文字定位可以写在主题包的 C# 视觉元素中，由 `.ui` 模板创建。`ElementPainter` 只遍历视觉树、执行通用绘图、文本、裁剪、焦点及浮层调度，不按 Button、CheckBox 等控件类型分派皮肤。
+
+## 共享类型化资源
+
+主题包可公开静态 `ThemeResource<T>` 字段，在 `.eustyle` 通过直接字段引用复用：
+
+```scss
+@using EclipseUI.Elements;
+@using EclipseUI.Themes.Fluent;
+
+Button.primary {
+    Background: resource(FluentResources.ControlBackground);
+}
+```
+
+资源按接收属性值的元素解析，能够响应亮暗、状态和主题变化。编译器验证公开静态字段及目标属性值类型，并生成直接调用，不执行资源初始化器，不使用运行时反射或字符串注册表。同模块控件主题仍可使用 `Theme: resource(MyButtonTheme)`。这些资源不是通用动态资源字典。
+
+## 离屏与验证
+
+离屏使用同一主题和测量链路：
 
 ```csharp
 var painter = new ElementPainter(FluentTheme.Light, textPainter);
-painter.Prepare(root); // 在 Measure/Arrange 之前
+painter.Prepare(root);
 root.Measure(size);
 root.Arrange(new Rect(Point.Zero, size));
 var frame = painter.BuildFrame(root, size);
 ```
 
-底层 ElementPainter 未指定主题时仍提供原来的 ElementTheme；Fluent 的自动默认入口是桌面宿主。皮肤没有启用尚未实施的 design/23 选择器或资源重设计，也不包含系统材质、模糊及高对比专用色板。
-
-## 验证
+相关回归覆盖模板替换、借入内容保留、部件事件、选择和编辑、输入与焦点、亮暗切换、浮层、动画和 retained 绘制。结构回归检查核心与平台不引用 Fluent、交互控件不包含主题绘制、绘制器不包含控件皮肤分发。
 
 ```powershell
 dotnet build EclipseUI.slnx
-dotnet test EclipseUI.slnx --no-build --no-restore -m:1 -- xUnit.ParallelizeTestCollections=false xUnit.MaxParallelThreads=1
-dotnet run --project sandbox/FluentCheck -- out/fluent
+dotnet test EclipseUI.slnx --no-build --no-restore -m:1
 dotnet run --project samples/Gallery.Desktop -- --cpu --theme light --shot out/fluent-gallery-light.png
 dotnet run --project samples/Gallery.Desktop -- --cpu --theme dark --shot out/fluent-gallery-dark.png
 ```
 
-FluentThemeTests 验证默认值优先级、动态子项、树间隔离、系统变化、显式主题、retained/damage、指针状态、内容命中、选中与键盘焦点、浮层关闭及双色资源。Linux WindowHostTests 通过可注入偏好验证真实帧循环中的跟随与固定主题。
-
-FluentCheck 为完整控件目录生成深浅色、选中/下拉、键盘焦点、悬停、按下和禁用共 12 张截图，路径为 out/fluent/；图片经图像查看工具核对文字、表面、选中项、菜单、下拉及布局。
-
-最终构建、1605 项测试及 Windows 原生 GPU 验证结果见[验证报告](./reports/fluent-theme-2026-11-14.md)。
+[早期验证报告](./reports/fluent-theme-2026-11-14.md)和 [WinUI 外观对照报告](./reports/fluent-winui-fidelity-2026-11-14.md)保留当时的测试与截图记录，不代表本轮测试结果或逐像素 WinUI 一致性。当前未提供系统材质、模糊、高对比专用配色或系统强调色自动导入。

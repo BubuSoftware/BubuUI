@@ -7,7 +7,7 @@ public class ScrollBarInteractionTests
 {
     private static (HeadlessRoot Host, ScrollViewer Viewer) Create(bool horizontal = false)
     {
-        var viewer = new ScrollViewer { Width = 120, Height = 120, Padding = 8,
+        var viewer = new ScrollViewer { Width = 120, Height = 120, Padding = 8, ScrollBarInset = 4, ScrollBarThickness = 6, ScrollBarHitThickness = 14,
             HorizontalScrollBarVisibility = horizontal ? ScrollBarVisibility.Auto : ScrollBarVisibility.Disabled,
             VerticalScrollBarVisibility = horizontal ? ScrollBarVisibility.Disabled : ScrollBarVisibility.Auto };
         viewer.Children.Add(new Border { Width = horizontal ? 1200 : 104, Height = horizontal ? 104 : 1200 });
@@ -125,7 +125,7 @@ public class ScrollBarInteractionTests
     [InlineData(true)]
     public void ScrollBarReleaseDoesNotClickContainingButton(bool overflow)
     {
-        var viewer = new ScrollViewer { Width = 120, Height = 120, VerticalScrollBarVisibility = ScrollBarVisibility.Visible };
+        var viewer = new ScrollViewer { Width = 120, Height = 120, ScrollBarInset = 4, ScrollBarThickness = 6, ScrollBarHitThickness = 14, VerticalScrollBarVisibility = ScrollBarVisibility.Visible };
         viewer.Children.Add(new Border { Height = overflow ? 1200 : 80 });
         var button = new Button { Content = viewer }; var clicks = 0; button.AddHandler(Button.ClickEvent, _ => clicks++);
         using var host = new HeadlessRoot(button); host.UpdateLayout(); var press = At(viewer, 118, 8);

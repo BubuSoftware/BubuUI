@@ -61,7 +61,6 @@ public class ElementTheme : IHostTheme
     public virtual double PopupRadius => PanelRadius;
     public virtual double PopupShadowSize => 0;
     public virtual bool TransparentPanels => false;
-    public virtual bool HasLayeredChrome => false;
     public virtual Color ControlStrongBorder => ControlBorder;
     public virtual Color ControlStrongDisabledBorder => DisabledBorder;
     public virtual Color ControlAltBackground => ControlBackground;

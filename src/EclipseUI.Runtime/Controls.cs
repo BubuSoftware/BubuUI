@@ -14,7 +14,7 @@ public class Button : TemplatedControl
         StyledProperty<string>.Register<Button>("Label", "",
             new PropertyOptions { Invalidate = InvalidateKind.Measure });
 
-    public static readonly StyledProperty<double> HorizontalPaddingProperty = StyledProperty<double>.Register<Button>("HorizontalPadding", 12, new() { Invalidate = InvalidateKind.Measure });
+    public static readonly StyledProperty<double> HorizontalPaddingProperty = StyledProperty<double>.Register<Button>("HorizontalPadding", 0, new() { Invalidate = InvalidateKind.Measure });
     public static readonly StyledProperty<HorizontalAlignment> LabelAlignmentProperty = StyledProperty<HorizontalAlignment>.Register<Button>("LabelAlignment", HorizontalAlignment.Center, new() { Invalidate = InvalidateKind.Render });
     public HorizontalAlignment LabelAlignment { get => GetValue(LabelAlignmentProperty); set => SetValue(LabelAlignmentProperty, value); }
     public Point GetLabelOrigin(Size size)
@@ -22,7 +22,7 @@ public class Button : TemplatedControl
         var bounds = GetLabelBounds();
         return new(bounds.X + (LabelAlignment is HorizontalAlignment.Left or HorizontalAlignment.Stretch ? 0 : LabelAlignment == HorizontalAlignment.Right ? bounds.Width - size.Width : (bounds.Width - size.Width) / 2), bounds.Y + (bounds.Height - size.Height) / 2);
     }
-    public static readonly StyledProperty<double> VerticalPaddingProperty = StyledProperty<double>.Register<Button>("VerticalPadding", 6, new() { Invalidate = InvalidateKind.Measure });
+    public static readonly StyledProperty<double> VerticalPaddingProperty = StyledProperty<double>.Register<Button>("VerticalPadding", 0, new() { Invalidate = InvalidateKind.Measure });
     public double HorizontalPadding { get => GetValue(HorizontalPaddingProperty); set => SetValue(HorizontalPaddingProperty, Math.Max(0, value)); }
     public double VerticalPadding { get => GetValue(VerticalPaddingProperty); set => SetValue(VerticalPaddingProperty, Math.Max(0, value)); }
     private double HPad => HorizontalPadding;
@@ -109,10 +109,10 @@ public class Button : TemplatedControl
 [UiContent(UiContentKind.Text, Target = nameof(Label))]
 public class CheckBox : Element
 {
-    /// <summary>Zero preserves the font-relative glyph used by legacy themes.</summary>
+    /// <summary>Space reserved for the selection indicator; the control theme supplies its size.</summary>
     public static readonly StyledProperty<double> GlyphSizeProperty = StyledProperty<double>.Register<CheckBox>("GlyphSize", 0, new() { Invalidate = InvalidateKind.Measure });
     public double GlyphSize { get => GetValue(GlyphSizeProperty); set => SetValue(GlyphSizeProperty, Math.Max(0, value)); }
-    public double EffectiveGlyphSize => GlyphSize > 0 ? GlyphSize : GetValue(TextBlock.FontSizeProperty) * 1.1;
+    public double EffectiveGlyphSize => GlyphSize;
     public static readonly RoutedEvent CheckedChangedEvent = new RoutedEvent("CheckedChanged", RoutingStrategy.Bubble);
 
     public static readonly StyledProperty<bool> CheckedProperty =
@@ -179,7 +179,7 @@ public class CheckBox : Element
     {
         var fontSize = GetValue(TextBlock.FontSizeProperty);
         var metrics = TextMeasurer.Current.Measure(Label, fontSize);
-        return new Size(EffectiveGlyphSize + 8 + metrics.Width + 16, Math.Max(metrics.Height, Math.Max(EffectiveGlyphSize, fontSize * 1.4)) + 8);
+        return new Size(EffectiveGlyphSize + metrics.Width, Math.Max(metrics.Height, EffectiveGlyphSize));
     }
 
     protected internal override void ArrangeCore(Rect final) { }

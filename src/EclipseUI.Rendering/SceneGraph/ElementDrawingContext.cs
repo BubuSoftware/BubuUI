@@ -14,66 +14,18 @@ internal sealed class ElementDrawingContext : IElementDrawingContext
     public UiColor Foreground { get; }
     public UiColor Background { get; }
     public UiColor Border { get; }
-    public UiColor Accent { get; }
-    public UiColor OnAccent { get; }
-    public UiColor SelectionBackground { get; }
-    public UiColor SelectionForeground { get; }
-    public UiColor MutedForeground { get; }
     public double CornerRadius { get; }
-    public bool HasLayeredChrome => _theme.HasLayeredChrome;
-    public UiColor StrongBorder { get; }
-    public UiColor AltBackground { get; }
-    public UiColor ThumbBackground => Convert(_theme.ThumbBackground);
-    private readonly ElementTheme _theme;
-    private readonly Element _element;
-    internal ElementDrawingContext(DisplayList list, Point offset, ElementTheme theme, ITextPainter? text, Color foreground, Color background, Element element)
+    internal ElementDrawingContext(DisplayList list, Point offset, ITextPainter? text, Color foreground, Color background, Element element)
     {
-        _list = list; _offset = offset; _text = text; _theme = theme; _element = element;
+        _list = list; _offset = offset; _text = text;
         Foreground = Convert(foreground); Background = Convert(background);
-        var enabled = element.IsEffectiveEnabled;
-        Border = Convert(!enabled ? theme.DisabledBorder : element.IsHovered ? theme.ControlHoverBorder : theme.ControlBorder);
-        Accent = Convert(!enabled ? theme.AccentDisabled : element.IsPressed ? theme.AccentPressed : element.IsHovered ? theme.AccentHover : theme.Accent);
-        OnAccent = Convert(enabled ? theme.OnAccent : theme.OnAccentDisabled);
-        StrongBorder = Convert(enabled ? theme.ControlStrongBorder : theme.ControlStrongDisabledBorder);
-        AltBackground = Convert(Visual.GetBackgroundResource(element)?.Resolve(theme) ?? Visual.GetBackground(element)
-            ?? (enabled ? element.IsPressed ? theme.ControlAltPressedBackground : element.IsHovered ? theme.ControlAltHoverBackground : theme.ControlAltBackground : theme.DisabledBackground));
-        SelectionBackground = Convert(enabled ? theme.SelectionBackground : theme.DisabledBackground);
-        SelectionForeground = Convert(enabled ? theme.SelectionForeground : theme.DisabledForeground);
-        MutedForeground = Convert(enabled ? theme.MutedForeground : theme.DisabledForeground);
-        CornerRadius = Visual.GetCornerRadius(element) ?? theme.ControlRadius;
+        Border = element.BorderBrush;
+        CornerRadius = Visual.GetCornerRadius(element) ?? element.CornerRadius;
     }
     private static UiColor Convert(Color c) => new(c.R, c.G, c.B, c.A);
     private static Color Convert(UiColor c) => new(c.R, c.G, c.B, c.A);
     private Point At(Point p) => new(p.X + _offset.X, p.Y + _offset.Y);
     private Rect At(Rect r) => new(At(r.Location), r.Size);
-    public void ControlSurface(Rect rect, double radius, bool input = false, bool focused = false, bool selected = false)
-    {
-        var enabled = _element.IsEffectiveEnabled;
-        var explicitBackground = Visual.GetBackground(_element) is not null || Visual.GetBackgroundResource(_element) is not null;
-        var fill = selected && !explicitBackground ? Accent : input && focused && enabled && HasLayeredChrome && !explicitBackground ? Convert(_theme.InputActiveBackground) : Background;
-        FillRectangle(rect, fill, radius);
-        var inset = new Rect(rect.X + .5, rect.Y + .5, Math.Max(0, rect.Width - 1), Math.Max(0, rect.Height - 1));
-        if (inset.Size.IsEmpty) return;
-        Brush border = Convert(Border);
-        if (HasLayeredChrome && enabled && !_element.IsPressed && !input)
-        {
-            var primary = selected ? _theme.AccentBorder : _theme.ControlBorder;
-            var secondary = selected ? _theme.AccentSecondaryBorder : _theme.ControlSecondaryBorder;
-            var fromBottom = selected || _theme.IsLight;
-            var edge = _offset.Y + (fromBottom ? rect.Bottom : rect.Top);
-            border = new LinearGradient(new(_offset.X, edge), new(_offset.X, edge + (fromBottom ? -3 : 3)),
-                [new(.33, secondary), new(1, primary)]);
-        }
-        _list.Add(new StrokePath(PathGeometry.RoundedRectangle(At(inset), Math.Max(0, HasLayeredChrome ? radius - .5 : radius)), border, 1));
-        if (input && HasLayeredChrome && enabled)
-        {
-            // Clip the baseline to the rounded silhouette, including caller-supplied radii.
-            _list.Add(new PushClipPath(PathGeometry.RoundedRectangle(At(rect), radius)));
-            var thickness = focused ? 2 : 1;
-            FillRectangle(new(rect.X, rect.Bottom - thickness, rect.Width, thickness), Convert(focused ? _theme.Accent : _theme.InputBottomBorder));
-            _list.Add(new PopClip());
-        }
-    }
     public void FillRectangle(Rect rect, UiColor color, double radius = 0)
     {
         if (rect.Size.IsEmpty || color.A == 0) return;
@@ -109,6 +61,7 @@ internal sealed class ElementDrawingContext : IElementDrawingContext
         _list.Add(new DrawImage(handle, At(destination), Math.Clamp(opacity, 0, 1)));
     }
     public void PushClip(Rect rect) { _clipDepth++; _list.Add(new PushClip(At(rect))); }
+    public void PushRoundedClip(Rect rect, double radius) { _clipDepth++; _list.Add(new PushClipPath(PathGeometry.RoundedRectangle(At(rect), radius))); }
     public void PopClip()
     {
         if (_clipDepth == 0) throw new InvalidOperationException("Custom drawing clip stack is empty.");

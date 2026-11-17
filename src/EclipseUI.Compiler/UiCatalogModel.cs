@@ -336,6 +336,7 @@ public sealed class UiCatalog : IEquatable<UiCatalog>
     private readonly Dictionary<string, UiHiddenTag> _hidden;
     private readonly Dictionary<(string Owner, string Name), UiAttachedPropDef> _attached;
     private readonly Dictionary<string, UiLiteralParserDef> _literalParsers;
+    private UiElementDef? _elementStyleTarget;
 
     public UiCatalog(
         IEnumerable<UiElementDef> elements,
@@ -441,6 +442,19 @@ public sealed class UiCatalog : IEquatable<UiCatalog>
     /// </summary>
     public UiElementDef? FindByTypeDisplayName(string clrTypeDisplayName) =>
         _byType.TryGetValue(clrTypeDisplayName, out var def) ? def : null;
+
+    /// <summary>
+    /// Common property surface for untyped style selectors. Abstract Element remains
+    /// unavailable as a constructible tag; its inherited metadata still comes from the scanner.
+    /// </summary>
+    public UiElementDef ElementStyleTarget => _elementStyleTarget ??= new UiElementDef(
+        "Element", "global::EclipseUI.Element", UiContentModel.None, null,
+        Elements.SelectMany(element => element.Properties.Values)
+            .Where(property => property.DeclaringTypeName is "global::EclipseUI.Element" or "global::EclipseUI.UiObject")
+            .GroupBy(property => property.Name, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal),
+        new Dictionary<string, UiEventDef>(), new Dictionary<string, UiParameterDef>(),
+        new Dictionary<string, UiSlotDef>(), Array.Empty<UiMetadataProblem>());
 
     /// <summary>按 <c>Owner.Prop</c> 两段查附加属性（design/14 §14.5.5）；名中含更多点号时调用方先行拒绝。</summary>
     public UiAttachedPropDef? FindAttached(string owner, string name) =>

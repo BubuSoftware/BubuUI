@@ -76,7 +76,7 @@ public class LooklessTemplateTests
     }
 
     [Theory]
-    [InlineData("@template TextBlock", "@template requires")]
+    [InlineData("@template Window", "@template requires")]
     [InlineData("@template Missing", "@template requires")]
     [InlineData("@template Button\n@template Button", "once at document")]
     public void InvalidTemplateDeclarationsGiveSourceDiagnostics(string directive, string message)

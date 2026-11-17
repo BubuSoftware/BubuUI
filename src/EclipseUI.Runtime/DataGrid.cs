@@ -49,11 +49,14 @@ public class DataGrid : Panel
 {
     public override Rect? GetContentClip() => new Rect(Point.Zero, FinalRect.Size);
     public override FocusVisualGeometry GetFocusVisualGeometry() => _rows.GetRealizedItem(SelectedIndex) is { } row
-        ? new(row, new(4, 4, Math.Max(0, row.FinalRect.Width - 8), Math.Max(0, row.FinalRect.Height - 8)), 3)
+        ? new(row, new(Point.Zero, row.FinalRect.Size), row.CornerRadius)
         : base.GetFocusVisualGeometry();
     private readonly Grid _header = new() { RowDefinitions = "Auto" };
     private readonly VirtualizingStackPanel _rows = new() { IsVariableHeight = true };
-    private readonly ScrollViewer _scroll = new();
+    public const string ScrollPart = "PART_Scroll";
+    private ScrollViewer? _scroll;
+    public Grid HeaderHost => _header;
+    public VirtualizingStackPanel RowsHost => _rows;
     private readonly List<object?> _view = [];
     private ObservableCollection<DataGridColumn> _columns = [];
     private readonly HashSet<DataGridColumn> _subscribed = [];
@@ -61,6 +64,8 @@ public class DataGrid : Panel
     private INotifyCollectionChanged? _observable;
     private int _sortColumn = -1;
     private bool _ascending = true;
+    public static readonly StyledProperty<double> RowHeightProperty = StyledProperty<double>.Register<DataGrid>(nameof(RowHeight), 0, new() { Invalidate = InvalidateKind.Measure });
+    public double RowHeight { get => GetValue(RowHeightProperty); set => SetValue(RowHeightProperty, Math.Max(0, value)); }
     public static readonly StyledProperty<int> SelectedIndexProperty = StyledProperty<int>.Register<DataGrid>("SelectedIndex", -1, new() { Invalidate = InvalidateKind.Render });
     public static readonly StyledProperty<bool> IsReadOnlyProperty = StyledProperty<bool>.Register<DataGrid>("IsReadOnly", true, new() { Invalidate = InvalidateKind.Measure });
     public static readonly RoutedEvent SelectionChangedEvent = new("SelectionChanged");
@@ -94,7 +99,6 @@ public class DataGrid : Panel
     public override bool IsFocusable => true;
     public DataGrid()
     {
-        _scroll.Children.Add(_rows); Children.Add(_header); Children.Add(_scroll);
         _rows.ItemFactory = CreateRow; _rows.ItemUpdater = UpdateRow;
         _columns.CollectionChanged += ColumnsChanged;
         PropertyChanged += (_, p) =>
@@ -114,21 +118,14 @@ public class DataGrid : Panel
             else if (k.Key == Key.Home) SelectedIndex = 0;
             else if (k.Key == Key.End) SelectedIndex = _view.Count - 1;
             else return;
-            var y = SelectedIndex * 36d;
-            if (y < _scroll.VerticalOffset) _scroll.ScrollToVerticalOffset(y);
-            else if (y + 36 > _scroll.VerticalOffset + _scroll.ViewportHeight) _scroll.ScrollToVerticalOffset(y + 36 - _scroll.ViewportHeight);
+            var y = SelectedIndex * RowHeight;
+            if (_scroll is not null)
+            {
+                if (y < _scroll.VerticalOffset) _scroll.ScrollToVerticalOffset(y);
+                else if (y + RowHeight > _scroll.VerticalOffset + _scroll.ViewportHeight) _scroll.ScrollToVerticalOffset(y + RowHeight - _scroll.ViewportHeight);
+            }
             e.Handled = true;
         });
-    }
-    private sealed class HeaderButton : Button
-    {
-        internal int SortDirection;
-        public override Rect GetLabelBounds()
-        {
-            var bounds = base.GetLabelBounds();
-            return bounds with { Size = new(Math.Max(0, bounds.Width - (SortDirection == 0 ? 0 : 16)), bounds.Height) };
-        }
-        public override void Render(IElementDrawingContext c) { if (SortDirection != 0) ControlIcons.Chevron(c, new(FinalRect.Width - 12, FinalRect.Height / 2), up: SortDirection > 0); }
     }
     private sealed record RowIndex(int Index);
     private void ColumnsChanged(object? sender, NotifyCollectionChangedEventArgs e) => RebuildColumns();
@@ -142,7 +139,7 @@ public class DataGrid : Panel
         _header.ColumnDefinitions = string.Join(',', _columns.Select(c => c.Width));
         for (var i = 0; i < _columns.Count; i++)
         {
-            var index = i; var button = new HeaderButton { Label = _columns[i].Header, SortDirection = _sortColumn == i ? _ascending ? 1 : -1 : 0 };
+            var index = i; var button = new DataGridColumnHeader { Label = _columns[i].Header, SortDirection = _sortColumn == i ? _ascending ? 1 : -1 : 0 };
             Grid.SetColumn(button, i); button.AddHandler(Button.ClickEvent, _ => Sort(index)); _header.Children.Add(button);
         }
         _rows.Refresh(); InvalidateMeasure();
@@ -177,7 +174,7 @@ public class DataGrid : Panel
     }
     private Element CreateRow(int index)
     {
-        var row = new ListBoxItem { Padding = 2, FocusVisualOwner = this };
+        var row = new ListBoxItem { FocusVisualOwner = this };
         row.AddHandler(PreviewPointerPressedEvent, _ => { if (row.Item is RowIndex current) SelectedIndex = current.Index; });
         UpdateRow(row, index); return row;
     }
@@ -215,19 +212,24 @@ public class DataGrid : Panel
         if (!success) editor.Text = Convert.ToString(column.GetValue(item), CultureInfo.InvariantCulture) ?? "";
         RaiseEvent(new(success ? CellEditCommittedEvent : CellEditRejectedEvent));
     }
-    protected internal override Size MeasureCore(Size available)
+    protected override void OnApplyTemplate(TemplateInstance instance)
     {
-        _header.Measure(available); _scroll.Measure(new(available.Width, Math.Max(0, available.Height - _header.DesiredSize.Height)));
-        return new(Math.Max(_header.DesiredSize.Width, _scroll.DesiredSize.Width), _header.DesiredSize.Height + _scroll.DesiredSize.Height);
+        base.OnApplyTemplate(instance);
+        _scroll = instance.FindPart<ScrollViewer>(ScrollPart) ?? throw new InvalidOperationException($"DataGrid template requires {ScrollPart} of type ScrollViewer.");
     }
-    protected internal override void ArrangeCore(Rect final)
-    {
-        var h = Math.Min(final.Height, _header.DesiredSize.Height); _header.Arrange(new(0, 0, final.Width, h)); _scroll.Arrange(new(0, h, final.Width, final.Height - h));
-    }
+    protected override void OnTemplateRemoving() { _scroll = null; base.OnTemplateRemoving(); }
     protected override void OnDispose()
     {
         if (_observable is not null) _observable.CollectionChanged -= SourceChanged;
         _columns.CollectionChanged -= ColumnsChanged; foreach (var column in _subscribed) column.PropertyChanged -= ColumnChanged;
         base.OnDispose();
+        _header.Dispose(); _rows.Dispose();
     }
+}
+
+/// <summary>A sortable column header; its appearance is supplied by its control theme.</summary>
+public class DataGridColumnHeader : Button
+{
+    public static readonly StyledProperty<int> SortDirectionProperty = StyledProperty<int>.Register<DataGridColumnHeader>(nameof(SortDirection), 0, new() { Invalidate = InvalidateKind.Measure });
+    public int SortDirection { get => GetValue(SortDirectionProperty); set => SetValue(SortDirectionProperty, value); }
 }

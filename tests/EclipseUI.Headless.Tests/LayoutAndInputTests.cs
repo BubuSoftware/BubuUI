@@ -58,8 +58,13 @@ public class PanelPaddingTests
     }
 
     [Fact]
-    public void ListBoxItem_DefaultsToEightPixelPadding()
-        => Assert.Equal(8, new ListBoxItem().Padding);
+    public void ListBoxItem_FluentThemeSuppliesEightPixelPadding()
+    {
+        using var item = new ListBoxItem();
+        Assert.Equal(0, item.Padding);
+        item.SetThemeDefaults(EclipseUI.Themes.Fluent.FluentTheme.Light); item.ApplyTemplate();
+        Assert.Equal(8, item.Padding);
+    }
 
     [Fact]
     public void ClipToBounds_DefaultsOffAndIsSettable()

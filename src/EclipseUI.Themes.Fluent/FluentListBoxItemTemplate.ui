@@ -1,0 +1,8 @@
+@namespace EclipseUI.Themes.Fluent
+@using EclipseUI.Elements
+@template ListBoxItem
+
+<Grid>
+    <FluentListBoxItemVisual Owner={Owner} IsHitTestVisible="false" />
+    <ItemsPresenter Owner={Owner} />
+</Grid>

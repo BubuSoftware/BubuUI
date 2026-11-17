@@ -64,7 +64,15 @@ public class ScrollViewer : Panel, IFrameAnimation
             ScrollBarVisibility.Auto,
             new PropertyOptions { Invalidate = InvalidateKind.Measure });
 
-    private const double BarInset = 4, BarThickness = 6, BarHitThickness = 14;
+    public static readonly StyledProperty<double> ScrollBarInsetProperty = StyledProperty<double>.Register<ScrollViewer>(nameof(ScrollBarInset), 0, new() { Invalidate = InvalidateKind.Arrange });
+    public static readonly StyledProperty<double> ScrollBarThicknessProperty = StyledProperty<double>.Register<ScrollViewer>(nameof(ScrollBarThickness), 0, new() { Invalidate = InvalidateKind.Arrange });
+    public static readonly StyledProperty<double> ScrollBarHitThicknessProperty = StyledProperty<double>.Register<ScrollViewer>(nameof(ScrollBarHitThickness), 0, new() { Invalidate = InvalidateKind.Arrange });
+    public double ScrollBarInset { get => GetValue(ScrollBarInsetProperty); set => SetValue(ScrollBarInsetProperty, Math.Max(0, value)); }
+    public double ScrollBarThickness { get => GetValue(ScrollBarThicknessProperty); set => SetValue(ScrollBarThicknessProperty, Math.Max(0, value)); }
+    public double ScrollBarHitThickness { get => GetValue(ScrollBarHitThicknessProperty); set => SetValue(ScrollBarHitThicknessProperty, Math.Max(0, value)); }
+    private double BarInset => ScrollBarInset;
+    private double BarThickness => ScrollBarThickness;
+    private double BarHitThickness => ScrollBarHitThickness;
     private const double RepeatDelay = .4, RepeatInterval = .06;
     private bool _barHeld, _barScrolling, _draggingBar, _dragHorizontal;
     private double _dragStart, _dragOffset, _repeatRemaining;
@@ -75,6 +83,7 @@ public class ScrollViewer : Panel, IFrameAnimation
     public bool TryGetScrollBarGeometry(bool horizontal, out ScrollBarGeometry geometry)
     {
         geometry = default;
+        if (BarThickness <= 0 || BarHitThickness <= 0) return false;
         var visibility = horizontal ? HorizontalScrollBarVisibility : VerticalScrollBarVisibility;
         var scrollable = horizontal ? ScrollableWidth : ScrollableHeight;
         if (visibility is ScrollBarVisibility.Hidden or ScrollBarVisibility.Disabled || visibility == ScrollBarVisibility.Auto && scrollable <= 0) return false;

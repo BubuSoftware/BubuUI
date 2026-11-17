@@ -143,7 +143,7 @@ Render 只调用动态槽和 Refresh，不直接构造静态节点、安装绑�
 
 ## 6. 样式、覆盖与继承
 
-StyledProperty 有效值优先级：local > template > class > inherited > default。根属性使用 BeginTemplateValues，既保留 setter 校验，也使调用方 local 值稳定覆盖模板默认值；动态根默认值仍写模板层。
+StyledProperty 有效值优先级：local > template > class > template rule > control theme > skin > inherited > host theme default > property default。普通根属性使用 BeginTemplateValues，控件皮肤内部使用 BeginSkinValues；两者均保留 setter 校验，使调用方赋值和应用样式稳定覆盖皮肤默认值。控件主题和 `/template/` 规则的完整边界见 [05](./05-control-themes.md)。
 
 模板内部 Class 使用 ApplyTemplateClasses，使用点使用 ApplyClasses；类集内部在前、外部在后。Style 内联转换为相同值层的静态 setter。附加属性仍调用声明宿主的 setter，不做根转发。
 

@@ -43,13 +43,13 @@ public class ControlLayoutTests
     [Fact]
     public void ButtonContentParticipatesInRealTreeAndLayout()
     {
-        var content = new Border { Width = 40, Height = 20 }; var button = new Button { Content = content };
+        var content = new Border { Width = 40, Height = 20 }; var button = new Button { Content = content, HorizontalPadding = 12, VerticalPadding = 6 };
         using var host = new HeadlessRoot(button); host.UpdateLayout(); Assert.Same(button, content.Parent); Assert.Equal(64, button.DesiredSize.Width); Assert.Equal(new Rect(12, 6, 40, 20), content.FinalRect);
     }
     [Fact]
     public void ScrollBarOwnsHitTestingAndDraggingChangesOffset()
     {
-        var viewer = new ScrollViewer { Width = 100, Height = 100 }; viewer.Children.Add(new Border { Height = 1000 });
+        var viewer = new ScrollViewer { Width = 100, Height = 100, ScrollBarInset = 4, ScrollBarThickness = 6, ScrollBarHitThickness = 14 }; viewer.Children.Add(new Border { Height = 1000 });
         using var host = new HeadlessRoot(viewer); host.UpdateLayout(); Assert.Same(viewer, host.HitTest(new(94, 8)));
         host.PointerPress(new(94, 8)); host.PointerMove(new(94, 50)); host.PointerRelease(new(94, 50)); host.UpdateLayout(); Assert.InRange(viewer.VerticalOffset, 400, 600);
     }

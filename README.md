@@ -106,14 +106,14 @@ dotnet publish samples/Gallery.Desktop -c Release -r osx-arm64 --self-contained 
 - 保留静态树、编译期动态槽和 if/foreach/switch 块；普通 CLR 状态＋显式失效，无依赖追踪或运行时通用树 diff。
 - 单一符号目录；公开可写 CLR 属性、StyledProperty、路由事件、委托、附加属性、默认内容及具名槽。
 - 双向绑定按 StyledProperty 或匹配的 PChanged 回调能力选择，与 ui/C# 来源无关。
-- Class/Style 和主题；模板默认值与 local 覆盖；声明式自定义样式属性和字面量转换器。
+- Class/Style、Element 控件模板与命名主题、类型化共享资源；模板默认值与 local 覆盖；声明式自定义样式属性和字面量转换器。
 - Measure/Arrange、输入/焦点/路由、HarfBuzz 文本与逐字素字体回退（中文/彩色 emoji）、Vello CPU/GPU、保留显示列表及 damage/跳帧。
 - UI 同步上下文与后台安全失效；构建失败临时作用域清理，真实内容树资源释放。
 - LSP 诊断、补全、源映射与符号导航，共用目录和生成代码。
 
 ## 控件库
 
-Windows/Linux/macOS 桌面默认使用 Fluent 皮肤并跟随系统明暗；也可显式配置：
+交互控件与主题外观分离。Windows/Linux/macOS 平台默认使用中性主题；应用引用 `EclipseUI.Themes.Fluent` 后显式启用 Fluent 皮肤及系统明暗跟随：
 
 ```csharp
 using EclipseUI;
@@ -125,9 +125,9 @@ AppBuilder.Configure<MyApp>()
     .Start(args);
 ```
 
-运行期调用 `SetTheme(FluentTheme.Dark)`，或传入 `FluentTheme.Light` / `FluentTheme.System` 切换模式。Gallery 支持 `--theme system|light|dark`，主题按钮循环切换三种模式。令牌、默认值层和验证见 [Fluent 皮肤](./design/27-fluent-theme.md)。
+运行期调用 `SetTheme(FluentTheme.Dark)`，或传入 `FluentTheme.Light` / `FluentTheme.System` 切换模式。Gallery 支持 `--theme system|light|dark`，主题按钮循环切换三种模式。配色、默认值层和验证见 [Fluent 主题包](./design/27-fluent-theme.md)。所有 Element 均支持 `Theme` 和 `Template`；Fluent 为内置交互控件提供可替换 `.ui` 模板和 `.eustyle` 状态规则，Runtime 与通用渲染器不包含控件皮肤绘制。内容通过 `ContentPresenter` / `ItemsPresenter` 投影，切换模板保留调用方内容与行为状态。主题包可通过公开静态 `ThemeResource<T>` 复用类型化资源。详细契约见 [spec/05](./spec/05-control-themes.md)。
 
-当前目录有 42 个公开标签（含 Window）。除原有文本、按钮和布局控件外，已提供 TextBox/PasswordBox、ListBox/ComboBox、开关与数值输入、浮层和菜单、TabControl、TreeView、DataGrid、DatePicker/Calendar、图像与形状，以及 Canvas/DockPanel。Grid 支持跨行跨列，滚动条可拖动，虚拟列表支持变高和可选容器复用。
+当前目录包含 Window、基础视觉元素、通用呈现器和交互控件。除文本、按钮和布局控件外，已提供 TextBox/PasswordBox、ListBox/ComboBox、开关与数值输入、浮层和菜单、TabControl、TreeView、DataGrid、DatePicker/Calendar、图像与形状，以及 Canvas/DockPanel。Grid 支持跨行跨列，滚动条可拖动，虚拟列表支持变高和可选容器复用。
 
 完整行为、使用示例及能力边界见 [控件库契约](./design/24-control-library.md)。默认 Gallery 为 Fluent 交互演示页，仅展示真实控件，支持主题切换、重置、滑块与进度条联动，窄窗口自动收紧布局。`--legacy` 的第六区保留完整控件目录；也可独立验证并生成深浅主题截图：
 

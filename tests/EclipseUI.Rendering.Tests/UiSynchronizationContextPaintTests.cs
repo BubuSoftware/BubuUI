@@ -47,10 +47,10 @@ public class UiSynchronizationContextPaintTests
     public void AsyncContinuation_RepaintsTextBlockSegment_WithNewText()
     {
         var component = new AsyncTextComponent();
-        var host = new HeadlessRoot(component) { AvailableSize = Surface };
+        var host = new HeadlessRoot(FluentTest.Skin(component)) { AvailableSize = Surface };
         using var ui = host.InstallSynchronizationContext();
         var recorder = new RecordingTextPainter();
-        var painter = new ElementPainter(textPainter: recorder);
+        var painter = new ElementPainter(FluentTheme.Dark, textPainter: recorder);
 
         host.UpdateLayout();
         _ = painter.Build(component, Surface);

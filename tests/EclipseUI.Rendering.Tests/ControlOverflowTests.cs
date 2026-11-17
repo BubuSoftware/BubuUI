@@ -76,8 +76,8 @@ public class ControlOverflowTests
         var root = new Canvas { Width = Surface.Width, Height = Surface.Height };
         var control = Make(name); control.MinWidth = 0; control.MinHeight = 0; control.Width = 32; control.Height = 12;
         Canvas.SetLeft(control, 50); Canvas.SetTop(control, 40); root.Children.Add(control);
-        using var host = new HeadlessRoot(root) { AvailableSize = Surface }; host.UpdateLayout();
-        var list = new ElementPainter(textPainter: new StripText()).Build(root, Surface);
+        using var host = new HeadlessRoot(FluentTest.Skin(root)) { AvailableSize = Surface }; host.UpdateLayout();
+        var list = new ElementPainter(FluentTheme.Dark, textPainter: new StripText()).Build(root, Surface);
         Assert.Empty(list.Validate());
         PixelProbe.On(Render.Frame(list), name)
             .NotContains(new(0, 0, 50, 180), Ink)
@@ -100,11 +100,12 @@ public class ControlOverflowTests
         else owner = name == "Border" ? new Border { Padding = 4, Content = body } : new ContentControl { Padding = 4, Content = body };
         owner.Width = 70; owner.Height = 40;
         var root = new Canvas { Width = Surface.Width, Height = Surface.Height }; root.Children.Add(owner);
-        using var host = new HeadlessRoot(root) { AvailableSize = Surface }; host.UpdateLayout();
+        using var host = new HeadlessRoot(FluentTest.Skin(root)) { AvailableSize = Surface }; host.UpdateLayout();
         Assert.Same(root, host.Input.HitTest(new(100, 15)));
-        Assert.Same(owner, host.Input.HitTest(new(2, 2)));
+        var edgeHit = host.Input.HitTest(new(2, 2));
+        Assert.Same(owner, edgeHit?.TemplatedParent ?? edgeHit);
         Assert.Same(body, host.Input.HitTest(new(20, 15)));
-        var list = new ElementPainter().Build(root, Surface);
+        var list = new ElementPainter(FluentTheme.Dark).Build(root, Surface);
         PixelProbe.On(Render.Frame(list), name).NotContains(new(70, 0, 250, 180), Ink).Verify();
     }
 
@@ -113,9 +114,9 @@ public class ControlOverflowTests
     {
         var parent = new StackPanel { Width = 70, Height = 40 }; var body = WideBody(); parent.Children.Add(body);
         var root = new Canvas { Width = Surface.Width, Height = Surface.Height }; root.Children.Add(parent);
-        using var host = new HeadlessRoot(root) { AvailableSize = Surface }; host.UpdateLayout();
+        using var host = new HeadlessRoot(FluentTest.Skin(root)) { AvailableSize = Surface }; host.UpdateLayout();
         Assert.Same(body, host.Input.HitTest(new(100, 15)));
-        PixelProbe.On(Render.Frame(new ElementPainter().Build(root, Surface))).At(100, 15, Ink).Verify();
+        PixelProbe.On(Render.Frame(new ElementPainter(FluentTheme.Dark).Build(root, Surface))).At(100, 15, Ink).Verify();
     }
 
     [Theory]
@@ -129,8 +130,8 @@ public class ControlOverflowTests
         if (control is MenuItem menu) menu.Submenu = new ContextMenu();
         var root = new Canvas { Width = Surface.Width, Height = Surface.Height };
         Canvas.SetLeft(control, 50); Canvas.SetTop(control, 40); root.Children.Add(control);
-        using var host = new HeadlessRoot(root) { AvailableSize = Surface }; host.UpdateLayout();
-        var list = new ElementPainter(textPainter: new StripText()).Build(root, Surface);
+        using var host = new HeadlessRoot(FluentTest.Skin(root)) { AvailableSize = Surface }; host.UpdateLayout();
+        var list = new ElementPainter(FluentTheme.Dark, textPainter: new StripText()).Build(root, Surface);
         Assert.Empty(list.Validate());
         PixelProbe.On(Render.Frame(list), name).NotContains(new(50 + textRight, 40, 100 - textRight, 40), Ink).Verify();
     }
@@ -141,8 +142,8 @@ public class ControlOverflowTests
         var control = new TabControl { Width = 140, Height = 100 };
         control.SetValue(TextBlock.FontSizeProperty, 60); control.Children.Add(new TabItem { Header = LongText });
         var root = new Canvas { Width = Surface.Width, Height = Surface.Height }; root.Children.Add(control);
-        using var host = new HeadlessRoot(root) { AvailableSize = Surface }; host.UpdateLayout();
-        PixelProbe.On(Render.Frame(new ElementPainter(textPainter: new StripText()).Build(root, Surface)))
+        using var host = new HeadlessRoot(FluentTest.Skin(root)) { AvailableSize = Surface }; host.UpdateLayout();
+        PixelProbe.On(Render.Frame(new ElementPainter(FluentTheme.Dark, textPainter: new StripText()).Build(root, Surface)))
             .Contains(new(0, 0, 140, 32), Ink).NotContains(new(0, 32, 140, 68), Ink).Verify();
     }
 
@@ -152,8 +153,8 @@ public class ControlOverflowTests
         var control = new TreeViewItem { Header = LongText, IsExpanded = true, Width = 140, Height = 100 };
         control.SetValue(TextBlock.FontSizeProperty, 60); control.Children.Add(new TreeViewItem());
         var root = new Canvas { Width = Surface.Width, Height = Surface.Height }; root.Children.Add(control);
-        using var host = new HeadlessRoot(root) { AvailableSize = Surface }; host.UpdateLayout();
-        PixelProbe.On(Render.Frame(new ElementPainter(textPainter: new StripText()).Build(root, Surface)))
+        using var host = new HeadlessRoot(FluentTest.Skin(root)) { AvailableSize = Surface }; host.UpdateLayout();
+        PixelProbe.On(Render.Frame(new ElementPainter(FluentTheme.Dark, textPainter: new StripText()).Build(root, Surface)))
             .Contains(new(0, 0, 140, 28), Ink).NotContains(new(0, 28, 140, 72), Ink).Verify();
     }
 
@@ -162,8 +163,8 @@ public class ControlOverflowTests
     {
         var calendar = new Calendar { Width = 140, Height = 224 };
         var root = new Canvas { Width = Surface.Width, Height = 240 }; root.Children.Add(calendar);
-        using var host = new HeadlessRoot(root) { AvailableSize = new(320, 240) }; host.UpdateLayout();
-        var list = new ElementPainter(textPainter: new StripText()).Build(root, new(320, 240));
+        using var host = new HeadlessRoot(FluentTest.Skin(root)) { AvailableSize = new(320, 240) }; host.UpdateLayout();
+        var list = new ElementPainter(FluentTheme.Dark, textPainter: new StripText()).Build(root, new(320, 240));
         Assert.Empty(list.Validate());
         var probe = PixelProbe.On(Render.Frame(list)).Contains(new(0, 56, 140, 168), Ink);
         for (var column = 0; column < 7; column++) probe.NotContains(new(column * 20 + 18, 56, 2, 168), Ink);
@@ -179,8 +180,8 @@ public class ControlOverflowTests
     {
         var root = new Canvas { Width = Surface.Width, Height = Surface.Height };
         var control = Make(name); control.MinWidth = 0; control.MinHeight = 0; root.Children.Add(control);
-        var painter = new ElementPainter(textPainter: new StripText());
-        using var host = new HeadlessRoot(root) { AvailableSize = Surface };
+        var painter = new ElementPainter(FluentTheme.Dark, textPainter: new StripText());
+        using var host = new HeadlessRoot(FluentTest.Skin(root)) { AvailableSize = Surface };
         foreach (var size in new[] { new Size(0, 50), new Size(100, 0) })
         {
             control.Width = size.Width; control.Height = size.Height; host.UpdateLayout();
@@ -194,9 +195,9 @@ public class ControlOverflowTests
     {
         var root = new Canvas { Width = Surface.Width, Height = Surface.Height };
         var button = new Button { Width = 60, Height = 32 }; Canvas.SetLeft(button, 50); Canvas.SetTop(button, 40); root.Children.Add(button);
-        using var host = new HeadlessRoot(root) { AvailableSize = Surface }; host.UpdateLayout();
+        using var host = new HeadlessRoot(FluentTest.Skin(root)) { AvailableSize = Surface }; host.UpdateLayout();
         host.Focus.AlwaysShowFocusVisuals = true; host.Focus.Focus(button);
-        var painter = new ElementPainter();
+        var painter = new ElementPainter(FluentTheme.Dark);
         PixelProbe.On(Render.Frame(painter.Build(root, Surface))).At(48, 56, painter.Theme.FocusRing).Verify();
     }
 
@@ -209,8 +210,8 @@ public class ControlOverflowTests
         var popup = new Popup { Content = body, PlacementTarget = owner, IsOpen = true };
         panel.Children.Add(popup); owner.Content = panel; root.Children.Add(owner);
         var painter = new ElementPainter(FluentTheme.Light); painter.Prepare(root);
-        using var host = new HeadlessRoot(root) { AvailableSize = Surface }; host.UpdateLayout();
-        Assert.Same(body, host.Input.HitTest(new(90, 45)));
+        using var host = new HeadlessRoot(FluentTest.Skin(root)) { AvailableSize = Surface }; host.UpdateLayout();
+        Assert.True(ReferenceEquals(body, host.Input.HitTest(new(90, 45))), string.Join("\n", root.Descendants().Select(e => $"{e.GetType().Name}: {e.FinalRect}; origin={e.PointFromRoot(Point.Zero)}")));
         var first = painter.BuildFrame(root, Surface); Assert.Empty(first.List.Validate());
         PixelProbe.On(Render.Frame(first.List)).At(90, 45, Ink).Verify();
         body.Width = 160; host.UpdateLayout();

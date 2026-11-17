@@ -1,0 +1,8 @@
+@namespace EclipseUI.Themes.Fluent
+@using EclipseUI.Elements
+@using EclipseUI.Themes.Fluent
+@template ProgressBar
+
+<Grid>
+    <FluentProgressBarVisual Owner={Owner} />
+</Grid>

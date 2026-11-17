@@ -55,7 +55,7 @@ internal sealed class ControlThemeEmitter(UiCatalog catalog, IReadOnlyList<UiTem
         if (!SyntaxFacts.IsValidIdentifier(name) || SyntaxFacts.GetKeywordKind(name) != SyntaxKind.None || name is "Apply" or "ApplyControlThemes" or "StyleBootstrap")
         { Error(node, "Control theme name conflicts with a generated member or is not a valid C# identifier."); return; }
         var target = Resolve(header.Groups[2].Value);
-        if (target is null || !target.Properties.ContainsKey("Template")) { Error(node, "Theme target must be an imported TemplatedControl type."); return; }
+        if (target is null || !target.Properties.ContainsKey("Template")) { Error(node, "Theme target must be an imported Element type."); return; }
         if (!_emitted.Add(name)) { Error(node, $"Duplicate control theme '{name}'."); return; }
         var templateNodes = node.Children.Where(n => n.Header == "Template" && n.Value is not null).ToArray();
         if (templateNodes.Length != 1) { Error(node, "A control theme requires exactly one Template: template(Type) declaration."); return; }
@@ -133,7 +133,7 @@ internal sealed class ControlThemeEmitter(UiCatalog catalog, IReadOnlyList<UiTem
         var typeName = match.Groups["type"].Value;
         var specificity = (typeName.Length > 0 && typeName != "&" ? 1 : 0) + 100 *
             (match.Groups["classes"].Value.Count(c => c == '.') + match.Groups["states"].Value.Count(c => c == ':'));
-        var target = owner ?? Resolve(typeName.Length == 0 ? "TemplatedControl" : typeName);
+        var target = owner ?? (typeName.Length == 0 ? catalog.ElementStyleTarget : Resolve(typeName));
         if (target is null) { Error(source, $"Unknown or ambiguous selector type '{typeName}'."); return null; }
         var conditions = new List<string> { "e is " + target.ClrTypeDisplayName };
         foreach (var cls in match.Groups["classes"].Value.Split('.').Where(c => c.Length > 0))
@@ -174,10 +174,18 @@ internal sealed class ControlThemeEmitter(UiCatalog catalog, IReadOnlyList<UiTem
             if (value.StartsWith("resource(", StringComparison.Ordinal))
             {
                 var name = value.EndsWith(")", StringComparison.Ordinal) ? value.Substring(9, value.Length - 10).Trim() : "";
-                if (node.Header != "Theme" || !_themes.TryGetValue(name, out var theme)) { Error(node, $"Unknown or incompatible control theme resource '{name}'."); continue; }
-                if (!Assignable(compilation.GetTypeByMetadataName(target.ClrTypeDisplayName.Substring(8)), compilation.GetTypeByMetadataName(theme.Type.Substring(8))))
-                { Error(node, "Control theme resource target is incompatible with the selector."); continue; }
-                expression = name;
+                if (node.Header == "Theme" && _themes.TryGetValue(name, out var theme))
+                {
+                    if (!Assignable(compilation.GetTypeByMetadataName(target.ClrTypeDisplayName.Substring(8)), compilation.GetTypeByMetadataName(theme.Type.Substring(8))))
+                    { Error(node, "Control theme resource target is incompatible with the selector."); continue; }
+                    expression = name;
+                }
+                else if (name.IndexOf('.') >= 0)
+                {
+                    expression = Resource(name, property, node);
+                    dynamic = true;
+                }
+                else { Error(node, $"Unknown or incompatible control theme resource '{name}'."); continue; }
             }
             else if (value.StartsWith("theme(", StringComparison.Ordinal) && value.EndsWith(")", StringComparison.Ordinal))
             {
@@ -191,6 +199,47 @@ internal sealed class ControlThemeEmitter(UiCatalog catalog, IReadOnlyList<UiTem
             if (expression is not null) result.Add($"global::EclipseUI.ThemeSetter.{(dynamic ? "Dynamic" : "Value")}({Field(property)}, {expression})");
         }
         return result;
+    }
+    private string? Resource(string name, UiPropDef property, ThemeStyleNode node)
+    {
+        if (!Regex.IsMatch(name, @"^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+$"))
+        { Error(node, "Expected resource(Type.StaticField)."); return null; }
+        var split = name.LastIndexOf('.');
+        var typeName = name.Substring(0, split); var memberName = name.Substring(split + 1);
+        var candidates = new[] { typeName }.Concat(_imports.Select(ns => ns + "." + typeName))
+            .Select(FindType).Where(type => type is not null).Cast<INamedTypeSymbol>()
+            .Distinct<INamedTypeSymbol>(SymbolEqualityComparer.Default).ToArray();
+        if (candidates.Length != 1)
+        { Error(node, $"Unknown or ambiguous typed resource '{name}'; import its declaring namespace."); return null; }
+        var field = candidates[0].GetMembers(memberName).OfType<IFieldSymbol>().SingleOrDefault();
+        if (field is null || !field.IsStatic || field.DeclaredAccessibility != Accessibility.Public ||
+            !compilation.IsSymbolAccessibleWithin(field, compilation.Assembly) ||
+            field.Type is not INamedTypeSymbol resourceType ||
+            resourceType.OriginalDefinition.ToDisplayString() != "EclipseUI.ThemeResource<T>")
+        { Error(node, $"Resource '{name}' must be a public static ThemeResource<T> field."); return null; }
+        var declaringType = FindType(property.DeclaringTypeName.Replace("global::", ""));
+        var propertyField = declaringType?.GetMembers(property.PropertyFieldName).OfType<IFieldSymbol>().SingleOrDefault();
+        var valueType = (propertyField?.Type as INamedTypeSymbol)?.TypeArguments.FirstOrDefault();
+        if (valueType is null || !SymbolEqualityComparer.Default.Equals(valueType, resourceType.TypeArguments[0]))
+        {
+            Error(node, $"Resource '{name}' has value type '{resourceType.TypeArguments[0].ToDisplayString()}', but property '{property.Name}' requires '{property.ClrTypeDisplayName}'.");
+            return null;
+        }
+        var member = SyntaxFacts.GetKeywordKind(field.Name) == SyntaxKind.None ? field.Name : "@" + field.Name;
+        return field.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) + "." + member + ".Resolve";
+    }
+    private INamedTypeSymbol? FindType(string name)
+    {
+        var type = compilation.GetTypeByMetadataName(name);
+        if (type is not null) return type;
+        // Metadata names use '+' for nested types while style references use normal C# dots.
+        for (var split = name.LastIndexOf('.'); split >= 0; split = name.LastIndexOf('.', split - 1))
+        {
+            var nested = name.Substring(0, split) + "+" + name.Substring(split + 1).Replace('.', '+');
+            if (compilation.GetTypeByMetadataName(nested) is { } match) return match;
+            if (split == 0) break;
+        }
+        return null;
     }
     private string? Literal(UiPropDef property, string value, ThemeStyleNode node)
     {

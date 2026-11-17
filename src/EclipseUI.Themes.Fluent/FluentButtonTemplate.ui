@@ -20,7 +20,7 @@
 
 @code {
     private static UiColor ColorOf(Color color) => new(color.R, color.G, color.B, color.A);
-    private ElementTheme Palette => Owner.ThemeDefaults as ElementTheme ?? FluentTheme.Light;
+    private FluentTheme Palette => Owner.ThemeDefaults as FluentTheme ?? FluentTheme.Light;
     private UiColor ResolveBackground() => Visual.GetBackgroundResource(Owner) is { } resource
         ? ColorOf(resource.Resolve(Palette)) : Visual.GetBackground(Owner) is { } color ? ColorOf(color) : Owner.Background;
     private UiColor ResolveForeground() => Visual.GetForegroundResource(Owner) is { } resource

@@ -22,7 +22,7 @@ public class ThemeTests
 
     private static void Layout(Element root)
     {
-        using var host = new HeadlessRoot(root) { AvailableSize = Surface };
+        using var host = new HeadlessRoot(FluentTest.Skin(root)) { AvailableSize = Surface };
         host.UpdateLayout();
     }
 
@@ -41,29 +41,31 @@ public class ThemeTests
     {
         var root = Tree();
         Layout(root);
-        var painter = new ElementPainter(ElementTheme.Dark);
+        var painter = new ElementPainter(FluentTheme.Dark);
 
         _ = painter.Build(root, Surface);
-        Assert.Equal((0, 2), painter.LastBuildStats); // 首帧全量：root + button
+        Assert.Equal((0, FluentTest.VisualCount(root)), painter.LastBuildStats); // First frame includes the control template visuals.
 
         _ = painter.Build(root, Surface);
-        Assert.Equal((2, 0), painter.LastBuildStats); // 全复用
+        Assert.Equal((FluentTest.VisualCount(root), 0), painter.LastBuildStats); // 全复用
 
-        painter.ReplaceTheme(ElementTheme.Light);
+        painter.ReplaceTheme(FluentTheme.Light);
+        painter.Prepare(root);
+        Layout(root);
         var relit = painter.Build(root, Surface);
-        Assert.Equal((0, 2), painter.LastBuildStats); // 段已随换表失效：全量重画
+        Assert.Equal((0, FluentTest.VisualCount(root)), painter.LastBuildStats); // 段已随换表失效：全量重画
 
-        // 按钮背景颜色取自新表（Accent），不是旧 Dark 值。
+        // Scoped Fluent colors are reevaluated after switching the application palette.
         var background = relit.Commands.ConvertAll(c => c)
             .OfType<FillRoundedRect>()
             .Select(f => f.Brush)
             .OfType<SolidColorBrush>()
-            .First(b => b.Color == ElementTheme.Light.Accent || b.Color == ElementTheme.Dark.Accent);
-        Assert.Equal(ElementTheme.Light.Accent, background.Color);
+            .First(b => b.Color == FluentTheme.Light.ButtonBackground || b.Color == FluentTheme.Dark.ButtonBackground);
+        Assert.Equal(FluentTheme.Light.ButtonBackground, background.Color);
 
         // 新主题下段恢复复用语义。
         _ = painter.Build(root, Surface);
-        Assert.Equal((2, 0), painter.LastBuildStats);
+        Assert.Equal((FluentTest.VisualCount(root), 0), painter.LastBuildStats);
     }
 
     [Fact]
@@ -71,16 +73,16 @@ public class ThemeTests
     {
         var root = Tree();
         Layout(root);
-        var theme = new ElementTheme();
+        var theme = FluentTheme.Dark;
         var painter = new ElementPainter(theme);
 
         _ = painter.Build(root, Surface);
         _ = painter.Build(root, Surface);
-        Assert.Equal((2, 0), painter.LastBuildStats);
+        Assert.Equal((FluentTest.VisualCount(root), 0), painter.LastBuildStats);
 
         painter.ReplaceTheme(theme); // 同实例：不清段
         _ = painter.Build(root, Surface);
-        Assert.Equal((2, 0), painter.LastBuildStats);
+        Assert.Equal((FluentTest.VisualCount(root), 0), painter.LastBuildStats);
     }
 
     // ---- S-C：ThemeColor 主题资源 ----
@@ -105,24 +107,25 @@ public class ThemeTests
     {
         var dark = new Color(31, 37, 50);
         var light = new Color(255, 255, 255);
-        // 资源卡不能作树根：根节点跳过卡片背景绘制（PaintElement isRoot 分支）。
+        // The Button template resolves the attached resource using its scoped palette.
         var root = new StackPanel();
-        var card = new StackPanel();
+        var card = new Button { Label = "Ok" };
         Visual.SetBackgroundResource(card, new ThemeColor(dark, light));
-        card.Children.Add(new Button { Label = "Ok" });
         root.Children.Add(card);
         Layout(root);
 
-        var painter = new ElementPainter(ElementTheme.Dark);
+        var painter = new ElementPainter(FluentTheme.Dark);
         var first = painter.Build(root, Surface);
         Assert.Equal(dark, CardFill(first.Commands, dark, light));
 
-        painter.ReplaceTheme(ElementTheme.Light);
+        painter.ReplaceTheme(FluentTheme.Light);
+        painter.Prepare(root);
+        Layout(root);
         var relit = painter.Build(root, Surface);
-        Assert.Equal((0, 3), painter.LastBuildStats); // 换表丢段：全量重画
+        Assert.Equal((0, FluentTest.VisualCount(root)), painter.LastBuildStats); // 换表丢段：全量重画
         Assert.Equal(light, CardFill(relit.Commands, dark, light)); // 资源色随新主题解析
 
         _ = painter.Build(root, Surface);
-        Assert.Equal((3, 0), painter.LastBuildStats); // 新主题下恢复复用
+        Assert.Equal((FluentTest.VisualCount(root), 0), painter.LastBuildStats); // 新主题下恢复复用
     }
 }

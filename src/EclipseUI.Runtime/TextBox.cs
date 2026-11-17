@@ -6,8 +6,8 @@ namespace EclipseUI.Elements;
 [UiContent(UiContentKind.Text, Target = nameof(Text))]
 public class TextBox : Element, IFrameAnimation
 {
-    public static readonly StyledProperty<double> HorizontalPaddingProperty = StyledProperty<double>.Register<TextBox>("HorizontalPadding", 6, new() { Invalidate = InvalidateKind.Measure });
-    public static readonly StyledProperty<double> VerticalPaddingProperty = StyledProperty<double>.Register<TextBox>("VerticalPadding", 6, new() { Invalidate = InvalidateKind.Measure });
+    public static readonly StyledProperty<double> HorizontalPaddingProperty = StyledProperty<double>.Register<TextBox>("HorizontalPadding", 0, new() { Invalidate = InvalidateKind.Measure });
+    public static readonly StyledProperty<double> VerticalPaddingProperty = StyledProperty<double>.Register<TextBox>("VerticalPadding", 0, new() { Invalidate = InvalidateKind.Measure });
     public double HorizontalPadding { get => GetValue(HorizontalPaddingProperty); set => SetValue(HorizontalPaddingProperty, Math.Max(0, value)); }
     public double VerticalPadding { get => GetValue(VerticalPaddingProperty); set => SetValue(VerticalPaddingProperty, Math.Max(0, value)); }
     public static readonly StyledProperty<string> TextProperty = StyledProperty<string>.Register<TextBox>("Text", "", new() { Invalidate = InvalidateKind.Measure });
@@ -25,6 +25,8 @@ public class TextBox : Element, IFrameAnimation
     private string _composition = "";
     private double _blinkElapsed;
     private bool _caretVisible = true;
+    private TextPresenter? _textPresenter;
+    private Rect? _presentationBounds;
     public string Text { get => GetValue(TextProperty); set => SetValue(TextProperty, value ?? ""); }
     public string Placeholder { get => GetValue(PlaceholderProperty); set => SetValue(PlaceholderProperty, value ?? ""); }
     public bool IsReadOnly { get => GetValue(IsReadOnlyProperty); set => SetValue(IsReadOnlyProperty, value); }
@@ -37,31 +39,33 @@ public class TextBox : Element, IFrameAnimation
     public string CompositionText => _composition;
     public bool CanUndo => _undo.Count > 0;
     public bool CanRedo => _redo.Count > 0;
+    /// <summary>Text and geometry consumed by an explicitly installed text presenter.</summary>
+    public string PresentedText => DisplayText;
+    public string PresentedComposition => DisplayComposition;
+    public double TextFontSize => FontSize;
+    public double TextLineHeight => LineHeight;
+    public Point TextOrigin => new(PresentationBounds.X + HorizontalPadding - _scrollX, TextTop - _scrollY);
+    public Rect TextViewportBounds => TextViewport;
+    public bool IsCaretVisible => _caretVisible;
+    public event Action? PresentationChanged;
     public override bool IsFocusable => true;
     public override bool IsTextInputClient => true;
     internal override void CancelPointerInteraction() => _dragging = false;
     protected override FocusVisualMode DefaultFocusVisualMode => FocusVisualMode.Control;
-    public override FocusVisualGeometry GetFocusVisualGeometry() => new(this, new(Point.Zero, FinalRect.Size), 4);
-    public override void RenderFocusVisual(IElementDrawingContext c)
-    {
-        // Layered chrome renders focus with its baseline in Render, also for pointer focus.
-        if (!c.HasLayeredChrome)
-            c.StrokeRectangle(new(.5, .5, Math.Max(0, FinalRect.Width - 1), Math.Max(0, FinalRect.Height - 1)), c.Accent, 1, c.CornerRadius);
-    }
+    public override FocusVisualGeometry GetFocusVisualGeometry() => new(this, new(Point.Zero, FinalRect.Size), CornerRadius);
     protected virtual bool CanCopy => true;
     protected virtual string DisplayText => Text;
     protected virtual string DisplayComposition => _composition;
     protected double FontSize => GetValue(TextBlock.FontSizeProperty);
     public TextBox()
     {
-        MinWidth = 80;
         AddHandler(TextInputEvent, e => { if (e is TextInputEventArgs t && !IsReadOnly) { if (t.Text.Any(c => !char.IsControl(c) || AcceptsReturn && c is '\r' or '\n')) InsertText(t.Text); e.Handled = true; } });
         AddHandler(TextCompositionEvent, e =>
         {
             if (e is not TextCompositionEventArgs c || IsReadOnly) return;
             _composition = c.Stage == CompositionStage.Updated ? c.Text : "";
             if (c.Stage == CompositionStage.Committed) InsertText(c.Text);
-            InvalidateMeasure(); InvalidateRender(); e.Handled = true;
+            InvalidateMeasure(); NotifyPresentationChanged(); e.Handled = true;
         });
         AddHandler(KeyDownEvent, HandleKey);
         AddHandler(PointerPressedEvent, e =>
@@ -71,14 +75,20 @@ public class TextBox : Element, IFrameAnimation
         });
         AddHandler(PointerMovedEvent, e => { if (_dragging && e is PointerEventArgs p) { MoveCaret(IndexAt(PointFromRoot(p.Position)), true); e.Handled = true; } });
         AddHandler(PointerReleasedEvent, _ => _dragging = false);
-        AddHandler(GotFocusEvent, _ => { _blinkElapsed = 0; _caretVisible = true; InvalidateRender(); });
-        AddHandler(LostFocusEvent, _ => { _composition = ""; _dragging = false; InvalidateMeasure(); InvalidateRender(); });
+        AddHandler(GotFocusEvent, _ => { _blinkElapsed = 0; _caretVisible = true; NotifyPresentationChanged(); });
+        AddHandler(LostFocusEvent, _ => { _composition = ""; _dragging = false; InvalidateMeasure(); NotifyPresentationChanged(); });
         PropertyChanged += (_, property) =>
         {
-            if (property != TextProperty) return;
-            _anchor = Boundary(Math.Min(_anchor, Text.Length)); _caret = Boundary(Math.Min(_caret, Text.Length));
-            if (!_editing) { _undo.Clear(); _redo.Clear(); }
-            InvalidateRender(); RaiseEvent(new(TextChangedEvent));
+            if (property == TextProperty)
+            {
+                _anchor = Boundary(Math.Min(_anchor, Text.Length)); _caret = Boundary(Math.Min(_caret, Text.Length));
+                if (!_editing) { _undo.Clear(); _redo.Clear(); }
+                NotifyPresentationChanged(); RaiseEvent(new(TextChangedEvent));
+            }
+            else if (property == PlaceholderProperty || property == TextBlock.FontSizeProperty ||
+                     property == HorizontalPaddingProperty || property == VerticalPaddingProperty ||
+                     property == AcceptsReturnProperty || property == PasswordBox.PasswordCharProperty)
+                NotifyPresentationChanged();
         };
     }
     protected virtual void HandlePointerPressed(PointerEventArgs p)
@@ -144,7 +154,7 @@ public class TextBox : Element, IFrameAnimation
     private void ChangedSelection()
     {
         _blinkElapsed = 0; _caretVisible = true;
-        EnsureCaretVisible(); InvalidateRender(); RaiseEvent(new(SelectionChangedEvent));
+        EnsureCaretVisible(); NotifyPresentationChanged(); RaiseEvent(new(SelectionChangedEvent));
     }
     public void InsertText(string value)
     {
@@ -216,7 +226,7 @@ public class TextBox : Element, IFrameAnimation
             case Key.Up:
             case Key.Down:
                 if (command) { MoveCaret(e.Key == Key.Up ? 0 : Text.Length, shift); break; }
-                var caret = CaretPosition(); MoveCaret(IndexAt(new(caret.X + 6 - _scrollX, caret.Y + 6 - _scrollY + (e.Key == Key.Up ? -1 : 1) * LineHeight)), shift); break;
+                var caret = CaretPosition(); MoveCaret(IndexAt(new(caret.X + PresentationBounds.X + HorizontalPadding - _scrollX, caret.Y + TextTop - _scrollY + (e.Key == Key.Up ? -1 : 1) * LineHeight)), shift); break;
             case Key.Backspace:
                 if (!IsReadOnly) { if (SelectionLength == 0 && _caret > 0) { var previous = command ? LineStart : word ? PreviousWord(_caret) : Previous(_caret); Select(previous, _caret - previous); } if (SelectionLength > 0) InsertText(""); }
                 break;
@@ -245,13 +255,15 @@ public class TextBox : Element, IFrameAnimation
         var lines = prefix.Split('\n');
         return new(TextMeasurer.Current.Measure(lines[^1], FontSize).Width, (lines.Length - 1) * LineHeight);
     }
-    private double TextTop => AcceptsReturn ? VerticalPadding : Math.Max(VerticalPadding, (FinalRect.Height - LineHeight) / 2);
-    public Rect CaretRect { get { var p = CaretPosition(); return new(p.X + HorizontalPadding - _scrollX, p.Y + TextTop - _scrollY, 1, LineHeight); } }
-    protected virtual Rect TextViewport => new(Math.Max(0, HorizontalPadding - 2), Math.Max(0, VerticalPadding - 2), Math.Max(0, FinalRect.Width - Math.Max(0, HorizontalPadding - 2) * 2), Math.Max(0, FinalRect.Height - Math.Max(0, VerticalPadding - 2) * 2));
+    protected Rect PresentationBounds => _presentationBounds ?? new Rect(Point.Zero, FinalRect.Size);
+    private double TextTop => PresentationBounds.Y + (AcceptsReturn ? VerticalPadding : Math.Max(VerticalPadding, (PresentationBounds.Height - LineHeight) / 2));
+    public Rect CaretRect { get { var p = CaretPosition(); return new(p.X + PresentationBounds.X + HorizontalPadding - _scrollX, p.Y + TextTop - _scrollY, 1, LineHeight); } }
+    protected virtual Rect TextViewport => new(PresentationBounds.X + HorizontalPadding, PresentationBounds.Y + VerticalPadding,
+        Math.Max(0, PresentationBounds.Width - HorizontalPadding * 2), Math.Max(0, PresentationBounds.Height - VerticalPadding * 2));
     private void EnsureCaretVisible()
     {
         var p = CaretPosition();
-        var w = Math.Max(1, TextViewport.Width - 6); var h = Math.Max(LineHeight, TextViewport.Height - 4);
+        var w = Math.Max(1, TextViewport.Width - CaretRect.Width); var h = Math.Max(LineHeight, TextViewport.Height);
         _scrollX = Math.Max(0, Math.Clamp(_scrollX, p.X - w, p.X)); _scrollY = Math.Max(0, Math.Clamp(_scrollY, p.Y - h + LineHeight, p.Y));
     }
     private int IndexAt(Point p)
@@ -259,7 +271,7 @@ public class TextBox : Element, IFrameAnimation
         var lines = DisplayText.Split('\n');
         var line = Math.Clamp((int)Math.Floor((p.Y - TextTop + _scrollY) / LineHeight), 0, lines.Length - 1);
         var start = lines.Take(line).Sum(l => l.Length + 1); var text = lines[line];
-        var x = Math.Max(0, p.X - HorizontalPadding + _scrollX);
+        var x = Math.Max(0, p.X - PresentationBounds.X - HorizontalPadding + _scrollX);
         var breaks = StringInfo.ParseCombiningCharacters(text).Append(text.Length).ToArray();
         for (var i = 1; i < breaks.Length; i++)
         {
@@ -269,47 +281,46 @@ public class TextBox : Element, IFrameAnimation
         }
         return Math.Min(Text.Length, start + text.Length);
     }
-    protected internal override Size MeasureCore(Size available)
+    public virtual Size MeasureTextContent(int minimumLines = 1)
     {
         var lines = DisplayText.Split('\n');
-        return new(Math.Max(80, lines.Max(l => TextMeasurer.Current.Measure(l, FontSize).Width) + HorizontalPadding * 2), Math.Max(AcceptsReturn ? 3 : 1, lines.Length) * LineHeight + VerticalPadding * 2);
+        var textWidth = lines.Max(l => TextMeasurer.Current.Measure(l, FontSize).Width);
+        if (Text.Length == 0) textWidth = Math.Max(textWidth, TextMeasurer.Current.Measure(Placeholder, FontSize).Width);
+        return new(textWidth + HorizontalPadding * 2,
+            Math.Max(Math.Max(1, minimumLines), lines.Length) * LineHeight + VerticalPadding * 2);
     }
-    protected internal override void ArrangeCore(Rect final) => EnsureCaretVisible();
+    protected internal override Size MeasureCore(Size available) => MeasureTextContent();
+    protected internal override void ArrangeCore(Rect final) => UpdateTextViewport();
+    public void UpdateTextViewport()
+    {
+        var previous = (_scrollX, _scrollY);
+        EnsureCaretVisible();
+        if (previous != (_scrollX, _scrollY)) NotifyPresentationChanged();
+    }
+    internal void SetTextPresenter(TextPresenter presenter, Rect bounds)
+    {
+        _textPresenter = presenter;
+        _presentationBounds = bounds;
+        UpdateTextViewport();
+    }
+    internal void RemoveTextPresenter(TextPresenter presenter)
+    {
+        if (!ReferenceEquals(_textPresenter, presenter)) return;
+        _textPresenter = null;
+        _presentationBounds = null;
+        UpdateTextViewport();
+    }
+    private void NotifyPresentationChanged()
+    {
+        InvalidateRender();
+        PresentationChanged?.Invoke();
+    }
     public void Advance(TimeSpan elapsed)
     {
         if (!IsFocused) return;
         _blinkElapsed = (_blinkElapsed + elapsed.TotalSeconds) % 1.1;
         var visible = _blinkElapsed < .55;
-        if (visible != _caretVisible) { _caretVisible = visible; InvalidateRender(); }
-    }
-    public override void Render(IElementDrawingContext c)
-    {
-        var bounds = new Rect(0, 0, FinalRect.Width, FinalRect.Height);
-        c.ControlSurface(bounds, c.CornerRadius, input: true, focused: IsFocused);
-        c.PushClip(TextViewport);
-        var lines = DisplayText.Split('\n'); int offset = 0;
-        for (var i = 0; i < lines.Length; i++)
-        {
-            var line = lines[i]; var y = TextTop + i * LineHeight - _scrollY;
-            var a = Math.Clamp(SelectionStart - offset, 0, line.Length); var b = Math.Clamp(SelectionStart + SelectionLength - offset, 0, line.Length);
-            if (b > a)
-            {
-                var x = TextMeasurer.Current.Measure(line[..a], FontSize).Width;
-                c.FillRectangle(new(HorizontalPadding + x - _scrollX, y, TextMeasurer.Current.Measure(line[a..b], FontSize).Width, LineHeight), c.Accent with { A = 100 });
-            }
-            c.Text(line, new(HorizontalPadding - _scrollX, y), FontSize, c.Foreground); offset += line.Length + 1;
-        }
-        if (Text.Length == 0 && _composition.Length == 0) c.Text(Placeholder, new(HorizontalPadding, TextTop), FontSize, c.MutedForeground);
-        if (IsFocused)
-        {
-            var caret = CaretRect; if (_caretVisible) c.FillRectangle(caret, c.Foreground);
-            if (_composition.Length > 0)
-            {
-                c.Text(DisplayComposition, caret.Location, FontSize, c.Foreground);
-                c.Line(new(caret.X, caret.Bottom), new(caret.X + TextMeasurer.Current.Measure(DisplayComposition, FontSize).Width, caret.Bottom), c.Accent);
-            }
-        }
-        c.PopClip();
+        if (visible != _caretVisible) { _caretVisible = visible; NotifyPresentationChanged(); }
     }
 }
 

@@ -1,0 +1,8 @@
+@namespace EclipseUI.Themes.Fluent
+@using EclipseUI.Elements
+@template TreeViewItem
+
+<Grid>
+    <FluentTreeViewItemVisual Owner={Owner} />
+    <ItemsPresenter Owner={Owner} />
+</Grid>

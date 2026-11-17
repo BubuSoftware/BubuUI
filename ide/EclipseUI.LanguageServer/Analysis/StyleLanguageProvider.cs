@@ -85,7 +85,7 @@ internal sealed partial class StyleLanguageProvider
         var boundary = header.FindIndex(t => t.Value == "/template/");
         if (!owner && boundary >= 0 && header.Count > boundary + 1) return Resolve(header[boundary + 1].Value, document);
         if (header.FirstOrDefault()?.Value == "&") return Target(node.Parent, document, owner);
-        return header.Count > 0 && header[0].Value != "." ? Resolve(header[0].Value, document) : Resolve("TemplatedControl", document);
+        return header.Count > 0 && header[0].Value != "." ? Resolve(header[0].Value, document) : _catalog.ElementStyleTarget;
     }
     private UiPropDef? Property(Node? node) => node is not null && !node.Block && node.Header.Count >= 2 && node.Header[1].Value == ":"
         && !Legacy(node) ? Target(node)?.Properties.GetValueOrDefault(node.Header[0].Value) : null;
@@ -135,6 +135,8 @@ internal sealed partial class StyleLanguageProvider
                 if (node?.Header.FirstOrDefault()?.Value == "Theme")
                     foreach (var theme in _themes.Where(t => FindTheme(t.Name) is not null && Compatible(Target(node), Resolve(t.Target, t.Document)?.ClrTypeDisplayName)))
                         Add(theme.Name, UiCompletionKind.Variable, "ControlTheme for " + theme.Target);
+                foreach (var resource in Resources(Property(node), prefix))
+                    Add(resource.Name, UiCompletionKind.Variable, resource.Field.Type.ToDisplayString());
             }
             else if (node?.Header.FirstOrDefault()?.Value == "Template")
                 foreach (var template in _templates.Where(t => Compatible(Target(node), t.Target)))
@@ -171,9 +173,9 @@ internal sealed partial class StyleLanguageProvider
                 foreach (var value in property.TypeShape.EnumMembers) Add(value, UiCompletionKind.EnumMember, property.ClrTypeDisplayName);
                 foreach (var value in _catalog.FindLiteralParser(property.TypeShape.CanonicalKey)?.Candidates ?? []) Add(value, UiCompletionKind.LiteralValue);
                 if (property.TypeShape.CanonicalKey == "bool") { Add("true", UiCompletionKind.Keyword); Add("false", UiCompletionKind.Keyword); }
-                if (property.Name == "Theme") Add("resource", UiCompletionKind.Method, "resource(ControlThemeName)", insertion: "resource(");
-                else if (property.Name == "Template") Add("template", UiCompletionKind.Method, "template(TemplateType)", insertion: "template(");
-                else Add("theme", UiCompletionKind.Method, "theme(dark, light)", insertion: "theme(");
+                Add("resource", UiCompletionKind.Method, "resource(ControlThemeName or Type.StaticField)", insertion: "resource(");
+                if (property.Name == "Template") Add("template", UiCompletionKind.Method, "template(TemplateType)", insertion: "template(");
+                else if (property.Name != "Theme") Add("theme", UiCompletionKind.Method, "theme(dark, light)", insertion: "theme(");
             }
         }
         else if (start > 0 && text[start - 1] == ':' && (node?.Block == true || node?.Parent is null || node?.Header.FirstOrDefault()?.Value == "&"))
@@ -323,11 +325,13 @@ internal sealed partial class StyleLanguageProvider
             "@using" => "Import a namespace containing controls or template factories.",
             "/template/" => "Explicit template boundary. Matches owned visual parts; does not cross nested templates or borrowed content.",
             "template" => "**template(TemplateType)** — construct a reusable control template factory.",
-            "resource" => "**resource(Name)** — control theme in this compilation module.",
+            "resource" => "**resource(Name)** — a control theme in this module, or a public static typed ThemeResource field.",
             "theme" => "**theme(dark, light)** — select a typed literal using the effective theme variant.",
             _ => null,
         };
         if (function == "resource" && FindTheme(argument) is { } theme) description = $"**{theme.Name}** — ControlTheme for `{theme.Target}`";
+        else if (function == "resource" && FindResource(argument, Property(node)) is { } resource)
+            description = $"**{resource.ContainingType.ToDisplayString()}.{resource.Name}** : `{resource.Type.ToDisplayString()}`\n\nTyped resource evaluated for the receiving element when the theme or state changes.";
         else if (function == "template" && FindTemplate(argument) is { } template) description = $"**{Qualified(template)}**\n\nControlTemplate for `{template.Target}`; each application creates a fresh visual tree.";
         else if (node is not null && node.Header.FirstOrDefault() == token && Property(node) is { } prop)
             description = $"**{prop.Name}** : `{TypeNames.Short(prop.ClrTypeDisplayName)}`\n\nStyled property declared by `{TypeNames.Short(prop.DeclaringTypeName)}`.";
@@ -346,6 +350,8 @@ internal sealed partial class StyleLanguageProvider
         if (token is null) return null;
         if (function == "resource" && FindTheme(argument) is { } theme)
             return new(theme.Document.Path, theme.Token.Span, theme.Name, theme.Document.Text);
+        if (function == "resource" && FindResource(argument, Property(node)) is { } resource)
+            return ResourceDefinition(resource);
         if (function == "template" && FindTemplate(argument) is { } template)
         {
             if (template.Path is not null && template.Text is not null)
@@ -449,7 +455,7 @@ internal sealed partial class StyleLanguageProvider
                 UiSignature? signature = name switch
                 {
                     "theme" => new("theme(dark, light)", "Both literals use the property's type; the effective theme selects one.", [new("dark", "Value in a dark theme"), new("light", "Value in a light theme")]),
-                    "resource" => new("resource(name)", "Control theme declared in this compilation module; target types must be compatible.", [new("name", "Control theme name")]),
+                    "resource" => new("resource(name)", "A control theme declared in this module, or a public static ThemeResource<T> field whose value type matches the property.", [new("name", "Control theme name or Type.StaticField")]),
                     "template" => new("template(type)", "Imported ControlTemplate factory compatible with the owning control.", [new("type", "Template factory type")]),
                     _ => null,
                 };
@@ -528,7 +534,7 @@ internal sealed partial class StyleLanguageProvider
         {
             var (t, node, function, argument) = Context(token.Span.Start);
             var kind = token.Value.StartsWith('@') || token.Value is "for" or "/template/" || States.Contains(token.Value) ? "keyword" :
-                function == "resource" && FindTheme(argument) is not null ? "variable" :
+                function == "resource" && (FindTheme(argument) is not null || FindResource(argument, Property(node)) is not null) ? "variable" :
                 function == "template" && FindTemplate(argument) is not null ? "class" :
                 node?.Header.FirstOrDefault()?.Value == "@theme" && node.Header.ElementAtOrDefault(1) == token ? "variable" :
                 token.Value.StartsWith('$') || StateToken(node, token) && StateNames().Contains(token.Value) ? "variable" :

@@ -11,7 +11,6 @@ public sealed class FluentTheme : ElementTheme, IElementThemeDefaults
     public static IHostTheme System { get; } = new SystemSource();
     public override bool IsLight { get; }
     private readonly Dictionary<StyledProperty, object> _defaults;
-    private static readonly object ControlMinHeight = 32d;
 
     private FluentTheme(bool light)
     {
@@ -37,19 +36,13 @@ public sealed class FluentTheme : ElementTheme, IElementThemeDefaults
         _defaults = new()
         {
             [TextBlock.FontSizeProperty] = 14d,
-            [Button.HorizontalPaddingProperty] = 12d,
-            [Button.VerticalPaddingProperty] = 5d,
-            [CheckBox.GlyphSizeProperty] = 20d,
-            [Slider.ThumbSizeProperty] = 22d,
-            [TextBox.HorizontalPaddingProperty] = 12d,
-            [TextBox.VerticalPaddingProperty] = 6d,
-            [Elements.Border.BorderColorProperty] = ToUi(ControlBorder),
-            [Elements.Border.CornerRadiusProperty] = ControlRadius,
-            [Elements.Border.BackgroundProperty] = ToUi(PopupBackground),
+            [Element.ForegroundProperty] = ToUi(Foreground),
+            [Visual.FocusRingWidthProperty] = 2d,
+            [Visual.FocusRingOffsetProperty] = 2d,
+            [Visual.FocusRingColorProperty] = FocusRing,
         };
     }
 
-    public override bool HasLayeredChrome => true;
     public override Color FocusRingInner => IsLight ? new(255, 255, 255, 179) : new(0, 0, 0, 179);
     public override Color AccentHover => Accent with { A = 230 };
     public override Color ButtonBackground => ControlBackground;
@@ -90,20 +83,39 @@ public sealed class FluentTheme : ElementTheme, IElementThemeDefaults
         _ => throw new ArgumentOutOfRangeException(nameof(variant)),
     };
 
+    private static readonly IReadOnlyDictionary<Type, ControlTheme> ControlThemes = new Dictionary<Type, ControlTheme>
+    {
+        [typeof(Button)] = StyleBootstrap.FluentButton,
+        [typeof(ToggleButton)] = StyleBootstrap.FluentToggleButton,
+        [typeof(CheckBox)] = StyleBootstrap.FluentCheckBox,
+        [typeof(RadioButton)] = StyleBootstrap.FluentRadioButton,
+        [typeof(ToggleSwitch)] = StyleBootstrap.FluentToggleSwitch,
+        [typeof(Slider)] = StyleBootstrap.FluentSlider,
+        [typeof(ProgressBar)] = StyleBootstrap.FluentProgressBar,
+        [typeof(TextBox)] = StyleBootstrap.FluentTextBox,
+        [typeof(PasswordBox)] = StyleBootstrap.FluentPasswordBox,
+        [typeof(NumericUpDown)] = StyleBootstrap.FluentNumericUpDown,
+        [typeof(ComboBox)] = StyleBootstrap.FluentComboBox,
+        [typeof(DatePicker)] = StyleBootstrap.FluentDatePicker,
+        [typeof(Calendar)] = StyleBootstrap.FluentCalendar,
+        [typeof(DropDownButton)] = StyleBootstrap.FluentDropDownButton,
+        [typeof(DataGridColumnHeader)] = StyleBootstrap.FluentDataGridColumnHeader,
+        [typeof(MenuItem)] = StyleBootstrap.FluentMenuItem,
+        [typeof(TreeViewItem)] = StyleBootstrap.FluentTreeViewItem,
+        [typeof(TreeView)] = StyleBootstrap.FluentTreeView,
+        [typeof(TabControl)] = StyleBootstrap.FluentTabControl,
+        [typeof(DataGrid)] = StyleBootstrap.FluentDataGrid,
+        [typeof(ListBoxItem)] = StyleBootstrap.FluentListBoxItem,
+        [typeof(ItemsControl)] = StyleBootstrap.FluentItemsControl,
+        [typeof(ScrollViewer)] = StyleBootstrap.FluentScrollViewer,
+        [typeof(Popup)] = StyleBootstrap.FluentPopup,
+    };
+
     public T GetDefault<T>(Element element, StyledProperty<T> property)
     {
-        if (ReferenceEquals(property, TemplatedControl.ThemeProperty) && element.GetType() == typeof(Button))
-            return (T)(object)StyleBootstrap.FluentButton;
-        if (ReferenceEquals(property, Button.LabelAlignmentProperty) && element.Parent is ComboBox)
-            return (T)(object)HorizontalAlignment.Left;
-        if (ReferenceEquals(property, Element.MinHeightProperty) && element is Button or TextBox or ComboBox or DatePicker or CheckBox)
-            return (T)ControlMinHeight;
-        if (ReferenceEquals(property, Element.HeightProperty) && element is ProgressBar) return (T)(object)3d;
-        if (ReferenceEquals(property, Element.MinHeightProperty) && element is Slider { Orientation: Orientation.Horizontal }) return (T)ControlMinHeight;
-        if (ReferenceEquals(property, Element.MinWidthProperty) && element is Slider { Orientation: Orientation.Vertical }) return (T)ControlMinHeight;
-        // Ordinary borders stay transparent; popup borders share their enclosing surface.
-        if (ReferenceEquals(property, Elements.Border.BackgroundProperty) && element.Parent is not Popup)
-            return property.DefaultValue;
+        if (ReferenceEquals(property, Element.ThemeProperty))
+            for (var type = element.GetType(); type is not null; type = type.BaseType)
+                if (ControlThemes.TryGetValue(type, out var theme)) return (T)(object)theme;
         return _defaults.TryGetValue(property, out var value) && value is T result ? result : property.DefaultValue;
     }
 

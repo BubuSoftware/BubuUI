@@ -8,12 +8,7 @@ public static class TextShaperFactory
     /// <summary>尝试创建 HarfBuzz shaper；失败返回 null（调用方使用 MeasuringTextPainter）。</summary>
     public static HarfBuzzTextShaper? TryCreate()
     {
-        var candidates = new[]
-        {
-            @"C:\Windows\Fonts\segoeui.ttf",
-            @"C:\Windows\Fonts\msyh.ttc",
-            @"C:\Windows\Fonts\arial.ttf",
-        };
+        var candidates = new HarfBuzzTextOptions().FontPaths;
 
         foreach (var path in candidates)
         {

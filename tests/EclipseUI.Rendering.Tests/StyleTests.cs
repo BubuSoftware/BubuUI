@@ -106,9 +106,9 @@ public class StyleTests : IDisposable
         var root = new StackPanel();
         var button = new Button { Label = "Go", Classes = ["accent"] };
         root.Children.Add(button);
-        new HeadlessRoot(root) { AvailableSize = Surface }.UpdateLayout();
+        new HeadlessRoot(FluentTest.Skin(root)) { AvailableSize = Surface }.UpdateLayout();
 
-        var painter = new ElementPainter(ElementTheme.Dark);
+        var painter = new ElementPainter(FluentTheme.Dark);
         var list = painter.Build(root, Surface);
 
         // 按钮背景命令取 class 色，而非主题 Accent。
@@ -117,11 +117,11 @@ public class StyleTests : IDisposable
             .FirstOrDefault(b => b.Color == ClassColor);
         Assert.NotNull(fill);
         Assert.DoesNotContain(list.Commands.OfType<FillRoundedRect>(),
-            f => f.Brush is SolidColorBrush { Color: var c } && c == ElementTheme.Dark.Accent);
+            f => f.Brush is SolidColorBrush { Color: var c } && c == FluentTheme.Dark.Accent);
 
         // 视觉变化进段缓存：复用帧背景命令仍在（段含覆盖色）。
         var reused = painter.Build(root, Surface);
-        Assert.Equal((2, 0), painter.LastBuildStats);
+        Assert.Equal((FluentTest.VisualCount(root), 0), painter.LastBuildStats);
         Assert.Contains(reused.Commands.OfType<FillRoundedRect>(),
             f => f.Brush is SolidColorBrush { Color: var c } && c == ClassColor);
     }
@@ -139,7 +139,7 @@ public class StyleTests : IDisposable
         var root = new StackPanel();
         var button = new Button { Label = "Go", Classes = ["papi"] };
         root.Children.Add(button);
-        var headless = new HeadlessRoot(root) { AvailableSize = Surface };
+        var headless = new HeadlessRoot(FluentTest.Skin(root)) { AvailableSize = Surface };
         headless.UpdateLayout();
         return (headless, button, root);
     }
@@ -201,20 +201,20 @@ public class StyleTests : IDisposable
     public void PseudoState_Change_RebuildsSegment_ThenReuses()
     {
         var (headless, button) = BuildButtonTree(_registry);
-        var painter = new ElementPainter(ElementTheme.Dark);
+        var painter = new ElementPainter(FluentTheme.Dark);
 
         painter.Build(headless.Content, Surface); // 首帧全画
         painter.Build(headless.Content, Surface);
-        Assert.Equal((2, 0), painter.LastBuildStats); // 稳定后全复用
+        Assert.Equal((FluentTest.VisualCount(headless.Content), 0), painter.LastBuildStats); // 稳定后全复用
 
         headless.PointerMove(CenterOf(button)); // IsHovered → InvalidateRender → Version++
         var hoveredList = painter.Build(headless.Content, Surface);
-        Assert.Equal((1, 1), painter.LastBuildStats); // button 段重建（含 hover 变体色）
+        Assert.Equal((1, FluentTest.VisualCount(button)), painter.LastBuildStats); // button 段重建（含 hover 变体色）
         Assert.Contains(hoveredList.Commands.OfType<FillRoundedRect>(),
             f => f.Brush is SolidColorBrush { Color: var c } && c == HoverColor);
 
         painter.Build(headless.Content, Surface);
-        Assert.Equal((2, 0), painter.LastBuildStats); // 状态稳定后恢复全复用
+        Assert.Equal((FluentTest.VisualCount(headless.Content), 0), painter.LastBuildStats); // 状态稳定后恢复全复用
     }
 
     // ---- E3 :disabled 变体与置灰兜底 ----
@@ -252,35 +252,35 @@ public class StyleTests : IDisposable
         var root = new StackPanel();
         var button = new Button { Label = "No", IsEnabled = false }; // 无类：走主题置灰令牌兜底
         root.Children.Add(button);
-        new HeadlessRoot(root) { AvailableSize = Surface }.UpdateLayout();
+        new HeadlessRoot(FluentTest.Skin(root)) { AvailableSize = Surface }.UpdateLayout();
 
-        var painter = new ElementPainter(ElementTheme.Dark);
+        var painter = new ElementPainter(FluentTheme.Dark);
         var list = painter.Build(root, Surface);
 
         Assert.Contains(list.Commands.OfType<FillRoundedRect>(),
-            f => f.Brush is SolidColorBrush { Color: var c } && c == ElementTheme.Dark.DisabledBackground);
+            f => f.Brush is SolidColorBrush { Color: var c } && c == FluentTheme.Dark.DisabledBackground);
         Assert.DoesNotContain(list.Commands.OfType<FillRoundedRect>(),
-            f => f.Brush is SolidColorBrush { Color: var c } && c == ElementTheme.Dark.Accent);
+            f => f.Brush is SolidColorBrush { Color: var c } && c == FluentTheme.Dark.Accent);
     }
 
     [Fact]
     public void DisabledVariant_RebuildsSegment_ThenReuses()
     {
         var (headless, button, _) = BuildButtonTreeWithRoot(_registry);
-        var painter = new ElementPainter(ElementTheme.Dark);
+        var painter = new ElementPainter(FluentTheme.Dark);
 
         painter.Build(headless.Content, Surface);
         painter.Build(headless.Content, Surface);
-        Assert.Equal((2, 0), painter.LastBuildStats); // 稳定后全复用
+        Assert.Equal((FluentTest.VisualCount(headless.Content), 0), painter.LastBuildStats); // 稳定后全复用
 
         button.IsEnabled = false;
         var disabledList = painter.Build(headless.Content, Surface);
-        Assert.Equal((1, 1), painter.LastBuildStats); // button 段重建（含 :disabled 变体色）
+        Assert.Equal((1, FluentTest.VisualCount(button)), painter.LastBuildStats); // button 段重建（含 :disabled 变体色）
         Assert.Contains(disabledList.Commands.OfType<FillRoundedRect>(),
             f => f.Brush is SolidColorBrush { Color: var c } && c == DisabledBg);
 
         painter.Build(headless.Content, Surface);
-        Assert.Equal((2, 0), painter.LastBuildStats);
+        Assert.Equal((FluentTest.VisualCount(headless.Content), 0), painter.LastBuildStats);
     }
 
     [Fact]
@@ -289,15 +289,15 @@ public class StyleTests : IDisposable
         var root = new StackPanel();
         var button = new Button { Label = "Go", Classes = ["thickring"] };
         root.Children.Add(button);
-        var headless = new HeadlessRoot(root) { AvailableSize = Surface };
+        var headless = new HeadlessRoot(FluentTest.Skin(root)) { AvailableSize = Surface };
         headless.UpdateLayout();
         headless.Focus.Focus(button); // 焦点环出现（width 取 class 覆盖 5）
 
-        var painter = new ElementPainter(ElementTheme.Dark);
+        var painter = new ElementPainter(FluentTheme.Dark);
         painter.Build(headless.Content, Surface);
         var list = painter.Build(headless.Content, Surface); // 复用帧也含环命令
 
-        var stroke = Assert.Single(list.Commands.OfType<StrokePath>());
+        var stroke = Assert.Single(list.Commands.OfType<StrokePath>(), s => s.Width == 5 && s.Brush is SolidColorBrush { Color: var c } && c == FluentTheme.Dark.FocusRing);
         Assert.Equal(5, stroke.Width); // 环宽取 class 值，而非主题令牌 2
     }
     [Fact]
@@ -306,10 +306,10 @@ public class StyleTests : IDisposable
         _registry.Define("shell", s => s.Padding(0)).FocusWithin(s => s.Padding(5));
         _registry.Define("action", s => s.FocusRingOffset(7)).Focus(s => s.FocusRingWidth(3)).FocusVisible(s => s.FocusRingColor(new Color(255, 0, 255)));
         var root = new StackPanel { Classes = ["shell"] }; var button = new Button { Classes = ["action"] }; root.Children.Add(button);
-        using var host = new HeadlessRoot(root); host.Focus.Focus(button, FocusOrigin.Pointer);
-        Assert.Equal(5, root.Padding); Assert.Equal(3, Visual.GetFocusRingWidth(button)); Assert.Null(Visual.GetFocusRingColor(button));
+        using var host = new HeadlessRoot(FluentTest.Skin(root)); host.Focus.Focus(button, FocusOrigin.Pointer);
+        Assert.Equal(5, root.Padding); Assert.Equal(3, Visual.GetFocusRingWidth(button)); Assert.Equal(FluentTheme.Dark.FocusRing, Visual.GetFocusRingColor(button));
         host.Focus.NotifyInput(FocusOrigin.Keyboard); Assert.Equal(new Color(255, 0, 255), Visual.GetFocusRingColor(button));
-        host.Focus.ClearFocus(); Assert.Equal(0, root.Padding); Assert.Null(Visual.GetFocusRingWidth(button));
+        host.Focus.ClearFocus(); Assert.Equal(0, root.Padding); Assert.Equal(FluentTheme.Dark.FocusRingWidth, Visual.GetFocusRingWidth(button));
     }
 
 }

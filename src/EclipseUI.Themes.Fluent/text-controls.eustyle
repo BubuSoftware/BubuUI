@@ -1,0 +1,57 @@
+@using EclipseUI.Elements;
+@using EclipseUI.Themes.Fluent;
+
+@theme FluentTextBox for TextBox {
+    Template: template(FluentTextBoxTemplate);
+    MinWidth: 80;
+    MinHeight: 32;
+    HorizontalPadding: 12;
+    VerticalPadding: 6;
+    CornerRadius: 4;
+    Background: resource(FluentResources.ControlBackground);
+    Foreground: resource(FluentResources.Foreground);
+    BorderBrush: resource(FluentResources.ControlBorder);
+    &:hover { Background: resource(FluentResources.ControlHoverBackground); }
+    &:focus { Background: resource(FluentResources.InputActiveBackground); }
+    &:disabled {
+        Background: resource(FluentResources.DisabledBackground);
+        Foreground: resource(FluentResources.DisabledForeground);
+    }
+}
+
+@theme FluentPasswordBox for PasswordBox {
+    Template: template(FluentPasswordBoxTemplate);
+    MinWidth: 80;
+    MinHeight: 32;
+    HorizontalPadding: 12;
+    VerticalPadding: 6;
+    CornerRadius: 4;
+    Background: resource(FluentResources.ControlBackground);
+    Foreground: resource(FluentResources.Foreground);
+    BorderBrush: resource(FluentResources.ControlBorder);
+    &:hover { Background: resource(FluentResources.ControlHoverBackground); }
+    &:focus { Background: resource(FluentResources.InputActiveBackground); }
+    &:disabled {
+        Background: resource(FluentResources.DisabledBackground);
+        Foreground: resource(FluentResources.DisabledForeground);
+    }
+}
+
+@theme FluentNumericUpDown for NumericUpDown {
+    Template: template(FluentNumericUpDownTemplate);
+    MinWidth: 80;
+    MinHeight: 32;
+    HorizontalPadding: 12;
+    VerticalPadding: 6;
+    SpinnerWidth: 20;
+    CornerRadius: 4;
+    Background: resource(FluentResources.ControlBackground);
+    Foreground: resource(FluentResources.Foreground);
+    BorderBrush: resource(FluentResources.ControlBorder);
+    &:hover { Background: resource(FluentResources.ControlHoverBackground); }
+    &:focus { Background: resource(FluentResources.InputActiveBackground); }
+    &:disabled {
+        Background: resource(FluentResources.DisabledBackground);
+        Foreground: resource(FluentResources.DisabledForeground);
+    }
+}

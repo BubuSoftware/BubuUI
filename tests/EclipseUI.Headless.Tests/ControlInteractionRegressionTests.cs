@@ -1,4 +1,5 @@
 using EclipseUI.Elements;
+using EclipseUI.Themes.Fluent;
 using Xunit;
 
 namespace EclipseUI.Headless.Tests;
@@ -10,13 +11,14 @@ public class ControlInteractionRegressionTests
     public void ClickingButtonContentRaisesClickOnItsButton()
     {
         var inner = new Border { Width = 50, Height = 20 }; var button = new Button { Content = inner }; int clicks = 0; button.AddHandler(Button.ClickEvent, _ => clicks++);
+        button.SetThemeDefaults(FluentTheme.Light);
         using var host = new HeadlessRoot(button); host.UpdateLayout(); var point = PointIn(inner); host.PointerPress(point); host.PointerRelease(point);
         Assert.Equal(1, clicks); Assert.False(button.IsPressed); Assert.False(inner.IsPressed);
     }
     [Fact]
     public void NumericSpinnerButtonsWorkThroughTheTextEditorInputHandler()
     {
-        var number = new NumericUpDown { Width = 120, Value = 5 }; using var host = new HeadlessRoot(number); host.UpdateLayout();
+        var number = new NumericUpDown { Width = 120, Height = 32, SpinnerWidth = 20, Value = 5 }; using var host = new HeadlessRoot(number); host.UpdateLayout();
         var up = PointIn(number, 110, 6); host.PointerPress(up); host.PointerRelease(up); Assert.Equal(6, number.Value);
     }
     [Fact]
@@ -36,6 +38,7 @@ public class ControlInteractionRegressionTests
     {
         var grid = new Grid { Width = 300, Height = 200 }; var content = new Border { Width = 80, Height = 20 }; var button = new Button { Content = content, VerticalAlignment = VerticalAlignment.Top };
         var tip = new ToolTip { Target = button, Content = new Border { Width = 100, Height = 30 } }; grid.Children.Add(button); grid.Children.Add(tip);
+        grid.SetThemeDefaults(FluentTheme.Light);
         using var host = new HeadlessRoot(grid); host.UpdateLayout(); host.PointerMove(PointIn(content)); Assert.True(tip.IsOpen);
         host.PointerMove(new(290, 190)); Assert.False(tip.IsOpen);
     }
@@ -45,6 +48,7 @@ public class ControlInteractionRegressionTests
         var root = new Grid { Width = 400, Height = 300 }; var outerBody = new StackPanel(); var target = new Button { Label = "owner" }; outerBody.Children.Add(target);
         var innerBody = new Button { Label = "nested", Width = 100 }; var inner = new Popup { Content = innerBody, PlacementTarget = target, Placement = Placement.Right, IsOpen = true }; outerBody.Children.Add(inner);
         var outer = new Popup { Content = outerBody, IsOpen = true }; root.Children.Add(outer);
+        root.SetThemeDefaults(FluentTheme.Light);
         using var host = new HeadlessRoot(root); host.UpdateLayout(); host.PointerPress(PointIn(innerBody)); Assert.True(outer.IsOpen); Assert.True(inner.IsOpen);
     }
     [Fact]
@@ -56,28 +60,38 @@ public class ControlInteractionRegressionTests
     [Fact]
     public void DatePickerAltDownIsHandledBeforeTextBoxNavigation()
     {
-        var picker = new DatePicker(); using var host = new HeadlessRoot(picker); host.UpdateLayout(); host.Focus.Focus(picker.Children.OfType<TextBox>().Single()); host.Input.KeyPress(Key.Down, KeyModifiers.Alt); Assert.True(picker.IsDropDownOpen);
+        var picker = new DatePicker(); picker.SetThemeDefaults(FluentTheme.Light);
+        using var host = new HeadlessRoot(picker); host.UpdateLayout(); host.Focus.Focus(picker.Descendants().OfType<TextBox>().Single()); host.Input.KeyPress(Key.Down, KeyModifiers.Alt); Assert.True(picker.IsDropDownOpen);
     }
     [Fact]
     public void ClickingEditableDataGridCellSelectsItsRowBeforeTextInputConsumesPointer()
     {
         var grid = new DataGrid { Width = 300, Height = 160, IsReadOnly = false, ItemsSource = new[] { new ControlCatalogTests.Row { Name = "one" }, new ControlCatalogTests.Row { Name = "two" } } };
+        grid.SetThemeDefaults(FluentTheme.Light);
         grid.Columns.Add(new() { Header = "Name", Binding = "Name" }); using var host = new HeadlessRoot(grid); host.UpdateLayout(); host.UpdateLayout();
         var editor = grid.Descendants().OfType<TextBox>().Last(); host.PointerPress(PointIn(editor)); Assert.Equal(1, grid.SelectedIndex); Assert.Same(editor, host.Focus.Focused);
     }
     [Fact]
     public void FrameClockAdvancesOnlyActiveVisibleAnimations()
     {
-        var root = new StackPanel(); var progress = new ProgressBar { IsIndeterminate = true }; var idle = new ProgressBar(); root.Children.Add(progress); root.Children.Add(idle);
-        using var host = new HeadlessRoot(root); host.UpdateLayout(); var moving = progress.RenderVersion; var stationary = idle.RenderVersion;
-        FrameAnimations.Advance(root, TimeSpan.FromSeconds(.2)); Assert.True(progress.RenderVersion > moving); Assert.Equal(stationary, idle.RenderVersion);
-        progress.IsVisible = false; moving = progress.RenderVersion; FrameAnimations.Advance(root, TimeSpan.FromSeconds(.2)); Assert.Equal(moving, progress.RenderVersion);
+        var root = new StackPanel();
+        var progress = new ProgressBar { IsIndeterminate = true, Theme = EclipseUI.Themes.Fluent.StyleBootstrap.FluentProgressBar };
+        var idle = new ProgressBar { Theme = EclipseUI.Themes.Fluent.StyleBootstrap.FluentProgressBar };
+        root.Children.Add(progress); root.Children.Add(idle);
+        using var host = new HeadlessRoot(root); host.UpdateLayout();
+        var movingVisual = progress.Descendants().OfType<EclipseUI.Themes.Fluent.FluentProgressBarVisual>().Single();
+        var idleVisual = idle.Descendants().OfType<EclipseUI.Themes.Fluent.FluentProgressBarVisual>().Single();
+        var moving = movingVisual.RenderVersion; var stationary = idleVisual.RenderVersion;
+        FrameAnimations.Advance(root, TimeSpan.FromSeconds(.2)); Assert.True(movingVisual.RenderVersion > moving); Assert.Equal(stationary, idleVisual.RenderVersion);
+        progress.IsVisible = false; moving = movingVisual.RenderVersion;
+        FrameAnimations.Advance(root, TimeSpan.FromSeconds(.2)); Assert.Equal(moving, movingVisual.RenderVersion);
     }
 
     [Fact]
     public void DropdownKeyboardNavigatesWithoutClosingUntilEnter()
     {
         var combo = new ComboBox { ItemsSource = new[] { "one", "two", "three" } };
+        combo.SetThemeDefaults(FluentTheme.Light);
         using var host = new HeadlessRoot(combo); host.UpdateLayout(); host.Focus.Focus(combo);
         host.Input.KeyPress(Key.Down, KeyModifiers.Alt); host.UpdateLayout();
         host.KeyPress(Key.Down); host.KeyPress(Key.Down); Assert.Equal(1, combo.SelectedIndex); Assert.True(combo.IsDropDownOpen);
@@ -87,8 +101,9 @@ public class ControlInteractionRegressionTests
     [Fact]
     public void CalendarArrowNavigationKeepsPopupOpenUntilDateIsChosen()
     {
-        var picker = new DatePicker { SelectedDate = new(2026, 11, 14) }; using var host = new HeadlessRoot(picker); host.UpdateLayout();
-        host.Focus.Focus(picker.Children.OfType<TextBox>().Single()); host.Input.KeyPress(Key.Down, KeyModifiers.Alt); host.UpdateLayout();
+        var picker = new DatePicker { SelectedDate = new(2026, 11, 14) }; picker.SetThemeDefaults(FluentTheme.Light);
+        using var host = new HeadlessRoot(picker); host.UpdateLayout();
+        host.Focus.Focus(picker.Descendants().OfType<TextBox>().Single()); host.Input.KeyPress(Key.Down, KeyModifiers.Alt); host.UpdateLayout();
         host.KeyPress(Key.Right); Assert.Equal(new DateTime(2026, 11, 15), picker.SelectedDate); Assert.True(picker.IsDropDownOpen);
         host.KeyPress(Key.Enter); Assert.False(picker.IsDropDownOpen);
     }
@@ -106,6 +121,7 @@ public class ControlInteractionRegressionTests
     {
         var data = Enumerable.Range(0, 100).Select(i => new ControlCatalogTests.Row { Count = i }).ToArray();
         var grid = new DataGrid { Width = 300, Height = 160, IsReadOnly = false, ItemsSource = data };
+        grid.SetThemeDefaults(FluentTheme.Light);
         grid.Columns.Add(new() { Header = "Count", Binding = "Count" }); using var host = new HeadlessRoot(grid); host.UpdateLayout(); host.UpdateLayout();
         var editor = grid.Descendants().OfType<TextBox>().First(); host.Focus.Focus(editor); editor.SelectAll(); host.Input.TextInput("42");
         grid.Descendants().OfType<ScrollViewer>().Single().ScrollToEnd(); host.UpdateLayout(); Assert.Equal(42, data[0].Count);

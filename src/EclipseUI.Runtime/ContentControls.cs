@@ -33,14 +33,14 @@ public class Border : ContentControl
         var inset = Padding + BorderThickness;
         return new Rect(inset, inset, Math.Max(0, FinalRect.Width - inset * 2), Math.Max(0, FinalRect.Height - inset * 2));
     }
-    public static readonly StyledProperty<UiColor> BackgroundProperty = StyledProperty<UiColor>.Register<Border>("Background", UiColor.Transparent, new() { Invalidate = InvalidateKind.Render });
-    public static readonly StyledProperty<UiColor> BorderColorProperty = StyledProperty<UiColor>.Register<Border>("BorderColor", new(100, 110, 125), new() { Invalidate = InvalidateKind.Render });
+    public new static readonly StyledProperty<UiColor> BackgroundProperty = StyledProperty<UiColor>.Register<Border>("Background", UiColor.Transparent, new() { Invalidate = InvalidateKind.Render });
+    public static readonly StyledProperty<UiColor> BorderColorProperty = StyledProperty<UiColor>.Register<Border>("BorderColor", UiColor.Transparent, new() { Invalidate = InvalidateKind.Render });
     public static readonly StyledProperty<double> BorderThicknessProperty = StyledProperty<double>.Register<Border>("BorderThickness", 1, new() { Invalidate = InvalidateKind.Measure });
-    public static readonly StyledProperty<double> CornerRadiusProperty = StyledProperty<double>.Register<Border>("CornerRadius", 4, new() { Invalidate = InvalidateKind.Render });
-    public UiColor Background { get => GetValue(BackgroundProperty); set => SetValue(BackgroundProperty, value); }
+    public new static readonly StyledProperty<double> CornerRadiusProperty = StyledProperty<double>.Register<Border>("CornerRadius", 0, new() { Invalidate = InvalidateKind.Render });
+    public new UiColor Background { get => GetValue(BackgroundProperty); set => SetValue(BackgroundProperty, value); }
     public UiColor BorderColor { get => GetValue(BorderColorProperty); set => SetValue(BorderColorProperty, value); }
     public double BorderThickness { get => GetValue(BorderThicknessProperty); set => SetValue(BorderThicknessProperty, Math.Max(0, value)); }
-    public double CornerRadius { get => GetValue(CornerRadiusProperty); set => SetValue(CornerRadiusProperty, Math.Max(0, value)); }
+    public new double CornerRadius { get => GetValue(CornerRadiusProperty); set => SetValue(CornerRadiusProperty, Math.Max(0, value)); }
     protected internal override Size MeasureCore(Size available)
     {
         var t = BorderThickness * 2;

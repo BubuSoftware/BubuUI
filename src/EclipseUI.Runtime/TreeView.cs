@@ -4,9 +4,8 @@ namespace EclipseUI.Elements;
 
 public class TreeViewItem : StackPanel
 {
-    public override Rect? GetDrawingClip() => new Rect(0, 0, FinalRect.Width, Math.Min(28, FinalRect.Height));
-    public override Rect? GetContentClip() => new Rect(20, 28, Math.Max(0, FinalRect.Width - 20), Math.Max(0, FinalRect.Height - 28));
-    public override FocusVisualGeometry GetFocusVisualGeometry() => new(this, new(4, 4, Math.Max(0, FinalRect.Width - 8), 20), 3);
+    public override Rect? GetContentClip() => new Rect(Point.Zero, FinalRect.Size);
+    public override FocusVisualGeometry GetFocusVisualGeometry() => new(this, new(0, 0, FinalRect.Width, HeaderHeight), 0);
     public static readonly StyledProperty<string> HeaderProperty = StyledProperty<string>.Register<TreeViewItem>("Header", "", new() { Invalidate = InvalidateKind.Measure });
     public static readonly StyledProperty<bool> IsExpandedProperty = StyledProperty<bool>.Register<TreeViewItem>("IsExpanded", false, new() { Invalidate = InvalidateKind.Measure });
     public static readonly StyledProperty<bool> IsSelectedProperty = StyledProperty<bool>.Register<TreeViewItem>("IsSelected", false, new() { Invalidate = InvalidateKind.Render });
@@ -16,53 +15,58 @@ public class TreeViewItem : StackPanel
     public bool IsSelected { get => GetValue(IsSelectedProperty); set => SetValue(IsSelectedProperty, value); }
     public object? Item { get; set; }
     public override bool IsFocusable => true;
-    public override bool UsesDefaultDrawing => false;
+    public static readonly StyledProperty<double> HeaderHeightProperty = StyledProperty<double>.Register<TreeViewItem>(nameof(HeaderHeight), 0, new() { Invalidate = InvalidateKind.Measure });
+    public static readonly StyledProperty<double> IndentProperty = StyledProperty<double>.Register<TreeViewItem>(nameof(Indent), 0, new() { Invalidate = InvalidateKind.Measure });
+    public static readonly StyledProperty<double> HeaderPaddingProperty = StyledProperty<double>.Register<TreeViewItem>(nameof(HeaderPadding), 0, new() { Invalidate = InvalidateKind.Measure });
+    public double HeaderHeight { get => GetValue(HeaderHeightProperty); set => SetValue(HeaderHeightProperty, Math.Max(0, value)); }
+    public double Indent { get => GetValue(IndentProperty); set => SetValue(IndentProperty, Math.Max(0, value)); }
+    public double HeaderPadding { get => GetValue(HeaderPaddingProperty); set => SetValue(HeaderPaddingProperty, Math.Max(0, value)); }
     public TreeViewItem()
     {
         PropertyChanged += (_, p) => { if (p == IsExpandedProperty) { UpdateChildren(); InvalidateRender(); RaiseEvent(new(ExpandedChangedEvent)); } };
         AddHandler(PointerPressedEvent, e =>
         {
-            if (e is not PointerEventArgs p || !ReferenceEquals(e.Source, this) || PointFromRoot(p.Position).Y > 28) return;
-            if (PointFromRoot(p.Position).X < 20 && Children.Count > 0) IsExpanded = !IsExpanded;
+            if (e is not PointerEventArgs p || !IsOwnHeaderSource(e.Source) || PointFromRoot(p.Position).Y > HeaderHeight) return;
+            if (PointFromRoot(p.Position).X < Indent && Children.Count > 0) IsExpanded = !IsExpanded;
             FindTree()?.Select(this); e.Handled = true;
         });
         AddHandler(KeyDownEvent, e =>
         {
             if (e is not KeyEventArgs k || !ReferenceEquals(e.Source, this)) return;
             if (k.Key == Key.Right) { if (!IsExpanded && Children.Count > 0) IsExpanded = true; else if (Children.OfType<TreeViewItem>().FirstOrDefault() is { } first) { FindTree()?.Select(first); first.RequestFocus(); } }
-            else if (k.Key == Key.Left) { if (IsExpanded) IsExpanded = false; else if (Parent is TreeViewItem parent) { FindTree()?.Select(parent); parent.RequestFocus(); } }
+            else if (k.Key == Key.Left) { if (IsExpanded) IsExpanded = false; else if (FindParentItem() is { } parent) { FindTree()?.Select(parent); parent.RequestFocus(); } }
             else if (k.Key is Key.Space or Key.Enter) FindTree()?.Select(this);
             else return;
             e.Handled = true;
         });
     }
+    private bool IsOwnHeaderSource(Element? source)
+    {
+        for (var element = source; element is not null && !ReferenceEquals(element, this); element = element.Parent)
+            if (element is TreeViewItem) return false;
+        return source is not null;
+    }
+    private TreeViewItem? FindParentItem() { for (var p = Parent; p is not null; p = p.Parent) if (p is TreeViewItem item) return item; return null; }
     private TreeView? FindTree() { for (var p = Parent; p is not null; p = p.Parent) if (p is TreeView tree) return tree; return null; }
     private void UpdateChildren() { foreach (var child in Children) child.IsVisible = IsExpanded; }
     protected internal override void OnChildrenChanged() { UpdateChildren(); base.OnChildrenChanged(); }
     protected internal override Size MeasureCore(Size available)
     {
         var size = TextMeasurer.Current.Measure(Header, GetValue(TextBlock.FontSizeProperty));
-        double w = size.Width + 28, h = 28;
+        double w = size.Width + HeaderPadding, h = HeaderHeight;
         foreach (var child in Children)
         {
-            child.Measure(new(Math.Max(0, available.Width - 20), double.PositiveInfinity));
-            if (IsExpanded) { w = Math.Max(w, child.DesiredSize.Width + 20); h += child.DesiredSize.Height; }
+            child.Measure(new(Math.Max(0, available.Width - Indent), double.PositiveInfinity));
+            if (IsExpanded) { w = Math.Max(w, child.DesiredSize.Width + Indent); h += child.DesiredSize.Height; }
         }
         return new(w, h);
     }
     protected internal override void ArrangeCore(Rect final)
     {
-        double y = 28;
-        foreach (var child in Children) { child.Arrange(new(20, y, Math.Max(0, final.Width - 20), IsExpanded ? child.DesiredSize.Height : 0)); if (IsExpanded) y += child.DesiredSize.Height; }
+        double y = HeaderHeight;
+        foreach (var child in Children) { child.Arrange(new(Indent, y, Math.Max(0, final.Width - Indent), IsExpanded ? child.DesiredSize.Height : 0)); if (IsExpanded) y += child.DesiredSize.Height; }
     }
-    public override void Render(IElementDrawingContext c)
-    {
-        c.FillRectangle(new(0, 0, FinalRect.Width, 28), IsSelected ? c.SelectionBackground : c.Background, c.CornerRadius);
-        var fg = IsSelected ? c.SelectionForeground : c.Foreground;
-        if (IsSelected) c.FillRectangle(new(3, 6, 3, 16), c.Accent, 1.5);
-        if (Children.Count > 0) ControlIcons.Chevron(c, new(10, 14), right: !IsExpanded);
-        c.Text(Header, new(24, 4), GetValue(TextBlock.FontSizeProperty), fg);
-    }
+
 }
 
 public class TreeView : StackPanel

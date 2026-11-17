@@ -34,7 +34,14 @@ public abstract class Panel : Element
         set => SetValue(ClipToBoundsProperty, value);
     }
 
-    internal override IEnumerable<Element> VisualChildren => _children;
+    public override IReadOnlyList<Element> VisualChildren => TemplateRoot is not null
+        ? base.VisualChildren : _children.IsProjected ? Array.Empty<Element>() : _children;
+
+    protected override void OnDispose()
+    {
+        foreach (var child in _children.ToArray()) if (!child.IsDisposed) child.Dispose();
+        base.OnDispose();
+    }
 }
 
 /// <summary>垂直堆叠布局（StackPanel 与块协调器共用）。</summary>
@@ -143,7 +150,7 @@ public class ListBoxItem : StackPanelBase
     public object? Item { get; internal set; }
 
     /// <summary>列表项默认内边距：行内文字不贴边（样式系统落地前的最小视觉约定）。</summary>
-    public ListBoxItem() { Padding = 8; IsTabStop = false; }
+    public ListBoxItem() { IsTabStop = false; }
 }
 
 /// <summary>流式换行方向。</summary>

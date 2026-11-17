@@ -42,6 +42,10 @@ public sealed class ElementCollection : IReadOnlyList<Element>
 {
     private readonly List<Element> _items = new();
     private readonly Element _owner;
+    private Element? _projection;
+    internal Element Owner => _owner;
+    internal Element VisualOwner => _projection ?? _owner;
+    internal bool IsProjected => _projection is not null;
 
     internal ElementCollection(Element owner) => _owner = owner;
 
@@ -56,7 +60,7 @@ public sealed class ElementCollection : IReadOnlyList<Element>
         child.EnsureInitialized();
         // User initialization can dispose the owner or attach this child elsewhere.
         ValidateChild(child, allowCurrent: false);
-        child._parent = _owner;
+        child._parent = VisualOwner;
         child._parentCollection = this;
         _items.Add(child);
         child.ReconnectUpdates();
@@ -67,7 +71,8 @@ public sealed class ElementCollection : IReadOnlyList<Element>
         List<Exception>? failures = null;
         try { child._focusManager?.RefreshFocusPath(); } catch (Exception error) { (failures ??= new()).Add(error); }
         try { _owner.NotifyFocusTreeChanged(); } catch (Exception error) { (failures ??= new()).Add(error); }
-        try { child.AttachToParent(_owner); } catch (Exception error) { (failures ??= new()).Add(error); }
+        try { child.AttachToParent(VisualOwner); } catch (Exception error) { (failures ??= new()).Add(error); }
+        if (_projection is not null) { _projection.InvalidateMeasure(); _projection.InvalidateRender(); }
         _owner.OnChildrenChanged();
         if (failures is not null) throw new AggregateException("Content attachment notifications failed.", failures);
     }
@@ -89,7 +94,8 @@ public sealed class ElementCollection : IReadOnlyList<Element>
             List<Exception>? failures = null;
             try { _owner.NotifyFocusTreeChanged(); } catch (Exception error) { (failures ??= new()).Add(error); }
             try { if (child.UpdateParent is null) child.DetachFromTree(); } catch (Exception error) { (failures ??= new()).Add(error); }
-            _owner.OnChildrenChanged();
+            if (_projection is not null) { _projection.InvalidateMeasure(); _projection.InvalidateRender(); }
+        _owner.OnChildrenChanged();
             if (failures is not null) throw new AggregateException("Content removal notifications failed.", failures);
             return true;
         }
@@ -118,6 +124,7 @@ public sealed class ElementCollection : IReadOnlyList<Element>
             try { if (child.UpdateParent is null) child.DetachFromTree(); }
             catch (Exception error) { (failures ??= new()).Add(error); }
         }
+        if (_projection is not null) { _projection.InvalidateMeasure(); _projection.InvalidateRender(); }
         _owner.OnChildrenChanged();
         if (failures is not null)
             throw new AggregateException("Content removal lifecycle notifications failed.", failures);
@@ -159,7 +166,7 @@ public sealed class ElementCollection : IReadOnlyList<Element>
         }
         foreach (var child in added)
         {
-            child._parent = _owner;
+            child._parent = VisualOwner;
             child._parentCollection = this;
             child.ReconnectUpdates();
             child._needsMeasure = true;
@@ -183,9 +190,10 @@ public sealed class ElementCollection : IReadOnlyList<Element>
         {
             // Earlier callbacks may have removed or already attached a newly added child.
             if (!ReferenceEquals(child._parentCollection, this) || child.IsAttached) continue;
-            try { child.AttachToParent(_owner); }
+            try { child.AttachToParent(VisualOwner); }
             catch (Exception error) { (failures ??= new()).Add(error); }
         }
+        if (_projection is not null) { _projection.InvalidateMeasure(); _projection.InvalidateRender(); }
         _owner.OnChildrenChanged();
         if (failures is not null)
             throw new AggregateException("Content replacement lifecycle notifications failed.", failures);
@@ -200,10 +208,34 @@ public sealed class ElementCollection : IReadOnlyList<Element>
             throw new InvalidOperationException($"Element '{child}' already has a parent.");
         if (child._contentOwner is not null)
             throw new InvalidOperationException($"Element '{child}' already belongs to another content owner.");
-        for (UiObject? ancestor = _owner; ancestor is not null; ancestor = ancestor.UpdateParent)
+        for (UiObject? ancestor = VisualOwner; ancestor is not null; ancestor = ancestor.UpdateParent)
             if (ReferenceEquals(ancestor, child))
                 throw new InvalidOperationException("An element cannot contain itself or an ancestor.");
         if (!current) child.ValidateCanAttach();
+    }
+
+    internal void ProjectTo(Element? presenter)
+    {
+        if (ReferenceEquals(_projection, presenter)) return;
+        if (_projection is not null && presenter is not null)
+            throw new InvalidOperationException("A content collection can only be projected by one presenter.");
+        foreach (var child in _items)
+            for (Element? node = presenter; node is not null; node = node.Parent)
+                if (ReferenceEquals(node, child)) throw new InvalidOperationException("A presenter cannot project an ancestor.");
+        var previousRoot = _owner.SchedulingRoot;
+        _projection = presenter;
+        foreach (var child in _items)
+        {
+            child._parent = VisualOwner;
+            child.ReconnectUpdates(previousRoot);
+            child._needsMeasure = true;
+            child._needsArrange = true;
+            if (VisualOwner.IsAttached) child.AttachToParent(VisualOwner);
+            else if (child.IsAttached) child.DetachFromTree();
+        }
+        _owner.InvalidateMeasure();
+        VisualOwner.InvalidateMeasure();
+        _owner.NotifyFocusTreeChanged();
     }
 
     // foreach 走 List<T>.Enumerator struct（S5 预算：不装箱）；接口实现保留给
@@ -218,7 +250,7 @@ public sealed class ElementCollection : IReadOnlyList<Element>
 /// 元素：唯一参与布局/绘制/输入的节点。属性引擎是唯一真相源，
 /// 变更只标脏不做布局，布局在帧调度时按脏标记增量执行。
 /// </summary>
-public abstract class Element : UiObject
+public abstract partial class Element : UiObject
 {
     internal Element? _parent;
     internal FocusManager? _focusManager;
@@ -246,8 +278,8 @@ public abstract class Element : UiObject
     private int _valueBatchDepth;
     private HashSet<StyledProperty>? _batchedChanges;
     [UiIgnore] public string? Part { get; set; }
-    [UiIgnore] public Elements.TemplatedControl? TemplatedParent { get; internal set; }
-    public void SetTemplatedParent(Elements.TemplatedControl owner) => TemplatedParent = owner;
+    [UiIgnore] public Element? TemplatedParent { get; internal set; }
+    public void SetTemplatedParent(Element owner) => TemplatedParent = owner;
     public bool IsLightTheme => ThemeDefaults?.IsLight ?? true;
     private IReadOnlyList<string>? _classes;
     private IReadOnlyList<string>? _templateClasses;
@@ -291,7 +323,6 @@ public abstract class Element : UiObject
     public static readonly RoutedEvent TextCompositionEvent = new("TextComposition", RoutingStrategy.Bubble);
     public static readonly RoutedEvent PointerEnteredEvent = new("PointerEntered", RoutingStrategy.Direct);
     public static readonly RoutedEvent PointerExitedEvent = new("PointerExited", RoutingStrategy.Direct);
-    public virtual bool UsesDefaultDrawing => true;
     public virtual void Render(IElementDrawingContext context) { }
     /// <summary>Local clip for this element's own drawing; focus decorations are drawn separately.</summary>
     public virtual Rect? GetDrawingClip() => new Rect(Point.Zero, FinalRect.Size);
@@ -749,7 +780,7 @@ public abstract class Element : UiObject
         OnStylesChanged();
     }
 
-    protected virtual void OnStylesChanged() { }
+    protected virtual void OnStylesChanged() => RefreshTemplate(force: true);
     protected virtual void PrepareLayout() => Styling.Provider?.ApplyRules(this);
 
     private void NotifyInheritedChange(StyledProperty property)
@@ -773,10 +804,7 @@ public abstract class Element : UiObject
         }
     }
 
-    internal virtual IEnumerable<Element> VisualChildren
-    {
-        get { yield break; }
-    }
+    public virtual IReadOnlyList<Element> VisualChildren => _templateRoots is null ? Array.Empty<Element>() : _templateRoots;
 
     /// <summary>
     /// 绘制透明：不产生自己的背景/边框。块协调器（<c>@if</c> / <c>@foreach</c>）覆盖为 true，
@@ -794,6 +822,7 @@ public abstract class Element : UiObject
     /// <summary>沿祖先链标脏（脏标记传播：祖先的 measure 依赖子树的 desired）。</summary>
     public void InvalidateMeasure()
     {
+        InvalidateTemplateLayout(measure: true);
         var node = this;
         while (node is not null && !node._needsMeasure)
         {
@@ -804,6 +833,7 @@ public abstract class Element : UiObject
 
     public void InvalidateArrange()
     {
+        InvalidateTemplateLayout(measure: false);
         var node = this;
         while (node is not null && !node._needsArrange)
         {
@@ -813,7 +843,11 @@ public abstract class Element : UiObject
     }
 
     /// <summary>标记视觉内容已变（不涉及布局）；脏区跟踪据此判断重绘范围。</summary>
-    public void InvalidateRender() => _renderVersion++;
+    public void InvalidateRender()
+    {
+        _renderVersion++;
+        if (_templateInstance is not null) RefreshTemplate(force: true);
+    }
 
     /// <summary>
     /// 测量先扣 Margin 并应用本地尺寸要求，使换行使用正确宽度。
@@ -826,6 +860,7 @@ public abstract class Element : UiObject
             throw new ArgumentOutOfRangeException(nameof(available), "Measure constraints must be non-negative or positive infinity.");
         EnsureInitialized();
         PrepareLayout();
+        RefreshTemplate();
         if (!IsVisible || this is Elements.Popup { IsOpen: false })
         {
             _desired = _coreDesired = Size.Empty;
@@ -841,7 +876,7 @@ public abstract class Element : UiObject
             ? available
             : new Size(Math.Max(0, available.Width - margin * 2), Math.Max(0, available.Height - margin * 2));
         var constraint = ApplySizeConstraints(inner);
-        var content = MeasureCore(constraint);
+        var content = UsesTemplateLayout && TemplateRoot is { } template ? MeasureTemplate(template, constraint) : MeasureCore(constraint);
         ValidateMeasuredSize(content);
         _coreDesired = ApplySizeConstraints(content);
         ValidateMeasuredSize(_coreDesired);
@@ -904,7 +939,8 @@ public abstract class Element : UiObject
         };
 
         _final = new Rect(x, y, w, h);
-        ArrangeCore(_final);
+        if (UsesTemplateLayout && TemplateRoot is { } template) template.Arrange(new(Point.Zero, _final.Size));
+        else ArrangeCore(_final);
         _lastArrangeSlot = slot;
         _needsArrange = false;
     }
@@ -921,8 +957,19 @@ public abstract class Element : UiObject
 
     protected internal virtual void OnChildrenChanged() { }
 
-    protected internal abstract Size MeasureCore(Size available);
-    protected internal abstract void ArrangeCore(Rect final);
+    protected internal virtual Size MeasureCore(Size available) => Size.Empty;
+    protected internal virtual void ArrangeCore(Rect final) { }
+
+    /// <summary>Layout of behavior-owned content, used by an ItemsPresenter without entering the host template again.</summary>
+    protected virtual bool UsesTemplateLayout => true;
+    public Size MeasureContent(Size available) => MeasureCore(available);
+    public void ArrangeContent(Rect final) => ArrangeCore(final);
+
+    private static Size MeasureTemplate(Element template, Size available)
+    {
+        template.Measure(available);
+        return template.DesiredSize;
+    }
 
     // ---- 布局契约（design/05 §布局契约，Layoutable 级统一面）----
 

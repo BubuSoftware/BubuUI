@@ -64,7 +64,7 @@ public class LayoutTests
     [Fact]
     public void Button_MeasuresLabelWithPadding()
     {
-        var button = new Button { Label = "OK" };
+        var button = new Button { Label = "OK", HorizontalPadding = 12, VerticalPadding = 6 };
         var root = new HeadlessRoot(button);
         root.UpdateLayout();
         Assert.Equal(12 * 2 + 2 * 14 * 0.6, button.DesiredSize.Width, 5);

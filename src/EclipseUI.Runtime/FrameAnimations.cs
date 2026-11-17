@@ -13,6 +13,6 @@ public static class FrameAnimations
         if (elapsed < TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(elapsed));
         if (!root.IsEffectivelyVisible) return;
         if (root is IFrameAnimation animation) animation.Advance(elapsed);
-        if (root is Elements.Panel panel) foreach (var child in panel.Children) Advance(child, elapsed);
+        foreach (var child in root.VisualChildren.ToArray()) Advance(child, elapsed);
     }
 }

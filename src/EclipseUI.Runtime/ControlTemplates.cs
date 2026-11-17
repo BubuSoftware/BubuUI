@@ -6,18 +6,18 @@ namespace EclipseUI;
 public abstract class ControlTemplate
 {
     public abstract Type TargetType { get; }
-    public abstract TemplateInstance Build(TemplatedControl owner);
+    public abstract TemplateInstance Build(Element owner);
 }
 
-public abstract class ControlTemplate<T> : ControlTemplate where T : TemplatedControl
+public abstract class ControlTemplate<T> : ControlTemplate where T : Element
 {
     public sealed override Type TargetType => typeof(T);
-    public sealed override TemplateInstance Build(TemplatedControl owner) =>
+    public sealed override TemplateInstance Build(Element owner) =>
         owner is T typed ? Build(typed) : throw new ArgumentException($"Template requires {typeof(T).Name}.");
     protected abstract TemplateInstance Build(T owner);
 }
 
-public sealed class FuncControlTemplate<T>(Func<T, TemplateInstance> build) : ControlTemplate<T> where T : TemplatedControl
+public sealed class FuncControlTemplate<T>(Func<T, TemplateInstance> build) : ControlTemplate<T> where T : Element
 {
     protected override TemplateInstance Build(T owner) => build(owner);
 }
@@ -25,6 +25,7 @@ public sealed class FuncControlTemplate<T>(Func<T, TemplateInstance> build) : Co
 public sealed class TemplateInstance : IDisposable
 {
     private readonly Action? _update;
+    private Element? _owner;
     private bool _disposed;
     public Element Root { get; }
     public TemplateInstance(Element root, Action? update = null)
@@ -33,24 +34,30 @@ public sealed class TemplateInstance : IDisposable
         if (root.Parent is not null || root.IsDisposed) throw new ArgumentException("Template root must be new and unattached.");
         _update = update;
     }
+    internal void SetOwner(Element owner) => _owner = owner;
     public IEnumerable<Element> Elements => OwnedElements(Root);
-    private static IEnumerable<Element> OwnedElements(Element root)
+    private IEnumerable<Element> OwnedElements(Element root)
     {
         yield return root;
-        if (root is ContentPresenter or TemplatedControl) yield break;
+        if (root is ContentPresenter or ItemsPresenter) yield break;
+        // Authored nested control content belongs to this template even after that control
+        // installs its own skin. Its generated template and data-created items do not.
         if (root is Panel panel)
             foreach (var child in panel.Children)
-                foreach (var descendant in OwnedElements(child)) yield return descendant;
+                if (_update is null || ReferenceEquals(child.TemplatedParent, _owner) || child.IsLayoutTransparent)
+                    foreach (var descendant in OwnedElements(child)) yield return descendant;
     }
     public T? FindPart<T>(string name) where T : Element => Elements.FirstOrDefault(e => e.Part == name) as T;
     public void Update() { if (!_disposed) _update?.Invoke(); }
     public void ReleaseContent()
     {
         foreach (var presenter in Elements.OfType<ContentPresenter>().ToArray()) presenter.ReleaseContent();
+        foreach (var presenter in Elements.OfType<ItemsPresenter>().ToArray()) presenter.ReleaseContent();
     }
     internal void ActivateContent()
     {
         foreach (var presenter in Elements.OfType<ContentPresenter>()) presenter.SyncContent();
+        foreach (var presenter in Elements.OfType<ItemsPresenter>()) presenter.ActivateContent();
     }
     public void Dispose()
     {
@@ -85,19 +92,19 @@ public sealed class ControlTheme
     public IReadOnlyList<ThemeRule> Rules { get; }
     public ControlTheme(Type targetType, ControlTemplate template, params ThemeRule[] rules)
     {
-        if (!typeof(TemplatedControl).IsAssignableFrom(targetType) || !template.TargetType.IsAssignableFrom(targetType))
+        if (!typeof(Element).IsAssignableFrom(targetType) || !template.TargetType.IsAssignableFrom(targetType))
             throw new ArgumentException("Control theme and template target types are incompatible.");
         TargetType = targetType; Template = template;
         Rules = Array.AsReadOnly(rules.Select(r => r with { Setters = Array.AsReadOnly(r.Setters.ToArray()) }).ToArray());
     }
-    internal void Apply(TemplatedControl owner, TemplateInstance? instance)
+    internal void Apply(Element owner, TemplateInstance? instance)
     {
         if (!TargetType.IsInstanceOfType(owner)) throw new InvalidOperationException($"Theme requires {TargetType.Name}.");
         ApplyTo(owner, owner, false);
         if (instance is not null)
             foreach (var part in instance.Elements.Where(e => ReferenceEquals(e.TemplatedParent, owner))) ApplyTo(owner, part, true);
     }
-    private void ApplyTo(TemplatedControl owner, Element target, bool part)
+    private void ApplyTo(Element owner, Element target, bool part)
     {
         var setters = new Dictionary<StyledProperty, ThemeSetter>();
         foreach (var rule in Rules)

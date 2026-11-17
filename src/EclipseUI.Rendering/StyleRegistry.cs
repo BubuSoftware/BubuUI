@@ -26,7 +26,7 @@ public sealed class StyleRegistry : IStyleProvider
                 foreach (var setter in rule.Setters) values[setter.TargetProperty] = setter;
         element.ReplaceRuleValues(values);
     }
-    public void ApplyTemplateStyles(TemplatedControl owner)
+    public void ApplyTemplateStyles(Element owner)
     {
         if (_rules.Count == 0 || owner.TemplateRoot is null) return;
         foreach (var part in new[] { owner.TemplateRoot }.Concat(owner.TemplateRoot.Descendants()))

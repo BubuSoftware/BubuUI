@@ -16,6 +16,8 @@ public class RetainedPaintTests
 {
     private static readonly Size Surface = new(360, 240);
 
+    private static Point Center(Element element) => new(element.FinalRect.X + element.FinalRect.Width / 2, element.FinalRect.Y + element.FinalRect.Height / 2);
+
     private static StackPanel Tree()
     {
         var root = new StackPanel();
@@ -33,7 +35,7 @@ public class RetainedPaintTests
 
     private static void Layout(Element root)
     {
-        using var host = new HeadlessRoot(root) { AvailableSize = Surface };
+        using var host = new HeadlessRoot(FluentTest.Skin(root)) { AvailableSize = Surface };
         host.UpdateLayout();
     }
 
@@ -46,16 +48,16 @@ public class RetainedPaintTests
     {
         var root = Tree();
         Layout(root);
-        var painter = new ElementPainter(textPainter: new FakeTextPainter());
+        var painter = new ElementPainter(FluentTheme.Dark, textPainter: new FakeTextPainter());
 
         _ = painter.Build(root, Surface);
         var (reused0, repainted0) = painter.LastBuildStats;
         Assert.Equal(0, reused0);          // 首帧全量
-        Assert.Equal(4, repainted0);       // root + 3 buttons
+        Assert.Equal(FluentTest.VisualCount(root), repainted0);       // Includes each button's template visuals.
 
         _ = painter.Build(root, Surface);
         var (reused1, repainted1) = painter.LastBuildStats;
-        Assert.Equal(4, reused1);          // 全部复用
+        Assert.Equal(FluentTest.VisualCount(root), reused1);          // 全部复用
         Assert.Equal(0, repainted1);
     }
 
@@ -64,21 +66,21 @@ public class RetainedPaintTests
     {
         var root = Tree();
         Layout(root);
-        var retainedPainter = new ElementPainter(textPainter: new FakeTextPainter());
+        var retainedPainter = new ElementPainter(FluentTheme.Dark, textPainter: new FakeTextPainter());
         var input = new InputRouter(root);
 
         _ = retainedPainter.Build(root, Surface);
 
         // 一组失效来源：按下态、焦点迁移、释放。
-        input.PointerPress(new Point(60, 40));
+        input.PointerPress(Center(root.Children[0]));
         (FocusManager.GetFor(root) ?? new FocusManager(root)).Focus(root.Children[1] as Button, FocusOrigin.Keyboard);
         retainedPainter.Build(root, Surface);
-        input.PointerRelease(new Point(60, 40));
+        input.PointerRelease(Center(root.Children[0]));
         (FocusManager.GetFor(root) ?? new FocusManager(root)).Focus(root.Children[1] as Button, FocusOrigin.Keyboard);
         retainedPainter.Build(root, Surface);
 
         var retained = retainedPainter.Build(root, Surface);
-        var reference = new ElementPainter(textPainter: new FakeTextPainter()).Build(root, Surface);
+        var reference = new ElementPainter(FluentTheme.Dark, textPainter: new FakeTextPainter()).Build(root, Surface);
 
         Assert.Equal(CommandShape(reference), CommandShape(retained));
         Assert.Equal(Render.Frame(retained).ContentHash(), Render.Frame(reference).ContentHash());
@@ -89,16 +91,17 @@ public class RetainedPaintTests
     {
         var root = Tree();
         Layout(root);
-        var painter = new ElementPainter(textPainter: new FakeTextPainter());
+        var painter = new ElementPainter(FluentTheme.Dark, textPainter: new FakeTextPainter());
         var input = new InputRouter(root);
 
         _ = painter.Build(root, Surface);
-        input.PointerPress(new Point(60, 40)); // Alpha 按下
+        input.PointerPress(Center(root.Children[0])); // Alpha 按下
 
         _ = painter.Build(root, Surface);
         var (reused, repainted) = painter.LastBuildStats;
-        Assert.Equal(2, reused);   // Beta + Gamma; root focus-within changed.
-        Assert.Equal(2, repainted);
+        var untouched = FluentTest.VisualCount(root.Children[1]) + FluentTest.VisualCount(root.Children[2]);
+        Assert.Equal(untouched, reused);
+        Assert.Equal(FluentTest.VisualCount(root) - untouched, repainted);
     }
 
     [Fact]
@@ -108,7 +111,7 @@ public class RetainedPaintTests
         Layout(root);
         var alpha = (Button)root.Children[0];
         var gamma = (Button)root.Children[2];
-        var painter = new ElementPainter(textPainter: new FakeTextPainter());
+        var painter = new ElementPainter(FluentTheme.Dark, textPainter: new FakeTextPainter());
 
         (FocusManager.GetFor(root) ?? new FocusManager(root)).Focus(alpha, FocusOrigin.Keyboard);
         _ = painter.Build(root, Surface);
@@ -116,8 +119,9 @@ public class RetainedPaintTests
         _ = painter.Build(root, Surface);
 
         var (reused, repainted) = painter.LastBuildStats;
-        Assert.Equal(2, reused);    // root + Beta
-        Assert.Equal(2, repainted); // Alpha（失焦）+ Gamma（得焦）
+        var untouched = 1 + FluentTest.VisualCount(root.Children[1]);
+        Assert.Equal(untouched, reused);
+        Assert.Equal(FluentTest.VisualCount(alpha) + FluentTest.VisualCount(gamma), repainted);
     }
 
     [Fact]
@@ -144,9 +148,9 @@ public class RetainedPaintTests
         Layout(root);
         Assert.True(viewer.ScrollableHeight > 0, "测试前提：内容超出视口才可滚动");
 
-        var painter = new ElementPainter(textPainter: new FakeTextPainter());
+        var painter = new ElementPainter(FluentTheme.Dark, textPainter: new FakeTextPainter());
         _ = painter.Build(root, Surface);
-        Assert.Equal((0, 85), painter.LastBuildStats); // grid+label+run+viewer+content+40×(block+run)
+        Assert.Equal((0, FluentTest.VisualCount(root)), painter.LastBuildStats); // Includes the viewer template and projected content.
 
         viewer.ScrollToEnd(); // offsets 走 StyledProperty → Arrange 失效（RenderVersion 不 bump）
         Layout(root);         // arrange 重跑 → content FinalRect 平移
@@ -154,11 +158,11 @@ public class RetainedPaintTests
         _ = painter.Build(root, Surface);
         var (reused, repainted) = painter.LastBuildStats;
         Assert.Equal(3, reused);       // grid + label + run（viewer 的 offset SetValue bump RenderVersion → 保守重画）
-        Assert.Equal(82, repainted);   // viewer + content（FinalRect 平移）+ 80 行（绝对位置随父偏移变化）
+        Assert.Equal(FluentTest.VisualCount(root) - 3, repainted);   // viewer + content（FinalRect 平移）+ 80 行（绝对位置随父偏移变化）
 
         // 渲染等价：retained 构建与全量构建逐像素一致。
         var retained = painter.Build(root, Surface);
-        var reference = new ElementPainter(textPainter: new FakeTextPainter()).Build(root, Surface);
+        var reference = new ElementPainter(FluentTheme.Dark, textPainter: new FakeTextPainter()).Build(root, Surface);
         Assert.Equal(Render.Frame(retained).ContentHash(), Render.Frame(reference).ContentHash());
     }
 
@@ -167,7 +171,7 @@ public class RetainedPaintTests
     {
         var root = Tree(); // 3 buttons
         Layout(root);
-        var painter = new ElementPainter(textPainter: new FakeTextPainter());
+        var painter = new ElementPainter(FluentTheme.Dark, textPainter: new FakeTextPainter());
         _ = painter.Build(root, Surface);
 
         root.Children.Add(MakeButton("Delta")); // 追加在尾部：既有按钮位置不变
@@ -175,8 +179,8 @@ public class RetainedPaintTests
 
         _ = painter.Build(root, Surface);
         var (reused, repainted) = painter.LastBuildStats;
-        Assert.Equal(3, reused);    // 3 个既有 buttons（root 变高，其段失配重画）
-        Assert.Equal(2, repainted); // root + 新 Delta
+        Assert.Equal(root.Children.Take(3).Sum(FluentTest.VisualCount), reused);
+        Assert.Equal(1 + FluentTest.VisualCount(root.Children[3]), repainted);
     }
 
     [Fact]
@@ -184,16 +188,16 @@ public class RetainedPaintTests
     {
         var root = Tree();
         Layout(root);
-        var painter = new ElementPainter(textPainter: new FakeTextPainter());
+        var painter = new ElementPainter(FluentTheme.Dark, textPainter: new FakeTextPainter());
         _ = painter.Build(root, Surface);
-        Assert.Equal((0, 4), painter.LastBuildStats); // 首帧全量
+        Assert.Equal((0, FluentTest.VisualCount(root)), painter.LastBuildStats); // 首帧全量
 
         _ = painter.Build(root, Surface);
-        Assert.Equal((4, 0), painter.LastBuildStats); // 复用
+        Assert.Equal((FluentTest.VisualCount(root), 0), painter.LastBuildStats); // 复用
 
         painter.ResetSegments();
         _ = painter.Build(root, Surface);
-        Assert.Equal((0, 4), painter.LastBuildStats); // 强制全量
+        Assert.Equal((0, FluentTest.VisualCount(root)), painter.LastBuildStats); // 强制全量
     }
 
     /// <summary>
@@ -210,7 +214,7 @@ public class RetainedPaintTests
         {
             var root = Tree();
             Layout(root);
-            var painter = new ElementPainter(textPainter: new FakeTextPainter());
+            var painter = new ElementPainter(FluentTheme.Dark, textPainter: new FakeTextPainter());
             var input = new InputRouter(root);
 
             var compositor = new RetainedFrameCompositor(gpu, (int)Surface.Width, (int)Surface.Height);
@@ -221,7 +225,7 @@ public class RetainedPaintTests
             var before = compositor.SnapshotPixels();
 
             // 状态变化：Alpha 按下 → retained 构建 + 元素级脏区。
-            input.PointerPress(new Point(60, 40));
+            input.PointerPress(Center(root.Children[0]));
             var frame = painter.BuildFrame(root, Surface);
             Assert.False(frame.Damage.IsFull);
             compositor.Composite(frame.List, frame.Damage);
@@ -254,13 +258,13 @@ public class RetainedPaintTests
         var root = new StackPanel();
         root.Children.Add(new Button { Label = "Hit" });
         Layout(root);
-        var painter = new ElementPainter(textPainter: new RectTextPainter());
+        var painter = new ElementPainter(FluentTheme.Dark, textPainter: new RectTextPainter());
 
         var first = painter.Build(root, Surface);
         AssertLabelAfterBackground(first.Commands, "button label before/without background");
 
         var second = painter.Build(root, Surface); // 全复用帧
-        Assert.Equal((2, 0), painter.LastBuildStats);
+        Assert.Equal((FluentTest.VisualCount(root), 0), painter.LastBuildStats);
         AssertLabelAfterBackground(second.Commands, "label missing on reused frame");
     }
 
@@ -270,13 +274,13 @@ public class RetainedPaintTests
         var root = new StackPanel();
         root.Children.Add(new CheckBox { Label = "Opt" });
         Layout(root);
-        var painter = new ElementPainter(textPainter: new RectTextPainter());
+        var painter = new ElementPainter(FluentTheme.Dark, textPainter: new RectTextPainter());
 
         var first = painter.Build(root, Surface);
         AssertLabelAfterBackground(first.Commands, "checkbox label before/without box");
 
         var second = painter.Build(root, Surface); // 全复用帧
-        Assert.Equal((2, 0), painter.LastBuildStats);
+        Assert.Equal((FluentTest.VisualCount(root), 0), painter.LastBuildStats);
         AssertLabelAfterBackground(second.Commands, "label missing on reused frame");
     }
 
@@ -314,7 +318,7 @@ public class RetainedPaintTests
         root.Children.Add(block);
         Layout(root);
         var recorder = new RecordingTextPainter();
-        var painter = new ElementPainter(textPainter: recorder);
+        var painter = new ElementPainter(FluentTheme.Dark, textPainter: recorder);
 
         _ = painter.Build(root, Surface);
         Assert.Contains("0", recorder.Painted);

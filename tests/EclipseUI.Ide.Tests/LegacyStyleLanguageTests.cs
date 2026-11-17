@@ -28,10 +28,10 @@ public sealed class LegacyStyleLanguageTests
     }
 
     [Fact]
-    public void LegacyPropertiesRemainLegacyInsideMixedThemeModules()
+    public void ImportedThemeModulesUseTypedPropertiesForClassSelectors()
     {
         var (service, uri, offset) = Open("@using EclipseUI.Elements\n@theme Rounded for Button {}\n.old { CornerRadius: th|; }");
-        Assert.Empty(service.Complete(uri, offset).Items);
+        Assert.Equal("theme", Assert.Single(service.Complete(uri, offset).Items).Label);
     }
 
     private static (LanguageService Service, string Uri, int Offset) Open(string marked, bool ui = false)

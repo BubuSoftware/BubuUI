@@ -36,11 +36,7 @@ internal readonly record struct FocusVisualDescriptor(
             }
             if (ReferenceEquals(node, owner)) break;
         }
-        var radius = Visual.GetCornerRadius(owner) ?? Visual.GetCornerRadius(target) ?? geometry.CornerRadius ?? (target switch
-        {
-            Button => theme.ButtonRadius, CheckBox => theme.CheckBoxRadius,
-            ListBoxItem => theme.ItemRadius, _ => theme.PanelRadius,
-        });
+        var radius = Visual.GetCornerRadius(owner) ?? Visual.GetCornerRadius(target) ?? geometry.CornerRadius ?? owner.CornerRadius;
         return new(owner, source, bounds, radius, width, offset,
             Visual.GetFocusRingColorResource(owner)?.Resolve(theme) ?? Visual.GetFocusRingColor(owner) ?? theme.FocusRing, clip);
     }

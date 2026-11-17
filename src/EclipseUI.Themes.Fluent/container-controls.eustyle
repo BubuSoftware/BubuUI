@@ -1,0 +1,23 @@
+@using EclipseUI.Elements;
+@using EclipseUI.Themes.Fluent;
+
+@theme FluentListBoxItem for ListBoxItem {
+    Template: template(FluentListBoxItemTemplate);
+    Padding: 8;
+    CornerRadius: 4;
+}
+@theme FluentItemsControl for ItemsControl {
+    Template: template(FluentItemsControlTemplate);
+}
+@theme FluentTreeView for TreeView {
+    Template: template(FluentTreeViewTemplate);
+}
+@theme FluentScrollViewer for ScrollViewer {
+    Template: template(FluentScrollViewerTemplate);
+    ScrollBarInset: 4;
+    ScrollBarThickness: 6;
+    ScrollBarHitThickness: 14;
+}
+@theme FluentPopup for Popup {
+    Template: template(FluentPopupTemplate);
+}

@@ -37,11 +37,8 @@ public static class TemplateAnalyzer
         if (doc.TemplateTarget is { } targetName)
         {
             var target = scope.Resolve(catalog, targetName).Element;
-            var current = target;
-            while (current is not null && current.ClrTypeDisplayName != "global::EclipseUI.Elements.TemplatedControl")
-                current = current.BaseTypeDisplayName is { } parent ? catalog.FindByTypeDisplayName(parent) : null;
-            if (current is null)
-                diags.Add(UiDiagnostics.Error(UiDiagnostics.Syntax, "@template requires an imported TemplatedControl type.", doc.TemplateTargetSpan));
+            if (target is null || !target.IsEmbeddable)
+                diags.Add(UiDiagnostics.Error(UiDiagnostics.Syntax, "@template requires an imported Element type.", doc.TemplateTargetSpan));
             if (doc.Nodes.OfType<UiElement>().FirstOrDefault() is { } templateRoot && catalog.Resolve(templateRoot.Tag, imports, EnclosingNamespaces(doc.Namespace)).Element is { IsEmbeddable: false })
                 diags.Add(UiDiagnostics.Error(UiDiagnostics.Syntax, "A control template root must be an Element.", templateRoot.TagSpan));
         }
