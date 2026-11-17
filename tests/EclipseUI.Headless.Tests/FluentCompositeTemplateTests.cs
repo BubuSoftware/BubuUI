@@ -7,6 +7,148 @@ namespace EclipseUI.Headless.Tests;
 
 public class FluentCompositeTemplateTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ListBoxPointerSelectionFindsItsItemWithOrWithoutATemplate(bool templated)
+    {
+        using var list = new ListBox
+        {
+            Width = 180, Height = 200, ItemsSource = new[] { "first", "second", "third" },
+            ItemTemplate = _ => new Border { Width = 100, Height = 24 }
+        };
+        if (templated) list.SetThemeDefaults(FluentTheme.Light);
+        using var host = new HeadlessRoot(list);
+        host.UpdateLayout();
+        var item = list.Children[2];
+        Assert.Same(list, item.ContentParent);
+        if (templated) Assert.NotSame(list, item.Parent);
+        else Assert.Same(list, item.Parent);
+        var content = Assert.Single(item.Descendants().OfType<Border>());
+        var origin = content.PointFromRoot(Point.Zero);
+        var point = new Point(content.FinalRect.Width / 2 - origin.X, content.FinalRect.Height / 2 - origin.Y);
+        host.PointerPress(point);
+        host.PointerRelease(point);
+        Assert.Equal(2, list.SelectedIndex);
+        Assert.Equal("third", list.SelectedItem);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ComboBoxShortDropdownFitsItsItemsAndKeepsPopupInsets(bool dark)
+    {
+        using var root = new Grid { Width = 600, Height = 600 };
+        var combo = new ComboBox
+        {
+            Width = 180, Height = 32, VerticalAlignment = VerticalAlignment.Top,
+            ItemsSource = new[] { "first", "second", "third" }, SelectedIndex = 0
+        };
+        root.Children.Add(combo);
+        root.SetThemeDefaults(dark ? FluentTheme.Dark : FluentTheme.Light);
+        using var host = new HeadlessRoot(root);
+        host.UpdateLayout();
+        var buttonOrigin = combo.PointFromRoot(Point.Zero);
+        var buttonPoint = new Point(combo.FinalRect.Width / 2 - buttonOrigin.X, combo.FinalRect.Height / 2 - buttonOrigin.Y);
+        host.PointerPress(buttonPoint);
+        host.PointerRelease(buttonPoint);
+        host.UpdateLayout();
+
+        var popup = Assert.Single(combo.Descendants().OfType<Popup>());
+        var viewer = Assert.Single(combo.Descendants().OfType<ScrollViewer>());
+        var list = Assert.Single(combo.Descendants().OfType<ListBox>());
+        Assert.True(combo.IsDropDownOpen);
+        Assert.Same(list, host.Focus.Focused);
+        Assert.False(list.IsFocusVisible);
+        var itemsHeight = list.Children.Sum(item => item.FinalRect.Height);
+        Assert.True(itemsHeight > 0);
+        Assert.Equal(itemsHeight + viewer.Padding * 2, viewer.FinalRect.Height, 6);
+        Assert.True(viewer.FinalRect.Height < viewer.MaxHeight);
+        Assert.Equal(0, viewer.ScrollableHeight, 6);
+
+        var viewerOrigin = viewer.PointFromRoot(Point.Zero);
+        var listOrigin = list.PointFromRoot(Point.Zero);
+        Assert.Equal(4, viewerOrigin.X - listOrigin.X, 6);
+        Assert.Equal(4, viewerOrigin.Y - listOrigin.Y, 6);
+        Assert.Equal(viewer.FinalRect.Width - 8, list.FinalRect.Width, 6);
+        Assert.Equal(viewer.FinalRect.Height, popup.TemplateRoot!.FinalRect.Height, 6);
+
+        host.KeyPress(Key.Escape);
+        Assert.False(combo.IsDropDownOpen);
+        host.Input.KeyPress(Key.Down, KeyModifiers.Alt);
+        host.UpdateLayout();
+        Assert.True(combo.IsDropDownOpen);
+        Assert.Same(list, host.Focus.Focused);
+        Assert.True(list.IsFocusVisible);
+        host.KeyPress(Key.End);
+        Assert.Equal(2, combo.SelectedIndex);
+        Assert.True(combo.IsDropDownOpen);
+        host.KeyPress(Key.Enter);
+        Assert.False(combo.IsDropDownOpen);
+        Assert.False(popup.IsOpen);
+        Assert.Same(combo, host.Focus.Focused);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ComboBoxLongDropdownKeepsABoundedViewportAndCanChooseTheLastItem(bool dark)
+    {
+        using var root = new Grid { Width = 600, Height = 600 };
+        var items = Enumerable.Range(0, 30).Select(index => $"Item {index}").ToArray();
+        var combo = new ComboBox
+        {
+            Width = 180, Height = 32, VerticalAlignment = VerticalAlignment.Top,
+            ItemsSource = items, SelectedIndex = 0
+        };
+        root.Children.Add(combo);
+        root.SetThemeDefaults(dark ? FluentTheme.Dark : FluentTheme.Light);
+        using var host = new HeadlessRoot(root);
+        host.UpdateLayout();
+        combo.IsDropDownOpen = true;
+        host.UpdateLayout();
+
+        var popup = Assert.Single(combo.Descendants().OfType<Popup>());
+        var viewer = Assert.Single(combo.Descendants().OfType<ScrollViewer>());
+        var list = Assert.Single(combo.Descendants().OfType<ListBox>());
+        Assert.InRange(viewer.FinalRect.Height, 1, 240);
+        Assert.InRange(viewer.ViewportHeight, 1, 232);
+        Assert.True(viewer.ScrollableHeight > 0);
+        Assert.True(viewer.ExtentHeight > viewer.ViewportHeight);
+
+        viewer.ScrollToEnd();
+        host.UpdateLayout();
+        Assert.Equal(viewer.ScrollableHeight, viewer.VerticalOffset, 6);
+        var last = list.Children[^1];
+        var origin = last.PointFromRoot(Point.Zero);
+        var point = new Point(last.FinalRect.Width / 2 - origin.X, last.FinalRect.Height / 2 - origin.Y);
+        host.PointerPress(point);
+        host.PointerRelease(point);
+        host.UpdateLayout();
+        Assert.Equal(items.Length - 1, combo.SelectedIndex);
+        Assert.Equal(items[^1], combo.SelectedItem);
+        Assert.False(combo.IsDropDownOpen);
+        Assert.False(popup.IsOpen);
+
+        combo.SelectedIndex = 0;
+        viewer.ScrollToHome();
+        host.Focus.Focus(combo, FocusOrigin.Keyboard);
+        host.Input.KeyPress(Key.Down, KeyModifiers.Alt);
+        host.UpdateLayout();
+        Assert.True(combo.IsDropDownOpen);
+        Assert.Same(list, host.Focus.Focused);
+        Assert.True(list.IsFocusVisible);
+        host.KeyPress(Key.End);
+        host.UpdateLayout();
+        Assert.Equal(items.Length - 1, combo.SelectedIndex);
+        Assert.Equal(viewer.ScrollableHeight, viewer.VerticalOffset, 6);
+        Assert.True(combo.IsDropDownOpen);
+        host.KeyPress(Key.Enter);
+        Assert.False(combo.IsDropDownOpen);
+        Assert.False(popup.IsOpen);
+        Assert.Same(combo, host.Focus.Focused);
+    }
+
     [Fact]
     public void ComboBoxAcceptsDataBeforeTemplateAndKeepsSelectionWhenRetemplated()
     {

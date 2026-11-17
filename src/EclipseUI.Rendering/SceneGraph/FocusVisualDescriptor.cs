@@ -28,7 +28,7 @@ internal readonly record struct FocusVisualDescriptor(
         // a navigation target and its owner, without escaping ancestor clips.
         for (var node = ReferenceEquals(target, owner) ? null : target.Parent; node is not null; node = node.Parent)
         {
-            if (node.GetContentClip() is { } localClip)
+            if (node.GetVisualChildrenClip() is { } localClip)
             {
                 var p = node.PointFromRoot(Point.Zero);
                 var r = new Rect(localClip.X - p.X, localClip.Y - p.Y, localClip.Width, localClip.Height);

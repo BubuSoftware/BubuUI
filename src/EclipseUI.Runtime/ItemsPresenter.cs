@@ -19,6 +19,14 @@ public class ItemsPresenter : Element
         }
     }
     public override IReadOnlyList<Element> VisualChildren => _active && _owner is not null ? _owner.Children : Array.Empty<Element>();
+    public override Rect? GetContentClip()
+    {
+        if (!UseOwnerLayout || _owner?.GetContentClip() is not { } clip) return base.GetContentClip();
+        var presenterOrigin = PointFromRoot(Point.Zero);
+        var ownerOrigin = _owner.PointFromRoot(Point.Zero);
+        return new(clip.X + presenterOrigin.X - ownerOrigin.X, clip.Y + presenterOrigin.Y - ownerOrigin.Y,
+            clip.Width, clip.Height);
+    }
     internal void ActivateContent()
     {
         if (_active || _owner is null) return;

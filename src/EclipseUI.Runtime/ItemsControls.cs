@@ -164,7 +164,8 @@ public class ListBox : ItemsControl
         {
             if (args is not PointerEventArgs p || p.Button != PointerButton.Left) return;
             var child = args.Source;
-            while (child?.Parent is not null && !ReferenceEquals(child.Parent, this)) child = child.Parent;
+            // ItemsPresenter changes visual parents while the item collection keeps ownership.
+            while (child?.ContentParent is not null && !ReferenceEquals(child.ContentParent, this)) child = child.ContentParent;
             var index = child is null ? -1 : Children.ToList().IndexOf(child);
             if (index < 0) return;
             Select(index, p.Modifiers);

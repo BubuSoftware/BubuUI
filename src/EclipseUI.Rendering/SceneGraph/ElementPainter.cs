@@ -189,7 +189,7 @@ public sealed class ElementPainter
         }
 
         // Content regions come from the control, shared with hit testing and focus geometry.
-        var contentClip = element.GetContentClip();
+        var contentClip = element.GetVisualChildrenClip();
         if (contentClip is { } childClip) _list.Add(new PushClip(ToRoot(childClip, rect.Location)));
 
         var children = element.VisualChildren;

@@ -5,7 +5,7 @@
 <Grid>
     <DropDownButton Part="PART_Button" Label={Owner.DisplayText} IsTabStop="false" />
     <Popup Part="PART_Popup" PlacementTarget={Owner} IsOpen={Owner.IsDropDownOpen}>
-        <ScrollViewer MaxHeight="240">
+        <ScrollViewer MaxHeight="240" Padding="4">
             <ListBox Part="PART_List" />
         </ScrollViewer>
     </Popup>

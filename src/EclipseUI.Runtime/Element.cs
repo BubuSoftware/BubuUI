@@ -328,6 +328,14 @@ public abstract partial class Element : UiObject
     public virtual Rect? GetDrawingClip() => new Rect(Point.Zero, FinalRect.Size);
     /// <summary>Local child clip, shared by painting, hit testing and navigation focus.</summary>
     public virtual Rect? GetContentClip() => this is Panel { ClipToBounds: true } ? new Rect(Point.Zero, FinalRect.Size) : null;
+    /// <summary>Clip for the immediate visual children; templates keep their chrome outside the projected content area.</summary>
+    public Rect? GetVisualChildrenClip()
+    {
+        var clip = GetContentClip();
+        return clip is not null && UsesTemplateLayout && TemplateRoot is not null
+            ? new Rect(Point.Zero, FinalRect.Size)
+            : clip;
+    }
     public static readonly StyledProperty<bool> IsVisibleProperty = StyledProperty<bool>.Register<Element>("IsVisible", true,
         new PropertyOptions { Invalidate = InvalidateKind.Measure });
     public bool IsVisible { get => GetValue(IsVisibleProperty); set => SetValue(IsVisibleProperty, value); }
@@ -1164,7 +1172,7 @@ public abstract partial class Element : UiObject
         var inside = new Rect(default, FinalRect.Size).Contains(local);
         if (!inside && Parent is null) return null;
         if (this is ScrollViewer bars && bars.TryGetScrollBar(PointFromRoot(point), out _, out _)) return this;
-        if (GetContentClip() is { } clip && !clip.Contains(local)) return inside ? this : null;
+        if (GetVisualChildrenClip() is { } clip && !clip.Contains(local)) return inside ? this : null;
         foreach (var child in VisualChildren.Reverse())
         {
             if (child.HitTest(point) is { } hit)

@@ -2,7 +2,7 @@
 @using EclipseUI.Elements
 @template ScrollViewer
 
-<Grid>
+<FluentOverlayPanel>
     <ItemsPresenter Owner={Owner} />
     <FluentScrollBarVisual Owner={Owner} />
-</Grid>
+</FluentOverlayPanel>

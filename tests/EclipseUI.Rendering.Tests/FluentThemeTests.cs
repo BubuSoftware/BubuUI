@@ -205,6 +205,26 @@ public class FluentThemeTests
 
     [Theory]
     [InlineData(false)] [InlineData(true)]
+    public void ComboBoxDropdownSelectionMarkerIsVisibleOutsideTheTextPadding(bool dark)
+    {
+        var theme = dark ? FluentTheme.Dark : FluentTheme.Light;
+        using var root = new Canvas { Width = 320, Height = 240 };
+        var combo = new ComboBox { Width = 180, Height = 32, ItemsSource = new[] { "Alpha", "Beta", "Gamma" }, SelectedIndex = 1 };
+        root.Children.Add(combo);
+        var painter = new ElementPainter(theme); painter.Prepare(root);
+        using var host = new HeadlessRoot(root) { AvailableSize = Size }; host.UpdateLayout();
+        combo.IsDropDownOpen = true; host.UpdateLayout();
+
+        var item = Assert.Single(combo.Descendants().OfType<ListBoxItem>(), item => item.IsSelected);
+        var origin = item.PointFromRoot(Point.Zero);
+        var marker = new Rect(3 - origin.X, 6 - origin.Y, 3, item.FinalRect.Height - 12);
+        var list = painter.Build(root, Size);
+        Assert.Empty(list.Validate());
+        PixelProbe.On(Render.Frame(list)).Contains(marker, theme.Accent, minCount: 4).Verify();
+    }
+
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
     public void PopupSurfaceIsOpaqueAndClosingDamagesItsShadow(bool dark)
     {
         var theme = dark ? FluentTheme.Dark : FluentTheme.Light;
