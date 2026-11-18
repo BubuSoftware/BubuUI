@@ -18,12 +18,13 @@ internal sealed class ControlThemeEmitter(UiCatalog catalog, IReadOnlyList<UiTem
     private readonly StringBuilder _apply = new();
     private readonly List<UiDiagnostic> _diagnostics = new();
     private IReadOnlyList<string> _imports = Array.Empty<string>();
+    private IReadOnlyList<string> _enclosingNamespaces = Array.Empty<string>();
     public string Fields => _fields.ToString();
     public string Apply => _apply.ToString();
 
     public void Declare(ThemeStyleDocument doc)
     {
-        _imports = doc.Imports;
+        SetScope(doc);
         foreach (var node in doc.Nodes.Where(n => n.Header.StartsWith("@theme ", StringComparison.Ordinal)))
         {
             var header = Regex.Match(node.Header, @"^@theme\s+([A-Za-z_]\w*)\s+for\s+([A-Za-z_]\w*)$");
@@ -36,7 +37,7 @@ internal sealed class ControlThemeEmitter(UiCatalog catalog, IReadOnlyList<UiTem
     private readonly HashSet<string> _emitted = new(StringComparer.Ordinal);
     public IReadOnlyList<UiDiagnostic> Emit(ThemeStyleDocument doc)
     {
-        _diagnostics.Clear(); _imports = doc.Imports;
+        _diagnostics.Clear(); SetScope(doc);
         foreach (var node in doc.Nodes)
         {
             if (node.Header.StartsWith("@theme ", StringComparison.Ordinal)) EmitTheme(node);
@@ -44,7 +45,13 @@ internal sealed class ControlThemeEmitter(UiCatalog catalog, IReadOnlyList<UiTem
         }
         return _diagnostics.ToArray();
     }
-    private UiElementDef? Resolve(string name) => catalog.Resolve(name, _imports, null).Element;
+    private void SetScope(ThemeStyleDocument doc)
+    {
+        _imports = doc.Imports;
+        _enclosingNamespaces = TemplateAnalyzer.EnclosingNamespaces(doc.Namespace);
+    }
+
+    private UiElementDef? Resolve(string name) => catalog.Resolve(name, _imports, _enclosingNamespaces).Element;
     private void Error(ThemeStyleNode node, string message) => _diagnostics.Add(UiDiagnostics.Error("EUI050", message, node.Span));
 
     private void EmitTheme(ThemeStyleNode node)
@@ -55,25 +62,20 @@ internal sealed class ControlThemeEmitter(UiCatalog catalog, IReadOnlyList<UiTem
         if (!SyntaxFacts.IsValidIdentifier(name) || SyntaxFacts.GetKeywordKind(name) != SyntaxKind.None || name is "Apply" or "ApplyControlThemes" or "StyleBootstrap")
         { Error(node, "Control theme name conflicts with a generated member or is not a valid C# identifier."); return; }
         var target = Resolve(header.Groups[2].Value);
-        if (target is null || !target.Properties.ContainsKey("Template")) { Error(node, "Theme target must be an imported Element type."); return; }
+        if (target is null || !target.Properties.ContainsKey("Template")) { Error(node, "Theme target must be a visible Element type."); return; }
         if (!_emitted.Add(name)) { Error(node, $"Duplicate control theme '{name}'."); return; }
         var templateNodes = node.Children.Where(n => n.Header == "Template" && n.Value is not null).ToArray();
         if (templateNodes.Length != 1) { Error(node, "A control theme requires exactly one Template: template(Type) declaration."); return; }
         var match = Regex.Match(templateNodes[0].Value!, @"^template\(([\w.]+)\)$");
         if (!match.Success) { Error(templateNodes[0], "Expected template(TemplateType)."); return; }
         var templateName = match.Groups[1].Value;
-        var candidates = templates.Where(t => t.TemplateTarget is not null &&
-            (t.Namespace + "." + t.Tag == templateName || t.Tag == templateName && t.Namespace is not null && _imports.Contains(t.Namespace))).ToArray();
-        string? templateType = candidates.Length == 1 ? "global::" + candidates[0].Namespace + "." + candidates[0].Tag : null;
+        string? templateType = ResolveTemplate(templateName);
         if (templateType is null)
         {
-            var symbols = (templateName.IndexOf('.') >= 0
-                ? new[] { compilation.GetTypeByMetadataName(templateName) }
-                : _imports.Select(i => compilation.GetTypeByMetadataName(i + "." + templateName)))
-                .Where(s => s is not null).ToArray();
-            if (symbols.Length == 1) templateType = symbols[0]!.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            var symbol = ResolveVisibleType(templateName);
+            if (symbol is not null) templateType = symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         }
-        if (templateType is null) { Error(templateNodes[0], $"Unknown or ambiguous template '{templateName}'; import its namespace."); return; }
+        if (templateType is null) { Error(templateNodes[0], $"Unknown or ambiguous template '{templateName}'; declare its namespace with @namespace or import it with @using."); return; }
         var templateSymbol = compilation.GetTypeByMetadataName(templateType.Substring(8));
         var templateBase = templateSymbol?.BaseType;
         var targetSymbol = compilation.GetTypeByMetadataName(target.ClrTypeDisplayName.Substring(8));
@@ -99,6 +101,36 @@ internal sealed class ControlThemeEmitter(UiCatalog catalog, IReadOnlyList<UiTem
         for (var current = target as INamedTypeSymbol; current is not null; current = current.BaseType)
             if (SymbolEqualityComparer.Default.Equals(current, expected)) return true;
         return false;
+    }
+
+    private string? ResolveTemplate(string name)
+    {
+        var qualified = templates.Where(t => t.TemplateTarget is not null && t.Namespace + "." + t.Tag == name).ToArray();
+        if (qualified.Length == 1) return "global::" + qualified[0].Namespace + "." + qualified[0].Tag;
+        if (qualified.Length > 1) return null;
+
+        foreach (var ns in _enclosingNamespaces)
+        {
+            var inScope = templates.Where(t => t.TemplateTarget is not null && t.Tag == name && t.Namespace == ns).ToArray();
+            if (inScope.Length == 1) return "global::" + inScope[0].Namespace + "." + inScope[0].Tag;
+            if (inScope.Length > 1) return null;
+        }
+
+        var imported = templates.Where(t => t.TemplateTarget is not null && t.Tag == name &&
+            t.Namespace is not null && _imports.Contains(t.Namespace)).ToArray();
+        return imported.Length == 1 ? "global::" + imported[0].Namespace + "." + imported[0].Tag : null;
+    }
+
+    private INamedTypeSymbol? ResolveVisibleType(string name)
+    {
+        if (name.IndexOf('.') >= 0 && FindType(name) is { } exact) return exact;
+        foreach (var ns in _enclosingNamespaces)
+            if (FindType(ns + "." + name) is { } inScope) return inScope;
+        if (FindType(name) is { } global) return global;
+        var imported = _imports.Select(ns => FindType(ns + "." + name))
+            .Where(type => type is not null).Cast<INamedTypeSymbol>()
+            .Distinct<INamedTypeSymbol>(SymbolEqualityComparer.Default).Take(2).ToArray();
+        return imported.Length == 1 ? imported[0] : null;
     }
     private static string Rule(string states, string part, IEnumerable<string> setters) =>
         $"new global::EclipseUI.ThemeRule({states}, {part}, new global::EclipseUI.ThemeSetter[] {{ {string.Join(", ", setters)} }})";
@@ -206,11 +238,9 @@ internal sealed class ControlThemeEmitter(UiCatalog catalog, IReadOnlyList<UiTem
         { Error(node, "Expected resource(Type.StaticField)."); return null; }
         var split = name.LastIndexOf('.');
         var typeName = name.Substring(0, split); var memberName = name.Substring(split + 1);
-        var candidates = new[] { typeName }.Concat(_imports.Select(ns => ns + "." + typeName))
-            .Select(FindType).Where(type => type is not null).Cast<INamedTypeSymbol>()
-            .Distinct<INamedTypeSymbol>(SymbolEqualityComparer.Default).ToArray();
+        var candidates = VisibleTypes(typeName);
         if (candidates.Length != 1)
-        { Error(node, $"Unknown or ambiguous typed resource '{name}'; import its declaring namespace."); return null; }
+        { Error(node, $"Unknown or ambiguous typed resource '{name}'; declare its namespace with @namespace or import it with @using."); return null; }
         var field = candidates[0].GetMembers(memberName).OfType<IFieldSymbol>().SingleOrDefault();
         if (field is null || !field.IsStatic || field.DeclaredAccessibility != Accessibility.Public ||
             !compilation.IsSymbolAccessibleWithin(field, compilation.Assembly) ||
@@ -227,6 +257,17 @@ internal sealed class ControlThemeEmitter(UiCatalog catalog, IReadOnlyList<UiTem
         }
         var member = SyntaxFacts.GetKeywordKind(field.Name) == SyntaxKind.None ? field.Name : "@" + field.Name;
         return field.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) + "." + member + ".Resolve";
+    }
+
+    private INamedTypeSymbol[] VisibleTypes(string typeName)
+    {
+        if (typeName.IndexOf('.') >= 0 && FindType(typeName) is { } exact) return [exact];
+        foreach (var ns in _enclosingNamespaces)
+            if (FindType(ns + "." + typeName) is { } inScope) return [inScope];
+        if (FindType(typeName) is { } global) return [global];
+        return _imports.Select(ns => FindType(ns + "." + typeName))
+            .Where(type => type is not null).Cast<INamedTypeSymbol>()
+            .Distinct<INamedTypeSymbol>(SymbolEqualityComparer.Default).ToArray();
     }
     private INamedTypeSymbol? FindType(string name)
     {

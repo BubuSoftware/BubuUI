@@ -33,23 +33,29 @@ internal sealed partial class StyleLanguageProvider
     {
         if (_compilation is null || property is null) yield break;
         var types = new List<INamedTypeSymbol>();
-        foreach (var import in _document.Imports.Prepend(""))
+        foreach (var ns in _document.EnclosingNamespaces.Concat(_document.Imports).Prepend(""))
         {
             INamespaceSymbol? space = _compilation.GlobalNamespace;
-            foreach (var segment in import.Split('.', StringSplitOptions.RemoveEmptyEntries))
+            foreach (var segment in ns.Split('.', StringSplitOptions.RemoveEmptyEntries))
                 space = space?.GetNamespaceMembers().FirstOrDefault(candidate => candidate.Name == segment);
             foreach (var type in space?.GetTypeMembers() ?? []) types.AddRange(ResourceTypes(type));
         }
         var lastDot = prefix.LastIndexOf('.');
-        if (lastDot >= 0 && ResourceType(prefix[..lastDot]) is { } explicitType) types.Add(explicitType);
+        if (lastDot >= 0)
+            foreach (var visible in VisibleResourceTypes(prefix[..lastDot])) types.Add(visible);
         foreach (var type in types.Distinct<INamedTypeSymbol>(SymbolEqualityComparer.Default))
         {
             var fullName = type.ToDisplayString();
             var ns = type.ContainingNamespace.IsGlobalNamespace ? "" : type.ContainingNamespace.ToDisplayString();
             var shortName = ns.Length == 0 ? fullName : fullName[(ns.Length + 1)..];
             var qualified = ns.Length > 0 && prefix.StartsWith(ns + ".", StringComparison.Ordinal);
+            var nearest = _document.EnclosingNamespaces
+                .Select(scope => ResourceType(scope + "." + shortName))
+                .FirstOrDefault(candidate => candidate is not null);
+            var shadowed = nearest is not null && !SymbolEqualityComparer.Default.Equals(nearest, type);
             foreach (var field in type.GetMembers().OfType<IFieldSymbol>().Where(field => ResourceMatches(field, property)))
-                yield return ((qualified ? fullName : shortName) + "." + field.Name, field);
+                if (qualified || !shadowed)
+                    yield return ((qualified ? fullName : shortName) + "." + field.Name, field);
         }
     }
     private IFieldSymbol? FindResource(string name, UiPropDef? property)
@@ -57,11 +63,23 @@ internal sealed partial class StyleLanguageProvider
         var split = name.LastIndexOf('.');
         if (_compilation is null || split <= 0) return null;
         var typeName = name[..split]; var memberName = name[(split + 1)..];
-        var types = new[] { typeName }.Concat(_document.Imports.Select(ns => ns + "." + typeName))
-            .Select(ResourceType).OfType<INamedTypeSymbol>().Distinct<INamedTypeSymbol>(SymbolEqualityComparer.Default).ToArray();
+        var types = VisibleResourceTypes(typeName);
         if (types.Length != 1) return null;
         var field = types[0].GetMembers(memberName).OfType<IFieldSymbol>().SingleOrDefault();
         return field is not null && ResourceMatches(field, property) ? field : null;
+    }
+
+    private INamedTypeSymbol[] VisibleResourceTypes(string typeName)
+    {
+        if (_compilation is null) return [];
+        if (typeName.IndexOf('.') >= 0 && ResourceType(typeName) is { } exact) return [exact];
+        foreach (var ns in _document.EnclosingNamespaces)
+            if (ResourceType(ns + "." + typeName) is { } inScope) return [inScope];
+        if (ResourceType(typeName) is { } global) return [global];
+        return _document.Imports.Select(ns => ResourceType(ns + "." + typeName))
+            .OfType<INamedTypeSymbol>()
+            .Distinct<INamedTypeSymbol>(SymbolEqualityComparer.Default)
+            .ToArray();
     }
     private UiDefinition? ResourceDefinition(IFieldSymbol field)
     {

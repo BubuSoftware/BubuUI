@@ -49,7 +49,7 @@ internal sealed partial class StyleLanguageProvider
             templates.Add(new(declaration.Tag, declaration.Namespace ?? "", resolved, file.Key, file.Value, ast));
         }
         // Imported template factories can also come from referenced theme libraries.
-        foreach (var ns in _styles.SelectMany(s => s.Imports).Distinct(StringComparer.Ordinal))
+        foreach (var ns in _styles.SelectMany(s => s.EnclosingNamespaces.Concat(s.Imports)).Distinct(StringComparer.Ordinal))
         {
             INamespaceSymbol? symbol = compilation?.GlobalNamespace;
             foreach (var segment in ns.Split('.')) symbol = symbol?.GetNamespaceMembers().FirstOrDefault(n => n.Name == segment);
@@ -64,8 +64,11 @@ internal sealed partial class StyleLanguageProvider
         _templates = templates.ToArray();
     }
 
-    private UiElementDef? Resolve(string name, StyleDocument? document = null) =>
-        _catalog.Resolve(name, (document ?? _document).Imports, null).Element;
+    private UiElementDef? Resolve(string name, StyleDocument? document = null)
+    {
+        var scope = document ?? _document;
+        return _catalog.Resolve(name, scope.Imports, scope.EnclosingNamespaces).Element;
+    }
     private bool Compatible(UiElementDef? actual, string? expected)
     {
         if (actual is null || expected is null) return false;
@@ -90,10 +93,21 @@ internal sealed partial class StyleLanguageProvider
     private UiPropDef? Property(Node? node) => node is not null && !node.Block && node.Header.Count >= 2 && node.Header[1].Value == ":"
         && !Legacy(node) ? Target(node)?.Properties.GetValueOrDefault(node.Header[0].Value) : null;
     private static string Qualified(Template t) => t.Namespace.Length == 0 ? t.Name : t.Namespace + "." + t.Name;
-    private Template? FindTemplate(string name, StyleDocument? document = null) => Unique(_templates.Where(t => Qualified(t) == name || t.Name == name && (document ?? _document).Imports.Contains(t.Namespace)));
+    private Template? FindTemplate(string name, StyleDocument? document = null)
+    {
+        var scope = document ?? _document;
+        var qualified = _templates.Where(t => Qualified(t) == name).ToArray();
+        if (qualified.Length > 0) return Unique(qualified);
+        foreach (var ns in scope.EnclosingNamespaces)
+        {
+            var local = _templates.Where(t => t.Name == name && t.Namespace == ns).ToArray();
+            if (local.Length > 0) return Unique(local);
+        }
+        return Unique(_templates.Where(t => t.Name == name && scope.Imports.Contains(t.Namespace)));
+    }
     private Theme? FindTheme(string name) => Unique(_themes.Where(t => t.Name == name));
     private static T? Unique<T>(IEnumerable<T> items) where T : class { var list = items.Take(2).ToArray(); return list.Length == 1 ? list[0] : null; }
-    private UiTextEdit? Import(string ns) => ns.Length == 0 || _document.Imports.Contains(ns) ? null :
+    private UiTextEdit? Import(string ns) => ns.Length == 0 || _document.Imports.Contains(ns) || _document.EnclosingNamespaces.Contains(ns, StringComparer.Ordinal) ? null :
         new(new(_document.Text.StartsWith('\uFEFF') ? 1 : 0, 0), "@using " + ns + (_document.Text.Contains("\r\n") ? "\r\n" : "\n"));
 
     public UiCompletionList Complete(int offset)
@@ -146,7 +160,7 @@ internal sealed partial class StyleLanguageProvider
                         "ControlTemplate for " + template.Target, qualified ? null : Import(template.Namespace));
                 }
         }
-        else if (node?.Header.FirstOrDefault()?.Value == "@using" && start >= node.Header[0].Span.End)
+        else if (node?.Header.FirstOrDefault()?.Value is "@using" or "@namespace" && start >= node.Header[0].Span.End)
         {
             var argStart = node.Header[0].Span.End;
             while (argStart < offset && char.IsWhiteSpace(text[argStart])) argStart++;
@@ -162,6 +176,7 @@ internal sealed partial class StyleLanguageProvider
         {
             if (start > 0 && text[start - 1] == '@') { start--; replacement = new(start, end - start); prefix = text[start..offset]; }
             Add("@using", UiCompletionKind.Directive, "Import control and template namespaces", insertion: "@using ");
+            Add("@namespace", UiCompletionKind.Directive, "Set the implicit namespace scope for controls, templates, and resources", insertion: "@namespace ");
             Add("@theme", UiCompletionKind.Directive, "@theme Name for ControlType { ... }", insertion: "@theme ");
             Add("@states", UiCompletionKind.Directive, "Declare custom states", insertion: "@states { ");
         }
@@ -201,7 +216,7 @@ internal sealed partial class StyleLanguageProvider
             {
                 Types(false);
                 Add("/template/", UiCompletionKind.Keyword, "Select inside this control's template");
-                Add("@theme", UiCompletionKind.Directive); Add("@using", UiCompletionKind.Directive);
+                Add("@theme", UiCompletionKind.Directive); Add("@using", UiCompletionKind.Directive); Add("@namespace", UiCompletionKind.Directive);
                 Add("@states", UiCompletionKind.Directive);
             }
         }
@@ -323,6 +338,7 @@ internal sealed partial class StyleLanguageProvider
         {
             "@theme" => "**@theme Name for ControlType**\n\nReusable control theme with one template and typed state setters.",
             "@using" => "Import a namespace containing controls or template factories.",
+            "@namespace" => "Set this style module's implicit namespace scope. Its namespace and enclosing namespaces are searched before explicit @using imports.",
             "/template/" => "Explicit template boundary. Matches owned visual parts; does not cross nested templates or borrowed content.",
             "template" => "**template(TemplateType)** — construct a reusable control template factory.",
             "resource" => "**resource(Name)** — a control theme in this module, or a public static typed ThemeResource field.",

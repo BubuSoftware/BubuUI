@@ -23,9 +23,13 @@ internal sealed class StyleDocument
     public bool Inline { get; }
     public List<Token> Tokens { get; } = new();
     public List<Node> Nodes { get; } = new();
+    public string? Namespace => Nodes.Where(n => n.Header.FirstOrDefault()?.Value == "@namespace")
+        .Select(n => string.Concat(n.Header.Skip(1).TakeWhile(t => t.Value != ";").Select(t => t.Value)).Trim())
+        .FirstOrDefault(value => value.Length > 0);
+    public string[] EnclosingNamespaces => TemplateAnalyzer.EnclosingNamespaces(Namespace).ToArray();
     public string[] Imports => Nodes.Where(n => n.Header.FirstOrDefault()?.Value == "@using")
         .Select(n => string.Concat(n.Header.Skip(1).TakeWhile(t => t.Value != ";").Select(t => t.Value))).ToArray();
-    public bool Advanced => !Embedded && Nodes.Any(n => n.Header.FirstOrDefault()?.Value is "@theme" or "@using" ||
+    public bool Advanced => !Embedded && Nodes.Any(n => n.Header.FirstOrDefault()?.Value is "@theme" or "@using" or "@namespace" ||
         n.Block && n.Header.FirstOrDefault()?.Value is not "." and not "@states");
 
     public StyleDocument(string path, string text, TextSpan? region = null, bool inline = false)
@@ -85,7 +89,7 @@ internal sealed class StyleDocument
                 if (active[index].Value == "}") { if (parent is not null) parent.End = active[index].Span.End; index++; return; }
                 var node = new Node { Start = active[index].Span.Start, End = Region.End, Parent = parent };
                 nodes.Add(node);
-                if (parent is null && active[index].Value == "@using")
+                if (parent is null && active[index].Value is "@using" or "@namespace")
                 {
                     var lineEnd = text.IndexOfAny(['\r', '\n'], node.Start);
                     node.End = lineEnd < 0 ? Region.End : Math.Min(lineEnd, Region.End);

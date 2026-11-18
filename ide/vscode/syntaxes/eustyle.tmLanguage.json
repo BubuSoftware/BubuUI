@@ -9,6 +9,7 @@
     { "include": "#string" },
     { "include": "#theme-declaration" },
     { "include": "#template-boundary" },
+    { "include": "#namespace-directive" },
     { "include": "#directive" },
     { "include": "#variable" },
     { "include": "#function" },
@@ -35,6 +36,14 @@
         "5": { "name": "entity.name.tag.eustyle" }
       }
     },
+    "namespace-directive": {
+      "match": "(@)(namespace)\\b\\s+([A-Za-z_][A-Za-z0-9_.]*)",
+      "captures": {
+        "1": { "name": "punctuation.definition.directive.eustyle" },
+        "2": { "name": "keyword.control.directive.eustyle" },
+        "3": { "name": "entity.name.namespace.eustyle" }
+      }
+    },
     "template-boundary": { "match": "/template/", "name": "keyword.operator.template.eustyle" },
     "comment": {
       "patterns": [
@@ -44,7 +53,7 @@
     },
 
     "directive": {
-      "match": "(@)(states|style|using|theme)\\b",
+      "match": "(@)(namespace|states|style|using|theme)\\b",
       "captures": {
         "1": { "name": "punctuation.definition.directive.eustyle" },
         "2": { "name": "keyword.control.directive.eustyle" }

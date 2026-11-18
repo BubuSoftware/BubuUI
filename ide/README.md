@@ -91,7 +91,7 @@ design/06 §6.9 之后，目录不再是「扫 dll 元数据」，所有能力�
 | 诊断 Tier 2 | ✅ | 真生成器 + 项目 Compilation 的 CS/EUI 诊断经 `#line` 映回 `.ui`；400ms debounce，只在文档版本未变时发布 |
 | `.eustyle` 诊断 | ✅ | `.eustyle` 进 `documentSelector`，`ExecuteStylesheet` 的 EUI050–052 有 LSP 红波浪线 |
 | 控件模板 `@template` / `Owner` | ✅ | 目标类型补全、导入、悬停、定义导航；类型化 Owner 接入 C# 服务，错误恢复视图保留模板宿主类型 |
-| `.eustyle` 控件主题 | ✅ | `@using`、`@theme`、typed setter、状态、`/template/`、`resource()`、`template()` 的补全/悬停/导航；按类型过滤候选，支持未保存文件及未完成输入 |
+| `.eustyle` 控件主题 | ✅ | `@namespace`、`@using`、`@theme`、typed setter、状态、`/template/`、`resource()`、`template()` 的补全/悬停/导航；按类型和命名空间作用域过滤候选，支持未保存文件及未完成输入 |
 | 主题编辑辅助 | ✅ | 同模块主题重命名（含本项目 `.cs/.ui` 可绑定引用）、大纲、语义着色、函数参数提示、导入与属性拼写快速修复、缩进及范围格式化；详见 [design/28](../design/28-lookless-controls.md) |
 | `@namespace` 契约 | ✅ | 必填；生成器报 EUI055（缺失）/ EUI056（与 code-behind 不一致），经 Tier 2 映回 `.ui`。补全提供 `@namespace` 指令与命名空间候选（自身命名空间排首位） |
 | 无 code-behind 的 `.ui` 组件 | ✅ | 目录把「同名同命名空间的 `.ui`」当组件证据（spec/02 §2.7），`<Tag />` 在编辑器与 `dotnet build` 里一致。K34：`@code` 里的 `[UiParameter]`/`[UiSlot]`/`[UiContent]` 由目录语法级提取为对外表面——补全、`@bind-` 校验与 `dotnet build` 同口径；有同名 `.cs` 时这些特性只对本文件可见（`EUI057` Warning）。`Ref={…}` 指向 `@code` 字段时 F12 落在本文档的字段声明 |

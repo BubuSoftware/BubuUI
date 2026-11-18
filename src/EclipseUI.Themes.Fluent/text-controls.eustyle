@@ -1,5 +1,5 @@
+@namespace EclipseUI.Themes.Fluent
 @using EclipseUI.Elements;
-@using EclipseUI.Themes.Fluent;
 
 @theme FluentTextBox for TextBox {
     Template: template(FluentTextBoxTemplate);

@@ -1,5 +1,5 @@
+@namespace EclipseUI.Themes.Fluent
 @using EclipseUI.Elements;
-@using EclipseUI.Themes.Fluent;
 
 @theme FluentButton for Button {
     Template: template(FluentButtonTemplate);

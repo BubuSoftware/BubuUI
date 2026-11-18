@@ -8,6 +8,8 @@ namespace EclipseUI.Compiler;
 /// Eustyle 解析器（E1，design/17 §4）：SCSS 子集 → 规则列表。语法：
 /// <code>
 /// $var: value;                        // 编译期变量（解析时替换，先声明先用）
+/// @namespace My.Controls             // 当前命名空间；隐式类型/资源查找范围
+/// @using My.Other.Controls            // 显式导入
 /// @states {{ name; name; }}           // 注册制伪类声明（E5，design/17 §3.2）
 /// .name[:state][:state] { prop: value;  &amp;:state { prop: value; ... } }
 /// .panel { &gt; Button { … }  TextBlock.title { … }  &gt; Button:hover { … } }   // E4 嵌套
@@ -55,10 +57,11 @@ public static class Eustyle
     public static EustyleStylesheet Parse(string text, string filePath, List<UiDiagnostic> diagnostics,
         StylePropertyCatalog properties, int spanOffset = 0, IReadOnlyCollection<string>? externalStates = null)
     {
-        var themeModule = ControlThemeSyntax.Parse(text, diagnostics);
-        if (spanOffset > 0 && themeModule.Nodes.Count > 0)
+        var themeModule = ControlThemeSyntax.Parse(text, diagnostics, spanOffset);
+        if (spanOffset > 0 && (themeModule.Namespace is not null || themeModule.Nodes.Count > 0))
             diagnostics.Add(UiDiagnostics.Error(UiDiagnostics.StyleSyntax,
-                "Control themes and typed rules must be declared in a .eustyle module, not an inline @style block.", new TextSpan(spanOffset, text.Length)));
+                "Control themes, typed rules, and @namespace declarations must be in a .eustyle module; an inline @style block uses its .ui file's namespace.",
+                new TextSpan(spanOffset, text.Length)));
         return new Impl(themeModule.LegacyText, diagnostics, spanOffset, externalStates, properties).Document();
     }
 

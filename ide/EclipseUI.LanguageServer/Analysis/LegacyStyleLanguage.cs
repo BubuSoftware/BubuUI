@@ -40,9 +40,9 @@ internal sealed partial class StyleLanguageProvider
     private bool Legacy(Node? node)
     {
         if (_document.Embedded) return true;
-        // Imports/themes select the typed parser for the entire module, including
+        // Namespace/import/theme directives select the typed parser for the entire module, including
         // class-only rules. Keep completion and navigation on that same surface.
-        if (_document.Nodes.Any(n => n.Header.FirstOrDefault()?.Value is "@theme" or "@using")) return false;
+        if (_document.Nodes.Any(n => n.Header.FirstOrDefault()?.Value is "@theme" or "@using" or "@namespace")) return false;
         if (node is null) return false;
         while (node.Parent is not null) node = node.Parent;
         return node.Header.FirstOrDefault()?.Value is "." or "@states" || node.Header.FirstOrDefault()?.Value.StartsWith('$') == true;
@@ -88,7 +88,12 @@ internal sealed partial class StyleLanguageProvider
         if (start > 0 && text[start - 1] == '@') { start--; prefix = text[start..offset]; }
         if (prefix.StartsWith('@'))
         {
-            if (!_document.Inline) Add("@states", UiCompletionKind.Directive, "Declare registered custom states", "@states { ");
+            if (!_document.Inline)
+            {
+                Add("@states", UiCompletionKind.Directive, "Declare registered custom states", "@states { ");
+                Add("@using", UiCompletionKind.Directive, "Import control and template namespaces", "@using ");
+                Add("@namespace", UiCompletionKind.Directive, "Set the implicit namespace scope for controls, templates, and resources", "@namespace ");
+            }
             return Result();
         }
         if (start > 0 && text[start - 1] == ':' && (node?.Block == true || node?.Parent is null || node?.Header.FirstOrDefault()?.Value == "&"))
@@ -128,7 +133,12 @@ internal sealed partial class StyleLanguageProvider
         }
         else if (selector)
             foreach (var type in _catalog.Elements) Add(type.Tag, UiCompletionKind.Class, type.ClrTypeDisplayName);
-        else if (!_document.Inline) Add("@states", UiCompletionKind.Directive);
+        else if (!_document.Inline)
+        {
+            Add("@states", UiCompletionKind.Directive);
+            Add("@using", UiCompletionKind.Directive);
+            Add("@namespace", UiCompletionKind.Directive);
+        }
         return Result();
     }
 

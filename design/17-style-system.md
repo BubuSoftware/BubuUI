@@ -393,6 +393,14 @@ public static class StyleBootstrap
 **取舍记录**：不做「块内类名不加前缀直进全局表」的文件级全局注入形态——作用域是内联样式的
 核心价值；要全局复用请写 `.eustyle`（同一语法，挪个位置而已）。
 
+### 4.9 `.eustyle` 命名空间查找
+
+`.eustyle` 模块可声明一次 `@namespace My.Controls`，把该命名空间及逐级外层命名空间设为
+控件、模板和 `ThemeResource<T>` 类型的隐式查找范围。查找按完整名称、当前命名空间到外层链、
+显式 `@using` 导入的顺序进行；命中更内层命名空间后，该层独占同名选择。该指令不改变生成
+`StyleBootstrap` 使用的项目 `RootNamespace`。内联 `.ui` 的 `@style` 块不接受 `@namespace`，
+使用宿主 `.ui` 的命名空间。
+
 ---
 
 ## 5. 编译管线与校验
