@@ -144,6 +144,14 @@ public sealed class LanguageService
     /// <summary>didOpen / didChange：项目快照要用编辑器缓冲区覆盖磁盘（L2，R4）。</summary>
     public void ApplyBuffer(string uri, string text) => _projects?.ApplyBuffer(uri, text);
 
+    /// <summary>Use the standard LSP initialize root when the process was started without --workspace.</summary>
+    public bool ConfigureWorkspaceRoot(string root)
+    {
+        if (_projects?.ConfigureWorkspaceRoot(root) != true) return false;
+        _cache.Clear();
+        return true;
+    }
+
     /// <summary>
     /// 诊断双通道（§6.9.4）：Tier 1（每次按键，FrontEnd.Parse + Analyze on 缓冲区目录）+
     /// Tier 2（项目 Compilation 的生成器/CS 诊断，经 #line 回映）。多项目命中时逐份都算，

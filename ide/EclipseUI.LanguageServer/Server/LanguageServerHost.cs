@@ -48,6 +48,7 @@ public sealed class LanguageServerHost
         switch (request.Method)
         {
             case "initialize":
+                ConfigureWorkspaceRoot(request.Parameters);
                 return Initialize(request.Parameters);
 
             case "shutdown":
@@ -305,6 +306,20 @@ public sealed class LanguageServerHost
                 ["version"] = typeof(LanguageServerHost).Assembly.GetName().Version?.ToString() ?? "0.1.0",
             },
         };
+    }
+
+    private void ConfigureWorkspaceRoot(JsonNode? parameters)
+    {
+        string? uri = null;
+        if (parameters?["workspaceFolders"] is JsonArray folders)
+            uri = folders.OfType<JsonObject>().Select(folder => String(folder, "uri"))
+                .FirstOrDefault(static value => !string.IsNullOrWhiteSpace(value));
+        uri ??= String(parameters, "rootUri");
+
+        var root = uri is null ? String(parameters, "rootPath") : DocumentStore.UriToPath(uri);
+        if (root is null) return;
+        if (_service.ConfigureWorkspaceRoot(root))
+            _log?.Invoke($"workspace root from LSP initialize: {Path.GetFullPath(root)}");
     }
 
     private async Task<JsonNode?> CompletionAsync(JsonNode? parameters)

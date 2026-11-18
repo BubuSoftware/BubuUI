@@ -40,7 +40,7 @@ public sealed class ProjectWorkspace
 {
     private const int MaxProjects = 64;
 
-    private readonly CatalogOptions _options;
+    private CatalogOptions _options;
     private readonly Action<string>? _log;
     private readonly object _gate = new();
     private readonly Dictionary<string, string> _buffers = new(StringComparer.OrdinalIgnoreCase);
@@ -61,6 +61,34 @@ public sealed class ProjectWorkspace
     }
 
     public bool HasProjects => _evaluations.Value.Count > 0;
+
+    /// <summary>
+    /// LSP clients normally provide their root in <c>initialize.rootUri</c>. Command-line
+    /// <c>--workspace</c> remains authoritative; this fills the root only when the host omitted it.
+    /// </summary>
+    public bool ConfigureWorkspaceRoot(string root)
+    {
+        if (string.IsNullOrWhiteSpace(root) || !Path.IsPathRooted(root)) return false;
+        lock (_gate)
+        {
+            if (!string.IsNullOrWhiteSpace(_options.ProbeRoot)) return false;
+            var normalized = Path.GetFullPath(root);
+            if (!Directory.Exists(normalized)) return false;
+            _options = new CatalogOptions
+            {
+                RuntimePath = _options.RuntimePath,
+                Assemblies = _options.Assemblies,
+                ProbeRoot = normalized,
+                IncludeSiblingAssemblies = _options.IncludeSiblingAssemblies,
+            };
+            _evaluations = new Lazy<IReadOnlyList<ProjectEvaluation>>(Discover,
+                LazyThreadSafetyMode.ExecutionAndPublication);
+            _snapshots.Clear();
+            _sourceLookups.Clear();
+            _generation++;
+            return true;
+        }
+    }
 
     /// <summary>已求值出的项目事实（只读；诊断与测试用）。</summary>
     public IReadOnlyList<ProjectEvaluation> Evaluations => _evaluations.Value;
