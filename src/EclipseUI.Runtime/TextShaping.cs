@@ -15,6 +15,7 @@ public readonly record struct ShapedGlyph(ushort GlyphId, int Cluster, double XA
 public sealed class ShapedBuffer
 {
     public required string Text { get; init; }
+    /// <summary>Effective raster size, including any font-specific optical sizing.</summary>
     public required double FontSize { get; init; }
     public required TextDirection Direction { get; init; }
     public required IReadOnlyList<ShapedGlyph> Glyphs { get; init; }

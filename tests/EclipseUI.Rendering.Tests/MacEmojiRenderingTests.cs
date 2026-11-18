@@ -6,9 +6,42 @@ using Xunit;
 
 namespace EclipseUI.Rendering.Tests;
 
+[CollectionDefinition("Mac text measurement", DisableParallelization = true)]
+public sealed class MacTextMeasurementCollection { }
+
+[Collection("Mac text measurement")]
 public class MacEmojiRenderingTests
 {
     private const string PrimaryFont = "/System/Library/Fonts/Supplemental/Arial.ttf";
+
+    [Theory]
+    [InlineData(14)] [InlineData(24)]
+    public void TextBoxCaretUsesTheSameEmojiSpacingAsPainting(double size)
+    {
+        if (!OperatingSystem.IsMacOS()) return;
+        using var shaper = new HarfBuzzTextShaper(PrimaryFont);
+        using var painter = new HarfBuzzTextPainter(shaper);
+        var previous = TextMeasurer.Current;
+        try
+        {
+            TextMeasurer.Current = painter;
+            using var editor = new TextBox { Width = 240 };
+            editor.SetValue(TextBlock.FontSizeProperty, size);
+            using var host = new HeadlessRoot(editor); host.UpdateLayout(); host.Focus.Focus(editor);
+            var start = editor.CaretRect.X;
+            host.Input.TextInput("🎉🎉🎉"); host.UpdateLayout();
+            var single = painter.Measure("🎉", size);
+            Assert.Equal(start + single.Width * 3, editor.CaretRect.X, 5);
+            Assert.True(editor.CaretRect.Height >= single.Height);
+            host.Input.KeyPress(Key.Left);
+            Assert.Equal(4, editor.CaretIndex);
+            Assert.Equal(start + single.Width * 2, editor.CaretRect.X, 5);
+            host.Input.KeyPress(Key.Left);
+            Assert.Equal(2, editor.CaretIndex);
+            Assert.Equal(start + single.Width, editor.CaretRect.X, 5);
+        }
+        finally { TextMeasurer.Current = previous; }
+    }
 
     [Fact]
     public void BitmapGlyphOffsetsFollowLocalAndOuterTransforms()
@@ -57,7 +90,10 @@ public class MacEmojiRenderingTests
         const string text = "😀😀😀";
         var single = painter.Measure("😀", size);
         var metrics = painter.Measure(text, size);
-        Assert.InRange(single.Width, size * .9, size * 1.1);
+        using var system = new NativeEmojiFont(size);
+        using var emojiShaper = new HarfBuzzTextShaper("/System/Library/Fonts/Apple Color Emoji.ttc");
+        var emojiGlyph = Assert.Single(emojiShaper.Shape("😀", size).Glyphs);
+        Assert.Equal(system.Advance(emojiGlyph.GlyphId), single.Width, 5);
         Assert.Equal(single.Width * 3, metrics.Width, 5);
         var list = new DisplayList(new(240, 100));
         list.Add(new PushTransform(Transform.Scale(scale)));

@@ -68,6 +68,7 @@ eng/package-macos.sh --publish-dir out/osx-arm64 --rid osx-arm64 --output out/ma
 - 文本来自 SDL UTF-8 文本事件，支持非 BMP 字符与 Option/死键提交。输入法预编辑经过 Started/Updated/Committed/Cancelled 路由。Cocoa 清空预编辑后立即提交的事件序列会合并为一次 Committed。
 - 仅可编辑 TextBox 聚焦时启用原生文本输入；失焦取消组合和指针捕获。系统剪贴板在宿主运行时接入，退出时恢复原有服务。
 - 文本默认使用系统 Arial/Helvetica，回退 Apple Color Emoji、PingFang、STHeiti 与 Songti，覆盖缺少 PingFang 文件的 macOS 安装。应用可通过 `UseHarfBuzzText` 选项指定字体。
+- Apple Color Emoji 的光学字号、行盒和进距读取 CoreText 系统度量，HarfBuzz 保留字素整形及零宽控制字形。测量、换行、光标和位图绘制共用校正结果，避免连续 emoji 紧贴；字体文件与 face 身份需匹配。初始化先加载 AppKit，再创建 CoreText 字体，以兼容后续 Cocoa 窗口启动。验证见[emoji 间距修复报告](./reports/macos-emoji-spacing-2026-11-18.md)。
 
 ## 验证
 
