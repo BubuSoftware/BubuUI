@@ -30,7 +30,7 @@ import java.util.List;
  */
 public final class EclipseUiTextMateBundleProvider implements TextMateBundleProvider {
 
-    private static final String PLUGIN_ID = "com.eclipseui.rider";
+    private static final String PLUGIN_ID = "com.eclipseui";
     private static final String RESOURCE_PREFIX = "/textmate/";
     private static final String BUNDLE_NAME = "eclipseui";
 

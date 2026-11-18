@@ -57,7 +57,7 @@ const protocolTests = read(path.join(ide, '..', 'tests', 'EclipseUI.Ide.Tests', 
 console.log('Rider shell contract');
 
 check('plugin identity and platform dependencies', () => {
-    has(pluginXml, '<id>com.eclipseui.rider</id>');
+    has(pluginXml, '<id>com.eclipseui</id>');
     has(pluginXml, '<idea-version since-build="242.*"/>');
     has(pluginXml, '<depends>com.intellij.modules.platform</depends>');
     has(pluginXml, '<depends>com.redhat.devtools.lsp4ij</depends>');

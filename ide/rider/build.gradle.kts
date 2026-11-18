@@ -49,7 +49,7 @@ dependencies {
 
 intellijPlatform {
     pluginConfiguration {
-        id = "com.eclipseui.rider"
+        id = "com.eclipseui"
         name = "EclipseUI"
         version = providers.gradleProperty("pluginVersion").get()
         description = """

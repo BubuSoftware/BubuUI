@@ -25,7 +25,7 @@ import java.util.List;
 public final class ServerCommand {
 
     public static final String SERVER_DLL = "EclipseUI.LanguageServer.dll";
-    private static final String PLUGIN_ID = "com.eclipseui.rider";
+    private static final String PLUGIN_ID = "com.eclipseui";
 
     private ServerCommand() {
     }

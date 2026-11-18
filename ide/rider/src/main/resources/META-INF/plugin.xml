@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <idea-plugin>
-    <id>com.eclipseui.rider</id>
+    <id>com.eclipseui</id>
     <name>EclipseUI</name>
     <vendor>EclipseUI</vendor>
     <version>0.2.0</version>
