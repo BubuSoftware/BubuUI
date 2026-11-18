@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using EclipseUI;
 using EclipseUI.Platform.Windows;
 using EclipseUI.Platform.Linux;
@@ -24,7 +23,6 @@ var builder = AppBuilder.Configure<GalleryApp>()
     .UseVello(new VelloSurfaceOptions { PreferVsync = options.Vsync })
     .UseHarfBuzzText()
     .UseFluentTheme(options.Theme)
-    .UseStyles(StyleRegistry.Instance, Gallery.StyleBootstrap.Apply)
     .ConfigureServices(s => s.AddSingleton(options));
 
 // --cpu / --shot：离屏 CPU 快照路径（不开窗口）——Build() 装配后直接 measure/arrange 出图。
@@ -38,8 +36,6 @@ else throw new PlatformNotSupportedException("Gallery.Desktop supports Windows, 
 
 return builder.Start(args);
 
-// The gallery's editable DataGrid resolves these row properties by name after trimming.
-[DynamicDependency(DynamicallyAccessedMemberTypes.PublicProperties, typeof(DemoRow))]
 static GalleryLaunchOptions? ParseArgs(string[] args)
 {
     try
@@ -51,7 +47,7 @@ static GalleryLaunchOptions? ParseArgs(string[] args)
         Console.Error.WriteLine(ex.Message);
         Console.Error.WriteLine(
             "usage: Gallery.Desktop [--width N] [--height N] [--frames N] [--max-fps N] " +
-            "[--no-vsync] [--always-render] [--theme system|light|dark] [--legacy] [--cpu] [--shot path]");
+            "[--no-vsync] [--always-render] [--theme system|light|dark] [--cpu] [--shot path]");
         return null;
     }
 }

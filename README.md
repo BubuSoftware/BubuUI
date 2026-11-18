@@ -60,9 +60,6 @@ dotnet test EclipseUI.slnx --no-build -m:1
 # 桌面画廊
 dotnet run --project samples/Gallery.Desktop
 
-# 原框架功能演示（响应式、样式、布局、完整控件目录）
-dotnet run --project samples/Gallery.Desktop -- --legacy
-
 # 离屏画廊与交互验证
 dotnet run --project sandbox/GalleryCheck -- --cpu --selfcheck --shot out/gallery.png
 ```
@@ -129,11 +126,11 @@ AppBuilder.Configure<MyApp>()
 
 当前目录包含 Window、基础视觉元素、通用呈现器和交互控件。除文本、按钮和布局控件外，已提供 TextBox/PasswordBox、ListBox/ComboBox、开关与数值输入、浮层和菜单、TabControl、TreeView、DataGrid、DatePicker/Calendar、图像与形状，以及 Canvas/DockPanel。Grid 支持跨行跨列，滚动条可拖动，虚拟列表支持变高和可选容器复用。
 
-完整行为、使用示例及能力边界见 [控件库契约](./design/24-control-library.md)。默认 Gallery 为 Fluent 交互演示页，仅展示真实控件，支持主题切换、重置、滑块与进度条联动，窄窗口自动收紧布局。`--legacy` 的第六区保留完整控件目录；也可独立验证并生成深浅主题截图：
+完整行为、使用示例及能力边界见 [控件库契约](./design/24-control-library.md)。Gallery 仅保留 Fluent 交互演示，页面和控件示例均以 `.ui` 描述，支持主题切换、重置、滑块与进度条联动，窄窗口自动收紧布局。旧页面已移入测试夹具，继续覆盖编译器与 IDE 回归。也可独立验证并导出深浅主题控件状态：
 
 ```powershell
 dotnet run --project sandbox/ControlCheck -- out/controls.png
-dotnet run --project sandbox/ControlNativeCheck
+dotnet run --project sandbox/FluentCheck -- out/fluent
 ```
 
 ## 边界

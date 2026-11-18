@@ -39,7 +39,7 @@ DataGridColumn 是列描述对象，通过 C# 或表达式传入 Columns；它�
 
 ## 使用方式
 
-完整可编译示例见 [ControlCatalog.ui](../samples/Gallery/ControlCatalog.ui)。
+完整可编译示例见 [FluentControlExamples.ui](../samples/Gallery/FluentControlExamples.ui)。
 
 ```xml
 <TextBox @bind-Text={query} Placeholder="Search" />

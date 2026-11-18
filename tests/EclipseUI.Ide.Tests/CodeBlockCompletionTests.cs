@@ -14,9 +14,9 @@ namespace EclipseUI.Ide.Tests;
 
 /// <summary>
 /// design/18 阶段 2：<c>@code</c> 内走 Roslyn CompletionService（真实生成文档 +
-/// EditorDocumentWorkspace），验收按 §7.2 与 .cs 对照。项目模式夹具借用 Gallery 的
+/// EditorDocumentWorkspace），验收按 §7.2 与 .cs 对照。项目模式夹具借用测试专用 Gallery 夹具的
 /// Counter.ui 路径注入缓冲区（ProjectWorkspace.TryRead 优先取缓冲区，生成文档与注入文本对齐）；
-/// 成员声明在 @code 里（Gallery 的 Counter 本就没有 .cs），TaskItem 是 Gallery 真实模型类型。
+/// 成员声明在 @code 里（Counter 夹具本就没有 .cs），TaskItem 是测试夹具模型类型。
 /// </summary>
 public class CodeBlockCompletionTests
 {
@@ -74,7 +74,7 @@ public class CodeBlockCompletionTests
 
         projects ??= SharedProjects.Value;
         var root = FindRepositoryRoot();
-        var path = System.IO.Path.Combine(root, "samples", "Gallery", "Counter.ui");
+        var path = System.IO.Path.Combine(root, "tests", "GalleryFixtures", "Counter.ui");
         var uri = DocumentStore.PathToUri(path);
         var service = new LanguageService(SharedLegacy.Value, new DocumentStore(), projects);
         service.ApplyBuffer(uri, doc);
@@ -262,7 +262,7 @@ public class CodeBlockCompletionTests
         // 独立实例：TaskItem.cs 缓冲区只在本用例生效，不污染共享夹具。
         var projects = new ProjectWorkspace(new CatalogOptions { ProbeRoot = FindRepositoryRoot() });
         var root = FindRepositoryRoot();
-        var taskItemPath = System.IO.Path.Combine(root, "samples", "Gallery", "TaskItem.cs");
+        var taskItemPath = System.IO.Path.Combine(root, "tests", "GalleryFixtures", "TaskItem.cs");
         Assert.DoesNotContain("Extra", File.ReadAllText(taskItemPath));
         var buffered = """
             namespace Gallery;

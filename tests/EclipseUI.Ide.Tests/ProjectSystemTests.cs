@@ -10,7 +10,7 @@ namespace EclipseUI.Ide.Tests;
 /// §6.9.7 五条要求的回归夹具：用**真实仓库**跑 L1–L4（MSBuild 求值 → 项目 Compilation →
 /// 真生成器 → 目录），不再用内存态/dll 目录假装有项目。
 ///
-/// 文档 uri 借用 samples/Gallery 里已存在、且被 AdditionalFiles 收进去的 .ui/.eustyle 路径，
+/// 文档 uri 借用 tests/GalleryFixtures 里已存在、且被 AdditionalFiles 收进去的 .ui/.eustyle 路径，
 /// 文本通过 DocumentStore 缓冲区注入——不写盘、不污染工作树，同时保证归属判据真实命中。
 /// </summary>
 public class ProjectSystemTests
@@ -21,7 +21,7 @@ public class ProjectSystemTests
         public required ProjectWorkspace Workspace { get; init; }
         public required LanguageService Service { get; init; }
 
-        public string Gallery(string fileName) => Path.Combine(Root, "samples", "Gallery", fileName);
+        public string Gallery(string fileName) => Path.Combine(Root, "tests", "GalleryFixtures", fileName);
     }
 
     // 求值 + 构建全部项目快照只做一次；只读夹具共用，改缓冲区的用例另建实例。
@@ -34,7 +34,7 @@ public class ProjectSystemTests
         var skinPath = fixture.Gallery("Counter.ui");
         var stylePath = fixture.Gallery("styles.eustyle");
         var snapshot = Assert.Single(fixture.Workspace.ResolveAll(skinPath));
-        stylePath = snapshot.Evaluation.AdditionalFiles.First(p => p.EndsWith(".eustyle", StringComparison.OrdinalIgnoreCase));
+        stylePath = snapshot.Evaluation.AdditionalFiles.First(p => p.EndsWith("app.eustyle", StringComparison.OrdinalIgnoreCase));
         var skinUri = DocumentStore.PathToUri(skinPath);
         var styleUri = DocumentStore.PathToUri(stylePath);
         var skin = "@namespace Gallery\n@using EclipseUI.Elements\n@template Button\n<Border Class=\"newChrome\" Background={Owner.Background} />";
@@ -119,13 +119,13 @@ public class ProjectSystemTests
     }
 
     /// <summary>
-    /// 扩展传的是打开的文件夹：只开 samples/Gallery 时，发现阶段也要向上扩到仓库根，
+    /// 扩展传的是打开的文件夹：只开 tests/GalleryFixtures 时，发现阶段也要向上扩到仓库根，
     /// 否则框架类型的源码工程不在集合里，L6 会错误地退回反编译。归属判据不因此放宽。
     /// </summary>
     [Fact]
     public void ProjectSystem_SubfolderWorkspaceStillSeesFrameworkSource()
     {
-        var gallery = Path.Combine(FindRepositoryRoot(), "samples", "Gallery");
+        var gallery = Path.Combine(FindRepositoryRoot(), "tests", "GalleryFixtures");
         var projects = new ProjectWorkspace(new CatalogOptions { ProbeRoot = gallery });
         Assert.True(projects.HasProjects);
         Assert.Contains(projects.FindSourceTypes("EclipseUI.Elements.Button"),
@@ -275,7 +275,7 @@ public class ProjectSystemTests
             "fell back to decompilation: " + definition.Uri);
         Assert.EndsWith(".cs", definition.Uri, StringComparison.OrdinalIgnoreCase);
         Assert.True(File.Exists(definition.Uri!), "definition target must be a real file on disk");
-        // 框架源码在仓库根下，不是当前 samples/Gallery 项目目录。
+        // 框架源码在仓库根下，不是当前 tests/GalleryFixtures 项目目录。
         Assert.NotEqual(Path.GetDirectoryName(sourcePath), Path.GetDirectoryName(definition.Uri));
         Assert.Contains("src", definition.Uri!, StringComparison.OrdinalIgnoreCase);
     }

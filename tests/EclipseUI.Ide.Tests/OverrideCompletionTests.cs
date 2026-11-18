@@ -24,7 +24,7 @@ public class OverrideCompletionTests
         string otherMembers = "")
     {
         var projects = Projects.Value;
-        var directory = Path.Combine(RepositoryRoot(), "samples", "Gallery");
+        var directory = Path.Combine(RepositoryRoot(), "tests", "GalleryFixtures");
         // The user's optional code-behind must not override a lifecycle member under test.
         // Buffer overlays never alter that file, and are harmless when it does not exist.
         projects.ApplyBuffer(DocumentStore.PathToUri(Path.Combine(directory, "Counter.cs")),

@@ -8,7 +8,7 @@ namespace EclipseUI.Ide.Tests;
 /// <summary>
 /// design/18 阶段 3（§5.6）：项目模式重命名走 Roslyn Renamer——Solution diff，
 /// 源 .cs 直接交付，生成文档编辑经统一映射服务回映 .ui，任一处映不回整体拒绝。
-/// 夹具借用 Gallery 真实 .ui 路径注入缓冲区；TaskItem 是 Gallery 真实模型类型，
+/// 夹具借用测试专用 Gallery 夹具的 .ui 路径注入缓冲区；TaskItem 是测试夹具模型类型，
 /// 跨文档引用（TaskList.ui / TaskItem.cs）天然存在。
 /// </summary>
 public class WorkspaceRenameTests
@@ -37,7 +37,7 @@ public class WorkspaceRenameTests
         var offset = markedDoc.IndexOf('|', StringComparison.Ordinal);
         Assert.True(offset >= 0, "fixture must contain a | cursor marker");
         var doc = markedDoc.Remove(offset, 1);
-        var path = System.IO.Path.Combine(FindRepositoryRoot(), "samples", "Gallery", fileName);
+        var path = System.IO.Path.Combine(FindRepositoryRoot(), "tests", "GalleryFixtures", fileName);
         var uri = DocumentStore.PathToUri(path);
         var service = new LanguageService(SharedLegacy.Value, new DocumentStore(), SharedProjects.Value);
         service.ApplyBuffer(uri, doc);
@@ -137,7 +137,7 @@ public class WorkspaceRenameTests
         // 共享工作区里 TaskList.ui 可能被 bind/foreach 测试留过缓冲区（那些夹具没有 {t.Name}）；
         // 本测试要它作为**磁盘 sibling** 参与跨文档引用，先ForgetBuffer 回到磁盘内容。
         var root = FindRepositoryRoot();
-        var taskListPath = System.IO.Path.Combine(root, "samples", "Gallery", "TaskList.ui");
+        var taskListPath = System.IO.Path.Combine(root, "tests", "GalleryFixtures", "TaskList.ui");
         SharedProjects.Value.ForgetBuffer(DocumentStore.PathToUri(taskListPath));
 
         var doc = CounterDoc.Replace("<TextBlock>{task.Name}</TextBlock>", "<TextBlock>{task.Na|me}</TextBlock>");
@@ -149,8 +149,8 @@ public class WorkspaceRenameTests
             f => f.Path is null ? fixture.Path : System.IO.Path.GetFullPath(f.Path),
             StringComparer.OrdinalIgnoreCase);
         // 当前 .ui + TaskItem.cs 声明 + TaskList.ui（{t.Name} + 种子/追加的对象初始化器，design/20 P2）。
-        Assert.Contains(System.IO.Path.GetFullPath(System.IO.Path.Combine(root, "samples", "Gallery", "TaskItem.cs")), byPath.Keys);
-        Assert.Contains(System.IO.Path.GetFullPath(System.IO.Path.Combine(root, "samples", "Gallery", "TaskList.ui")), byPath.Keys);
+        Assert.Contains(System.IO.Path.GetFullPath(System.IO.Path.Combine(root, "tests", "GalleryFixtures", "TaskItem.cs")), byPath.Keys);
+        Assert.Contains(System.IO.Path.GetFullPath(System.IO.Path.Combine(root, "tests", "GalleryFixtures", "TaskList.ui")), byPath.Keys);
         Assert.Contains(fixture.Path, byPath.Keys);
 
         // Roslyn 最小 diff 可能只替换标识符的一部分（Name→Title 共享后缀 e，实际编辑是
@@ -163,7 +163,7 @@ public class WorkspaceRenameTests
         }
 
         // TaskList.ui 引用 TaskItem.Name 五处：{t.Name} + 三条种子 + Add() 的对象初始化器（design/20 P2）。
-        var taskList = byPath[System.IO.Path.GetFullPath(System.IO.Path.Combine(root, "samples", "Gallery", "TaskList.ui"))];
+        var taskList = byPath[System.IO.Path.GetFullPath(System.IO.Path.Combine(root, "tests", "GalleryFixtures", "TaskList.ui"))];
         Assert.Equal(5, taskList.Edits.Count);
     }
 

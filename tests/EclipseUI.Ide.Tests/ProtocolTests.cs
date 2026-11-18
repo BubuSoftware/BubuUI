@@ -354,7 +354,7 @@ public class ProtocolTests
     public async Task Session_OverrideCompletionCommitsAValidMemberWithOrWithoutSnippets(bool snippetSupport)
     {
         var repository = RepositoryRoot();
-        var path = Path.Combine(repository, "samples", "Gallery", "TaskList.ui");
+        var path = Path.Combine(repository, "tests", "GalleryFixtures", "TaskList.ui");
         var uri = DocumentStore.PathToUri(path);
         const string marked = """
             @namespace Gallery
@@ -448,7 +448,7 @@ public class ProtocolTests
     public async Task Session_CSharpTypeCompletionAddsUsingAndCompilesAfterAllWireEditsAreApplied()
     {
         var repository = RepositoryRoot();
-        var path = Path.Combine(repository, "samples", "Gallery", "TaskList.ui");
+        var path = Path.Combine(repository, "tests", "GalleryFixtures", "TaskList.ui");
         var uri = DocumentStore.PathToUri(path);
         const string marked = """
             @namespace Gallery

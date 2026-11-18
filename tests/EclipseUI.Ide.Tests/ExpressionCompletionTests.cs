@@ -36,7 +36,7 @@ public class ExpressionCompletionTests
         var offset = markedDoc.IndexOf('|', StringComparison.Ordinal);
         Assert.True(offset >= 0, "fixture must contain a | cursor marker");
         var doc = markedDoc.Remove(offset, 1);
-        var path = System.IO.Path.Combine(FindRepositoryRoot(), "samples", "Gallery", "Counter.ui");
+        var path = System.IO.Path.Combine(FindRepositoryRoot(), "tests", "GalleryFixtures", "Counter.ui");
         var uri = DocumentStore.PathToUri(path);
         var service = new LanguageService(SharedLegacy.Value, new DocumentStore(), SharedProjects.Value);
         service.ApplyBuffer(uri, doc);

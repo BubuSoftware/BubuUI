@@ -9,7 +9,8 @@ internal static class StateSheet
 {
     internal static void Save(string output, FluentTheme theme, ITextPainter text, double scale)
     {
-        var rows = Gallery.FluentControlExamples.All;
+        using var examples = new Gallery.FluentControlExamples(); examples.EnsureInitialized();
+        var rows = examples.Rows;
         string[] states = ["Rest", "Hover", "Pressed", "Disabled", "Keyboard focus"];
         var size = new Size(1116, 120 + rows.Count * 48);
         var list = new DisplayList(size);
@@ -20,10 +21,13 @@ internal static class StateSheet
         for (var col = 0; col < states.Length; col++) text.Paint(list, states[col], 14, new(202 + col * 180, 91), theme.MutedForeground);
         for (var row = 0; row < rows.Count; row++)
         {
-            text.Paint(list, rows[row].Name, 14, new(24, 130 + row * 48), theme.Foreground);
+            text.Paint(list, rows[row].Title, 14, new(24, 130 + row * 48), theme.Foreground);
             for (var col = 0; col < states.Length; col++)
             {
-                var root = new Canvas(); var control = rows[row].Create();
+                using var specimens = new Gallery.FluentControlExamples(); specimens.EnsureInitialized();
+                var control = specimens.Rows[row].Control!;
+                ((Canvas)control.Parent!).Children.Remove(control);
+                using var root = new Canvas();
                 root.Children.Add(control); Canvas.SetLeft(control, 8); Canvas.SetTop(control, 8);
                 var painter = new ElementPainter(theme, text); painter.Prepare(root);
                 var cellSize = new Size(180, 48);

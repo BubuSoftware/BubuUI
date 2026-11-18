@@ -9,7 +9,7 @@ namespace EclipseUI.Ide.Tests;
 /// design/18 阶段 4（§5.8）：项目模式语义着色走 Roslyn Classifier——对生成文档分类，
 /// 经统一映射服务回映 .ui。验证：token 只落在 {expr}/@code 岛内（模板表面归 TextMate）、
 /// 关键符号拿到正确语义类型（field/property/method/variable）、legacy 无生成文档时回落探针路径。
-/// 夹具借用 Gallery 真实 .ui 路径注入缓冲区（TaskItem 是真实模型类型）。
+/// 夹具借用测试专用 Gallery 夹具的 .ui 路径注入缓冲区（TaskItem 是真实模型类型）。
 /// </summary>
 public class SemanticColoringTests
 {
@@ -46,7 +46,7 @@ public class SemanticColoringTests
     private static (LanguageService Service, string Uri, DocumentAnalysis Analysis) Create(
         string doc, string fileName = "Counter.ui")
     {
-        var path = System.IO.Path.Combine(FindRepositoryRoot(), "samples", "Gallery", fileName);
+        var path = System.IO.Path.Combine(FindRepositoryRoot(), "tests", "GalleryFixtures", fileName);
         var uri = DocumentStore.PathToUri(path);
         var service = new LanguageService(SharedLegacy.Value, new DocumentStore(), SharedProjects.Value);
         service.ApplyBuffer(uri, doc);

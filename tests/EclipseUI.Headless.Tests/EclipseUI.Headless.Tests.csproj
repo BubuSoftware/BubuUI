@@ -19,8 +19,9 @@
     <ProjectReference Include="..\..\src\EclipseUI.Compiler\EclipseUI.Compiler.csproj" />
     <ProjectReference Include="..\..\src\EclipseUI.Compiler.Metadata\EclipseUI.Compiler.Metadata.csproj" />
     <ProjectReference Include="..\..\src\EclipseUI.Text.Shaping\EclipseUI.Text.Shaping.csproj" />
-    <!-- 画廊共享 UI（展示页 Counter/TaskList/Prefs 作为端到端夹具）；平台入口 Gallery.Desktop 不参与测试 -->
+    <!-- 真实 Fluent 画廊应用，以及与发布示例隔离的旧编译器回归夹具。 -->
     <ProjectReference Include="..\..\samples\Gallery\Gallery.csproj" />
+    <ProjectReference Include="../GalleryFixtures/GalleryFixtures.csproj" />
     <ProjectReference Include="..\..\src\EclipseUI.Compiler.Generator\EclipseUI.Compiler.Generator.csproj"
                       OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>

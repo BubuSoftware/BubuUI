@@ -270,7 +270,7 @@ public class DirectiveImportCompletionTests
             IncludeSiblingAssemblies = false,
         });
         var service = new LanguageService(catalogs, new DocumentStore(), projects);
-        var path = Path.Combine(root, "samples", "Gallery", "TaskList.ui");
+        var path = Path.Combine(root, "tests", "GalleryFixtures", "TaskList.ui");
         var uri = DocumentStore.PathToUri(path);
         const string marked = "@namespace Gallery\n@using System.Threading.Ta|\n<NotARealTag />\n@code { public int Value; }";
         var offset = marked.IndexOf('|');

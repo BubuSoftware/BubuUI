@@ -5,7 +5,7 @@
     <RootNamespace>Gallery</RootNamespace>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Description>EclipseUI 画廊共享 UI（平台无关）：展示页（Counter/TaskList/Prefs）+ 主场景 + 文本/截图辅助。平台入口见 Gallery.Desktop。</Description>
+    <Description>EclipseUI Fluent 画廊共享 UI：声明式控件示例、主题切换与文本/截图辅助。平台入口见 Gallery.Desktop。</Description>
   </PropertyGroup>
 
   <ItemGroup>

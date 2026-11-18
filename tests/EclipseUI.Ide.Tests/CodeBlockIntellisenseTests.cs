@@ -248,9 +248,9 @@ public class CodeBlockIntellisenseTests
         });
         var service = new LanguageService(legacy, new DocumentStore(), projects);
 
-        // 借用 Gallery 里真实被 AdditionalFiles 收录的 .ui 路径，注入自定义缓冲区文本
+        // 借用测试专用 Gallery 夹具中被 AdditionalFiles 收录的 .ui 路径，注入自定义缓冲区文本
         // （ProjectWorkspace.TryRead 优先取缓冲区，生成文档与映射因此对齐注入文本）。
-        var path = Path.Combine(root, "samples", "Gallery", "Counter.ui");
+        var path = Path.Combine(root, "tests", "GalleryFixtures", "Counter.ui");
         var uri = DocumentStore.PathToUri(path);
         const string doc = """
             @namespace Gallery

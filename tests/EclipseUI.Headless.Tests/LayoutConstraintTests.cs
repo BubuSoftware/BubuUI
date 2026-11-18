@@ -231,7 +231,7 @@ public class LayoutConstraintTests
     {
         using var window = new LegacyWindow();
         window.EnsureInitialized();
-        GalleryApp.WireInteractions(window);
+        GalleryFixtureInteractions.Wire(window);
         var root = window.Content!;
         foreach (var width in new[] { 1000d, 360d, 700d, 360d })
         {

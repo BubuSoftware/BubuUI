@@ -10,8 +10,26 @@ public class ProjectReferenceContextTests
     private static readonly Lazy<ProjectSnapshot> Gallery = new(() =>
     {
         var workspace = new ProjectWorkspace(new CatalogOptions { ProbeRoot = RepositoryRoot() });
-        return Assert.Single(workspace.ResolveAll(Path.Combine(RepositoryRoot(), "samples", "Gallery", "TaskList.ui")));
+        return Assert.Single(workspace.ResolveAll(Path.Combine(RepositoryRoot(), "samples", "Gallery", "MainWindow.ui")));
     });
+
+    [Fact]
+    public void FluentGalleryTemplatesGenerateAndResolveWithoutCompilationErrors()
+    {
+        var snapshot = Gallery.Value;
+        var templates = snapshot.Evaluation.AdditionalFiles
+            .Where(path => path.EndsWith(".ui", StringComparison.OrdinalIgnoreCase)).ToArray();
+        Assert.NotEmpty(templates);
+        foreach (var path in templates)
+            Assert.True(snapshot.GeneratedDocuments.ContainsKey(Path.GetFullPath(path)),
+                "Missing generated document for " + path);
+        var errors = snapshot.Compilation.GetDiagnostics()
+            .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error).ToArray();
+        Assert.True(errors.Length == 0,
+            string.Join(Environment.NewLine, errors.Select(diagnostic => diagnostic.ToString())));
+        Assert.Contains(snapshot.Catalog.Elements, element => element.Tag == "FluentGalleryPage");
+        Assert.DoesNotContain(snapshot.Catalog.Elements, element => element.Tag == "Counter");
+    }
 
     [Fact]
     public void ProjectCompilationReferencesEachAssemblySimpleNameOnce()

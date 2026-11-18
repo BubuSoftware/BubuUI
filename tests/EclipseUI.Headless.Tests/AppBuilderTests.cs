@@ -170,16 +170,17 @@ public class AppBuilderTests
     {
         try
         {
-            var app = AppBuilder.Configure<GalleryApp>()
-                .ConfigureServices(s => s.AddSingleton(GalleryLaunchOptions.Parse(["--legacy"])))
-                .UseStyles(StyleRegistry.Instance, Gallery.StyleBootstrap.Apply)
-                .Build();
+            Styling.Provider = StyleRegistry.Instance;
+            Gallery.StyleBootstrap.Apply(StyleRegistry.Instance);
+            using var window = new LegacyWindow();
+            window.EnsureInitialized();
+            GalleryFixtureInteractions.Wire(window);
 
             Assert.True(StyleRegistry.Instance.IsDefined("badge"));
 
             // 第 5 分区的可见类通道演示：读回文案证明 .badge 规则的三个值落在 class 层
             //（hover 变体的运行时翻转需要真实指针，这里只断言 base 层）。
-            var demo = app.MainWindow!.Content!.Descendants<Button>()
+            var demo = window.Content!.Descendants<Button>()
                 .Single(b => b.Label.StartsWith("class .badge", StringComparison.Ordinal));
             Assert.Contains("Glow=6", demo.Label);
             Assert.Contains("Tone=Success", demo.Label);

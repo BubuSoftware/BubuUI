@@ -58,7 +58,7 @@ $primary: theme(#22a064, #1c8c58);
 }
 
 // design/19 P1: custom style properties declared in the app assembly
-// (samples/Gallery/BadgeStyles.cs, [UiStyleProperty] fields — no framework changes).
+// (tests/GalleryFixtures/BadgeStyles.cs, [UiStyleProperty] fields — no framework changes).
 // Value forms cover the dispatch table: number, enum keyword (member-checked at
 // compile time, emitted as T.Member) and string. Class channel emits the generic
 // s.Set(field, value) escape hatch; inline Style= emits target.SetValue(field, value).

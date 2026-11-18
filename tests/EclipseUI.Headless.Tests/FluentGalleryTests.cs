@@ -12,7 +12,7 @@ public class FluentGalleryTests
     [Fact]
     public void LiveInputUpdatesStatusAndResetDisposesOpenPopupAndRestoresValues()
     {
-        using var page = new FluentGalleryPage();
+        using var page = new FluentGalleryPage(); page.EnsureInitialized();
         new ElementPainter(FluentTheme.Light).Prepare(page);
         using var host = new HeadlessRoot(page) { AvailableSize = new(1180, 960) }; host.UpdateLayout();
         var button = (Button)page.LiveControls[0]; var p = button.PointFromRoot(Point.Zero);
@@ -34,7 +34,7 @@ public class FluentGalleryTests
     [Fact]
     public void GalleryUsesOnlyLiveDrawingAndKeepsFocusAcrossThemeChanges()
     {
-        using var page = new FluentGalleryPage();
+        using var page = new FluentGalleryPage(); page.EnsureInitialized();
         var painter = new ElementPainter(FluentTheme.Light); painter.Prepare(page);
         using var host = new HeadlessRoot(page) { AvailableSize = new(1180, 960) }; host.UpdateLayout();
         var editor = page.LiveControls.OfType<TextBox>().First(); host.Focus.Focus(editor);
@@ -54,7 +54,7 @@ public class FluentGalleryTests
     [Fact]
     public void NarrowWindowFitsLiveControlsWithoutHorizontalScrolling()
     {
-        using var page = new FluentGalleryPage();
+        using var page = new FluentGalleryPage(); page.EnsureInitialized();
         new ElementPainter(FluentTheme.Light).Prepare(page);
         using var host = new HeadlessRoot(page);
         foreach (var width in new[] { 1180d, 360d, 700d, 1180d })
@@ -67,24 +67,34 @@ public class FluentGalleryTests
         }
     }
 
-    [Fact]
-    public void ThemeButtonCyclesHostAppearanceAndLegacyIsExplicit()
+    [Theory]
+    [InlineData("system", ThemeVariant.System)]
+    [InlineData("light", ThemeVariant.Light)]
+    [InlineData("dark", ThemeVariant.Dark)]
+    public void ThemeButtonCyclesHostAppearance(string option, ThemeVariant initial)
     {
         var app = AppBuilder.Configure<GalleryApp>()
-            .ConfigureServices(s => s.AddSingleton(GalleryLaunchOptions.Parse(["--theme", "light"]))).Build();
+            .ConfigureServices(s => s.AddSingleton(GalleryLaunchOptions.Parse(["--theme", option]))).Build();
         using var window = Assert.IsType<MainWindow>(app.MainWindow);
         var host = new AppearanceHost(); app.Host = host;
-        window.ThemeButton.Click(); Assert.Same(FluentTheme.Dark, host.Theme);
-        window.ThemeButton.Click(); Assert.Same(FluentTheme.System, host.Theme);
-        window.ThemeButton.Click(); Assert.Same(FluentTheme.Light, host.Theme);
-        Assert.False(GalleryLaunchOptions.Parse([]).Legacy);
-        Assert.True(GalleryLaunchOptions.Parse(["--legacy"]).Legacy);
+        Assert.Equal($"Theme: {initial}", window.ThemeButton.Label);
+        Assert.Null(host.Theme);
+        var mode = initial;
+        for (var i = 0; i < 3; i++)
+        {
+            mode = mode switch { ThemeVariant.System => ThemeVariant.Light, ThemeVariant.Light => ThemeVariant.Dark, _ => ThemeVariant.System };
+            window.ThemeButton.Click();
+            Assert.Same(FluentTheme.For(mode), host.Theme);
+            Assert.Equal($"Theme: {mode}", window.ThemeButton.Label);
+        }
+        window.Page.ResetControls();
+        Assert.Equal($"Theme: {mode}", window.ThemeButton.Label);
     }
 
     [Fact]
     public void KeyboardFocusRevealsLiveControlsInASmallViewport()
     {
-        using var page = new FluentGalleryPage(); new ElementPainter(FluentTheme.Light).Prepare(page);
+        using var page = new FluentGalleryPage(); page.EnsureInitialized(); new ElementPainter(FluentTheme.Light).Prepare(page);
         using var host = new HeadlessRoot(page) { AvailableSize = new(360, 640) }; host.UpdateLayout();
         var slider = page.LiveControls.OfType<Slider>().Single();
         Assert.True(host.Focus.Focus(slider, FocusOrigin.Keyboard)); host.UpdateLayout();

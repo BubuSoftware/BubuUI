@@ -12,7 +12,6 @@ public sealed record GalleryLaunchOptions
     public int Width { get; init; } = 720;
 
     public int Height { get; init; } = 960;
-    public bool Legacy { get; init; }
 
     /// <summary>--frames N：最多跑 N 个循环 tick 后自动退出（默认跑到窗口关闭）。</summary>
     public int? Frames { get; init; }
@@ -37,7 +36,6 @@ public sealed record GalleryLaunchOptions
     {
         int width = 720;
         int height = 960;
-        bool legacy = false;
         int? frames = null;
         string? shotPath = null;
         bool vsync = true;
@@ -50,9 +48,6 @@ public sealed record GalleryLaunchOptions
         {
             switch (args[i])
             {
-                case "--legacy":
-                    legacy = true;
-                    break;
                 case "--theme" when i + 1 < args.Length:
                     theme = args[++i].ToLowerInvariant() switch
                     {
@@ -94,7 +89,6 @@ public sealed record GalleryLaunchOptions
         return new GalleryLaunchOptions
         {
             Theme = theme,
-            Legacy = legacy,
             Width = width,
             Height = height,
             Frames = frames,

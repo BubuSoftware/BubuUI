@@ -281,14 +281,16 @@ public class SourceMappingTests
         Assert.False(result.GeneratedDocuments.ContainsKey(UiPath));
     }
 
-    // ---- C. 仓库全部 Gallery 夹具 ----
+    // ---- C. 当前 Gallery 与测试专用模板夹具 ----
 
-    [Fact]
-    public void GalleryFixtures_RoundTripAllExpressionsAndCodeBlocks()
+    [Theory]
+    [InlineData("samples/Gallery")]
+    [InlineData("tests/GalleryFixtures")]
+    public void GalleryFixtures_RoundTripAllExpressionsAndCodeBlocks(string relativeDirectory)
     {
         var root = FindRepositoryRoot();
         var workspace = new ProjectWorkspace(new CatalogOptions { ProbeRoot = root });
-        var gallery = Path.Combine(root, "samples", "Gallery");
+        var gallery = Path.Combine(root, relativeDirectory.Replace('/', Path.DirectorySeparatorChar));
         var files = Directory.GetFiles(gallery, "*.ui");
         Assert.NotEmpty(files);
         foreach (var path in files)

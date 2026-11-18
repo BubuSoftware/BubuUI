@@ -21,6 +21,7 @@
     <Project Path="ide/EclipseUI.LanguageServer/EclipseUI.LanguageServer.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/GalleryFixtures/GalleryFixtures.csproj" />
     <Project Path="tests/EclipseUI.Compiler.Tests/EclipseUI.Compiler.Tests.csproj" />
     <Project Path="tests/EclipseUI.Headless.Tests/EclipseUI.Headless.Tests.csproj" />
     <Project Path="tests/EclipseUI.Platform.Linux.Tests/EclipseUI.Platform.Linux.Tests.csproj" />
