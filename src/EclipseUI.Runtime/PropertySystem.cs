@@ -16,7 +16,11 @@ public sealed class PropertyOptions
 {
     public bool Inherits { get; init; }
     public InvalidateKind Invalidate { get; init; } = InvalidateKind.None;
+    public bool Animatable { get; init; }
 }
+
+[AttributeUsage(AttributeTargets.Field)]
+public sealed class UiAnimatableAttribute : Attribute { }
 
 public abstract class StyledProperty
 {
@@ -34,6 +38,9 @@ public abstract class StyledProperty
     internal PropertyOptions Options { get; }
     public bool Inherits => Options.Inherits;
     public InvalidateKind Invalidate => Options.Invalidate;
+    public bool Animatable => Options.Animatable;
+
+    internal abstract ITransitionState CreateTransitionState();
 
     public override string ToString() => $"{OwnerType.Name}.{Name}";
 }
@@ -47,6 +54,8 @@ public sealed class StyledProperty<T> : StyledProperty
     }
 
     public T DefaultValue { get; }
+
+    internal override ITransitionState CreateTransitionState() => new TransitionState<T>(this);
 
     public static StyledProperty<T> Register<TOwner>(string name, T defaultValue = default!, PropertyOptions? options = null)
     {

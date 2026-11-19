@@ -127,6 +127,14 @@ public sealed class HeadlessRoot : IDisposable
         content.Arrange(new Rect(Point.Zero, content.DesiredSize));
     }
 
+    /// <summary>Advances the shared animation clock without implicitly running layout or posted work.</summary>
+    public void AdvanceAnimations(TimeSpan elapsed)
+    {
+        ThrowIfDisposed();
+        UiThreadGuard.AssertUiThread(_uiRoot, nameof(AdvanceAnimations));
+        FrameAnimations.Advance(SyncContent(), elapsed);
+    }
+
     /// <summary>滚轮输入（无头测试与 Win32 宿主共用同一 InputRouter 路径）。</summary>
     public void PointerWheel(Point point, double delta) => Input.PointerWheel(point, delta);
 

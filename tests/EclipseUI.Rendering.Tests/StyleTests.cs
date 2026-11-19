@@ -3,6 +3,7 @@ using System.Linq;
 using EclipseUI;
 using EclipseUI.Elements;
 using EclipseUI.Rendering;
+using EclipseUI.Themes.Fluent;
 using Xunit;
 
 namespace EclipseUI.Rendering.Tests;
@@ -36,6 +37,70 @@ public class StyleTests : IDisposable
     }
 
     public void Dispose() => Styling.Provider = null;
+
+    [Fact]
+    public void StyleTransitionUsesCurrentValueAcrossHoverChanges()
+    {
+        _registry.Define("animated", s => s.Background(new Color(0, 0, 0))
+                .Transition(Visual.BackgroundProperty, new TransitionSpec(TimeSpan.FromMilliseconds(100), Easings.Linear)))
+            .Hover(s => s.Background(new Color(100, 0, 0)));
+        var button = new Button { Classes = ["animated"], Width = 100, Height = 40 };
+        using var host = new HeadlessRoot(button);
+        host.UpdateLayout();
+        host.PointerMove(new Point(10, 10));
+        Assert.Equal(new Color(0, 0, 0), Visual.GetBackground(button));
+        host.AdvanceAnimations(TimeSpan.FromMilliseconds(50));
+        Assert.Equal(new Color(50, 0, 0), Visual.GetBackground(button));
+        host.PointerMove(new Point(200, 100));
+        Assert.Equal(new Color(50, 0, 0), Visual.GetBackground(button));
+        host.AdvanceAnimations(TimeSpan.FromMilliseconds(50));
+        Assert.Equal(new Color(25, 0, 0), Visual.GetBackground(button));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ThemeColorTransitionPaintsInterpolatedColorInBothThemes(bool light)
+    {
+        _registry.Define("theme-animated", s => s
+                .Background(new ThemeColor(new Color(0, 0, 0), new Color(100, 0, 0)))
+                .Transition(Visual.BackgroundProperty, new TransitionSpec(TimeSpan.FromMilliseconds(100), Easings.Linear)))
+            .Hover(s => s.Background(new ThemeColor(new Color(80, 0, 0), new Color(200, 0, 0))));
+        using var block = new TextBlock { Classes = ["theme-animated"], Width = 100, Height = 40 };
+        using var host = new HeadlessRoot(block);
+        host.UpdateLayout();
+        var painter = new ElementPainter(light ? FluentTheme.Light : FluentTheme.Dark);
+
+        Color Background() => Assert.IsType<SolidColorBrush>(
+            Assert.Single(painter.BuildFrame(block, Surface).List.Commands.OfType<FillRoundedRect>()).Brush).Color;
+
+        Assert.Equal(new Color(light ? (byte)100 : (byte)0, 0, 0), Background());
+        host.PointerMove(new Point(10, 10));
+        host.AdvanceAnimations(TimeSpan.FromMilliseconds(50));
+        Assert.Equal(new Color(light ? (byte)150 : (byte)40, 0, 0), Background());
+        host.PointerMove(new Point(200, 100));
+        host.AdvanceAnimations(TimeSpan.FromMilliseconds(50));
+        Assert.Equal(new Color(light ? (byte)125 : (byte)20, 0, 0), Background());
+    }
+
+    [Fact]
+    public void LaterClassOverridesTransitionAndRemovingItRestoresEarlierClass()
+    {
+        _registry.Define("base-animation", s => s.Background(new Color(0, 0, 0))
+                .Transition(Visual.BackgroundProperty, new TransitionSpec(TimeSpan.FromMilliseconds(100), Easings.Linear)))
+            .Hover(s => s.Background(new Color(100, 0, 0)));
+        _registry.Define("slower", s => s.Transition(Visual.BackgroundProperty,
+            new TransitionSpec(TimeSpan.FromMilliseconds(200), Easings.Linear)));
+        var button = new Button { Classes = ["base-animation", "slower"], Width = 100, Height = 40 };
+        using var host = new HeadlessRoot(button);
+        host.UpdateLayout(); host.PointerMove(new Point(10, 10));
+        host.AdvanceAnimations(TimeSpan.FromMilliseconds(50));
+        Assert.Equal(new Color(25, 0, 0), Visual.GetBackground(button));
+        button.Classes = ["base-animation"];
+        host.PointerMove(new Point(200, 100));
+        host.AdvanceAnimations(TimeSpan.FromMilliseconds(50));
+        Assert.Equal(new Color(13, 0, 0), Visual.GetBackground(button));
+    }
 
     [Fact]
     public void EffectiveValue_Layers_LocalOverClassOverDefault()

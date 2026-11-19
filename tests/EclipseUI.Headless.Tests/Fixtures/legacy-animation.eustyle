@@ -1,0 +1,18 @@
+.legacy-theme-anim {
+    Background: theme(#000000, #640000);
+    @transition Background {
+        Duration: 100ms;
+        Easing: Linear;
+    }
+    &:hover { Background: theme(#500000, #c80000); }
+}
+
+.legacy-radius-anim {
+    Background: #404040;
+    CornerRadius: 2;
+    @transition CornerRadius {
+        Duration: 100ms;
+        Easing: Linear;
+    }
+    &:hover { CornerRadius: 10; }
+}

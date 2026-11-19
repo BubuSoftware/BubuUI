@@ -31,6 +31,42 @@ namespace EclipseUI.Compiler;
 /// </summary>
 public static class Eustyle
 {
+    /// <summary>Validates a transition block's fields for both legacy and typed style parsers.</summary>
+    public static bool TryParseTransition(IEnumerable<(string Name, string Value)> fields,
+        out double milliseconds, out string easing, out string error)
+    {
+        milliseconds = 0; easing = "Linear"; error = "";
+        var hasDuration = false;
+        var hasEasing = false;
+        foreach (var (name, raw) in fields)
+        {
+            if (name == "Duration")
+            {
+                if (hasDuration) { error = "duplicate transition Duration"; return false; }
+                hasDuration = true;
+                var text = raw.Trim();
+                var factor = text.EndsWith("ms", StringComparison.Ordinal) ? 1d :
+                    text.EndsWith("s", StringComparison.Ordinal) ? 1000d : 0d;
+                var suffix = factor == 1 ? 2 : 1;
+                if (factor == 0 || !double.TryParse(text.Substring(0, text.Length - suffix), NumberStyles.Float,
+                    CultureInfo.InvariantCulture, out var value) || double.IsNaN(value) || double.IsInfinity(value) ||
+                    value < 0 || value * factor > TimeSpan.MaxValue.TotalMilliseconds)
+                { error = "transition Duration must be a nonnegative finite time with ms or s units"; return false; }
+                milliseconds = value * factor;
+            }
+            else if (name == "Easing")
+            {
+                if (hasEasing) { error = "duplicate transition Easing"; return false; }
+                hasEasing = true; easing = raw.Trim();
+                if (easing != "Linear" && easing != "CubicOut")
+                { error = "transition Easing must be Linear or CubicOut"; return false; }
+            }
+            else { error = $"unknown transition field '{name}'"; return false; }
+        }
+        if (!hasDuration) { error = "transition Duration is required"; return false; }
+        return true;
+    }
+
     private static readonly Dictionary<string, EustyleVariant> States =
         new(StringComparer.Ordinal)
         {
@@ -225,6 +261,81 @@ public static class Eustyle
                     _declaredStates.Add(new EustyleStateDecl(name, SpanAt(nameStart, name.Length)));
                 SkipTrivia();
             }
+        }
+
+        private void ParseTransition(List<EustyleSetter> setters,
+            List<(EustyleVariant Variant, string? Registered)> current)
+        {
+            var start = _i;
+            _i += "@transition".Length;
+            SkipTrivia();
+            var propertyStart = _i;
+            var property = Ident();
+            SkipTrivia();
+            if (property.Length == 0 || !Take('{'))
+            {
+                Error(start, _i + 1, "expected '@transition Property { Duration: 150ms; Easing: CubicOut; }'");
+                SkipBracedBlock();
+                return;
+            }
+            var fields = new List<(string Name, string Value)>();
+            while (true)
+            {
+                SkipTrivia();
+                if (Eof) { Error(start, _i, "unterminated @transition block"); return; }
+                if (Take('}')) break;
+                var fieldStart = _i;
+                var name = Ident();
+                SkipTrivia();
+                if (name.Length == 0 || !Take(':'))
+                { Error(fieldStart, _i + 1, "expected transition field name followed by ':'"); SkipTo(';', '}'); return; }
+                SkipTrivia();
+                var valueStart = _i;
+                while (!Eof && Peek != ';' && Peek != '}') _i++;
+                fields.Add((name, _s.Substring(valueStart, _i - valueStart).Trim()));
+                if (Peek == ';') _i++;
+            }
+            if (current.Count != 0)
+            { Error(start, _i, "transition configuration is only supported in a base rule, not a state variant"); return; }
+            if (!TryParseTransition(fields, out var milliseconds, out var easing, out var error))
+            { Error(start, _i, error); return; }
+            AddTransition(setters, property, propertyStart, start, milliseconds, easing);
+        }
+
+        private void ParseTransitionShorthand(List<EustyleSetter> setters,
+            List<(EustyleVariant Variant, string? Registered)> current)
+        {
+            var start = _i;
+            _i += "transition".Length;
+            SkipTrivia();
+            if (!Take(':')) { Error(start, _i + 1, "expected ':' after transition"); SkipTo(';', '}'); return; }
+            SkipTrivia();
+            var propertyStart = _i;
+            var property = Ident();
+            SkipTrivia();
+            var valueStart = _i;
+            while (!Eof && Peek != ';' && Peek != '}') _i++;
+            var parts = _s.Substring(valueStart, _i - valueStart).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            if (Peek == ';') _i++;
+            if (current.Count != 0)
+            { Error(start, _i, "transition configuration is only supported in a base rule, not a state variant"); return; }
+            if (property.Length == 0 || parts.Length != 2 ||
+                !TryParseTransition(new[] { ("Duration", parts.Length > 0 ? parts[0] : ""), ("Easing", parts.Length > 1 ? parts[1] : "") },
+                    out var ms, out var easing, out _))
+            { Error(start, _i, "expected 'transition: Property 150ms CubicOut;'"); return; }
+            AddTransition(setters, property, propertyStart, start, ms, easing);
+        }
+
+        private void AddTransition(List<EustyleSetter> setters, string name, int propertyStart, int start, double ms, string easing)
+        {
+            var span = SpanAt(propertyStart, name.Length);
+            var definition = _properties.Find(name);
+            if (definition is null)
+            { ErrorSpan(span, $"unknown style property '{name}'", UiDiagnostics.StyleUnknownProperty); return; }
+            if (!definition.Animatable)
+            { ErrorSpan(span, $"property '{name}' does not support animation", UiDiagnostics.StyleValueType); return; }
+            var valueSpan = SpanAt(start, _i - start);
+            setters.Add(new EustyleSetter(EustyleVariant.None, name, new EustyleTransition(ms, easing, valueSpan), span, valueSpan));
         }
 
         /// <summary>正式解析时消费一个已预扫的 @states 块（只前进 _i，收集与报告都在预扫完成）。</summary>
@@ -443,6 +554,12 @@ public static class Eustyle
             var seenVariants = new List<EustyleVariant>();
             var nested = new List<EustyleNested>();
             ParseBody(setters, seenVariants, selectorStates, name, allowNestedVariants: true, nested);
+            foreach (var transition in setters)
+                if (transition.Value is EustyleTransition && setters.Exists(s => s.Property == transition.Property && s.Value is EustyleTheme)
+                    && setters.Exists(s => s.Property == transition.Property && s.Value is EustyleColor))
+                    ErrorSpan(transition.PropertySpan,
+                        $"transition '{transition.Property}' cannot mix static colors and theme() in this class: they use different property slots",
+                        UiDiagnostics.StyleValueType);
             return new EustyleRule(name, nameSpan, setters, nested);
         }
 
@@ -466,6 +583,16 @@ public static class Eustyle
                 }
                 var c = _s[_i];
                 if (c == '}') { _i++; return; }
+                if (c == '@' && MatchesWord(_s, _i + 1, "transition"))
+                {
+                    ParseTransition(setters, current);
+                    continue;
+                }
+                if (MatchesWord(_s, _i, "transition"))
+                {
+                    ParseTransitionShorthand(setters, current);
+                    continue;
+                }
                 if (c == '&')
                 {
                     if (!allowNestedVariants)

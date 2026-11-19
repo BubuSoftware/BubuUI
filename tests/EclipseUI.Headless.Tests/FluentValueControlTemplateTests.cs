@@ -122,6 +122,110 @@ public class FluentValueControlTemplateTests
         Assert.Empty(progress.Descendants().OfType<FluentProgressBarVisual>());
     }
 
+    [Fact]
+    public void SwitchThumbMovesFromCurrentPositionWhenRapidlyReversed()
+    {
+        using var control = new ToggleSwitch { Theme = FluentStyles.FluentToggleSwitch, Width = 160, Height = 32 };
+        using var host = new HeadlessRoot(control);
+        host.UpdateLayout();
+        var glyph = control.Descendants().OfType<FluentToggleSwitchGlyph>().Single();
+        var drawing = new DrawingProbe();
+        glyph.Render(drawing);
+        var initialX = Assert.Single(drawing.Ellipses).X;
+
+        control.Checked = true;
+        Assert.True(control.Checked);
+        Assert.Equal(0, glyph.Progress);
+        FrameAnimations.Advance(control, TimeSpan.FromMilliseconds(90));
+        var moving = glyph.Progress;
+        Assert.InRange(moving, 0.001, 0.999);
+        drawing.Ellipses.Clear();
+        glyph.Render(drawing);
+        var movingX = Assert.Single(drawing.Ellipses).X;
+        Assert.True(movingX > initialX);
+
+        control.Checked = false;
+        Assert.False(control.Checked);
+        Assert.Equal(moving, glyph.Progress);
+        FrameAnimations.Advance(control, TimeSpan.FromMilliseconds(90));
+        Assert.InRange(glyph.Progress, 0.001, moving - 0.001);
+        drawing.Ellipses.Clear();
+        glyph.Render(drawing);
+        var reversingX = Assert.Single(drawing.Ellipses).X;
+        Assert.InRange(reversingX, initialX + 0.001, movingX - 0.001);
+        FrameAnimations.Advance(control, TimeSpan.FromMilliseconds(90));
+        Assert.Equal(0, glyph.Progress);
+        var completedVersion = glyph.RenderVersion;
+        FrameAnimations.Advance(control, TimeSpan.FromMilliseconds(180));
+        Assert.Equal(completedVersion, glyph.RenderVersion);
+    }
+
+    [Fact]
+    public void DisablingAnimationsOnOwnerCompletesItsThumbAndAffectsNewTransitions()
+    {
+        using var control = new ToggleSwitch { Theme = FluentStyles.FluentToggleSwitch };
+        using var host = new HeadlessRoot(control);
+        host.UpdateLayout();
+        var glyph = control.Descendants().OfType<FluentToggleSwitchGlyph>().Single();
+
+        control.Checked = true;
+        FrameAnimations.Advance(control, TimeSpan.FromMilliseconds(90));
+        Assert.InRange(glyph.Progress, 0.001, 0.999);
+        FrameAnimations.SetEnabled(control, false);
+        Assert.Equal(1, glyph.Progress);
+        control.Checked = false;
+        Assert.Equal(0, glyph.Progress);
+
+        FrameAnimations.SetEnabled(control, true);
+        control.Checked = true;
+        Assert.Equal(0, glyph.Progress);
+        FrameAnimations.Advance(control, TimeSpan.FromMilliseconds(90));
+        Assert.InRange(glyph.Progress, 0.001, 0.999);
+    }
+
+    [Fact]
+    public void SwitchThumbInitializesFromCheckedAndResynchronizesAfterReattachment()
+    {
+        using var control = new ToggleSwitch { Theme = FluentStyles.FluentToggleSwitch, Checked = true };
+        FluentToggleSwitchGlyph glyph;
+        using (var host = new HeadlessRoot(control))
+        {
+            host.UpdateLayout();
+            glyph = control.Descendants().OfType<FluentToggleSwitchGlyph>().Single();
+            Assert.Equal(1, glyph.Progress);
+            control.Checked = false;
+            FrameAnimations.Advance(control, TimeSpan.FromMilliseconds(90));
+            Assert.InRange(glyph.Progress, 0.001, 0.999);
+        }
+
+        control.Checked = true;
+        using var replacementHost = new HeadlessRoot(control);
+        replacementHost.UpdateLayout();
+        Assert.Same(glyph, control.Descendants().OfType<FluentToggleSwitchGlyph>().Single());
+        Assert.Equal(1, glyph.Progress);
+        FrameAnimations.Advance(control, TimeSpan.FromMilliseconds(180));
+        Assert.Equal(1, glyph.Progress);
+    }
+
+    [Fact]
+    public void ReplacingSwitchTemplateCancelsTheOldThumbTransition()
+    {
+        using var control = new ToggleSwitch { Theme = FluentStyles.FluentToggleSwitch };
+        using var host = new HeadlessRoot(control);
+        host.UpdateLayout();
+        var glyph = control.Descendants().OfType<FluentToggleSwitchGlyph>().Single();
+        control.Checked = true;
+        FrameAnimations.Advance(control, TimeSpan.FromMilliseconds(90));
+        Assert.InRange(glyph.Progress, 0.001, 0.999);
+
+        control.Template = new FuncControlTemplate<Element>(_ => new TemplateInstance(new Border()));
+        host.UpdateLayout();
+        Assert.True(glyph.IsDisposed);
+        control.Checked = false;
+        FrameAnimations.Advance(control, TimeSpan.FromMilliseconds(180));
+        Assert.Empty(control.Descendants().OfType<FluentToggleSwitchGlyph>());
+    }
+
     private static Element Create(string kind) => kind switch
     {
         "CheckBox" => new CheckBox { Theme = FluentStyles.FluentCheckBox },
@@ -137,6 +241,7 @@ public class FluentValueControlTemplateTests
     {
         public int Commands { get; private set; }
         public List<UiColor> Fills { get; } = [];
+        public List<Rect> Ellipses { get; } = [];
         public UiColor Foreground => default;
         public UiColor Background => default;
         public UiColor Border => default;
@@ -144,7 +249,7 @@ public class FluentValueControlTemplateTests
         public UiColor OnAccent => default;
         public void FillRectangle(Rect rect, UiColor color, double radius = 0) { Commands++; Fills.Add(color); }
         public void StrokeRectangle(Rect rect, UiColor color, double width = 1, double radius = 0) => Commands++;
-        public void Ellipse(Rect rect, UiColor fill, UiColor stroke, double strokeWidth = 0) => Commands++;
+        public void Ellipse(Rect rect, UiColor fill, UiColor stroke, double strokeWidth = 0) { Commands++; Ellipses.Add(rect); }
         public void Line(Point start, Point end, UiColor color, double width = 1) => Commands++;
         public void Path(string data, UiColor fill, UiColor stroke, double strokeWidth = 1) => Commands++;
         public void Text(string text, Point origin, double fontSize, UiColor color) => Commands++;

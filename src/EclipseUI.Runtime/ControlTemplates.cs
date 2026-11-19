@@ -72,12 +72,15 @@ public sealed class TemplateInstance : IDisposable
 public sealed class ThemeSetter
 {
     internal StyledProperty Property { get; }
+    public bool IsTransition { get; }
     private readonly Action<Element, bool> _apply;
-    private ThemeSetter(StyledProperty property, Action<Element, bool> apply) { Property = property; _apply = apply; }
+    private ThemeSetter(StyledProperty property, Action<Element, bool> apply, bool isTransition = false) { Property = property; _apply = apply; IsTransition = isTransition; }
     public static ThemeSetter Value<T>(StyledProperty<T> property, T value) =>
         new(property, (e, style) => { if (style) e.SetRuleValue(property, value); else e.SetControlThemeValue(property, value); });
     public static ThemeSetter Dynamic<T>(StyledProperty<T> property, Func<Element, T> value) =>
         new(property, (e, style) => { if (style) e.SetRuleValue(property, value(e)); else e.SetControlThemeValue(property, value(e)); });
+    public static ThemeSetter Transition<T>(StyledProperty<T> property, TransitionSpec spec) =>
+        new(property, (e, style) => { if (style) e.SetRuleTransition(property, spec); else e.SetControlThemeTransition(property, spec); }, true);
     internal void Apply(Element element) => _apply(element, false);
     public void ApplyStyle(Element element) => _apply(element, true);
     public StyledProperty TargetProperty => Property;
@@ -107,10 +110,13 @@ public sealed class ControlTheme
     private void ApplyTo(Element owner, Element target, bool part)
     {
         var setters = new Dictionary<StyledProperty, ThemeSetter>();
+        var transitions = new Dictionary<StyledProperty, ThemeSetter>();
         foreach (var rule in Rules)
             if ((owner.PseudoStates & rule.States) == rule.States &&
                 (part ? rule.PartSelector?.Invoke(target) == true : rule.PartSelector is null))
-                foreach (var setter in rule.Setters) setters[setter.Property] = setter;
+                foreach (var setter in rule.Setters) (setter.IsTransition ? transitions : setters)[setter.Property] = setter;
+        using var batch = target.BeginValueBatch();
+        target.ReplaceControlThemeTransitions(transitions);
         target.ReplaceControlThemeValues(setters);
     }
 }

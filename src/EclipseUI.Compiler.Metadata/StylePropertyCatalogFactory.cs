@@ -127,7 +127,7 @@ public static class StylePropertyCatalogFactory
 
             properties.Add(new StylePropertyDef(
                 name, group.Kind, Display(field), resourceField, Display(field.ContainingType),
-                IsBuiltIn: true, derived.EnumTypeName, derived.Candidates));
+                IsBuiltIn: true, derived.EnumTypeName, derived.Candidates, CanAnimate(field), IsUiColor(field)));
         }
 
         // 标注通道（design/19 §4.3）：并集进目录，冲突规则 §7——同名即报（Error），
@@ -234,7 +234,7 @@ public static class StylePropertyCatalogFactory
             }
             result.Add(new StylePropertyDef(
                 name, derived.Kind.Value, Display(field), ResourceField: null, Display(field.ContainingType),
-                IsBuiltIn: false, derived.EnumTypeName, derived.Candidates));
+                IsBuiltIn: false, derived.EnumTypeName, derived.Candidates, CanAnimate(field), IsUiColor(field)));
         }
         return result;
     }
@@ -358,6 +358,7 @@ public static class StylePropertyCatalogFactory
     private static StyleValueKind? KindOf(ITypeSymbol type, INamedTypeSymbol? color, INamedTypeSymbol? themeColor)
     {
         if (type.SpecialType == SpecialType.System_Double) return StyleValueKind.Number;
+        if (type.ToDisplayString() == "EclipseUI.UiColor") return StyleValueKind.Color;
         var named = type as INamedTypeSymbol;
         if (named is { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T })
             named = named.TypeArguments[0] as INamedTypeSymbol;
@@ -373,6 +374,18 @@ public static class StylePropertyCatalogFactory
     }
 
     private static string Display(IFieldSymbol field) => field.ToDisplayString(QualifiedMember);
+
+    private static bool IsUiColor(IFieldSymbol field) => ((INamedTypeSymbol)field.Type).TypeArguments[0].ToDisplayString() == "EclipseUI.UiColor";
+
+    private static bool CanAnimate(IFieldSymbol field)
+    {
+        if (!field.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == "EclipseUI.UiAnimatableAttribute")) return false;
+        var type = ((INamedTypeSymbol)field.Type).TypeArguments[0];
+        if (type.SpecialType == SpecialType.System_Double || type.ToDisplayString() == "EclipseUI.UiColor") return true;
+        return type is INamedTypeSymbol { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T } nullable &&
+            (nullable.TypeArguments[0].ToDisplayString() == "EclipseUI.Rendering.Color" ||
+                nullable.TypeArguments[0].SpecialType == SpecialType.System_Double);
+    }
 
     private static string Display(INamedTypeSymbol type) => type.ToDisplayString(Qualified);
 

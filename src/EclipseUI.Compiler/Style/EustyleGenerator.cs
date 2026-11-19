@@ -160,6 +160,14 @@ public static class EustyleGenerator
             var definition = properties.Find(setter.Property)
                 ?? throw new InvalidOperationException(
                     $"style property '{setter.Property}' is not in the derived catalog");
+            if (setter.Value is EustyleTransition transition)
+            {
+                sb.Append(indent).Append("    s.Transition(").Append(definition.PropertyField)
+                    .Append(", new global::EclipseUI.TransitionSpec(global::System.TimeSpan.FromMilliseconds(")
+                    .Append(transition.Milliseconds.ToString("R", CultureInfo.InvariantCulture))
+                    .Append("), global::EclipseUI.Easings.").Append(transition.Easing).AppendLine("));");
+                continue;
+            }
             var target = definition.IsBuiltIn
                 ? "s." + definition.Name + "("
                 : "s.Set(" + definition.PropertyField + ", ";
@@ -206,6 +214,8 @@ public static class EustyleGenerator
     /// </summary>
     private static string ValueLiteral(EustyleValue value, StylePropertyDef? definition = null) => value switch
     {
+        EustyleColor color when definition?.IsUiColor == true =>
+            "new global::EclipseUI.UiColor(" + color.R + ", " + color.G + ", " + color.B + ", " + color.A + ")",
         EustyleColor color => ColorLiteral(color.R, color.G, color.B, color.A),
         EustyleTheme theme => ThemeLiteral(theme),
         EustyleNumber number => NumberLiteral(number),

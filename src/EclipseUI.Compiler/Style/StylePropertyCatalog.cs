@@ -49,7 +49,9 @@ public sealed record StylePropertyDef(
     string DeclaringTypeName,
     bool IsBuiltIn = true,
     string? EnumTypeName = null,
-    IReadOnlyList<string>? Candidates = null)
+    IReadOnlyList<string>? Candidates = null,
+    bool Animatable = false,
+    bool IsUiColor = false)
 {
     /// <summary>是否接受 <c>theme(dark, light)</c>（由是否存在 ThemeColor 重载 + 资源字段决定）。</summary>
     public bool AllowsTheme => ResourceField is not null;
@@ -66,6 +68,8 @@ public sealed record StylePropertyDef(
         && DeclaringTypeName == other.DeclaringTypeName
         && IsBuiltIn == other.IsBuiltIn
         && EnumTypeName == other.EnumTypeName
+        && Animatable == other.Animatable
+        && IsUiColor == other.IsUiColor
         && CatalogValueEq.Sequence(Candidates, other.Candidates);
 
     public override int GetHashCode()
@@ -77,6 +81,8 @@ public sealed record StylePropertyDef(
         hash = CatalogValueEq.Add(hash, DeclaringTypeName);
         hash = CatalogValueEq.Add(hash, IsBuiltIn);
         hash = CatalogValueEq.Add(hash, EnumTypeName);
+        hash = CatalogValueEq.Add(hash, Animatable ? 1 : 0);
+        hash = CatalogValueEq.Add(hash, IsUiColor ? 1 : 0);
         return CatalogValueEq.AddSequence(hash, Candidates);
     }
 }

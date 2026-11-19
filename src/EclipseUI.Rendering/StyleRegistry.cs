@@ -21,9 +21,12 @@ public sealed class StyleRegistry : IStyleProvider
     {
         if (_rules.Count == 0 || element.TemplatedParent is not null) return;
         var values = new Dictionary<StyledProperty, ThemeSetter>();
+        var transitions = new Dictionary<StyledProperty, ThemeSetter>();
         foreach (var rule in _rules.OrderBy(r => r.Specificity))
             if (rule.Part is null && element.TemplatedParent is null && rule.Owner(element))
-                foreach (var setter in rule.Setters) values[setter.TargetProperty] = setter;
+                foreach (var setter in rule.Setters) (setter.IsTransition ? transitions : values)[setter.TargetProperty] = setter;
+        using var batch = element.BeginValueBatch();
+        element.ReplaceRuleTransitions(transitions);
         element.ReplaceRuleValues(values);
     }
     public void ApplyTemplateStyles(Element owner)
@@ -33,9 +36,12 @@ public sealed class StyleRegistry : IStyleProvider
         {
             if (!ReferenceEquals(part.TemplatedParent, owner)) continue;
             var values = new Dictionary<StyledProperty, ThemeSetter>();
+            var transitions = new Dictionary<StyledProperty, ThemeSetter>();
             foreach (var rule in _rules.OrderBy(r => r.Specificity))
                 if (rule.Part is not null && rule.Owner(owner) && rule.Part(part))
-                    foreach (var setter in rule.Setters) values[setter.TargetProperty] = setter;
+                    foreach (var setter in rule.Setters) (setter.IsTransition ? transitions : values)[setter.TargetProperty] = setter;
+            using var batch = part.BeginValueBatch();
+            part.ReplaceRuleTransitions(transitions);
             part.ReplaceRuleValues(values);
         }
     }
@@ -85,7 +91,7 @@ public sealed class StyleRegistry : IStyleProvider
         }
     }
 
-    public void ClearStyles(Element element) => element.ClearStyleValues();
+    public void ClearStyles(Element element) { element.ClearStyleValues(); element.ClearStyleTransitions(); }
 }
 
 /// <summary>一个样式类的完整定义：基础 setter 序列 + 各伪类状态变体（D102）。</summary>
@@ -164,6 +170,16 @@ public sealed class StyleBuilder
         return this;
     }
 
+    public StyleBuilder Transition<T>(StyledProperty<T> property, TransitionSpec spec)
+    {
+        _setters.Add(new TransitionStyleSetter<T>(property, spec));
+        // Legacy Background values use a separate slot for theme(dark, light).
+        // Advance both possible slots; the existing resource-over-static paint priority is unchanged.
+        if (ReferenceEquals(property, Visual.BackgroundProperty))
+            _setters.Add(new TransitionStyleSetter<ThemeColor?>(Visual.BackgroundResourceProperty, spec));
+        return this;
+    }
+
     public StyleBuilder Background(Color color) => Set(Visual.BackgroundProperty, (Color?)color);
 
     public StyleBuilder Foreground(Color color) => Set(Visual.ForegroundProperty, (Color?)color);
@@ -190,5 +206,9 @@ public sealed class StyleBuilder
     private sealed class StyleSetter<T>(StyledProperty<T> property, T value) : IStyleSetter
     {
         public void Apply(Element element) => element.SetStyleValue(property, value);
+    }
+    private sealed class TransitionStyleSetter<T>(StyledProperty<T> property, TransitionSpec spec) : IStyleSetter
+    {
+        public void Apply(Element element) => element.SetStyleTransition(property, spec);
     }
 }

@@ -65,9 +65,9 @@ public sealed class UiBinding : IDisposable
 
         void OnPropertyChanged(Element sender, StyledProperty changed)
         {
-            if (syncing || !ReferenceEquals(changed, property)) return;
+            if (syncing || element.IsAnimationNotification || !ReferenceEquals(changed, property)) return;
 
-            var value = readTarget();
+            var value = element.ReadBindingTarget(property, readTarget);
             if (EqualityComparer<T>.Default.Equals(value, readSource())) return;
 
             writeSource(value);
@@ -80,7 +80,7 @@ public sealed class UiBinding : IDisposable
         return new UiBinding(
             () =>
             {
-                if (!EqualityComparer<T>.Default.Equals(readTarget(), readSource()))
+                if (!EqualityComparer<T>.Default.Equals(element.ReadBindingTarget(property, readTarget), readSource()))
                     PushSourceToTarget();
             },
             () => element.PropertyChanged -= OnPropertyChanged);

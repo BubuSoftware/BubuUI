@@ -84,14 +84,14 @@ internal sealed class ControlThemeEmitter(UiCatalog catalog, IReadOnlyList<UiTem
         { Error(templateNodes[0], "Template target is incompatible with this control theme."); return; }
 
         var rules = new List<string>();
-        var defaults = node.Children.Where(n => n.Value is not null && n.Header != "Template").ToArray();
+        var defaults = node.Children.Where(n => (n.Value is not null && n.Header != "Template") || n.Header.StartsWith("@transition ", StringComparison.Ordinal)).ToArray();
         rules.Add(Rule("global::EclipseUI.PseudoStates.None", "null", Setters(defaults, target)));
-        foreach (var child in node.Children.Where(n => n.Value is null))
+        foreach (var child in node.Children.Where(n => n.Value is null && !n.Header.StartsWith("@transition ", StringComparison.Ordinal)))
         {
             var selector = Selector(child.Header, child, target);
             if (selector is null) continue;
             if (child.Children.Any(n => n.Value is null)) { Error(child, "Theme rules accept declarations; deeper selector nesting is not supported."); continue; }
-            rules.Add(Rule(selector.Value.States, selector.Value.PartPredicate, Setters(child.Children, selector.Value.PartType ?? target)));
+            rules.Add(Rule(selector.Value.States, selector.Value.PartPredicate, Setters(child.Children, selector.Value.PartType ?? target, false)));
         }
         _fields.Append("    public static global::EclipseUI.ControlTheme ").Append(name).Append(" { get; } = new(typeof(")
             .Append(target.ClrTypeDisplayName).Append("), new ").Append(templateType).Append("(), ").Append(string.Join(", ", rules)).AppendLine(");");
@@ -141,9 +141,9 @@ internal sealed class ControlThemeEmitter(UiCatalog catalog, IReadOnlyList<UiTem
         var selector = Selector(node.Header, node, null);
         if (selector is null) return;
         var s = selector.Value;
-        var defaults = node.Children.Where(n => n.Value is not null).ToArray();
+        var defaults = node.Children.Where(n => n.Value is not null || n.Header.StartsWith("@transition ", StringComparison.Ordinal)).ToArray();
         AddStyle(s, defaults);
-        foreach (var nested in node.Children.Where(n => n.Value is null))
+        foreach (var nested in node.Children.Where(n => n.Value is null && !n.Header.StartsWith("@transition ", StringComparison.Ordinal)))
         {
             if (!nested.Header.StartsWith("&", StringComparison.Ordinal)) { Error(nested, "Nested rules must start with '&'."); continue; }
             var expanded = Selector(node.Header + nested.Header.Substring(1), nested, null);
@@ -152,7 +152,8 @@ internal sealed class ControlThemeEmitter(UiCatalog catalog, IReadOnlyList<UiTem
     }
     private void AddStyle((UiElementDef OwnerType, UiElementDef? PartType, string OwnerPredicate, string PartPredicate, string States, int Specificity) selector, IReadOnlyList<ThemeStyleNode> declarations)
     {
-        var setters = Setters(declarations, selector.PartType ?? selector.OwnerType);
+        var setters = Setters(declarations, selector.PartType ?? selector.OwnerType,
+            selector.States == "global::EclipseUI.PseudoStates.None");
         _apply.Append("        registry.AddRule(").Append(selector.OwnerPredicate).Append(", ").Append(selector.PartPredicate)
             .Append(", ").Append(selector.Specificity).Append(", new global::EclipseUI.ThemeSetter[] { ").Append(string.Join(", ", setters)).AppendLine(" });");
     }
@@ -193,11 +194,18 @@ internal sealed class ControlThemeEmitter(UiCatalog catalog, IReadOnlyList<UiTem
         }
         return (target, partType, "e => " + string.Join(" && ", conditions), part, mask, specificity);
     }
-    private List<string> Setters(IReadOnlyList<ThemeStyleNode> nodes, UiElementDef target)
+    private List<string> Setters(IReadOnlyList<ThemeStyleNode> nodes, UiElementDef target, bool allowTransitions = true)
     {
         var result = new List<string>();
         foreach (var node in nodes)
         {
+            if (node.Header.StartsWith("@transition ", StringComparison.Ordinal) || node.Header == "transition")
+            {
+                if (!allowTransitions) { Error(node, "Transition configuration is only supported in a base rule, not a state variant."); continue; }
+                var transition = Transition(node, target);
+                if (transition is not null) result.Add(transition);
+                continue;
+            }
             if (node.Value is null) { Error(node, "Expected a property declaration."); continue; }
             if (!target.Properties.TryGetValue(node.Header, out var property)) { Error(node, $"'{node.Header}' is not a styled property on {target.Tag}."); continue; }
             var value = node.Value;
@@ -231,6 +239,38 @@ internal sealed class ControlThemeEmitter(UiCatalog catalog, IReadOnlyList<UiTem
             if (expression is not null) result.Add($"global::EclipseUI.ThemeSetter.{(dynamic ? "Dynamic" : "Value")}({Field(property)}, {expression})");
         }
         return result;
+    }
+
+    private string? Transition(ThemeStyleNode node, UiElementDef target)
+    {
+        string name;
+        IEnumerable<(string Name, string Value)> fields;
+        if (node.Header == "transition")
+        {
+            var parts = (node.Value ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length != 3) { Error(node, "Expected transition: Property 150ms CubicOut;"); return null; }
+            name = parts[0];
+            fields = new[] { ("Duration", parts[1]), ("Easing", parts[2]) };
+        }
+        else
+        {
+            name = node.Header.Substring("@transition ".Length).Trim();
+            if (node.Value is not null || node.Children.Any(n => n.Value is null))
+            { Error(node, "Transition block accepts Duration and Easing declarations."); return null; }
+            fields = node.Children.Select(n => (n.Header, n.Value!));
+        }
+        if (!target.Properties.TryGetValue(name, out var property))
+        { Error(node, $"'{name}' is not a styled property on {target.Tag}."); return null; }
+        var typeName = property.DeclaringTypeName;
+        var type = compilation.GetTypeByMetadataName(typeName.StartsWith("global::", StringComparison.Ordinal) ? typeName.Substring(8) : typeName);
+        var field = type?.GetMembers(property.PropertyFieldName).OfType<IFieldSymbol>().SingleOrDefault();
+        var valueType = (field?.Type as INamedTypeSymbol)?.TypeArguments.FirstOrDefault();
+        if (field is null || !field.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == "EclipseUI.UiAnimatableAttribute") ||
+            (valueType?.SpecialType != SpecialType.System_Double && valueType?.ToDisplayString() != "EclipseUI.UiColor"))
+        { Error(node, $"Property '{name}' does not support animation."); return null; }
+        if (!Eustyle.TryParseTransition(fields, out var ms, out var easing, out var error))
+        { Error(node, error); return null; }
+        return $"global::EclipseUI.ThemeSetter.Transition({Field(property)}, new global::EclipseUI.TransitionSpec(global::System.TimeSpan.FromMilliseconds({ms.ToString("R", System.Globalization.CultureInfo.InvariantCulture)}), global::EclipseUI.Easings.{easing}))";
     }
     private string? Resource(string name, UiPropDef property, ThemeStyleNode node)
     {

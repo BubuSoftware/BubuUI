@@ -182,13 +182,13 @@ WrapPanel、NoWrap 文本和尺寸对齐的旧断言也已按本契约迁移，G
 [08 决策记录](./08-milestones-and-risks.md#决策记录汇总)）
 
 ```
-元素树变更 → 场景图增量更新 → 合成器 vsync 帧循环：
+元素树变更 → 场景图增量更新 → 合成器 vsync 帧循环（远期目标）：
   layout → cull → layer 合并 → damage region
   → 序列化 display list → 每帧一次 FFI → Vello 建 scene → 光栅输出
 ```
 
 - 透明/变换自动提升为 layer。
-- 动画（spring/tween）在合成器线程跑，改的是 layer 变换而非元素属性。
+- 合成动画可在未来的合成器线程上更新 layer；当前动画在 UI 线程推进。动画系统第一阶段的设计见 [design/29](./29-animation-system.md)，不依赖合成器线程。
 - damage region 保证只重绘脏区域。
 
 ### Windows 交互缩放

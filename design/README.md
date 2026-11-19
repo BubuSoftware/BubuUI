@@ -8,6 +8,7 @@
 
 | 文档 | 用途 |
 |---|---|
+| [29 · 动画系统](./29-animation-system.md) | 已实施：属性过渡、样式语法、时钟和生命周期；附使用说明与边界 |
 | [27 · macOS 平台](./27-macos-platform.md) | SDL3 Cocoa 窗口、Metal、Retina、Command 输入与原生验证 |
 | [27 · Fluent 默认皮肤](./27-fluent-theme.md) | 独立主题包、系统/浅/深模式、控件状态、默认值及验证 |
 | [26 · Linux 平台](./26-linux-platform.md) | SDL3 X11/Wayland 窗口、Vello 表面、输入/字体与运行验证 |

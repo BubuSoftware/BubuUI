@@ -67,6 +67,40 @@ public class FluentRadioButtonGlyph : FluentVisual<RadioButton>
 
 public class FluentToggleSwitchGlyph : FluentVisual<ToggleSwitch>
 {
+    [UiAnimatable]
+    public static readonly StyledProperty<double> ProgressProperty = StyledProperty<double>.Register<FluentToggleSwitchGlyph>(
+        nameof(Progress), 0, new PropertyOptions { Invalidate = InvalidateKind.Render, Animatable = true });
+
+    private ToggleSwitch? _subscribedOwner;
+
+    /// <summary>The displayed position of the switch thumb, from zero to one.</summary>
+    public double Progress => GetValue(ProgressProperty);
+
+    protected override void OnAttached()
+    {
+        base.OnAttached();
+        // Initial attachment and reattachment reflect the current logical state without an entrance animation.
+        SetValue(ProgressProperty, Owner.Checked ? 1d : 0d);
+        Transitions.Set(this, ProgressProperty, new TransitionSpec(TimeSpan.FromMilliseconds(180), Easings.CubicOut));
+        _subscribedOwner = Owner;
+        _subscribedOwner.PropertyChanged += OnOwnerPropertyChanged;
+    }
+
+    protected override void OnDetached()
+    {
+        if (_subscribedOwner is { } owner)
+            owner.PropertyChanged -= OnOwnerPropertyChanged;
+        _subscribedOwner = null;
+        Transitions.Remove(this, ProgressProperty);
+        base.OnDetached();
+    }
+
+    private void OnOwnerPropertyChanged(Element owner, StyledProperty property)
+    {
+        if (property == CheckBox.CheckedProperty && owner is ToggleSwitch toggle)
+            SetValue(ProgressProperty, toggle.Checked ? 1d : 0d);
+    }
+
     protected override Size MeasureCore(Size available) => new(40, 20);
     protected override void ArrangeCore(Rect final) { }
     public override void Render(IElementDrawingContext c)
@@ -79,7 +113,7 @@ public class FluentToggleSwitchGlyph : FluentVisual<ToggleSwitch>
             c.StrokeRectangle(new(.5, .5, Math.Max(0, width - 1), Math.Max(0, height - 1)),
                 Owner.BorderBrush, 1, Math.Max(0, height / 2 - .5));
         var knob = Math.Max(0, height * (Owner.IsHovered || Owner.IsPressed ? .7 : .6));
-        var center = Owner.Checked ? width - height / 2 : height / 2;
+        var center = height / 2 + Math.Max(0, width - height) * Progress;
         c.Ellipse(new(center - knob / 2, (height - knob) / 2, knob, knob),
             Owner.Checked ? FluentValueColors.Of(Owner.IsEffectiveEnabled ? Palette.OnAccent : Palette.OnAccentDisabled)
                 : FluentValueColors.StrongBorder(Owner, Palette), UiColor.Transparent);

@@ -223,6 +223,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
             : 0;
         var clock = Stopwatch.StartNew();
         var animationTime = Stopwatch.GetTimestamp();
+        var animationPaused = false;
 
         while (!_disposed && !_uiRoot.IsDisposed && _window.PumpMessages())
         {
@@ -242,6 +243,8 @@ public sealed class WindowHost : IDisposable, IWindowHost
             var size = _window.LogicalClientSize;
             if (size.IsEmpty)
             {
+                FrameAnimations.SetPaused(SyncRoot(), true);
+                animationPaused = true;
                 // 最小化：没有可绘制的客户区，等消息但不要空转。
                 Thread.Sleep(8);
                 continue;
@@ -256,7 +259,9 @@ public sealed class WindowHost : IDisposable, IWindowHost
             var root = SyncRoot();
             _painter.Prepare(root);
             var animationNow = Stopwatch.GetTimestamp();
-            FrameAnimations.Advance(root, TimeSpan.FromSeconds((animationNow - animationTime) / (double)Stopwatch.Frequency));
+            FrameAnimations.SetPaused(root, false);
+            FrameAnimations.Advance(root, TimeSpan.FromSeconds((animationNow - animationTime) / (double)Stopwatch.Frequency), !animationPaused);
+            animationPaused = false;
             animationTime = animationNow;
             root.Measure(size);
             root.Arrange(new Rect(Point.Zero, size));

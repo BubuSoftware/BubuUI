@@ -23,19 +23,43 @@ public readonly record struct ThemeColor(Color Dark, Color Light)
 /// </summary>
 public static class Visual
 {
+    static Visual()
+    {
+        static Color Blend(Color a, Color b, double t)
+        {
+            static byte Channel(byte x, byte y, double progress) =>
+                (byte)Math.Clamp((int)Math.Round(x + (y - x) * progress, MidpointRounding.AwayFromZero), 0, 255);
+            return new Color(Channel(a.R, b.R, t), Channel(a.G, b.G, t),
+                Channel(a.B, b.B, t), Channel(a.A, b.A, t));
+        }
+
+        TransitionInterpolators.Register<Color?>((from, to, t) => Blend(from!.Value, to!.Value, t),
+            (from, to) => from.HasValue && to.HasValue);
+        TransitionInterpolators.Register<ThemeColor?>((from, to, t) => new ThemeColor(
+                Blend(from!.Value.Dark, to!.Value.Dark, t), Blend(from.Value.Light, to.Value.Light, t)),
+            (from, to) => from.HasValue && to.HasValue);
+        TransitionInterpolators.Register<double?>((from, to, t) => from!.Value * (1 - t) + to!.Value * t,
+            (from, to) => from.HasValue && to.HasValue && double.IsFinite(from.Value) && double.IsFinite(to.Value));
+    }
+
+    [UiAnimatable]
     public static readonly StyledProperty<Color?> BackgroundProperty =
-        StyledProperty<Color?>.Register<Element>("Visual.Background", null);
+        StyledProperty<Color?>.Register<Element>("Visual.Background", null, new() { Invalidate = InvalidateKind.Render, Animatable = true });
 
     public static readonly StyledProperty<Color?> ForegroundProperty =
         StyledProperty<Color?>.Register<Element>("Visual.Foreground", null);
 
+    [UiAnimatable]
     public static readonly StyledProperty<double?> CornerRadiusProperty =
-        StyledProperty<double?>.Register<Element>("Visual.CornerRadius", null);
+        StyledProperty<double?>.Register<Element>("Visual.CornerRadius", null,
+            new() { Invalidate = InvalidateKind.Render, Animatable = true });
 
     // ---- S-C：主题资源（优先级 resource > 静态覆盖 > 主题令牌）----
 
+    [UiAnimatable]
     public static readonly StyledProperty<ThemeColor?> BackgroundResourceProperty =
-        StyledProperty<ThemeColor?>.Register<Element>("Visual.BackgroundResource", null);
+        StyledProperty<ThemeColor?>.Register<Element>("Visual.BackgroundResource", null,
+            new() { Invalidate = InvalidateKind.Render, Animatable = true });
 
     public static readonly StyledProperty<ThemeColor?> ForegroundResourceProperty =
         StyledProperty<ThemeColor?>.Register<Element>("Visual.ForegroundResource", null);

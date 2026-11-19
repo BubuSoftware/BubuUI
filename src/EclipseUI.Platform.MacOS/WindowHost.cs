@@ -82,6 +82,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
     private bool _pendingResize;
     private bool _pendingFullFrame;
     private long _animationTime;
+    private bool _animationPaused;
     private ExceptionDispatchInfo? _nativeFrameFailure;
     private readonly record struct FrameResult(bool Presented, Size Size, FrameDamage Damage, double Milliseconds);
 
@@ -235,6 +236,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
             : 0;
         var clock = Stopwatch.StartNew();
         _animationTime = Stopwatch.GetTimestamp();
+        _animationPaused = false;
 
         while (!_disposed && !_uiRoot.IsDisposed && _window.PumpMessages())
         {
@@ -295,13 +297,19 @@ public sealed class WindowHost : IDisposable, IWindowHost
                 if (!CanRender) return result;
                 var root = SyncRoot();
                 _painter.Prepare(root);
-                var now = Stopwatch.GetTimestamp();
-                FrameAnimations.Advance(root, TimeSpan.FromSeconds((now - _animationTime) / (double)Stopwatch.Frequency));
-                _animationTime = now;
+                var size = _window.LogicalClientSize;
+                if (attempt == 0)
+                {
+                    var now = Stopwatch.GetTimestamp();
+                    FrameAnimations.SetPaused(root, size.IsEmpty);
+                    FrameAnimations.Advance(root, TimeSpan.FromSeconds((now - _animationTime) / (double)Stopwatch.Frequency),
+                        !size.IsEmpty && !_animationPaused);
+                    _animationPaused = size.IsEmpty;
+                    _animationTime = now;
+                }
                 var width = _window.ClientWidth;
                 var height = _window.ClientHeight;
                 var scale = _window.ScaleFactor;
-                var size = _window.LogicalClientSize;
                 if (size.IsEmpty || !CanRender) return result;
                 var start = Stopwatch.GetTimestamp();
                 root.Measure(size);

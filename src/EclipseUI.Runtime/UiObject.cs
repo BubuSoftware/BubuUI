@@ -228,6 +228,13 @@ public abstract class UiObject : IDisposable
         {
             if (node._attachmentVersion != version) continue;
             node._detachmentPending = false;
+            if (host is null && node is Element element)
+            {
+                element.SetAnimationPaused(false);
+                try { element.CancelTransitions(); }
+                catch (Exception error) { (failures ??= new()).Add(error); }
+            }
+            if (node._attachmentVersion != version) continue;
             if (!notify) continue;
             if (host is not null)
             {

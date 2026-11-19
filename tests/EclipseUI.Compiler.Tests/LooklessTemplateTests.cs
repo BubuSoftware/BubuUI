@@ -2,12 +2,147 @@ using EclipseUI.Compiler.Generator;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Text;
+using EclipseUI.Rendering;
+using Button = EclipseUI.Elements.Button;
 using Xunit;
 
 namespace EclipseUI.Compiler.Tests;
 
 public class LooklessTemplateTests
 {
+    private static System.Reflection.Assembly LoadCompiled(Compilation output)
+    {
+        using var bytes = new MemoryStream();
+        var result = output.Emit(bytes);
+        Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+        return System.Reflection.Assembly.Load(bytes.ToArray());
+    }
+
+    [Fact]
+    public void CompiledLegacyClassTransitionAnimatesOnHover()
+    {
+        const string sheet = """
+            .animated {
+                Background: #000000;
+                @transition Background { Duration: 100ms; Easing: Linear; }
+                &:hover { Background: #640000; }
+            }
+            """;
+        var (result, output) = Compile(("transition.eustyle", sheet));
+        Assert.Empty(result.Diagnostics.Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error));
+        var assembly = LoadCompiled(output);
+        var registry = new StyleRegistry();
+        assembly.GetTypes().Single(t => t.Name == "StyleBootstrap").GetMethod("Apply")!.Invoke(null, [registry]);
+        var previous = Styling.Provider;
+        try
+        {
+            Styling.Provider = registry;
+            var button = new Button { Classes = ["animated"], Width = 100, Height = 40 };
+            using var host = new HeadlessRoot(button);
+            host.UpdateLayout(); host.PointerMove(new Point(10, 10));
+            host.AdvanceAnimations(TimeSpan.FromMilliseconds(50));
+            Assert.Equal(new Color(50, 0, 0), Visual.GetBackground(button));
+        }
+        finally { Styling.Provider = previous; }
+    }
+
+    [Fact]
+    public void CompiledNewClassTransitionsFromExistingClassValue()
+    {
+        const string sheet = """
+            .baseline { Background: #000000; }
+            .target { Background: #640000; transition: Background 100ms Linear; }
+            """;
+        var (result, output) = Compile(("transition.eustyle", sheet));
+        Assert.Empty(result.Diagnostics.Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error));
+        var assembly = LoadCompiled(output);
+        var registry = new StyleRegistry();
+        assembly.GetTypes().Single(t => t.Name == "StyleBootstrap").GetMethod("Apply")!.Invoke(null, [registry]);
+        var previous = Styling.Provider;
+        try
+        {
+            Styling.Provider = registry;
+            var button = new Button { Classes = ["baseline"], Width = 100, Height = 40 };
+            using var host = new HeadlessRoot(button);
+            host.UpdateLayout();
+            button.Classes = ["baseline", "target"];
+            Assert.Equal(new Color(0, 0, 0), Visual.GetBackground(button));
+            host.AdvanceAnimations(TimeSpan.FromMilliseconds(50));
+            Assert.Equal(new Color(50, 0, 0), Visual.GetBackground(button));
+        }
+        finally { Styling.Provider = previous; }
+    }
+
+    [Fact]
+    public void CompiledLegacyThemeResourceTransitionAnimatesOnHover()
+    {
+        const string sheet = """
+            .animated {
+                Background: theme(#000000, #000000);
+                @transition Background { Duration: 100ms; Easing: Linear; }
+                &:hover { Background: theme(#640000, #640000); }
+            }
+            """;
+        var (result, output) = Compile(("transition.eustyle", sheet));
+        Assert.Empty(result.Diagnostics.Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error));
+        var assembly = LoadCompiled(output);
+        var registry = new StyleRegistry();
+        assembly.GetTypes().Single(t => t.Name == "StyleBootstrap").GetMethod("Apply")!.Invoke(null, [registry]);
+        var previous = Styling.Provider;
+        try
+        {
+            Styling.Provider = registry;
+            var button = new Button { Classes = ["animated"], Width = 100, Height = 40 };
+            using var host = new HeadlessRoot(button);
+            host.UpdateLayout(); host.PointerMove(new Point(10, 10));
+            host.AdvanceAnimations(TimeSpan.FromMilliseconds(50));
+            Assert.Equal(new ThemeColor(new Color(50, 0, 0), new Color(50, 0, 0)), Visual.GetBackgroundResource(button));
+        }
+        finally { Styling.Provider = previous; }
+    }
+
+    [Fact]
+    public void CompiledControlThemeTransitionAnimatesOnHover()
+    {
+        var theme = Theme.Replace("Background: theme(#111111, #eeeeee);",
+                "Background: #000000; @transition Background { Duration: 100ms; Easing: Linear; }")
+            .Replace("&:hover /template/ Border.chrome { Background: #abcdef; }",
+                "&:hover { Background: #640000; }");
+        var (result, output) = Compile(("ButtonSkin.ui", Template), ("theme.eustyle", theme));
+        Assert.Empty(result.Diagnostics.Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error));
+        var assembly = LoadCompiled(output);
+        var controlTheme = (ControlTheme)assembly.GetTypes().Single(t => t.Name == "StyleBootstrap")
+            .GetProperty("Rounded")!.GetValue(null)!;
+        var button = new Button { Theme = controlTheme, Width = 100, Height = 40 };
+        using var host = new HeadlessRoot(button);
+        host.UpdateLayout();
+        Assert.Equal(new UiColor(0, 0, 0), button.Background);
+        host.PointerMove(new Point(10, 10));
+        host.AdvanceAnimations(TimeSpan.FromMilliseconds(50));
+        Assert.Equal(new UiColor(50, 0, 0), button.Background);
+    }
+
+    [Theory]
+    [InlineData("@transition Background { Duration: 150ms; Easing: CubicOut; }")]
+    [InlineData("transition: Background 150ms CubicOut;")]
+    public void ThemeTransitionCompilesWithTypedProperty(string transition)
+    {
+        var theme = Theme.Replace("Background: theme(#111111, #eeeeee);", "Background: #111111; " + transition);
+        var (result, output) = Compile(("ButtonSkin.ui", Template), ("theme.eustyle", theme));
+        Assert.Empty(result.Diagnostics.Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error));
+        Assert.Empty(output.GetDiagnostics().Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error));
+        var generated = string.Join("\n", result.GeneratedSources.Select(s => s.SourceText.ToString()));
+        Assert.Contains("ThemeSetter.Transition(global::EclipseUI.Element.BackgroundProperty", generated);
+    }
+
+    [Fact]
+    public void ThemeTransitionRejectsUnmarkedBusinessProperty()
+    {
+        var theme = Theme.Replace("Background: theme(#111111, #eeeeee);", "@transition IsEnabled { Duration: 150ms; }");
+        var (result, _) = Compile(("ButtonSkin.ui", Template), ("theme.eustyle", theme));
+        Assert.Contains(result.Diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+    }
+
     private sealed class Input(string path, string text) : AdditionalText
     {
         public override string Path => path;

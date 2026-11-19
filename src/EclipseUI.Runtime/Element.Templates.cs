@@ -4,10 +4,12 @@ namespace EclipseUI;
 
 public abstract partial class Element
 {
-    public static readonly StyledProperty<UiColor> BackgroundProperty = StyledProperty<UiColor>.Register<Element>(nameof(Background), UiColor.Transparent, new() { Invalidate = InvalidateKind.Render });
+    [UiAnimatable]
+    public static readonly StyledProperty<UiColor> BackgroundProperty = StyledProperty<UiColor>.Register<Element>(nameof(Background), UiColor.Transparent, new() { Invalidate = InvalidateKind.Render, Animatable = true });
     public static readonly StyledProperty<UiColor> ForegroundProperty = StyledProperty<UiColor>.Register<Element>(nameof(Foreground), new(0, 0, 0), new() { Inherits = true, Invalidate = InvalidateKind.Render });
     public static readonly StyledProperty<UiColor> BorderBrushProperty = StyledProperty<UiColor>.Register<Element>(nameof(BorderBrush), UiColor.Transparent, new() { Invalidate = InvalidateKind.Render });
-    public static readonly StyledProperty<double> CornerRadiusProperty = StyledProperty<double>.Register<Element>(nameof(CornerRadius), 0, new() { Invalidate = InvalidateKind.Render });
+    [UiAnimatable]
+    public static readonly StyledProperty<double> CornerRadiusProperty = StyledProperty<double>.Register<Element>(nameof(CornerRadius), 0, new() { Invalidate = InvalidateKind.Render, Animatable = true });
     public UiColor Background { get => GetValue(BackgroundProperty); set => SetValue(BackgroundProperty, value); }
     public UiColor Foreground { get => GetValue(ForegroundProperty); set => SetValue(ForegroundProperty, value); }
     public UiColor BorderBrush { get => GetValue(BorderBrushProperty); set => SetValue(BorderBrushProperty, value); }
@@ -49,17 +51,31 @@ public abstract partial class Element
     {
         if (_applyingTemplate || !IsInitialized || IsDisposed) return;
         if (!force && !_needsMeasure && _lastTemplateVersion == RenderVersion && ReferenceEquals(_lastTemplateDefaults, ThemeDefaults)) return;
+        var suppressTransitions = _suppressTransitions;
+        if (_lastTemplateVersion < 0) _suppressTransitions = true;
         _applyingTemplate = true;
         try
         {
             var theme = Theme;
             if (!ReferenceEquals(theme, _appliedTheme))
             {
-                ReplaceControlThemeValues(new Dictionary<StyledProperty, ThemeSetter>());
+                using (BeginValueBatch())
+                {
+                    ClearControlThemeTransitions();
+                    ReplaceControlThemeValues(new Dictionary<StyledProperty, ThemeSetter>());
+                    theme?.Apply(this, null);
+                }
                 if (_templateInstance is not null)
-                    foreach (var element in _templateInstance.Elements) element.ReplaceControlThemeValues(new Dictionary<StyledProperty, ThemeSetter>());
+                    foreach (var element in _templateInstance.Elements)
+                    {
+                        using (element.BeginValueBatch())
+                        {
+                            element.ClearControlThemeTransitions();
+                            element.ReplaceControlThemeValues(new Dictionary<StyledProperty, ThemeSetter>());
+                        }
+                    }
             }
-            theme?.Apply(this, null);
+            else theme?.Apply(this, null);
             var template = Template ?? theme?.Template;
             if (!ReferenceEquals(template, _appliedTemplate))
             {
@@ -141,6 +157,6 @@ public abstract partial class Element
             _lastTemplateVersion = RenderVersion;
             _lastTemplateDefaults = ThemeDefaults;
         }
-        finally { _applyingTemplate = false; }
+        finally { _applyingTemplate = false; _suppressTransitions = suppressTransitions; }
     }
 }

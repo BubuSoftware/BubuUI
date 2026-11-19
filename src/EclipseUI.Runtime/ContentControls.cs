@@ -33,7 +33,8 @@ public class Border : ContentControl
         var inset = Padding + BorderThickness;
         return new Rect(inset, inset, Math.Max(0, FinalRect.Width - inset * 2), Math.Max(0, FinalRect.Height - inset * 2));
     }
-    public new static readonly StyledProperty<UiColor> BackgroundProperty = StyledProperty<UiColor>.Register<Border>("Background", UiColor.Transparent, new() { Invalidate = InvalidateKind.Render });
+    [UiAnimatable]
+    public new static readonly StyledProperty<UiColor> BackgroundProperty = StyledProperty<UiColor>.Register<Border>("Background", UiColor.Transparent, new() { Invalidate = InvalidateKind.Render, Animatable = true });
     public static readonly StyledProperty<UiColor> BorderColorProperty = StyledProperty<UiColor>.Register<Border>("BorderColor", UiColor.Transparent, new() { Invalidate = InvalidateKind.Render });
     public static readonly StyledProperty<double> BorderThicknessProperty = StyledProperty<double>.Register<Border>("BorderThickness", 1, new() { Invalidate = InvalidateKind.Measure });
     public new static readonly StyledProperty<double> CornerRadiusProperty = StyledProperty<double>.Register<Border>("CornerRadius", 0, new() { Invalidate = InvalidateKind.Render });

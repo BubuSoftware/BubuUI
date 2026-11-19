@@ -22,6 +22,9 @@ public sealed record EustyleTheme(EustyleColor Dark, EustyleColor Light, TextSpa
 /// <summary>裸数字（逻辑单位；单位后缀不被支持，报 EUI052）。</summary>
 public sealed record EustyleNumber(double Value, TextSpan Span) : EustyleValue(Span);
 
+/// <summary>Transition duration in milliseconds and a supported easing name.</summary>
+public sealed record EustyleTransition(double Milliseconds, string Easing, TextSpan Span) : EustyleValue(Span);
+
 /// <summary>
 /// 裸标识符值（design/19 §5.1，keyword 风格）：枚举属性按成员表校验后发射
 /// <c>global::Ns.T.Member</c>；string 属性直通为字符串字面量。值限于数字/颜色的

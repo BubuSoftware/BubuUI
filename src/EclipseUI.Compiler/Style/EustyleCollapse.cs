@@ -66,6 +66,23 @@ public static class EustyleCollapse
             rules.Add(new EustyleRule(name, span, derivedSetters[name], Array.Empty<EustyleNested>()));
             injects.Add(new InjectRule(rootClass, chain, name, span));
         }
+        // Rules with a shared class name (including flattened nested rules) can place the
+        // transition, static color and theme resource in different declarations.  Validate
+        // after flattening so no single parser rule can hide the property-slot conflict.
+        foreach (var group in rules.GroupBy(r => r.ClassName, StringComparer.Ordinal))
+        {
+            var setters = group.SelectMany(r => r.Setters).ToArray();
+            foreach (var transition in setters.Where(s => s.Value is EustyleTransition))
+            {
+                if (!setters.Any(s => s.Property == transition.Property && s.Value is EustyleColor) ||
+                    !setters.Any(s => s.Property == transition.Property && s.Value is EustyleTheme)) continue;
+                if (diagnostics.Any(d => d.Code == UiDiagnostics.StyleValueType && d.Span == transition.PropertySpan &&
+                    d.Message.Contains("cannot mix static colors and theme()"))) continue;
+                diagnostics.Add(UiDiagnostics.Error(UiDiagnostics.StyleValueType,
+                    $"transition '{transition.Property}' cannot mix static colors and theme() in this class: they use different property slots",
+                    transition.PropertySpan));
+            }
+        }
         return new Collapsed(rules, injects, sheet.States);
 
         void Walk(string rootClass, string parentDerived, IReadOnlyList<ChainSeg> ancestorChain,

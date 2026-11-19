@@ -18,6 +18,88 @@ namespace EclipseUI.Compiler.Tests;
 /// </summary>
 public class EustyleTests
 {
+    [Theory]
+    [InlineData("@transition Background { Duration: 150ms; Easing: CubicOut; }")]
+    [InlineData("transition: Background 150ms CubicOut;")]
+    public void TransitionSyntaxGeneratesTypedStyleBuilderCall(string transition)
+    {
+        var (sheet, diags) = Parse($".card {{ Background: #202020; {transition} &:hover {{ Background: #404040; }} }}");
+        Assert.Empty(diags);
+        var value = Assert.IsType<EustyleTransition>(sheet.Rules.Single().Setters[1].Value);
+        Assert.Equal(150, value.Milliseconds);
+        Assert.Equal("CubicOut", value.Easing);
+        var code = EustyleGenerator.EmitDefines(sheet, "registry", Catalog);
+        Assert.Contains("s.Transition(global::EclipseUI.Rendering.Visual.BackgroundProperty, new global::EclipseUI.TransitionSpec(global::System.TimeSpan.FromMilliseconds(150), global::EclipseUI.Easings.CubicOut));", code);
+        AssertGeneratedCodeParses(code);
+    }
+
+    [Theory]
+    [InlineData("@transition Background { Duration: -1ms; }")]
+    [InlineData("@transition Background { Duration: 1px; }")]
+    [InlineData("@transition Background { Duration: 1s; Easing: Nope; }")]
+    [InlineData("@transition Background { Easing: Linear; }")]
+    [InlineData("transition: Background 1ms Nope;")]
+    [InlineData("@transition Padding { Duration: 150ms; }")]
+    [InlineData("@transition Background { Duration: 150ms; } Background: #000; &:hover { Background: theme(#000, #fff); }")]
+    public void InvalidTransitionsAreRejected(string declaration)
+    {
+        var (_, diagnostics) = Parse($".card {{ {declaration} }}");
+        Assert.NotEmpty(diagnostics);
+    }
+
+    [Fact]
+    public void TransitionInStateRuleIsRejected()
+    {
+        var (_, diagnostics) = Parse(".card { &:hover { @transition Background { Duration: 150ms; } } }");
+        Assert.Contains(diagnostics, d => d.Message.Contains("base rule"));
+    }
+
+    [Fact]
+    public void TransitionAcceptsThemeResourcesAtBothStates()
+    {
+        var (_, diagnostics) = Parse(".card { Background: theme(#000, #fff); @transition Background { Duration: 150ms; } &:hover { Background: theme(#333, #ccc); } }");
+        Assert.Empty(diagnostics);
+    }
+
+    [Theory]
+    [InlineData(".card { transition: Background 100ms Linear; Background: #000; } .card:hover { Background: theme(#000, #fff); }")]
+    [InlineData(".outer { > Button { transition: Background 100ms Linear; Background: #000; } > Button:hover { Background: theme(#000, #fff); } }")]
+    public void TransitionRejectsMixedColorSourcesAcrossFlattenedRules(string source)
+    {
+        var (sheet, diagnostics) = Parse(source);
+        EustyleCollapse.Flatten(sheet, diagnostics);
+        Assert.Contains(diagnostics, d => d.Message.Contains("cannot mix static colors and theme()"));
+    }
+
+    [Fact]
+    public void CornerRadiusTransitionBindsNullableVisualProperty()
+    {
+        var (sheet, diagnostics) = Parse(".card { CornerRadius: 4; transition: CornerRadius 150ms CubicOut; &:hover { CornerRadius: 8; } }");
+        Assert.Empty(diagnostics);
+        Assert.Contains("s.Transition(global::EclipseUI.Rendering.Visual.CornerRadiusProperty",
+            EustyleGenerator.EmitDefines(sheet, "registry", Catalog));
+    }
+
+    [Fact]
+    public void CustomUiColorTransitionUsesUiColorLiteral()
+    {
+        var catalog = CustomCatalog("""
+            public static class CustomVisuals
+            {
+                [UiStyleProperty, UiAnimatable]
+                public static readonly StyledProperty<UiColor> AccentColorProperty =
+                    StyledProperty<UiColor>.Register<Probe>("AccentColor", default,
+                        new() { Invalidate = InvalidateKind.Render, Animatable = true });
+            }
+            """);
+        var (sheet, diagnostics) = ParseWith(catalog,
+            ".custom { AccentColor: #ff0000; transition: AccentColor 100ms Linear; }");
+        Assert.Empty(diagnostics);
+        var code = EustyleGenerator.EmitDefines(sheet, "registry", catalog);
+        Assert.Contains("s.Set(global::CustomVisuals.AccentColorProperty, new global::EclipseUI.UiColor(255, 0, 0, 255));", code);
+        Assert.Contains("s.Transition(global::CustomVisuals.AccentColorProperty", code);
+    }
+
     // ---------- 解析�?----------
 
     /// <summary>真实符号派生的属性目录（扫描 Runtime + Rendering，绝不手写固定表）�?/summary>

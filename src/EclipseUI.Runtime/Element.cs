@@ -359,12 +359,27 @@ public abstract partial class Element : UiObject
     {
         UiThreadGuard.AssertUiThread(this, nameof(SetThemeDefaults));
         if (ReferenceEquals(_themeDefaults, value)) return;
+        var elements = new[] { this }.Concat(Descendants()).ToArray();
+        foreach (var element in elements)
+            if (element._transitions is not null)
+                foreach (var state in element._transitions.Values.ToArray()) state.Capture(element);
         _themeDefaults = value;
+        foreach (var element in elements)
+            if (element._transitions is not null)
+                foreach (var pair in element._transitions.ToArray())
+                    if (pair.Value.Commit(element)) { element.ReconcileAnimationRegistration(); element.ApplyValueChange(pair.Key); }
         InvalidateMeasure(); InvalidateRender();
         foreach (var element in Descendants()) { element.InvalidateMeasure(); element.InvalidateRender(); }
     }
 
     public T GetValue<T>(StyledProperty<T> property)
+    {
+        if (!ReferenceEquals(_baseReadProperty, property) && _transitions?.TryGetValue(property, out var animation) == true && animation is TransitionState<T> typed && typed.TryGet(out var value))
+            return value;
+        return GetBaseValue(property);
+    }
+
+    public T GetBaseValue<T>(StyledProperty<T> property)
     {
         // Effective values: local → template → class → inherited → scoped theme → property default.
         // 命中值盒：强类型读取，无拆箱。类型不匹配（正常 API 下不可达）时退化到下一层。
@@ -400,6 +415,7 @@ public abstract partial class Element : UiObject
             SetTemplateValue(property, value);
             return;
         }
+        BeforeBaseChange(property);
         if (_localValues is not null &&
             _localValues.TryGetValue(property, out var existing) &&
             existing is ValueBox<T> typedBox)
@@ -407,7 +423,7 @@ public abstract partial class Element : UiObject
             // 命中已有 ValueBox<T>：相等短路；否则只改 .Value 字段，不新建对象，
             // 消除重复赋值时的装箱与分配。
             if (EqualityComparer<T>.Default.Equals(typedBox.Value, value))
-                return;
+            { AfterBaseChange(property); return; }
             typedBox.Value = value;
         }
         else
@@ -416,6 +432,7 @@ public abstract partial class Element : UiObject
             (_localValues ??= new Dictionary<StyledProperty, IValueBox>())[property] = new ValueBox<T>(value);
         }
 
+        AfterBaseChange(property);
         ApplyValueChange(property);
     }
 
@@ -424,16 +441,18 @@ public abstract partial class Element : UiObject
     {
         if (_skinValueDepth > 0) { SetSkinValue(property, value); return; }
         UiThreadGuard.AssertUiThread(this, nameof(SetTemplateValue));
-        var previous = GetValue(property);
+        var previous = GetBaseValue(property);
+        BeforeBaseChange(property);
         if (_templateValues is not null &&
             _templateValues.TryGetValue(property, out var existing) && existing is ValueBox<T> typed)
         {
-            if (EqualityComparer<T>.Default.Equals(typed.Value, value)) return;
+            if (EqualityComparer<T>.Default.Equals(typed.Value, value)) { AfterBaseChange(property); return; }
             typed.Value = value;
         }
         else
             (_templateValues ??= new())[property] = new ValueBox<T>(value);
-        if (!EqualityComparer<T>.Default.Equals(previous, GetValue(property)))
+        AfterBaseChange(property);
+        if (!EqualityComparer<T>.Default.Equals(previous, GetBaseValue(property)))
         {
             var previousDepth = _templateValueDepth;
             _templateValueDepth = 0;
@@ -478,12 +497,13 @@ public abstract partial class Element : UiObject
     /// </summary>
     public void SetStyleValue<T>(StyledProperty<T> property, T value)
     {
+        BeforeBaseChange(property);
         if (_styleValues is not null &&
             _styleValues.TryGetValue(property, out var existing) &&
             existing is ValueBox<T> typedBox)
         {
             if (EqualityComparer<T>.Default.Equals(typedBox.Value, value))
-                return;
+            { AfterBaseChange(property); return; }
             typedBox.Value = value;
         }
         else
@@ -491,6 +511,7 @@ public abstract partial class Element : UiObject
             (_styleValues ??= new Dictionary<StyledProperty, IValueBox>())[property] = new ValueBox<T>(value);
         }
 
+        AfterBaseChange(property);
         ApplyValueChange(property);
     }
 
@@ -500,8 +521,13 @@ public abstract partial class Element : UiObject
     /// </summary>
     public void ClearLocalValue<T>(StyledProperty<T> property)
     {
+        BeforeBaseChange(property);
         if (_localValues?.Remove(property) == true)
+        {
+            AfterBaseChange(property);
             ApplyValueChange(property);
+        }
+        else AfterBaseChange(property);
     }
 
     /// <summary>清除全部 class 样式值并按失效级别触发重算（Classes 变化时由提供者调用）。</summary>
@@ -510,15 +536,22 @@ public abstract partial class Element : UiObject
         if (_styleValues is not { Count: > 0 })
             return;
         var affected = new List<StyledProperty>(_styleValues.Keys);
+        foreach (var property in affected) BeforeBaseChange(property);
         _styleValues = null;
         foreach (var property in affected)
+        {
+            AfterBaseChange(property);
             ApplyValueChange(property);
+        }
     }
 
-    private void ApplyValueChange(StyledProperty property)
+    private void ApplyValueChange(StyledProperty property, bool animationChange = false)
     {
         if (_valueBatchDepth > 0) { (_batchedChanges ??= new()).Add(property); return; }
-        PropertyChanged?.Invoke(this, property);
+        var previousAnimationNotification = _animationNotification;
+        _animationNotification = animationChange;
+        try { PropertyChanged?.Invoke(this, property); }
+        finally { _animationNotification = previousAnimationNotification; }
         InvalidateRender();
         switch (property.Invalidate)
         {
@@ -542,9 +575,11 @@ public abstract partial class Element : UiObject
     }
     public void SetSkinValue<T>(StyledProperty<T> property, T value)
     {
-        var old = GetValue(property);
+        var old = GetBaseValue(property);
+        BeforeBaseChange(property);
         (_skinValues ??= new())[property] = new ValueBox<T>(value);
-        if (!EqualityComparer<T>.Default.Equals(old, GetValue(property)))
+        AfterBaseChange(property);
+        if (!EqualityComparer<T>.Default.Equals(old, GetBaseValue(property)))
         {
             var depth = _skinValueDepth;
             _skinValueDepth = 0;
@@ -554,22 +589,26 @@ public abstract partial class Element : UiObject
     }
     internal void SetControlThemeValue<T>(StyledProperty<T> property, T value)
     {
-        var old = GetValue(property);
+        var old = GetBaseValue(property);
+        BeforeBaseChange(property);
         (_controlThemeValues ??= new())[property] = new ValueBox<T>(value);
-        if (!EqualityComparer<T>.Default.Equals(old, GetValue(property))) ApplyValueChange(property);
+        AfterBaseChange(property);
+        if (!EqualityComparer<T>.Default.Equals(old, GetBaseValue(property))) ApplyValueChange(property);
     }
     public void SetRuleValue<T>(StyledProperty<T> property, T value)
     {
-        var old = GetValue(property);
+        var old = GetBaseValue(property);
+        BeforeBaseChange(property);
         (_ruleValues ??= new())[property] = new ValueBox<T>(value);
-        if (!EqualityComparer<T>.Default.Equals(old, GetValue(property))) ApplyValueChange(property);
+        AfterBaseChange(property);
+        if (!EqualityComparer<T>.Default.Equals(old, GetBaseValue(property))) ApplyValueChange(property);
     }
     public void ReplaceRuleValues(IReadOnlyDictionary<StyledProperty, ThemeSetter> setters)
     {
         using var batch = BeginValueBatch();
         if (_ruleValues is not null)
             foreach (var property in _ruleValues.Keys.Where(p => !setters.ContainsKey(p)).ToArray())
-            { _ruleValues.Remove(property); ApplyValueChange(property); }
+            { BeforeBaseChange(property); _ruleValues.Remove(property); AfterBaseChange(property); ApplyValueChange(property); }
         foreach (var setter in setters.Values) setter.ApplyStyle(this);
     }
     internal void ReplaceControlThemeValues(IReadOnlyDictionary<StyledProperty, ThemeSetter> setters)
@@ -577,10 +616,10 @@ public abstract partial class Element : UiObject
         using var batch = BeginValueBatch();
         if (_controlThemeValues is not null)
             foreach (var property in _controlThemeValues.Keys.Where(p => !setters.ContainsKey(p)).ToArray())
-            { _controlThemeValues.Remove(property); ApplyValueChange(property); }
+            { BeforeBaseChange(property); _controlThemeValues.Remove(property); AfterBaseChange(property); ApplyValueChange(property); }
         foreach (var setter in setters.Values) setter.Apply(this);
     }
-    private IDisposable BeginValueBatch()
+    public IDisposable BeginValueBatch()
     {
         _valueBatchDepth++;
         return new ValueBatch(this);
@@ -592,7 +631,9 @@ public abstract partial class Element : UiObject
         {
             if (_owner is not { } element) return;
             _owner = null;
-            if (--element._valueBatchDepth != 0 || element._batchedChanges is null) return;
+            if (--element._valueBatchDepth != 0) return;
+            element.CommitTransitions();
+            if (element._batchedChanges is null) return;
             var changes = element._batchedChanges;
             element._batchedChanges = null;
             foreach (var property in changes) element.ApplyValueChange(property);
@@ -777,6 +818,7 @@ public abstract partial class Element : UiObject
     /// <summary>清 class 层并按当前类集重应用（类集变化与伪类状态变化共用）。</summary>
     private void ReapplyStyles()
     {
+        using var batch = BeginValueBatch();
         var provider = Styling.Provider;
         if (provider is not null)
         {

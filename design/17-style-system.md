@@ -32,7 +32,7 @@
 
 - **运行时样式表加载 / 动态选择器引擎**（0.x 不做；热重载走「重编译 + 重放 Define」，远期）
 - CSS specificity 演算（用「声明序后者胜」替代，语义可预测）
-- `em/rem/%`、`calc()`、`@media`、transition/animation
+- `em/rem/%`、`calc()`、`@media`、关键帧 animation（样式过渡已支持，见 [design/29](./29-animation-system.md)）
 - CSS `var()` 运行时自定义属性——**该角色由「属性层缺失 → painter 回落主题令牌」天然承担**
   （不写 `background` = 令牌穿透，见 §6.2）
 - 控件模板（S-D：换视觉树的结构定制，与样式正交，1.0 后独立片）
