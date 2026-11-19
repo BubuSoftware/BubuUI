@@ -14,6 +14,10 @@ public sealed class MacOSDesktopFactAttribute : FactAttribute
 public class NativeDesktopTests
 {
     [MacOSDesktopFact]
+    public Task SoftwareRasterUploadsAndPresentsThroughMetalAcrossResize()
+        => RunNativeScenario("software-raster");
+
+    [MacOSDesktopFact]
     public Task MetalRetainsPixelsAndRasterizesOnlyDamagedRegions()
         => RunNativeScenario("partial-raster");
 

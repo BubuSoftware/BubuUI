@@ -8,7 +8,7 @@ namespace EclipseUI.Rendering.Vello;
 internal sealed class GpuRetainedFrame : IDisposable
 {
     private readonly WgpuDevice _device;
-    private readonly WgpuRenderer _renderer;
+    private readonly WgpuRenderer? _renderer;
     private readonly WgpuQueue _queue;
     private readonly WgpuBindGroupLayout _bindings;
     private readonly WgpuPipelineLayout _layout;
@@ -23,7 +23,7 @@ internal sealed class GpuRetainedFrame : IDisposable
     public long RasterizedPixels { get; private set; }
     public GpuDamageRegion LastRegion { get; private set; }
 
-    public GpuRetainedFrame(WgpuDevice device, WgpuRenderer renderer, WgpuTextureFormat surfaceFormat)
+    public GpuRetainedFrame(WgpuDevice device, WgpuRenderer? renderer, WgpuTextureFormat surfaceFormat)
     {
         _device = device; _renderer = renderer; _queue = device.GetQueue();
         try
@@ -54,17 +54,35 @@ internal sealed class GpuRetainedFrame : IDisposable
     public bool HasFrame => _hasFrame;
     public void Reset() => _hasFrame = false;
 
+    /// <summary>Uploads a completed software frame; Metal only presents the texture.</summary>
+    public void PresentBitmap(RenderTarget pixels, WgpuTextureView surface)
+    {
+        EnsureFrame(pixels.Width, pixels.Height);
+        _queue.WriteTexture(
+            new WgpuImageCopyTexture { Texture = _frame!, Aspect = WgpuTextureAspect.All },
+            pixels.Pixels,
+            new WgpuTextureDataLayout { BytesPerRow = (uint)pixels.Stride, RowsPerImage = (uint)pixels.Height },
+            new WgpuExtent3D { Width = (uint)pixels.Width, Height = (uint)pixels.Height, DepthOrArrayLayers = 1 });
+        _hasFrame = true;
+        LastRegion = new(0, 0, pixels.Width, pixels.Height);
+        RasterizedPixels = LastRegion.Area;
+        Copy(surface, _frameBinding!, _presentPipeline, LastRegion, false);
+    }
+
+    private void EnsureFrame(int width, int height)
+    {
+        if (_width == width && _height == height) return;
+        DisposeFrame();
+        (_frame, _frameView, _frameBinding) = CreateTexture(width, height, false);
+        _width = width; _height = height;
+        _hasFrame = false;
+    }
+
     public void Render(Scene scene, GpuDamageRegion region, WgpuTextureView surface, int width, int height, AntialiasingMode antialiasing)
     {
         RasterizedPixels = 0;
         LastRegion = region;
-        if (_width != width || _height != height)
-        {
-            DisposeFrame();
-            (_frame, _frameView, _frameBinding) = CreateTexture(width, height, false);
-            _width = width; _height = height;
-            _hasFrame = false;
-        }
+        EnsureFrame(width, height);
         if (region.Area > 0)
         {
             if (_patchWidth != region.Width || _patchHeight != region.Height)
@@ -77,7 +95,7 @@ internal sealed class GpuRetainedFrame : IDisposable
             }
             _patchScene.Reset();
             _patchScene.Append(scene, Matrix3x2.CreateTranslation(-region.X, -region.Y));
-            _renderer.Render(_patchScene, _patchView!, new RenderParams((uint)region.Width, (uint)region.Height,
+            _renderer!.Render(_patchScene, _patchView!, new RenderParams((uint)region.Width, (uint)region.Height,
                 RgbaColor.FromBytes(0, 0, 0, 255), antialiasing, RenderFormat.Rgba8));
             Copy(_frameView!, _patchBinding!, _copyPipeline, region, _hasFrame);
             _hasFrame = true;
@@ -93,7 +111,7 @@ internal sealed class GpuRetainedFrame : IDisposable
         {
             Size = new() { Width = (uint)width, Height = (uint)height, DepthOrArrayLayers = 1 },
             MipLevelCount = 1, SampleCount = 1, Dimension = WgpuTextureDimension.D2, Format = WgpuTextureFormat.Rgba8Unorm,
-            Usage = WgpuTextureUsage.TextureBinding | (raster ? WgpuTextureUsage.StorageBinding : WgpuTextureUsage.RenderAttachment),
+            Usage = WgpuTextureUsage.TextureBinding | (raster ? WgpuTextureUsage.StorageBinding : WgpuTextureUsage.RenderAttachment | WgpuTextureUsage.CopyDst),
             ViewFormats = []
         });
         WgpuTextureView? view = null;

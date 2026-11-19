@@ -23,6 +23,7 @@ internal static class Program
                 case "lifetime": LifetimeScenario(); break;
                 case "thread": ThreadScenario(); break;
                 case "partial-raster": PartialRasterScenario(); break;
+                case "software-raster": SoftwareRasterScenario(); break;
                 default: throw new ArgumentException("Unknown native scenario.");
             }
             Console.WriteLine($"macOS native {scenario}: passed");
@@ -33,6 +34,31 @@ internal static class Program
             Console.Error.WriteLine(error);
             return 1;
         }
+    }
+
+    private static void SoftwareRasterScenario()
+    {
+        using var window = new MacOSWindow("Software raster with Metal presentation", 400, 300);
+        window.Show();
+        using var presenter = VelloSurfaceBackend.Create(window.SurfaceHandle, window.ClientWidth, window.ClientHeight,
+            new() { UseSoftwareRasterizer = true, ValidateDisplayList = true });
+        void Draw(Color color)
+        {
+            var width = presenter.Width; var height = presenter.Height;
+            var list = new DisplayList(new(width, height))
+                .Add(new FillRect(new(0, 0, width, height), Color.White))
+                .Add(new PushClip(new(10, 10, width - 20, height - 20)))
+                .Add(new FillRoundedRect(new(20, 20, 70, 50), 8, color))
+                .Add(new PopClip());
+            presenter.Render(list);
+            Assert.Equal((long)width * height, presenter.LastRasterizedPixels);
+        }
+        Draw(Color.Black);
+        Draw(new(30, 80, 220));
+        presenter.Resize(presenter.Width + 20, presenter.Height + 20);
+        Draw(new(50, 160, 60));
+        Assert.Equal(3, presenter.PresentedFrames);
+        Assert.Contains("CPU raster", presenter.Name);
     }
 
     private static void PartialRasterScenario()

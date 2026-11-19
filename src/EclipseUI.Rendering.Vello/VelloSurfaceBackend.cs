@@ -12,6 +12,9 @@ public readonly record struct SurfaceFrameTimings(
 
 public sealed class VelloSurfaceOptions
 {
+    /// <summary>Rasterize with vello_cpu and upload the finished frame instead of running compute shaders.</summary>
+    public bool UseSoftwareRasterizer { get; init; }
+
     public AntialiasingMode Antialiasing { get; init; } = AntialiasingMode.Area;
 
     /// <summary>优先使用的 wgpu 后端；null 表示由 wgpu 自动选择。</summary>
@@ -47,6 +50,8 @@ public sealed class VelloSurfaceBackend : ISurfacePresenter
     private WgpuRenderer? _renderer;
     private WgpuSurface? _surface;
     private GpuRetainedFrame? _retained;
+    private VelloSparseBackend? _software;
+    private RenderTarget? _softwareTarget;
     private WgpuTextureFormat _format;
     private PresentMode _presentMode;
 
@@ -55,11 +60,12 @@ public sealed class VelloSurfaceBackend : ISurfacePresenter
         _options = options;
     }
 
-    public string Name => "Vello (GPU surface)";
+    public string Name => _options.UseSoftwareRasterizer ? "Vello (CPU raster, GPU surface)" : "Vello (GPU surface)";
 
     public string Description => $"backend: {Name}, wgpu={BackendType}, format={Format}, present={PresentMode}, surface={Width}x{Height} px";
 
-    public RenderCapabilities Capabilities => RenderCapabilities.All;
+    public RenderCapabilities Capabilities => _options.UseSoftwareRasterizer
+        ? RenderCapabilities.All & ~RenderCapabilities.Blur : RenderCapabilities.All;
 
     public int Width { get; private set; }
 
@@ -148,7 +154,8 @@ public sealed class VelloSurfaceBackend : ISurfacePresenter
                       $"alpha=[{string.Join(",", capabilities.AlphaModes)}] " +
                       $"usage={capabilities.Usage}";
 
-        _renderer = new WgpuRenderer(_device);
+        if (_options.UseSoftwareRasterizer) _software = new VelloSparseBackend();
+        else _renderer = new WgpuRenderer(_device);
         _retained = new GpuRetainedFrame(_device, _renderer, _format);
         Configure(width, height);
 
@@ -291,15 +298,25 @@ public sealed class VelloSurfaceBackend : ISurfacePresenter
         using (texture)
         using (var view = texture.CreateView())
         {
-            var region = GpuDamageRegion.Resolve(frame.Damage, Width, Height, scale, _retained!.HasFrame);
-            if (region.Area > 0)
+            if (_software is not null)
             {
-                _scene.Reset();
-                _builder.Build(_scene, list, new Size(Width, Height));
-                LastReusedSceneFragments = _builder.ReusedFragments;
-                LastBuiltSceneFragments = _builder.BuiltFragments;
+                if (_softwareTarget is null || _softwareTarget.Width != Width || _softwareTarget.Height != Height)
+                    _softwareTarget = new RenderTarget(Width, Height);
+                _software.Render(list, _softwareTarget);
+                _retained!.PresentBitmap(_softwareTarget, view);
             }
-            _retained.Render(_scene, region, view, Width, Height, _options.Antialiasing);
+            else
+            {
+                var region = GpuDamageRegion.Resolve(frame.Damage, Width, Height, scale, _retained!.HasFrame);
+                if (region.Area > 0)
+                {
+                    _scene.Reset();
+                    _builder.Build(_scene, list, new Size(Width, Height));
+                    LastReusedSceneFragments = _builder.ReusedFragments;
+                    LastBuiltSceneFragments = _builder.BuiltFragments;
+                }
+                _retained.Render(_scene, region, view, Width, Height, _options.Antialiasing);
+            }
 
             var presentStart = Stopwatch.GetTimestamp();
             texture.Present();
@@ -318,6 +335,9 @@ public sealed class VelloSurfaceBackend : ISurfacePresenter
 
     public void Dispose()
     {
+        _software?.Dispose();
+        _software = null;
+        _softwareTarget = null;
         _retained?.Dispose();
         _retained = null;
         _renderer?.Dispose();

@@ -137,6 +137,8 @@ dotnet run --project sandbox/FluentCheck -- out/fluent
 
 泛型模板标签暂不支持。原生窗口由平台层创建，运行时不依赖具体绘制后端。AOT 发布仍受原生渲染依赖限制。GPU 路径已支持原生场景片段缓存、脏区局部光栅化和保留帧；最终上屏仍复制完整表面。数据绑定的 ListBox/ComboBox 达到 128 项后自动虚拟化，在有限滚动视口内仅实现可见范围。实现与验收边界见[框架修复报告](./design/reports/framework-hardening-2026-11-18.md)。
 
+需要软件栅格时可使用 `.UseVello(new VelloSurfaceOptions { UseSoftwareRasterizer = true })`：`VelloSparseBackend` 在 CPU 上绘制完整画面，GPU 仅上传纹理并呈现；变化帧全量重绘，空闲帧继续跳过。该模式不使用原生场景片段缓存或 GPU 局部光栅，阴影保留偏移轮廓但没有模糊效果。离屏软件渲染也可直接使用 `VelloSparseBackend`。
+
 当前环境有一项已在重构前代码复现的精确像素 golden 差异；未改基线掩盖。详细命令、测试数和隔离证据见 [验证报告](./design/reports/root-type-unification-2026-11-13.md)。
 
 ## 文档与目录
