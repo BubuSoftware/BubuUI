@@ -100,9 +100,13 @@ public sealed class InputRouter
         using var scope = Focus.EnterInput(FocusOrigin.Pointer, modifiers);
         Focus.NotifyInput(FocusOrigin.Pointer);
         CancelPointerCapture();
-        foreach (var popup in OpenPopups().Reverse().ToArray())
-            if (!popup.StaysOpen && !popup.ContainsRootPoint(point) && !popup.Descendants().OfType<Elements.Popup>().Any(p => p.IsOpen && p.ContainsRootPoint(point))) popup.Close();
-        var hit = HitTest(point);
+        var popups = OpenPopups().Reverse().ToArray();
+        var hit = popups.Length > 0 ? HitTest(point) : null;
+        foreach (var popup in popups)
+            if (!popup.StaysOpen && !popup.ContainsRootPoint(point)
+                && !(button == PointerButton.Left && hit is { IsEffectiveEnabled: true } && popup.IsLightDismissExcluded(hit))
+                && !popup.Descendants().OfType<Elements.Popup>().Any(p => p.IsOpen && p.ContainsRootPoint(point))) popup.Close();
+        hit = HitTest(point);
         if (hit is not null && !hit.IsEffectiveEnabled)
             return; // :disabled 吞按下
 

@@ -17,6 +17,8 @@ public class Popup : ContentControl
     public bool IsOpen { get => GetValue(IsOpenProperty); set => SetValue(IsOpenProperty, value); }
     public bool StaysOpen { get => GetValue(StaysOpenProperty); set => SetValue(StaysOpenProperty, value); }
     public Placement Placement { get => GetValue(PlacementProperty); set => SetValue(PlacementProperty, value); }
+    // A toggle button handles dismissal on Click, after the pointer-press light-dismiss pass.
+    internal Element? LightDismissExclusion { get; set; }
     private Element? _placementTarget;
     private Point _pointerPosition;
     private double _horizontalOffset, _verticalOffset;
@@ -84,6 +86,13 @@ public class Popup : ContentControl
         double x = 0, y = 0;
         for (Element? e = element; e is not null; e = e.Parent) { x += e.FinalRect.X; y += e.FinalRect.Y; }
         return new(x, y);
+    }
+    internal bool IsLightDismissExcluded(Element? hit)
+    {
+        if (LightDismissExclusion is not { } exclusion) return false;
+        for (var element = hit; element is not null; element = element.Parent)
+            if (ReferenceEquals(element, exclusion)) return true;
+        return false;
     }
     public bool ContainsRootPoint(Point point) => IsOpen && (TemplateRoot ?? Content) is { } body &&
         new Rect(Point.Zero, body.FinalRect.Size).Contains(body.PointFromRoot(point));

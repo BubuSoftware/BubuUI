@@ -123,7 +123,7 @@ public class DatePicker : Panel
             _calendar.AddHandler(Calendar.SelectedDateChangedEvent, CalendarChanged);
             _calendar.AddHandler(Calendar.DateChosenEvent, DateChosen);
         }
-        if (_popup is not null) { _popup.PlacementTarget = this; _popup.AddHandler(Popup.ClosedEvent, PopupClosed); }
+        if (_popup is not null) { _popup.PlacementTarget = this; _popup.LightDismissExclusion = _button; _popup.AddHandler(Popup.ClosedEvent, PopupClosed); }
         UpdateDate(); UpdateDropDown();
     }
     protected override void OnTemplateRemoving()
@@ -131,7 +131,7 @@ public class DatePicker : Panel
         if (_editor is not null) { _editor.RemoveHandler(LostFocusEvent, EditorLostFocus); _editor.RemoveHandler(KeyDownEvent, EditorKeyDown); }
         if (_button is not null) _button.RemoveHandler(Button.ClickEvent, ButtonClicked);
         if (_calendar is not null) { _calendar.RemoveHandler(Calendar.SelectedDateChangedEvent, CalendarChanged); _calendar.RemoveHandler(Calendar.DateChosenEvent, DateChosen); }
-        if (_popup is not null) _popup.RemoveHandler(Popup.ClosedEvent, PopupClosed);
+        if (_popup is not null) { _popup.LightDismissExclusion = null; _popup.RemoveHandler(Popup.ClosedEvent, PopupClosed); }
         _editor = null; _button = null; _calendar = null; _popup = null;
         base.OnTemplateRemoving();
     }

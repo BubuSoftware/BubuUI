@@ -70,7 +70,7 @@ public class ComboBox : Panel
         _list = instance.FindPart<ListBox>(ListPart) ?? throw new InvalidOperationException($"ComboBox template requires {ListPart} of type ListBox.");
         _popup = instance.FindPart<Popup>(PopupPart) ?? throw new InvalidOperationException($"ComboBox template requires {PopupPart} of type Popup.");
         if (_button is not null) { _button.FocusVisualOwner = this; _button.AddHandler(Button.ClickEvent, ButtonClicked); }
-        if (_popup is not null) { _popup.PlacementTarget = this; _popup.AddHandler(Popup.ClosedEvent, PopupClosed); }
+        if (_popup is not null) { _popup.PlacementTarget = this; _popup.LightDismissExclusion = _button; _popup.AddHandler(Popup.ClosedEvent, PopupClosed); }
         if (_list is not null)
         {
             _list.AddHandler(ListBox.SelectionChangedEvent, ListSelectionChanged);
@@ -82,7 +82,7 @@ public class ComboBox : Panel
     protected override void OnTemplateRemoving()
     {
         if (_button is not null) _button.RemoveHandler(Button.ClickEvent, ButtonClicked);
-        if (_popup is not null) _popup.RemoveHandler(Popup.ClosedEvent, PopupClosed);
+        if (_popup is not null) { _popup.LightDismissExclusion = null; _popup.RemoveHandler(Popup.ClosedEvent, PopupClosed); }
         if (_list is not null)
         {
             _list.RemoveHandler(ListBox.SelectionChangedEvent, ListSelectionChanged);
