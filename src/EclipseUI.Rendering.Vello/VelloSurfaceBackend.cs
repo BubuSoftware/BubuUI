@@ -54,6 +54,8 @@ public sealed class VelloSurfaceBackend : ISurfacePresenter
     private RenderTarget? _softwareTarget;
     private WgpuTextureFormat _format;
     private PresentMode _presentMode;
+    private WgpuCompositeAlphaMode _alphaMode;
+    private bool _transparent;
 
     private VelloSurfaceBackend(VelloSurfaceOptions options)
     {
@@ -64,8 +66,7 @@ public sealed class VelloSurfaceBackend : ISurfacePresenter
 
     public string Description => $"backend: {Name}, wgpu={BackendType}, format={Format}, present={PresentMode}, surface={Width}x{Height} px";
 
-    public RenderCapabilities Capabilities => _options.UseSoftwareRasterizer
-        ? RenderCapabilities.All & ~RenderCapabilities.Blur : RenderCapabilities.All;
+    public RenderCapabilities Capabilities => RenderCapabilities.All;
 
     public int Width { get; private set; }
 
@@ -78,6 +79,9 @@ public sealed class VelloSurfaceBackend : ISurfacePresenter
 
     /// <summary>实际配置的呈现模式（诊断用）。</summary>
     public PresentMode PresentMode => _presentMode;
+    public WgpuCompositeAlphaMode AlphaMode => _alphaMode;
+    public bool SupportsTransparency => _transparent && _alphaMode is WgpuCompositeAlphaMode.Premultiplied
+        or WgpuCompositeAlphaMode.PostMultiplied or WgpuCompositeAlphaMode.Inherit;
 
     /// <summary>呈现模式是否垂直同步锁定（Fifo/AutoVsync）。</summary>
     public bool IsVsync => _presentMode is PresentMode.Fifo or PresentMode.AutoVsync;
@@ -149,6 +153,8 @@ public sealed class VelloSurfaceBackend : ISurfacePresenter
         var capabilities = _surface!.GetCapabilities(_adapter);
         _format = SelectFormat(capabilities.Formats);
         _presentMode = SelectPresentMode(capabilities.PresentModes);
+        _transparent = window.IsTransparent;
+        _alphaMode = SelectAlphaMode(capabilities.AlphaModes, _transparent);
         Diagnostics = $"formats=[{string.Join(",", capabilities.Formats)}] " +
                       $"present=[{string.Join(",", capabilities.PresentModes)}] " +
                       $"alpha=[{string.Join(",", capabilities.AlphaModes)}] " +
@@ -156,7 +162,7 @@ public sealed class VelloSurfaceBackend : ISurfacePresenter
 
         if (_options.UseSoftwareRasterizer) _software = new VelloSparseBackend();
         else _renderer = new WgpuRenderer(_device);
-        _retained = new GpuRetainedFrame(_device, _renderer, _format);
+        _retained = new GpuRetainedFrame(_device, _renderer, _format, _transparent, _alphaMode == WgpuCompositeAlphaMode.PostMultiplied);
         Configure(width, height);
 
         Width = width;
@@ -226,6 +232,15 @@ public sealed class VelloSurfaceBackend : ISurfacePresenter
         return available[0];
     }
 
+    private static WgpuCompositeAlphaMode SelectAlphaMode(IReadOnlyList<WgpuCompositeAlphaMode> available, bool transparent)
+    {
+        if (transparent)
+            foreach (var mode in new[] { WgpuCompositeAlphaMode.Premultiplied, WgpuCompositeAlphaMode.PostMultiplied, WgpuCompositeAlphaMode.Inherit })
+                if (available.Contains(mode)) return mode;
+        return available.Contains(WgpuCompositeAlphaMode.Opaque) ? WgpuCompositeAlphaMode.Opaque
+            : available.Count > 0 ? available[0] : WgpuCompositeAlphaMode.Auto;
+    }
+
     private void Configure(int width, int height)
     {
         _surface!.Configure(_device!, new WgpuSurfaceConfiguration
@@ -238,7 +253,7 @@ public sealed class VelloSurfaceBackend : ISurfacePresenter
             // but BGRA storage requires an optional device feature we do not enable.
             Usage = WgpuTextureUsage.RenderAttachment,
             PresentMode = _presentMode,
-            AlphaMode = WgpuCompositeAlphaMode.Opaque,
+            AlphaMode = _alphaMode,
             ViewFormats = Array.Empty<WgpuTextureFormat>(),
         });
     }

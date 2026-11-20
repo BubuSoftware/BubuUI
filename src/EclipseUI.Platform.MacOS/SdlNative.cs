@@ -138,6 +138,31 @@ internal static class SdlNative
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
     internal static extern nint SDL_CreateWindow([MarshalAs(UnmanagedType.LPUTF8Str)] string title, int width, int height, ulong flags);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern nint SDL_CreatePopupWindow(nint parent, int offsetX, int offsetY, int width, int height, ulong flags);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern nint SDL_GetKeyboardFocus();
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern uint SDL_GetDisplayForWindow(nint window);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    internal static extern bool SDL_GetDisplayUsableBounds(uint display, out Rect bounds);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    internal static extern bool SDL_GetWindowPosition(nint window, out int x, out int y);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    internal static extern bool SDL_SetWindowPosition(nint window, int x, int y);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern nint SDL_CreateSurfaceFrom(int width, int height, uint format, nint pixels, int pitch);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void SDL_DestroySurface(nint surface);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    internal static extern bool SDL_SetWindowShape(nint window, nint shape);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    internal static extern bool SDL_ReadSurfacePixel(nint surface, int x, int y, out byte r, out byte g, out byte b, out byte a);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
     internal static extern void SDL_DestroyWindow(nint window);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
     internal static extern uint SDL_GetWindowID(nint window);

@@ -78,13 +78,21 @@ public sealed class InputRouter
         if (failures is not null) throw new AggregateException("Input reset failed.", failures);
     }
 
-    public Element? HitTest(Point point)
+    public Element? HitTest(Point point) => HitTest(point, null);
+
+    internal Element? HitTest(Point point, Elements.Popup? surface)
     {
         foreach (var popup in OpenPopups().Reverse())
-            if (popup.HitTest(point) is { } hit) return hit;
-        return _root.HitTest(point);
+            if (IsOnSurface(popup, surface) && popup.HitTest(point, surface) is { } hit) return hit;
+        return (surface as Element ?? _root).HitTest(point, surface);
     }
-    private IEnumerable<Elements.Popup> OpenPopups() => _root.Descendants().OfType<Elements.Popup>()
+    private static bool IsOnSurface(Elements.Popup popup, Elements.Popup? surface)
+    {
+        for (Element? node = popup; node is not null; node = node.Parent)
+            if (node is Elements.Popup { IsWindowHosted: true } hosted) return ReferenceEquals(hosted, surface);
+        return surface is null;
+    }
+    private IEnumerable<Elements.Popup> OpenPopups() => _root.Descendants().Prepend(_root).OfType<Elements.Popup>()
         .Where(p => p.IsOpen && p.IsEffectivelyVisible);
 
 
@@ -96,17 +104,20 @@ public sealed class InputRouter
     /// E3：命中有效禁用元素时整体吞掉——不捕获、不悬停、不聚焦、不路由。
     /// </summary>
     public void PointerPress(Point point, KeyModifiers modifiers = KeyModifiers.None, PointerButton button = PointerButton.Left)
+        => PointerPress(point, modifiers, button, null);
+
+    internal void PointerPress(Point point, KeyModifiers modifiers, PointerButton button, Elements.Popup? surface)
     {
         using var scope = Focus.EnterInput(FocusOrigin.Pointer, modifiers);
         Focus.NotifyInput(FocusOrigin.Pointer);
         CancelPointerCapture();
         var popups = OpenPopups().Reverse().ToArray();
-        var hit = popups.Length > 0 ? HitTest(point) : null;
+        var hit = popups.Length > 0 ? HitTest(point, surface) : null;
         foreach (var popup in popups)
             if (!popup.StaysOpen && !popup.ContainsRootPoint(point)
                 && !(button == PointerButton.Left && hit is { IsEffectiveEnabled: true } && popup.IsLightDismissExcluded(hit))
                 && !popup.Descendants().OfType<Elements.Popup>().Any(p => p.IsOpen && p.ContainsRootPoint(point))) popup.Close();
-        hit = HitTest(point);
+        hit = HitTest(point, surface);
         if (hit is not null && !hit.IsEffectiveEnabled)
             return; // :disabled 吞按下
 
@@ -135,9 +146,12 @@ public sealed class InputRouter
     /// E3：按下后中途被禁用（捕获期间父级 <see cref="Element.IsEnabled"/> 翻转）时，
     /// 只清按下位、不路由事件——禁用元素的 Released 不产生 Click。</summary>
     public void PointerRelease(Point point)
+        => PointerRelease(point, null);
+
+    internal void PointerRelease(Point point, Elements.Popup? surface)
     {
         using var scope = Focus.EnterInput(FocusOrigin.Pointer, _modifiers);
-        var target = Captured ?? HitTest(point);
+        var target = Captured ?? HitTest(point, surface);
         Captured = null;
         if (target is not null)
         {
@@ -148,13 +162,16 @@ public sealed class InputRouter
             }
             finally { EndPointerInteraction(target); } // Released handlers still observe IsPressed.
         }
-        UpdateHover(HitTest(point)); // 释放后重算悬停（指针可能在按住期间移出）
+        UpdateHover(HitTest(point, surface)); // 释放后重算悬停（指针可能在按住期间移出）
     }
 
     public void PointerMove(Point point)
+        => PointerMove(point, null);
+
+    internal void PointerMove(Point point, Elements.Popup? surface)
     {
         if (Captured is { } captured && !CanRoutePointer(captured)) CancelPointerCapture();
-        var target = Captured ?? HitTest(point);
+        var target = Captured ?? HitTest(point, surface);
         UpdateHover(target);
         if (target is null || !CanRoutePointer(target)) return;
         target.RaiseEvent(new PointerEventArgs(Element.PointerMovedEvent, point, _modifiers, _button) { Source = target });
@@ -194,8 +211,11 @@ public sealed class InputRouter
     /// 滚轮不做捕获——命中谁就路由给谁，可滚动容器在冒泡路径上消费。E3：禁用元素吞滚轮。
     /// </summary>
     public void PointerWheel(Point point, double delta, KeyModifiers modifiers = KeyModifiers.None)
+        => PointerWheel(point, delta, modifiers, null);
+
+    internal void PointerWheel(Point point, double delta, KeyModifiers modifiers, Elements.Popup? surface)
     {
-        var target = HitTest(point);
+        var target = HitTest(point, surface);
         if (target is null || !target.IsEffectiveEnabled) return;
         target.RaiseEvent(new WheelEventArgs(Element.PointerWheelChangedEvent, point, delta, modifiers) { Source = target });
     }

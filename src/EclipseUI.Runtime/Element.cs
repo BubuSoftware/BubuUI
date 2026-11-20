@@ -1207,17 +1207,21 @@ public abstract partial class Element : UiObject
     /// 命中测试：点在根坐标系；返回最深命中元素（子元素从后往前，即视觉最上层优先）。
     /// 调用前提：该元素已被 Arrange（FinalRect 有效）。
     /// </summary>
-    public Element? HitTest(Point point)
+    public Element? HitTest(Point point) => HitTest(point, null);
+
+    internal Element? HitTest(Point point, Elements.Popup? surface)
     {
         if (!IsHitTestVisible || !IsEffectivelyVisible) return null;
+        if (this is Elements.Popup { IsWindowHosted: true } popup && !ReferenceEquals(popup, surface)) return null;
+        if (this is Elements.Popup { IsWindowHosted: true } hosted && !hosted.ContainsRootPoint(point)) return null;
         var local = PointFromRoot(point);
         var inside = new Rect(default, FinalRect.Size).Contains(local);
-        if (!inside && Parent is null) return null;
+        if (!inside && Parent is null && !ReferenceEquals(this, surface)) return null;
         if (this is ScrollViewer bars && bars.TryGetScrollBar(PointFromRoot(point), out _, out _)) return this;
         if (GetVisualChildrenClip() is { } clip && !clip.Contains(local)) return inside ? this : null;
         foreach (var child in VisualChildren.Reverse())
         {
-            if (child.HitTest(point) is { } hit)
+            if (child.HitTest(point, surface) is { } hit)
                 return hit;
         }
         return inside ? this : null;

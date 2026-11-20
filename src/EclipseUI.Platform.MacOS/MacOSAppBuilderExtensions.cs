@@ -91,6 +91,8 @@ internal sealed class MacOSDesktopLifetime : IApplicationLifetime
             {
                 Theme = theme,
                 TextPainter = textPainter,
+                SurfaceFactory = surfaceFactory,
+                PopupWindowFactory = new MacOSPopupWindowFactory(win),
                 MaxFramesPerSecond = window.MaxFramesPerSecond,
                 AlwaysRender = window.AlwaysRender,
                 AlwaysShowFocusVisuals = window.AlwaysShowFocusVisuals,

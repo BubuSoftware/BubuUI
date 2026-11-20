@@ -238,7 +238,7 @@ public class FluentThemeTests
         var frame = painter.BuildFrame(root, Size);
         Assert.Empty(frame.List.Validate());
         Assert.Contains(frame.List.Commands.OfType<FillRoundedRect>(), fill => ColorOf(fill) == theme.PopupBackground && ColorOf(fill).A == 255);
-        Assert.Contains(frame.List.Commands.OfType<FillRoundedRect>(), fill => ColorOf(fill).A is > 0 and < 255);
+        Assert.Contains(frame.List.Commands.OfType<DropShadow>(), shadow => shadow.BlurRadius > 0 && shadow.Color.A is > 0 and < 255);
         Assert.True(painter.BuildFrame(root, Size).Damage.IsEmpty);
         popup.Close(); host.UpdateLayout();
         Assert.False(painter.BuildFrame(root, Size).Damage.IsEmpty);

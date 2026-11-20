@@ -25,7 +25,11 @@ public sealed class MacOSWindow : IMacOSWindow, ISystemThemeProvider
     private double _densityX = 1, _densityY = 1;
     private readonly MacOSComposition _composition = new();
 
-    public MacOSWindow(string title, int width, int height)
+    public MacOSWindow(string title, int width, int height) : this(title, width, height, null, true) { }
+
+    internal MacOSWindow(MacOSWindow parent, bool interactive) : this("", 1, 1, parent, interactive) { }
+
+    private MacOSWindow(string title, int width, int height, MacOSWindow? parent, bool interactive)
     {
         _eventWatch = WatchEvent;
         SdlNative.VerifyMainThread();
@@ -36,7 +40,10 @@ public sealed class MacOSWindow : IMacOSWindow, ISystemThemeProvider
             SdlNative.SDL_SetMainReady();
             SdlNative.Check(SdlNative.SDL_InitSubSystem(SdlNative.InitVideo));
             _ownsVideo = true;
-            _window = SdlNative.SDL_CreateWindow(title, width, height, SdlNative.WindowFlags);
+            _window = parent is null
+                ? SdlNative.SDL_CreateWindow(title, width, height, SdlNative.WindowFlags)
+                : SdlNative.SDL_CreatePopupWindow(parent._window, 0, 0, width, height,
+                    0x8 | 0x2000 | 0x20000000UL | 0x40000000UL | (interactive ? 0x80000UL : 0x40000UL));
             SdlNative.Check(_window != 0);
             VideoDriver = SdlNative.Utf8(SdlNative.SDL_GetCurrentVideoDriver());
             if (VideoDriver != "cocoa")
@@ -64,6 +71,11 @@ public sealed class MacOSWindow : IMacOSWindow, ISystemThemeProvider
 
     public string VideoDriver { get; } = "";
     internal uint Id => _id;
+    internal nint NativeHandle => _window;
+    internal double NativeUnitsPerLogicalX => ScaleFactor / _densityX;
+    internal double NativeUnitsPerLogicalY => ScaleFactor / _densityY;
+    internal bool IsFocused => _window != 0 && !IsClosed && SdlNative.SDL_GetKeyboardFocus() == _window;
+    internal void RefreshMetrics() { VerifyAccess(); UpdateMetrics(); }
     public int ClientWidth { get; private set; }
     public int ClientHeight { get; private set; }
     public double ScaleFactor { get; private set; } = 1;

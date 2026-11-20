@@ -14,6 +14,26 @@ public sealed class MacOSDesktopFactAttribute : FactAttribute
 public class NativeDesktopTests
 {
     [MacOSDesktopFact]
+    public Task OwnedPopupPresentsOutsideOwnerAndRoutesNestedInput()
+        => RunNativeScenario("popup");
+
+    [MacOSDesktopFact]
+    public Task PopupHostPreservesFocusEditsTextAndClosesTemplatedDropdown()
+        => RunNativeScenario("popup-host");
+
+    [MacOSDesktopFact]
+    public Task RoundedPopupKeepsNativeWindowAndMetalLayerTransparentAcrossResize()
+        => RunNativeScenario("popup-alpha");
+
+    [MacOSDesktopFact]
+    public Task DropdownShadowHasSmoothFalloffOnLightAndDarkNativeBackdrops()
+        => RunNativeScenario("popup-shadow");
+
+    [MacOSDesktopFact]
+    public Task SoftwareDropdownShadowHasSmoothFalloffOnLightAndDarkNativeBackdrops()
+        => RunNativeScenario("popup-shadow-software");
+
+    [MacOSDesktopFact]
     public Task SoftwareRasterUploadsAndPresentsThroughMetalAcrossResize()
         => RunNativeScenario("software-raster");
 

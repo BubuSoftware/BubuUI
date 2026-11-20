@@ -32,6 +32,8 @@ public interface IElementDrawingContext
     UiColor Border { get; }
     double CornerRadius => 0;
     void FillRectangle(Rect rect, UiColor color, double radius = 0);
+    /// <summary>Draw a Gaussian shadow behind a rounded rectangle. Blur radius follows CSS semantics (twice sigma).</summary>
+    void DrawShadow(Rect rect, UiColor color, double blurRadius, double radius = 0, Point offset = default) { }
     void StrokeRectangle(Rect rect, UiColor color, double width = 1, double radius = 0);
     void Ellipse(Rect rect, UiColor fill, UiColor stroke, double strokeWidth = 0);
     void Line(Point start, Point end, UiColor color, double width = 1);

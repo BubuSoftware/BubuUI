@@ -1,8 +1,9 @@
 namespace EclipseUI.Elements;
 
 public enum Placement { Bottom, Top, Left, Right, Pointer }
+public enum PopupHostMode { Auto, Overlay, Window }
 
-/// <summary>Content remains in the owner tree; hosts paint/hit-test open popups above normal content.</summary>
+/// <summary>Content remains in the owner tree; desktop hosts can present it in an owned native window.</summary>
 public class Popup : ContentControl
 {
     protected override bool UsesTemplateLayout => false;
@@ -12,11 +13,28 @@ public class Popup : ContentControl
     public static readonly StyledProperty<bool> IsOpenProperty = StyledProperty<bool>.Register<Popup>("IsOpen", false, new() { Invalidate = InvalidateKind.Measure });
     public static readonly StyledProperty<bool> StaysOpenProperty = StyledProperty<bool>.Register<Popup>("StaysOpen", false, new() { Invalidate = InvalidateKind.Render });
     public static readonly StyledProperty<Placement> PlacementProperty = StyledProperty<Placement>.Register<Popup>("Placement", Placement.Bottom, new() { Invalidate = InvalidateKind.Arrange });
+    public static readonly StyledProperty<PopupHostMode> HostModeProperty = StyledProperty<PopupHostMode>.Register<Popup>("HostMode", PopupHostMode.Auto, new() { Invalidate = InvalidateKind.Measure });
     public static readonly RoutedEvent OpenedEvent = new("Opened");
     public static readonly RoutedEvent ClosedEvent = new("Closed");
     public bool IsOpen { get => GetValue(IsOpenProperty); set => SetValue(IsOpenProperty, value); }
     public bool StaysOpen { get => GetValue(StaysOpenProperty); set => SetValue(StaysOpenProperty, value); }
     public Placement Placement { get => GetValue(PlacementProperty); set => SetValue(PlacementProperty, value); }
+    /// <summary>Auto uses a native popup when the desktop host supports it. Overlay keeps the popup inside its owner surface.</summary>
+    public PopupHostMode HostMode { get => GetValue(HostModeProperty); set => SetValue(HostModeProperty, value); }
+    public bool IsWindowHosted => _windowAvailableSize is not null;
+    private Size? _windowAvailableSize;
+    private double _windowCornerRadius;
+    internal Rect WindowBounds { get; private set; }
+    internal void SetWindowCornerRadius(double radius) => _windowCornerRadius = radius;
+    internal void SetWindowHosting(Size? availableSize)
+    {
+        if (_windowAvailableSize == availableSize) return;
+        _windowAvailableSize = availableSize;
+        if (availableSize is null) _windowCornerRadius = 0;
+        if (IsDisposed) return;
+        InvalidateMeasure();
+        InvalidateRender();
+    }
     // A toggle button handles dismissal on Click, after the pointer-press light-dismiss pass.
     internal Element? LightDismissExclusion { get; set; }
     private Element? _placementTarget;
@@ -56,8 +74,9 @@ public class Popup : ContentControl
     protected internal override Size MeasureCore(Size available)
     {
         var root = this as Element; while (root.Parent is not null) root = root.Parent;
-        (TemplateRoot ?? Content)?.Measure(new(Math.Min(root.FinalRect.Width > 0 ? root.FinalRect.Width : 480, MaxWidth),
-            Math.Min(root.FinalRect.Height > 0 ? root.FinalRect.Height : 480, MaxHeight)));
+        var availableSize = _windowAvailableSize ?? new Size(root.FinalRect.Width > 0 ? root.FinalRect.Width : 480,
+            root.FinalRect.Height > 0 ? root.FinalRect.Height : 480);
+        (TemplateRoot ?? Content)?.Measure(new(Math.Min(availableSize.Width, MaxWidth), Math.Min(availableSize.Height, MaxHeight)));
         return Size.Empty;
     }
     protected internal override void ArrangeCore(Rect final)
@@ -77,10 +96,19 @@ public class Popup : ContentControl
             Placement.Pointer => PointerPosition,
             _ => new Point(origin.X, origin.Y + (target?.FinalRect.Height ?? 0)),
         };
-        var local = PointFromRoot(new(Math.Clamp(p.X + HorizontalOffset, 0, Math.Max(0, root.FinalRect.Width - size.Width)),
-            Math.Clamp(p.Y + VerticalOffset, 0, Math.Max(0, root.FinalRect.Height - size.Height))));
-        body.Arrange(new(local, size));
+        var position = new Point(p.X + HorizontalOffset, p.Y + VerticalOffset);
+        if (!IsWindowHosted)
+            position = new(Math.Clamp(position.X, 0, Math.Max(0, root.FinalRect.Width - size.Width)),
+                Math.Clamp(position.Y, 0, Math.Max(0, root.FinalRect.Height - size.Height)));
+        WindowBounds = new(position, size);
+        body.Arrange(new(PointFromRoot(position), size));
     }
+    internal void ArrangeWindowContent(Rect bounds)
+    {
+        WindowBounds = bounds;
+        (TemplateRoot ?? Content)?.Arrange(new(PointFromRoot(bounds.Location), bounds.Size));
+    }
+    internal void UpdateWindowPlacement() => ArrangeCore(FinalRect);
     internal static Point RootOrigin(Element element)
     {
         double x = 0, y = 0;
@@ -94,8 +122,19 @@ public class Popup : ContentControl
             if (ReferenceEquals(element, exclusion)) return true;
         return false;
     }
-    public bool ContainsRootPoint(Point point) => IsOpen && (TemplateRoot ?? Content) is { } body &&
-        new Rect(Point.Zero, body.FinalRect.Size).Contains(body.PointFromRoot(point));
+    public bool ContainsRootPoint(Point point)
+    {
+        if (!IsOpen || (TemplateRoot ?? Content) is not { } body) return false;
+        if (IsWindowHosted && !WindowBounds.Contains(point)) return false;
+        var p = body.PointFromRoot(point);
+        var size = body.FinalRect.Size;
+        if (!new Rect(Point.Zero, size).Contains(p)) return false;
+        var radius = Math.Min(_windowCornerRadius, Math.Min(size.Width, size.Height) / 2);
+        if (!IsWindowHosted || radius <= 0) return true;
+        var x = p.X - Math.Clamp(p.X, radius, size.Width - radius);
+        var y = p.Y - Math.Clamp(p.Y, radius, size.Height - radius);
+        return x * x + y * y <= radius * radius;
+    }
 }
 
 public class ToolTip : Popup

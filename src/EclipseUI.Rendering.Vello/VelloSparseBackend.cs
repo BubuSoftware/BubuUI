@@ -22,7 +22,7 @@ public sealed class VelloSparseBackend : IRenderBackend
     public VelloSparseBackend(bool validateDisplayList = false) => _validateDisplayList = validateDisplayList;
 
     public string Name => "Vello Sparse (CPU)";
-    public RenderCapabilities Capabilities => RenderCapabilities.All & ~RenderCapabilities.Blur;
+    public RenderCapabilities Capabilities => RenderCapabilities.All;
 
     public void Render(DisplayList list, RenderTarget target)
     {
@@ -51,6 +51,7 @@ public sealed class VelloSparseBackend : IRenderBackend
     private readonly Dictionary<FontFace, Font> _fonts = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<FontFace> _sbixFonts = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<ImageHandle, Image> _images = new(ReferenceEqualityComparer.Instance);
+    private readonly SparseShadowCache _shadows = new();
 
     private void Build(SparseRenderContext scene, DisplayList list, Size targetSize)
     {
@@ -142,17 +143,31 @@ public sealed class VelloSparseBackend : IRenderBackend
                     break;
 
                 case DropShadow shadow:
-                    // Sparse has no blur command. Keep the offset silhouette so a
-                    // popup shadow never makes the software rendering path fail.
-                    var bounds = new Rect(shadow.Rect.X + shadow.Offset.X, shadow.Rect.Y + shadow.Offset.Y,
-                        shadow.Rect.Width, shadow.Rect.Height);
-                    scene.FillPath(ToPath(PathGeometry.RoundedRectangle(bounds, shadow.CornerRadius)),
-                        VFillRule.NonZero, Matrix(transform), ToVelloColor(shadow.Color));
+                    DrawShadow(scene, shadow, transform);
                     break;
                 default:
                     throw new NotSupportedException($"Unsupported drawing command: {command.GetType().Name}.");
             }
         }
+    }
+
+    private void DrawShadow(SparseRenderContext scene, DropShadow shadow, Transform transform)
+    {
+        if (shadow.Color.A == 0 || shadow.Rect.Size.IsEmpty) return;
+        if (shadow.BlurRadius <= 0)
+        {
+            var bounds = new Rect(shadow.Rect.X + shadow.Offset.X, shadow.Rect.Y + shadow.Offset.Y,
+                shadow.Rect.Width, shadow.Rect.Height);
+            scene.FillPath(ToPath(PathGeometry.RoundedRectangle(bounds, shadow.CornerRadius)),
+                VFillRule.NonZero, Matrix(transform), ToVelloColor(shadow.Color));
+            return;
+        }
+        var cached = _shadows.Get(shadow, transform);
+        var placement = Transform.Scale(cached.LogicalWidth / cached.Width, cached.LogicalHeight / cached.Height)
+            * Transform.Translation(shadow.Rect.X + shadow.Offset.X - cached.Padding,
+                shadow.Rect.Y + shadow.Offset.Y - cached.Padding)
+            * transform;
+        scene.DrawImage(new ImageBrush(cached.Image) { Quality = ImageQuality.Medium }, Matrix(placement));
     }
 
     private void DrawGlyphRun(SparseRenderContext scene, DrawGlyphs command, Transform transform)
@@ -409,5 +424,6 @@ public sealed class VelloSparseBackend : IRenderBackend
         _sbixFonts.Clear();
         foreach (var image in _images.Values) image.Dispose();
         _images.Clear();
+        _shadows.Dispose();
     }
 }

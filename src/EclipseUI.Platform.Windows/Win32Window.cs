@@ -114,6 +114,7 @@ public sealed partial class Win32Window : IDisposable
 
     private readonly nint _hwnd;
     private readonly bool _quitOnDestroy;
+    private readonly bool _isPopup;
     private bool _disposed;
     private bool _trackingLeave;
     private bool _initialized;
@@ -121,22 +122,31 @@ public sealed partial class Win32Window : IDisposable
     private nint _sizeMoveTimer;
 
     public Win32Window(string title, int width, int height, bool quitOnDestroy = true)
+        : this(title, width, height, quitOnDestroy, null, true) { }
+
+    internal Win32Window(Win32Window owner, bool interactive)
+        : this("", 1, 1, false, owner, interactive) { }
+
+    private Win32Window(string title, int width, int height, bool quitOnDestroy, Win32Window? owner, bool interactive)
     {
         if (!OperatingSystem.IsWindows())
             throw new PlatformNotSupportedException("Win32Window requires Windows.");
 
         _quitOnDestroy = quitOnDestroy;
+        _isPopup = owner is not null;
+        InputEnabled = interactive;
 
         EnsureDpiAwareness();
         EnsureClassRegistered();
         EnsureTimerResolution();
 
-        var style = Win32Native.WS_OVERLAPPEDWINDOW;
+        var style = _isPopup ? Win32Native.WS_POPUP : Win32Native.WS_OVERLAPPEDWINDOW;
+        var exStyle = _isPopup ? Win32Native.WS_EX_TOOLWINDOW | (interactive ? 0 : Win32Native.WS_EX_NOACTIVATE) : 0;
         var rect = new Win32Native.RECT { Left = 0, Top = 0, Right = width, Bottom = height };
-        Win32Native.AdjustWindowRectExForDpi(ref rect, style, false, 0, 96);
+        if (!_isPopup) Win32Native.AdjustWindowRectExForDpi(ref rect, style, false, exStyle, 96);
 
         _hwnd = Win32Native.CreateWindowExW(
-            0,
+            exStyle,
             DefaultClassName,
             title,
             style,
@@ -144,7 +154,7 @@ public sealed partial class Win32Window : IDisposable
             Win32Native.CW_USEDEFAULT,
             rect.Width,
             rect.Height,
-            nint.Zero,
+            owner?.Handle ?? nint.Zero,
             nint.Zero,
             Win32Native.GetModuleHandleW(null),
             nint.Zero);
@@ -214,10 +224,13 @@ public sealed partial class Win32Window : IDisposable
     public void Show()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        Win32Native.ShowWindow(_hwnd, Win32Native.SW_SHOWNORMAL);
+        Win32Native.ShowWindow(_hwnd, _isPopup ? Win32Native.SW_SHOWNOACTIVATE : Win32Native.SW_SHOWNORMAL);
         Win32Native.UpdateWindow(_hwnd);
-        Win32Native.SetForegroundWindow(_hwnd);
-        Win32Native.SetFocus(_hwnd);
+        if (!_isPopup)
+        {
+            Win32Native.SetForegroundWindow(_hwnd);
+            Win32Native.SetFocus(_hwnd);
+        }
         RefreshClientSize();
 
         if (!Win32Native.IsWindowVisible(_hwnd))
@@ -337,7 +350,7 @@ public sealed partial class Win32Window : IDisposable
         _disposed = true;
         EndSizeMove();
 
-        if (!IsClosed)
+        if (!IsClosed || _isPopup)
         {
             IsClosed = true;
             Win32Native.DestroyWindow(_hwnd);
@@ -447,6 +460,8 @@ public sealed partial class Win32Window : IDisposable
         if (ProcessIme(message, lParam)) return 0;
         switch (message)
         {
+            case 0x0084 /* WM_NCHITTEST */ when _isPopup && !InputEnabled:
+                return -1; // Noninteractive tooltips let the owner receive pointer input.
             case Win32Native.WM_ENTERSIZEMOVE:
                 if (!IsInSizeMove)
                 {
@@ -640,7 +655,9 @@ public sealed partial class Win32Window : IDisposable
             case Win32Native.WM_CLOSE:
                 Closing?.Invoke(this, EventArgs.Empty);
                 IsClosed = true;
-                Win32Native.DestroyWindow(_hwnd);
+                // The popup presenter borrows this HWND until the manager disposes it.
+                if (_isPopup) Win32Native.ShowWindow(_hwnd, 0);
+                else Win32Native.DestroyWindow(_hwnd);
                 return 0;
 
             case Win32Native.WM_DESTROY:

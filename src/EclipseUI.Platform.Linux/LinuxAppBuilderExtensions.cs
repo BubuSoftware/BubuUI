@@ -91,6 +91,8 @@ internal sealed class LinuxDesktopLifetime : IApplicationLifetime
             {
                 Theme = theme,
                 TextPainter = textPainter,
+                SurfaceFactory = surfaceFactory,
+                PopupWindowFactory = new LinuxPopupWindowFactory(win),
                 MaxFramesPerSecond = window.MaxFramesPerSecond,
                 AlwaysRender = window.AlwaysRender,
                 AlwaysShowFocusVisuals = window.AlwaysShowFocusVisuals,

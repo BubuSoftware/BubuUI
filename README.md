@@ -126,6 +126,8 @@ AppBuilder.Configure<MyApp>()
 
 当前目录包含 Window、基础视觉元素、通用呈现器和交互控件。除文本、按钮和布局控件外，已提供 TextBox/PasswordBox、ListBox/ComboBox、开关与数值输入、浮层和菜单、TabControl、TreeView、DataGrid、DatePicker/Calendar、图像与形状，以及 Canvas/DockPanel。Grid 支持跨行跨列，滚动条可拖动，虚拟列表支持变高和可选容器复用。
 
+桌面端 Popup（包括下拉框、日期面板和菜单）默认使用独立的原生窗口，可越过主窗口边界，位置与大小受屏幕可用区域约束。内容仍在原有控件树中，共享焦点、主题、路由与资源生命周期；支持嵌套 Popup、外部点击/Escape 关闭和弹窗内文本输入。`HostMode="Overlay"` 可固定使用主窗口内浮层；`Auto`（默认）和 `Window` 在无原生弹窗工厂或无头环境中回退为浮层。自建桌面宿主的接线方式与验证范围见[Popup 契约](./design/24-control-library.md#独立-popup-窗口2026-11-21)。
+
 完整行为、使用示例及能力边界见 [控件库契约](./design/24-control-library.md)。Gallery 仅保留 Fluent 交互演示，页面和控件示例均以 `.ui` 描述，支持主题切换、重置、滑块与进度条联动，窄窗口自动收紧布局。旧页面已移入测试夹具，继续覆盖编译器与 IDE 回归。也可独立验证并导出深浅主题控件状态：
 
 ```powershell
@@ -137,7 +139,7 @@ dotnet run --project sandbox/FluentCheck -- out/fluent
 
 泛型模板标签暂不支持。原生窗口由平台层创建，运行时不依赖具体绘制后端。AOT 发布仍受原生渲染依赖限制。GPU 路径已支持原生场景片段缓存、脏区局部光栅化和保留帧；最终上屏仍复制完整表面。数据绑定的 ListBox/ComboBox 达到 128 项后自动虚拟化，在有限滚动视口内仅实现可见范围。实现与验收边界见[框架修复报告](./design/reports/framework-hardening-2026-11-18.md)。
 
-需要软件栅格时可使用 `.UseVello(new VelloSurfaceOptions { UseSoftwareRasterizer = true })`：`VelloSparseBackend` 在 CPU 上绘制完整画面，GPU 仅上传纹理并呈现；变化帧全量重绘，空闲帧继续跳过。该模式不使用原生场景片段缓存或 GPU 局部光栅，阴影保留偏移轮廓但没有模糊效果。离屏软件渲染也可直接使用 `VelloSparseBackend`。
+需要软件栅格时可使用 `.UseVello(new VelloSurfaceOptions { UseSoftwareRasterizer = true })`：`VelloSparseBackend` 在 CPU 上绘制完整画面，GPU 仅上传纹理并呈现；变化帧全量重绘，空闲帧继续跳过。该模式不使用原生场景片段缓存或 GPU 局部光栅；圆角阴影支持高斯模糊并复用缓存。离屏软件渲染也可直接使用 `VelloSparseBackend`。
 
 当前环境有一项已在重构前代码复现的精确像素 golden 差异；未改基线掩盖。详细命令、测试数和隔离证据见 [验证报告](./design/reports/root-type-unification-2026-11-13.md)。
 

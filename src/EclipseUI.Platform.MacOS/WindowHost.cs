@@ -36,6 +36,8 @@ public sealed class WindowHostOptions
     public ISystemThemeProvider? SystemTheme { get; init; }
 
     public ITextPainter? TextPainter { get; init; }
+    public ISurfaceFactory? SurfaceFactory { get; init; }
+    public IPopupWindowFactory? PopupWindowFactory { get; init; }
 
     /// <summary>Esc 关闭窗口（应用内可关掉，自己处理键）。</summary>
     public bool CloseOnEscape { get; init; } = true;
@@ -74,6 +76,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
     private readonly WindowHostOptions _options;
     private readonly ElementPainter _painter;
     private readonly ThemeBinding _themeBinding;
+    private readonly PopupWindowManager? _popups;
     private bool _disposed;
     private bool _running;
     private IClipboard? _previousClipboard;
@@ -106,6 +109,8 @@ public sealed class WindowHost : IDisposable, IWindowHost
         _themeBinding.Update(_painter, root);
         _input = new InputRouter(root);
         _input.Focus.AlwaysShowFocusVisuals = _options.AlwaysShowFocusVisuals;
+        if (_options.SurfaceFactory is { } surfaces && _options.PopupWindowFactory is { } popups)
+            _popups = new PopupWindowManager(popups, surfaces, _options.TextPainter);
 
         _window.Resized += OnResized;
         _window.PaintRequested += OnPaintRequested;
@@ -209,7 +214,11 @@ public sealed class WindowHost : IDisposable, IWindowHost
             _activeContext = null;
             _running = false;
             RestoreClipboard();
-            try { _uiRoot.DetachFromHost(this); }
+            try
+            {
+                try { _popups?.Clear(); }
+                finally { _uiRoot.DetachFromHost(this); }
+            }
             catch (Exception cleanup) when (failure is not null)
             {
                 throw new AggregateException("Window loop and detachment failed.", failure, cleanup);
@@ -312,6 +321,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
                 var scale = _window.ScaleFactor;
                 if (size.IsEmpty || !CanRender) return result;
                 var start = Stopwatch.GetTimestamp();
+                _popups?.PrepareLayout(root, Input);
                 root.Measure(size);
                 root.Arrange(new Rect(Point.Zero, size));
                 if (!CanRender) return result;
@@ -320,6 +330,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
                 _presenter.Resize(width, height);
                 if (_pendingResize) continue;
                 if (_pendingFullFrame) { _painter.ResetDamage(); _pendingFullFrame = false; }
+                _popups?.Render(root, Input, _painter.Theme, _options.AlwaysRender);
                 UpdateTextInput();
                 if (!CanRender) return result;
                 var frame = _painter.BuildFrame(root, size, scale);
@@ -412,6 +423,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
     private void UpdateTextInput()
     {
         var editor = Input.Focus.Focused as EclipseUI.Elements.TextBox;
+        if (_popups?.OwnsEditor(editor) == true) editor = null;
         _window.SetTextInputEnabled(editor is { IsReadOnly: false });
         if (editor is null) return;
         var caret = editor.CaretRect;
@@ -426,7 +438,11 @@ public sealed class WindowHost : IDisposable, IWindowHost
         _previousClipboard = null;
     }
 
-    private void OnWindowFocusLost(object? sender, EventArgs e) => Input.Reset();
+    private void OnWindowFocusLost(object? sender, EventArgs e)
+    {
+        if (_popups?.HandleOwnerFocusLost(Input) == true) return;
+        Input.Reset();
+    }
 
     private void OnClosing(object? sender, EventArgs e) => IsExiting = true;
 
@@ -474,6 +490,8 @@ public sealed class WindowHost : IDisposable, IWindowHost
         _window.FocusLost -= OnWindowFocusLost;
         _window.Closing -= OnClosing;
         List<Exception>? failures = null;
+        try { _popups?.Dispose(); }
+        catch (Exception error) { (failures ??= new()).Add(error); }
         try { _uiRoot.DetachFromHost(this); }
         catch (Exception error) { (failures ??= new()).Add(error); }
         try { _input.Reset(); }

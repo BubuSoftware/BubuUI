@@ -92,6 +92,8 @@ internal sealed class ClassicDesktopLifetime : IApplicationLifetime
             {
                 Theme = theme,
                 TextPainter = textPainter,
+                SurfaceFactory = surfaceFactory,
+                PopupWindowFactory = new Win32PopupWindowFactory(win),
                 MaxFramesPerSecond = window.MaxFramesPerSecond,
                 AlwaysRender = window.AlwaysRender,
                 AlwaysShowFocusVisuals = window.AlwaysShowFocusVisuals,

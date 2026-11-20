@@ -31,6 +31,11 @@ internal sealed class ElementDrawingContext : IElementDrawingContext
         if (rect.Size.IsEmpty || color.A == 0) return;
         _list.Add(new FillRoundedRect(At(rect), Math.Max(0, radius), Convert(color)));
     }
+    public void DrawShadow(Rect rect, UiColor color, double blurRadius, double radius = 0, Point offset = default)
+    {
+        if (rect.Size.IsEmpty || color.A == 0) return;
+        _list.Add(new DropShadow(At(rect), Math.Max(0, radius), Math.Max(0, blurRadius), offset, Convert(color)));
+    }
     public void StrokeRectangle(Rect rect, UiColor color, double width = 1, double radius = 0)
     {
         if (rect.Size.IsEmpty || width <= 0 || color.A == 0) return;

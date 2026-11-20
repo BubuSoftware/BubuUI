@@ -28,19 +28,19 @@ public class FluentScrollBarVisual : FluentVisual<ScrollViewer>
 public class FluentPopupVisual : FluentVisual<Popup>
 {
     public FluentPopupVisual() => IsHitTestVisible = false;
-    public override Rect? GetDrawingClip() => new(-Palette.PopupShadowSize * 2, -Palette.PopupShadowSize * 2,
-        FinalRect.Width + Palette.PopupShadowSize * 4, FinalRect.Height + Palette.PopupShadowSize * 4);
+    public override Rect? GetDrawingClip()
+    {
+        var size = Math.Max(0, Palette.PopupShadowSize);
+        var extent = Math.Ceiling(size * 3);
+        return new(-extent, size - extent, FinalRect.Width + extent * 2, FinalRect.Height + extent * 2);
+    }
     public override void Render(IElementDrawingContext context)
     {
         var rect = new Rect(Point.Zero, FinalRect.Size);
-        var size = Palette.PopupShadowSize;
+        var size = Math.Max(0, Palette.PopupShadowSize);
         var radius = Visual.GetCornerRadius(Owner) ?? Owner.CornerRadius;
-        for (var i = 3; i >= 1 && size > 0; i--)
-        {
-            var spread = size * i / 3;
-            var shadow = ColorOf(Palette.PopupShadow) with { A = (byte)(Palette.PopupShadow.A / 3) };
-            context.FillRectangle(new(-spread, size - spread, rect.Width + spread * 2, rect.Height + spread * 2), shadow, radius + spread);
-        }
+        if (size > 0)
+            context.DrawShadow(rect, ColorOf(Palette.PopupShadow), size * 2, radius, new(0, size));
         context.FillRectangle(rect, FluentCompositeDrawing.Background(Owner, Palette), radius);
         context.StrokeRectangle(new(.5, .5, Math.Max(0, rect.Width - 1), Math.Max(0, rect.Height - 1)), Owner.BorderBrush, 1, radius);
     }

@@ -19,7 +19,11 @@ public sealed class LinuxWindow : ILinuxWindow, ISystemThemeProvider
     private double _densityX = 1, _densityY = 1;
     private readonly LinuxComposition _composition = new();
 
-    public LinuxWindow(string title, int width, int height)
+    public LinuxWindow(string title, int width, int height) : this(title, width, height, null, true) { }
+
+    internal LinuxWindow(LinuxWindow parent, bool interactive) : this("", 1, 1, parent, interactive) { }
+
+    private LinuxWindow(string title, int width, int height, LinuxWindow? parent, bool interactive)
     {
         if (!OperatingSystem.IsLinux()) throw new PlatformNotSupportedException("LinuxWindow requires Linux.");
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
@@ -31,7 +35,10 @@ public sealed class LinuxWindow : ILinuxWindow, ISystemThemeProvider
             SdlNative.Check(SdlNative.SDL_InitSubSystem(SdlNative.InitVideo));
             _ownsVideo = true;
             VideoThread = _thread;
-            _window = SdlNative.SDL_CreateWindow(title, width, height, SdlNative.WindowFlags);
+            _window = parent is null
+                ? SdlNative.SDL_CreateWindow(title, width, height, SdlNative.WindowFlags)
+                : SdlNative.SDL_CreatePopupWindow(parent._window, 0, 0, width, height,
+                    0x8 | 0x2000 | 0x10000000 | SdlNative.Transparent | (interactive ? SdlNative.PopupMenu : SdlNative.Tooltip));
             SdlNative.Check(_window != 0);
             VideoDriver = SdlNative.Utf8(SdlNative.SDL_GetCurrentVideoDriver());
             _id = SdlNative.SDL_GetWindowID(_window);
@@ -54,6 +61,12 @@ public sealed class LinuxWindow : ILinuxWindow, ISystemThemeProvider
     public string VideoDriver { get; } = "";
     internal uint Id => _id;
     internal bool UsesBasicTextInput => _basicTextInput;
+    internal nint SdlHandle => _window;
+    internal double WindowUnitsPerLogicalX => ScaleFactor / _densityX;
+    internal double WindowUnitsPerLogicalY => ScaleFactor / _densityY;
+    internal bool IsFocused => !IsClosed && _window != 0 && (SdlNative.SDL_GetWindowFlags(_window) & SdlNative.InputFocus) != 0;
+
+    internal void RefreshMetrics() { VerifyAccess(); UpdateMetrics(); }
     public int ClientWidth { get; private set; }
     public int ClientHeight { get; private set; }
     public double ScaleFactor { get; private set; } = 1;

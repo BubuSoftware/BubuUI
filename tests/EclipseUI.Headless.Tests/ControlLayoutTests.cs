@@ -63,6 +63,19 @@ public class ControlLayoutTests
         Assert.Same(body, host.HitTest(click)); host.PointerPress(new(250, 150)); Assert.False(popup.IsOpen);
     }
     [Fact]
+    public void WindowPopupTemplateFallsBackToInteractiveClampedOverlayInHeadlessHost()
+    {
+        using var page = new WindowPopupPage();
+        using var host = new HeadlessRoot(page) { AvailableSize = new(160, 100) };
+        host.UpdateLayout();
+        Assert.Equal(PopupHostMode.Window, page.Details.HostMode);
+        Assert.False(page.Details.IsWindowHosted);
+        Assert.Equal(new Rect(60, 60, 100, 40), page.Details.Content!.FinalRect);
+        Assert.Same(page.Details.Content, host.HitTest(new(70, 70)));
+        host.KeyPress(Key.Escape);
+        Assert.False(page.Details.IsOpen);
+    }
+    [Fact]
     public void EscapeClosesTopPopupAndClosedChildrenCannotReceiveFocus()
     {
         var root = new Grid { Width = 300, Height = 200 }; var editor = new TextBox(); var popup = new Popup { IsOpen = true, Content = editor }; root.Children.Add(popup);
