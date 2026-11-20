@@ -113,16 +113,19 @@ public sealed partial class Win32Window : IDisposable
     private static int TimerPeriodUsers;
 
     private readonly nint _hwnd;
+    private readonly bool _quitOnDestroy;
     private bool _disposed;
     private bool _trackingLeave;
     private bool _initialized;
     private const int SizeMoveTimerId = 0xE100;
     private nint _sizeMoveTimer;
 
-    public Win32Window(string title, int width, int height)
+    public Win32Window(string title, int width, int height, bool quitOnDestroy = true)
     {
         if (!OperatingSystem.IsWindows())
             throw new PlatformNotSupportedException("Win32Window requires Windows.");
+
+        _quitOnDestroy = quitOnDestroy;
 
         EnsureDpiAwareness();
         EnsureClassRegistered();
@@ -644,7 +647,7 @@ public sealed partial class Win32Window : IDisposable
                 EndSizeMove();
                 IsClosed = true;
                 lock (ClassLock) Windows.Remove(_hwnd);
-                Win32Native.PostQuitMessage(0);
+                if (_quitOnDestroy) Win32Native.PostQuitMessage(0);
                 return 0;
         }
 
