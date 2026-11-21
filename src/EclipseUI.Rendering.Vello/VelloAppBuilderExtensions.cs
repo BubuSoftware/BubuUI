@@ -22,15 +22,43 @@ public static class VelloAppBuilderExtensions
     private sealed class VelloSurfaceSetup(VelloSurfaceOptions options) : IPlatformSetup
     {
         public void RegisterServices(IServiceCollection services)
-            => services.AddSingleton<ISurfaceFactory>(new VelloSurfaceFactory(options));
+            => services.AddSingleton<ISurfaceFactory>(_ => new VelloSurfaceFactory(options));
     }
 
-    private sealed class VelloSurfaceFactory(VelloSurfaceOptions options) : ISurfaceFactory
+    private sealed class VelloSurfaceFactory(VelloSurfaceOptions options) : ISurfaceFactory, IDisposable
     {
+        private readonly object _gate = new();
+        private VelloDeviceContext? _windowsDevice;
+        private bool _disposed;
+
         public ISurfacePresenter Create(nint handle, int width, int height)
-            => VelloSurfaceBackend.Create(handle, width, height, options);
+            => Create(NativeWindowHandle.FromWin32(handle), width, height);
 
         public ISurfacePresenter Create(NativeWindowHandle window, int width, int height)
-            => VelloSurfaceBackend.Create(window, width, height, options);
+        {
+            lock (_gate)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                if (window.Kind != NativeWindowKind.Win32)
+                    return VelloSurfaceBackend.Create(window, width, height, options);
+
+                // Popup surfaces keep their own swapchain and frame state, but avoid
+                // enumerating adapters and creating a device on every dropdown click.
+                var surface = VelloSurfaceBackend.Create(window, width, height, options, _windowsDevice);
+                _windowsDevice ??= surface.RetainDeviceContext();
+                return surface;
+            }
+        }
+
+        public void Dispose()
+        {
+            lock (_gate)
+            {
+                if (_disposed) return;
+                _disposed = true;
+                _windowsDevice?.Release();
+                _windowsDevice = null;
+            }
+        }
     }
 }

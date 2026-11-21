@@ -7,6 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="EclipseUI.Platform.Windows.Tests" />
     <ProjectReference Include="..\EclipseUI.Rendering\EclipseUI.Rendering.csproj" />
     <ProjectReference Include="..\EclipseUI.Text.Shaping\EclipseUI.Text.Shaping.csproj" />
   </ItemGroup>

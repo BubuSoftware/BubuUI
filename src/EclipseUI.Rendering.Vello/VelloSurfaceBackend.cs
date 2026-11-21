@@ -49,6 +49,8 @@ public sealed class VelloSurfaceBackend : ISurfacePresenter
     private WgpuDevice? _device;
     private WgpuRenderer? _renderer;
     private WgpuSurface? _surface;
+    private VelloDeviceContext? _deviceContext;
+    private bool _disposed;
     private GpuRetainedFrame? _retained;
     private VelloSparseBackend? _software;
     private RenderTarget? _softwareTarget;
@@ -102,6 +104,13 @@ public sealed class VelloSurfaceBackend : ISurfacePresenter
         => Create(NativeWindowHandle.FromWin32(hwnd), width, height, options);
 
     public static VelloSurfaceBackend Create(NativeWindowHandle window, int width, int height, VelloSurfaceOptions? options = null)
+        => Create(window, width, height, options, null);
+
+    internal VelloDeviceContext RetainDeviceContext()
+        => (_deviceContext ?? throw new ObjectDisposedException(nameof(VelloSurfaceBackend))).Retain();
+
+    internal static VelloSurfaceBackend Create(NativeWindowHandle window, int width, int height,
+        VelloSurfaceOptions? options, VelloDeviceContext? sharedDevice)
     {
         if (window.Kind == NativeWindowKind.Unknown || window.Handle == 0)
             throw new ArgumentException("A valid native window handle is required.", nameof(window));
@@ -120,7 +129,7 @@ public sealed class VelloSurfaceBackend : ISurfacePresenter
         var backend = new VelloSurfaceBackend(options ?? new VelloSurfaceOptions());
         try
         {
-            backend.Initialize(window, width, height);
+            backend.Initialize(window, width, height, sharedDevice);
             return backend;
         }
         catch
@@ -130,7 +139,7 @@ public sealed class VelloSurfaceBackend : ISurfacePresenter
         }
     }
 
-    private void Initialize(NativeWindowHandle window, int width, int height)
+    private void Initialize(NativeWindowHandle window, int width, int height, VelloDeviceContext? sharedDevice)
     {
         var descriptor = new SurfaceDescriptor
         {
@@ -146,9 +155,23 @@ public sealed class VelloSurfaceBackend : ISurfacePresenter
                 _ => throw new PlatformNotSupportedException($"Unsupported window kind: {window.Kind}."),
             },
         };
-        CreateSurfaceAndAdapter(descriptor);
-        _device = _adapter!.RequestDevice()
-            ?? throw new InvalidOperationException("wgpu: RequestDevice returned null.");
+        if (sharedDevice is null)
+        {
+            CreateSurfaceAndAdapter(descriptor);
+            _device = _adapter!.RequestDevice()
+                ?? throw new InvalidOperationException("wgpu: RequestDevice returned null.");
+            _deviceContext = new(_instance!, _adapter, _device, BackendType);
+        }
+        else
+        {
+            _deviceContext = sharedDevice.Retain();
+            _instance = sharedDevice.Instance;
+            _adapter = sharedDevice.Adapter;
+            _device = sharedDevice.Device;
+            BackendType = sharedDevice.Backend;
+            _surface = WgpuSurface.Create(_instance, descriptor)
+                ?? throw new InvalidOperationException("wgpu: WgpuSurface.Create returned null.");
+        }
 
         var capabilities = _surface!.GetCapabilities(_adapter);
         _format = SelectFormat(capabilities.Formats);
@@ -350,6 +373,8 @@ public sealed class VelloSurfaceBackend : ISurfacePresenter
 
     public void Dispose()
     {
+        if (_disposed) return;
+        _disposed = true;
         _software?.Dispose();
         _software = null;
         _softwareTarget = null;
@@ -359,11 +384,20 @@ public sealed class VelloSurfaceBackend : ISurfacePresenter
         _renderer = null;
         _surface?.Dispose();
         _surface = null;
-        _device?.Dispose();
+        if (_deviceContext is not null)
+        {
+            _deviceContext.Release();
+            _deviceContext = null;
+        }
+        else
+        {
+            // Initialization can fail before the resources are owned by a context.
+            _device?.Dispose();
+            _adapter?.Dispose();
+            _instance?.Dispose();
+        }
         _device = null;
-        _adapter?.Dispose();
         _adapter = null;
-        _instance?.Dispose();
         _instance = null;
         _scene.Dispose();
         _builder.Dispose();
