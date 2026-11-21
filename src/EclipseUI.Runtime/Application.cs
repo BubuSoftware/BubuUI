@@ -16,6 +16,8 @@ public interface IHostTheme
 /// </summary>
 public interface IWindowHost
 {
+    /// <summary>Blocks native input and activation until the modal child finishes.</summary>
+    IDisposable? BlockModalInput() => null;
     /// <summary>Whether this host's UI or native window has closed.</summary>
     bool IsClosed => false;
 

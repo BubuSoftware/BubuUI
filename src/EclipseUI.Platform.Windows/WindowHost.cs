@@ -144,6 +144,31 @@ public sealed class WindowHost : IDisposable, IWindowHost
 
     public ElementPainter Painter => _painter;
 
+    public IDisposable BlockModalInput()
+    {
+        ObjectDisposedException.ThrowIf(_disposed || _window.IsClosed, this);
+        return new ModalOwnerScope(_window);
+    }
+
+    private sealed class ModalOwnerScope : IDisposable
+    {
+        private readonly Win32Window _window;
+        private IDisposable? _block;
+        public ModalOwnerScope(Win32Window window)
+        {
+            _window = window;
+            _block = window.BlockModalInput();
+        }
+        public void Dispose()
+        {
+            if (_block is not { } block) return;
+            _block = null;
+            block.Dispose();
+            if (!_window.IsClosed && Win32Native.IsWindowEnabled(_window.Handle))
+                Win32Native.SetFocus(_window.Handle);
+        }
+    }
+
     /// <summary>
     /// 运行时切换主题（S-A）：换 token 表 → 段缓存与脏区历史整体失效，
     /// 下一帧整帧重绘上屏；皮肤默认尺寸发生变化时也使布局失效。

@@ -138,6 +138,7 @@ internal sealed class ApplicationWindowSession : IDisposable
     private readonly bool _ownerEnabled;
     private readonly bool _modal;
     private bool _ownerDisabled, _disposed;
+    private IDisposable? _nativeOwnerBlock;
 
     internal ApplicationWindowSession(Application application, Window window, IWindowHost host,
         Action close, IClipboard clipboard, ApplicationWindowSession? owner, bool modal)
@@ -162,9 +163,10 @@ internal sealed class ApplicationWindowSession : IDisposable
 
     internal void DisableOwner()
     {
-        if (!_modal || _ownerContent is null) return;
+        if (!_modal || _owner is null) return;
         _ownerDisabled = true;
-        _ownerContent.IsEnabled = false;
+        if (_ownerContent is not null) _ownerContent.IsEnabled = false;
+        _nativeOwnerBlock = _owner.Host.BlockModalInput();
     }
 
     public void Dispose()
@@ -173,9 +175,18 @@ internal sealed class ApplicationWindowSession : IDisposable
         // Detach first also enforces thread affinity without leaving a half-disposed registration.
         _application.DetachWindow(this);
         _disposed = true;
-        if (!_ownerDisabled || _owner?.IsOpen != true || _ownerContent is not { IsDisposed: false }) return;
-        _ownerContent.IsEnabled = _ownerEnabled;
-        if (_ownerEnabled && _ownerFocus is { IsDisposed: false, IsAttached: true })
-            _ownerFocus.RequestFocus(FocusOrigin.Restore);
+        try
+        {
+            if (!_ownerDisabled || _owner?.IsOpen != true || _ownerContent is not { IsDisposed: false }) return;
+            _ownerContent.IsEnabled = _ownerEnabled;
+            if (_ownerEnabled && _ownerFocus is { IsDisposed: false, IsAttached: true })
+                _ownerFocus.RequestFocus(FocusOrigin.Restore);
+        }
+        finally
+        {
+            var block = _nativeOwnerBlock;
+            _nativeOwnerBlock = null;
+            block?.Dispose();
+        }
     }
 }

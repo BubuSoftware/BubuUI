@@ -288,12 +288,77 @@ public sealed class ApplicationWindowLifetimeTests
         Assert.Same(main.Host, fixture.App.Host);
     }
 
+    [Fact]
+    public void NestedNativeBlocksAreReleasedEvenAfterAnOwnerCloses()
+    {
+        using var fixture = new Fixture();
+        var main = fixture.Open("main");
+        var child = fixture.Open("child", modal: true);
+        var inner = fixture.Open("inner", modal: true);
+        Assert.Equal(1, main.Host.NativeBlocks);
+        Assert.Equal(1, child.Host.NativeBlocks);
+
+        child.RequestClose();
+        inner.End();
+        inner.Session!.Dispose();
+        Assert.Equal(0, child.Host.NativeBlocks);
+        Assert.Equal(1, main.Host.NativeBlocks);
+        child.End();
+        Assert.Equal(0, main.Host.NativeBlocks);
+    }
+
+    [Fact]
+    public void NonModalWindowDoesNotBlockNativeOwnerInput()
+    {
+        using var fixture = new Fixture();
+        var main = fixture.Open("main");
+        fixture.Open("child");
+        Assert.Equal(0, main.Host.NativeBlocks);
+        Assert.True(main.Window.Content!.IsEnabled);
+    }
+
+    [Fact]
+    public void NativeBlockFailureRestoresOwnerAndRegistration()
+    {
+        using var fixture = new Fixture();
+        var main = fixture.Open("main");
+        main.Host.BlockFailure = new InvalidOperationException("native block failure");
+        using var child = new Window { Content = new Grid() };
+
+        Assert.Throws<InvalidOperationException>(() => fixture.App.AttachWindow(
+            child, new FakeHost(), () => { }, new MemoryClipboard(), true));
+
+        Assert.Equal(0, main.Host.NativeBlocks);
+        Assert.True(main.Window.Content!.IsEnabled);
+        Assert.Same(main.Host, fixture.App.Host);
+        Assert.Same(main.Clipboard, Clipboard.Current);
+        Assert.Equal(new[] { main.Window }, fixture.App.Windows);
+    }
+
     private sealed class TestApp : Application { }
     private sealed class TestTheme : IHostTheme { }
 
     private sealed class FakeHost : IWindowHost
     {
         public bool IsClosed { get; set; }
+        public int NativeBlocks;
+        public Exception? BlockFailure;
+        public IDisposable BlockModalInput()
+        {
+            if (BlockFailure is { } error) throw error;
+            NativeBlocks++;
+            return new NativeBlock(this);
+        }
+        private sealed class NativeBlock(FakeHost host) : IDisposable
+        {
+            private bool _disposed;
+            public void Dispose()
+            {
+                if (_disposed) return;
+                _disposed = true;
+                host.NativeBlocks--;
+            }
+        }
         public List<IHostTheme> Themes { get; } = [];
         public Exception? ThemeFailure;
         public void SetTheme(IHostTheme theme)
