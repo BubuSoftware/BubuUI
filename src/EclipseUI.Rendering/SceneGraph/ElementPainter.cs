@@ -96,10 +96,50 @@ public sealed class ElementPainter
         return new PaintedFrame(list, damage);
     }
 
+    /// <summary>Paints a popup in its own surface while preserving its real owner tree and focus manager.</summary>
+    public PaintedFrame BuildPopupFrame(Popup popup, Rect bounds, double scale = 1, bool transparent = true)
+    {
+        ArgumentNullException.ThrowIfNull(popup);
+        var damage = _damageTracker.Begin(bounds.Size, scale);
+        var list = BuildCore(popup, bounds.Size, scale, _damageTracker, bounds, transparent);
+        _damageTracker.End();
+        return new(list, damage);
+    }
+
+    /// <summary>Includes drawing outside the popup body, while respecting content viewports and separate nested popups.</summary>
+    public static Rect GetPopupVisualBounds(Popup popup)
+    {
+        var bounds = popup.WindowBounds;
+        if ((popup.TemplateRoot ?? popup.Content) is { } body) Visit(body, null);
+        return bounds;
+
+        void Visit(Element element, Rect? inheritedClip)
+        {
+            if (!element.IsEffectivelyVisible || element is Popup) return;
+            var zero = element.PointFromRoot(Point.Zero);
+            var origin = new Point(-zero.X, -zero.Y);
+            var local = element.GetDrawingClip() ?? new Rect(Point.Zero, element.FinalRect.Size);
+            var drawing = ToRoot(local, origin);
+            if (inheritedClip is { } clip) drawing = Intersect(drawing, clip);
+            if (!drawing.Size.IsEmpty) bounds = FrameDamage.Union(bounds, drawing);
+            var childClip = inheritedClip;
+            if (element.GetVisualChildrenClip() is { } contentClip)
+            {
+                var region = ToRoot(contentClip, origin);
+                childClip = childClip is { } previous ? Intersect(previous, region) : region;
+            }
+            foreach (var child in element.VisualChildren) Visit(child, childClip);
+        }
+
+        static Rect Intersect(Rect a, Rect b) => new(Math.Max(a.X, b.X), Math.Max(a.Y, b.Y),
+            Math.Max(0, Math.Min(a.Right, b.Right) - Math.Max(a.X, b.X)),
+            Math.Max(0, Math.Min(a.Bottom, b.Bottom) - Math.Max(a.Y, b.Y)));
+    }
+
     /// <summary>丢弃脏区历史，下一帧强制整帧重绘（窗口遮挡恢复等场景）。</summary>
     public void ResetDamage() => _damageTracker.Reset();
 
-    private DisplayList BuildCore(Element root, Size size, double scale, DamageTracker? tracker)
+    private DisplayList BuildCore(Element root, Size size, double scale, DamageTracker? tracker, Rect? popupBounds = null, bool transparentPopup = true)
     {
         ArgumentNullException.ThrowIfNull(root);
 
@@ -107,6 +147,11 @@ public sealed class ElementPainter
         _list = list;
         _paintList = list;
         _focus = FocusVisualDescriptor.Resolve(root, _theme);
+        if (popupBounds is { } focusBounds && _focus.Owner is not null)
+        {
+            Rect Translate(Rect r) => new(r.X - focusBounds.X, r.Y - focusBounds.Y, r.Width, r.Height);
+            _focus = _focus with { Bounds = Translate(_focus.Bounds), Clip = _focus.Clip is { } clip ? Translate(clip) : null };
+        }
         _aaMargin = scale > 0 ? Math.Max(1, 1 / scale) : 1;
         _popups.Clear();
         _reusedSegments = 0;
@@ -116,17 +161,36 @@ public sealed class ElementPainter
         if (scaled)
             list.Add(new PushTransform(Transform.Scale(scale)));
 
-        list.Add(new FillRect(new Rect(0, 0, size.Width, size.Height), _theme.Surface));
+        if (popupBounds is null || !transparentPopup)
+            list.Add(new FillRect(new Rect(0, 0, size.Width, size.Height), _theme.Surface));
 
         var clipSurface = size.Width > 0 && size.Height > 0;
         if (clipSurface)
             list.Add(new PushClip(new Rect(0, 0, size.Width, size.Height)));
 
-        PaintElement(root, Point.Zero, isRoot: true, tracker);
-        for (var i = 0; i < _popups.Count; i++)
+        var origin = Point.Zero;
+        if (popupBounds is { } bounds)
         {
-            var entry = _popups[i];
-            PaintElement(entry.Popup, entry.Offset, false, tracker, overlay: true);
+            var parentOrigin = root.Parent?.PointFromRoot(Point.Zero) ?? Point.Zero;
+            origin = new(-parentOrigin.X - bounds.X, -parentOrigin.Y - bounds.Y);
+        }
+        PaintElement(root, origin, isRoot: popupBounds is null, tracker, overlay: popupBounds is not null);
+        if (_popups.Count != 0)
+        {
+            var modalRoot = root;
+            while (modalRoot.Parent is not null) modalRoot = modalRoot.Parent;
+            var modal = Elements.Popup.TopModal(modalRoot);
+            var paintedPopups = new HashSet<Elements.Popup>();
+            while (true)
+            {
+                var pending = _popups.Where(entry => !paintedPopups.Contains(entry.Popup)
+                        && (modal is null || modal.IsInModalScope(entry.Popup) || entry.Popup.IsInModalScope(modal)))
+                    .OrderBy(entry => entry.Popup.OpenOrder).ToArray();
+                if (pending.Length == 0) break;
+                var entry = pending[0];
+                paintedPopups.Add(entry.Popup);
+                PaintElement(entry.Popup, entry.Offset, false, tracker, overlay: true);
+            }
         }
 
         if (clipSurface) list.Add(new PopClip());
@@ -139,7 +203,11 @@ public sealed class ElementPainter
     private void PaintElement(Element element, Point offset, bool isRoot, DamageTracker? tracker, bool overlay = false)
     {
         if (!element.IsEffectivelyVisible) return;
-        if (element is Elements.Popup popup && !overlay) { _popups.Add((popup, offset)); return; }
+        if (element is Elements.Popup popup && !overlay)
+        {
+            if (!popup.IsWindowHosted) _popups.Add((popup, offset));
+            return;
+        }
         var final = element.FinalRect;
         var rect = new Rect(offset.X + final.X, offset.Y + final.Y, final.Width, final.Height);
         var selfBounds = SelfBounds(element, rect);
@@ -189,7 +257,10 @@ public sealed class ElementPainter
         }
 
         // Content regions come from the control, shared with hit testing and focus geometry.
-        var contentClip = element.GetVisualChildrenClip();
+        // Popup template chrome (including its shadow) can draw outside the body.
+        // Its content presenter/viewports keep content clipped, and hit testing uses the body.
+        var contentClip = element is Popup popupOwner && (popupOwner.IsWindowHosted || popupOwner.TemplateRoot is not null)
+            ? null : element.GetVisualChildrenClip();
         if (contentClip is { } childClip) _list.Add(new PushClip(ToRoot(childClip, rect.Location)));
 
         var children = element.VisualChildren;

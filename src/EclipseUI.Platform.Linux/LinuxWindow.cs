@@ -13,26 +13,44 @@ public sealed class LinuxWindow : ILinuxWindow, ISystemThemeProvider
     private nint _window;
     private uint _id;
     private bool _ownsVideo;
+    private readonly bool _modal;
+    private bool _modalActive;
     private bool _minimized;
     private bool _textInput;
     private bool _basicTextInput;
     private double _densityX = 1, _densityY = 1;
     private readonly LinuxComposition _composition = new();
 
-    public LinuxWindow(string title, int width, int height)
+    public LinuxWindow(string title, int width, int height) : this(title, width, height, null, true, false) { }
+
+    internal LinuxWindow(LinuxWindow parent, bool interactive, bool modal = false) : this("", 1, 1, parent, interactive, modal) { }
+
+    private LinuxWindow(string title, int width, int height, LinuxWindow? parent, bool interactive, bool modal)
     {
         if (!OperatingSystem.IsLinux()) throw new PlatformNotSupportedException("LinuxWindow requires Linux.");
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
         if (Windows.Count != 0 && VideoThread != _thread)
             throw new InvalidOperationException("All SDL windows must use the same main thread.");
+        _modal = modal;
         try
         {
             SdlNative.Check(SdlNative.SDL_InitSubSystem(SdlNative.InitVideo));
             _ownsVideo = true;
             VideoThread = _thread;
-            _window = SdlNative.SDL_CreateWindow(title, width, height, SdlNative.WindowFlags);
+            _window = parent is null || modal
+                ? SdlNative.SDL_CreateWindow(title, width, height, modal
+                    ? 0x8 | 0x10 | 0x2000 | 0x10000000 | SdlNative.Transparent
+                    : SdlNative.WindowFlags)
+                : SdlNative.SDL_CreatePopupWindow(parent._window, 0, 0, width, height,
+                    0x8 | 0x2000 | 0x10000000 | SdlNative.Transparent | (interactive ? SdlNative.PopupMenu : SdlNative.Tooltip));
             SdlNative.Check(_window != 0);
+            if (modal)
+            {
+                SdlNative.Check(SdlNative.SDL_SetWindowParent(_window, parent!._window));
+                SdlNative.Check(SdlNative.SDL_SetWindowModal(_window, true));
+                _modalActive = true;
+            }
             VideoDriver = SdlNative.Utf8(SdlNative.SDL_GetCurrentVideoDriver());
             _id = SdlNative.SDL_GetWindowID(_window);
             Windows.Add(_id, this);
@@ -54,6 +72,12 @@ public sealed class LinuxWindow : ILinuxWindow, ISystemThemeProvider
     public string VideoDriver { get; } = "";
     internal uint Id => _id;
     internal bool UsesBasicTextInput => _basicTextInput;
+    internal nint SdlHandle => _window;
+    internal double WindowUnitsPerLogicalX => ScaleFactor / _densityX;
+    internal double WindowUnitsPerLogicalY => ScaleFactor / _densityY;
+    internal bool IsFocused => !IsClosed && _window != 0 && (SdlNative.SDL_GetWindowFlags(_window) & SdlNative.InputFocus) != 0;
+
+    internal void RefreshMetrics() { VerifyAccess(); UpdateMetrics(); }
     public int ClientWidth { get; private set; }
     public int ClientHeight { get; private set; }
     public double ScaleFactor { get; private set; } = 1;
@@ -101,6 +125,14 @@ public sealed class LinuxWindow : ILinuxWindow, ISystemThemeProvider
         if (IsClosed) return;
         SdlNative.Check(SdlNative.SDL_ShowWindow(_window));
         UpdateMetrics();
+    }
+
+    internal void Activate()
+    {
+        VerifyAccess();
+        // Compositors can refuse focus activation without invalidating modality.
+        // Raising is best-effort, matching Win32's foreground-window policy.
+        if (!IsClosed && _modal) SdlNative.SDL_RaiseWindow(_window);
     }
 
     public void Close()
@@ -291,16 +323,28 @@ public sealed class LinuxWindow : ILinuxWindow, ISystemThemeProvider
             throw new InvalidOperationException("Linux window disposal must use the main UI thread.");
         IsClosed = true;
         Windows.Remove(_id);
+        List<Exception>? failures = null;
         if (_window != 0)
         {
-            SdlNative.SDL_DestroyWindow(_window);
-            _window = 0;
+            // DestroyWindow is still required when clearing modality is unsupported
+            // or fails; SDL releases the driver's modal state while destroying it.
+            try { if (_modalActive) SdlNative.Check(SdlNative.SDL_SetWindowModal(_window, false)); }
+            catch (Exception error) { (failures ??= []).Add(error); }
+            finally
+            {
+                _modalActive = false;
+                try { SdlNative.SDL_DestroyWindow(_window); }
+                catch (Exception error) { (failures ??= []).Add(error); }
+                finally { _window = 0; }
+            }
         }
         if (_ownsVideo)
         {
-            SdlNative.SDL_QuitSubSystem(SdlNative.InitVideo);
-            _ownsVideo = false;
+            try { SdlNative.SDL_QuitSubSystem(SdlNative.InitVideo); }
+            catch (Exception error) { (failures ??= []).Add(error); }
+            finally { _ownsVideo = false; }
         }
+        if (failures is not null) throw new AggregateException("Linux window cleanup failed.", failures);
     }
 }
 

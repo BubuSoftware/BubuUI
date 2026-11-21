@@ -20,6 +20,8 @@ public readonly record struct NativeWindowHandle
     public nint Handle { get; }
     public nint Display { get; }
     public int Screen { get; }
+    /// <summary>The native window supports compositing the surface's per-pixel alpha.</summary>
+    public bool IsTransparent { get; init; }
 
     public static NativeWindowHandle FromWin32(nint hwnd) => new(NativeWindowKind.Win32, hwnd, 0, 0);
     public static NativeWindowHandle FromXlib(nint window, nint display, int screen = 0)

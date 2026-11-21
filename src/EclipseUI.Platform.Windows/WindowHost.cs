@@ -37,6 +37,8 @@ public sealed class WindowHostOptions
     public ISystemThemeProvider? SystemTheme { get; init; }
 
     public ITextPainter? TextPainter { get; init; }
+    public ISurfaceFactory? SurfaceFactory { get; init; }
+    public IPopupWindowFactory? PopupWindowFactory { get; init; }
 
     /// <summary>Esc 关闭窗口（应用内可关掉，自己处理键）。</summary>
     public bool CloseOnEscape { get; init; } = true;
@@ -76,6 +78,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
     private readonly WindowHostOptions _options;
     private readonly ElementPainter _painter;
     private readonly ThemeBinding _themeBinding;
+    private readonly PopupWindowManager? _popups;
     private bool _disposed;
     private bool _running;
     private readonly IClipboard _clipboard;
@@ -110,6 +113,8 @@ public sealed class WindowHost : IDisposable, IWindowHost
         UpdateTheme(root);
         _input = new InputRouter(root);
         _input.Focus.AlwaysShowFocusVisuals = _options.AlwaysShowFocusVisuals;
+        if (_options.SurfaceFactory is { } surfaces && _options.PopupWindowFactory is { } popups)
+            _popups = new PopupWindowManager(popups, surfaces, _options.TextPainter);
 
         _window.Resized += OnResized;
         _window.PaintRequested += OnPaintRequested;
@@ -192,6 +197,9 @@ public sealed class WindowHost : IDisposable, IWindowHost
     /// <summary>窗口即将关闭。</summary>
     public bool IsExiting { get; private set; }
 
+    /// <summary>Whether this host can no longer present or receive input.</summary>
+    public bool IsClosed => _disposed || _uiRoot.IsDisposed || _window.IsClosed || IsExiting;
+
     /// <summary>每个循环 tick 触发一次；<see cref="HostFrameEventArgs.Presented"/> 区分是否上屏。</summary>
     public event EventHandler<HostFrameEventArgs>? FrameTicked;
 
@@ -225,10 +233,15 @@ public sealed class WindowHost : IDisposable, IWindowHost
             _activeContext = null;
             _running = false;
             RestoreClipboard();
+            List<Exception>? cleanupFailures = null;
+            try { _popups?.Clear(); }
+            catch (Exception cleanup) { (cleanupFailures ??= new()).Add(cleanup); }
             try { _uiRoot.DetachFromHost(this); }
-            catch (Exception cleanup) when (failure is not null)
+            catch (Exception cleanup) { (cleanupFailures ??= new()).Add(cleanup); }
+            if (cleanupFailures is not null)
             {
-                throw new AggregateException("Window loop and detachment failed.", failure, cleanup);
+                if (failure is not null) cleanupFailures.Insert(0, failure);
+                throw new AggregateException("Window loop cleanup failed.", cleanupFailures);
             }
         }
     }
@@ -353,6 +366,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
                 var scale = _window.ScaleFactor;
                 if (size.IsEmpty || !CanRender) return result;
                 var start = Stopwatch.GetTimestamp();
+                _popups?.PrepareLayout(root, Input);
                 root.Measure(size);
                 root.Arrange(new Rect(Point.Zero, size));
                 if (!CanRender) return result;
@@ -361,6 +375,8 @@ public sealed class WindowHost : IDisposable, IWindowHost
                 _presenter.Resize(width, height);
                 if (_pendingResize) continue;
                 if (_pendingFullFrame) { _painter.ResetDamage(); _pendingFullFrame = false; }
+                _popups?.Render(root, Input, _painter.Theme, _options.AlwaysRender);
+                UpdateTextInput();
                 var frame = _painter.BuildFrame(root, size, scale);
                 if (_pendingResize) continue;
                 var presented = _options.AlwaysRender || !frame.Damage.IsEmpty;
@@ -442,7 +458,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
         if (e.Key == Key.None) return;
         using var scope = Input.Focus.EnterInput(FocusOrigin.Keyboard, Modifiers(e));
         Input.Focus.NotifyInput(FocusOrigin.Keyboard);
-        if (e.Key == Key.Escape && Input.TryDismissPopup()) return;
+        if (e.Key == Key.Escape && Input.TryDismissPopup(e.IsRepeat)) return;
         if (_options.CloseOnEscape && e.Key == Key.Escape)
         {
             _window.Close();
@@ -462,16 +478,34 @@ public sealed class WindowHost : IDisposable, IWindowHost
     }
     private void OnTextComposition(object? sender, TextCompositionEventArgs e)
     {
-        if (Input.Focus.Focused is EclipseUI.Elements.TextBox editor)
+        if (Input.Focus.Focused is EclipseUI.Elements.TextBox editor && _popups?.OwnsEditor(editor) != true)
         {
             var rect = editor.CaretRect; var zero = editor.PointFromRoot(Point.Zero);
             _window.SetImeCaret(new(rect.X - zero.X, rect.Y - zero.Y, rect.Width, rect.Height));
         }
         Input.TextComposition(e.Text, e.Stage);
     }
-    private void OnWindowFocusLost(object? sender, EventArgs e) => Input.Reset();
+    private void UpdateTextInput()
+    {
+        var editor = Input.Focus.Focused as EclipseUI.Elements.TextBox;
+        if (editor is not null && _popups?.OwnsEditor(editor) == true) editor = null;
+        _window.SetTextInputEnabled(editor is { IsReadOnly: false });
+        if (editor is null) return;
+        var caret = editor.CaretRect;
+        var zero = editor.PointFromRoot(Point.Zero);
+        _window.SetImeCaret(new(caret.X - zero.X, caret.Y - zero.Y, caret.Width, caret.Height));
+    }
+    private void OnWindowFocusLost(object? sender, EventArgs e)
+    {
+        if (_popups?.HandleOwnerFocusLost(Input) != true) Input.Reset();
+    }
 
-    private void OnClosing(object? sender, EventArgs e) => IsExiting = true;
+    private void OnClosing(object? sender, EventArgs e)
+    {
+        IsExiting = true;
+        try { _popups?.Clear(); }
+        catch (Exception error) { _nativeFrameFailure ??= ExceptionDispatchInfo.Capture(error); }
+    }
 
     private static double Elapsed(long startTimestamp)
         => (Stopwatch.GetTimestamp() - startTimestamp) * 1000.0 / Stopwatch.Frequency;
@@ -524,6 +558,8 @@ public sealed class WindowHost : IDisposable, IWindowHost
         _window.FocusLost -= OnWindowFocusLost;
         _window.Closing -= OnClosing;
         List<Exception>? failures = null;
+        try { _popups?.Dispose(); }
+        catch (Exception error) { (failures ??= new()).Add(error); }
         try { _uiRoot.DetachFromHost(this); }
         catch (Exception error) { (failures ??= new()).Add(error); }
         try { _input.Reset(); }

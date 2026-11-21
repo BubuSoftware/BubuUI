@@ -20,12 +20,15 @@ internal sealed class GpuRetainedFrame : IDisposable
     private WgpuBindGroup? _frameBinding, _patchBinding;
     private int _width, _height, _patchWidth, _patchHeight;
     private bool _hasFrame;
+    private readonly bool _transparent;
     public long RasterizedPixels { get; private set; }
     public GpuDamageRegion LastRegion { get; private set; }
 
-    public GpuRetainedFrame(WgpuDevice device, WgpuRenderer? renderer, WgpuTextureFormat surfaceFormat)
+    public GpuRetainedFrame(WgpuDevice device, WgpuRenderer? renderer, WgpuTextureFormat surfaceFormat,
+        bool transparent = false, bool straightAlpha = false)
     {
         _device = device; _renderer = renderer; _queue = device.GetQueue();
+        _transparent = transparent;
         try
         {
             _bindings = device.CreateBindGroupLayout(new()
@@ -36,8 +39,10 @@ internal sealed class GpuRetainedFrame : IDisposable
             _layout = device.CreatePipelineLayout(new() { BindGroupLayouts = [_bindings] });
             _shader = device.CreateShaderModule(new WgpuShaderModuleDescriptor(Shader));
             _copyPipeline = CreatePipeline(WgpuTextureFormat.Rgba8Unorm, "copy");
-            _presentPipeline = CreatePipeline(surfaceFormat,
-                surfaceFormat is WgpuTextureFormat.Bgra8UnormSrgb or WgpuTextureFormat.Rgba8UnormSrgb ? "present_srgb" : "copy");
+            var srgb = surfaceFormat is WgpuTextureFormat.Bgra8UnormSrgb or WgpuTextureFormat.Rgba8UnormSrgb;
+            _presentPipeline = CreatePipeline(surfaceFormat, straightAlpha
+                ? srgb ? "present_straight_srgb" : "present_straight"
+                : srgb ? "present_srgb" : "copy");
         }
         catch { Dispose(); throw; }
     }
@@ -96,7 +101,7 @@ internal sealed class GpuRetainedFrame : IDisposable
             _patchScene.Reset();
             _patchScene.Append(scene, Matrix3x2.CreateTranslation(-region.X, -region.Y));
             _renderer!.Render(_patchScene, _patchView!, new RenderParams((uint)region.Width, (uint)region.Height,
-                RgbaColor.FromBytes(0, 0, 0, 255), antialiasing, RenderFormat.Rgba8));
+                RgbaColor.FromBytes(0, 0, 0, _transparent ? (byte)0 : (byte)255), antialiasing, RenderFormat.Rgba8));
             Copy(_frameView!, _patchBinding!, _copyPipeline, region, _hasFrame);
             _hasFrame = true;
             RasterizedPixels = region.Area;
@@ -175,6 +180,16 @@ internal sealed class GpuRetainedFrame : IDisposable
         @fragment fn copy(input: VertexOutput) -> @location(0) vec4<f32> { return read(input.uv); }
         @fragment fn present_srgb(input: VertexOutput) -> @location(0) vec4<f32> {
             let color = read(input.uv);
+            let linear = select(pow((color.rgb + vec3(.055)) / vec3(1.055), vec3(2.4)), color.rgb / vec3(12.92), color.rgb <= vec3(.04045));
+            return vec4(linear, color.a);
+        }
+        fn straight(uv: vec2<f32>) -> vec4<f32> {
+            let color = read(uv);
+            return vec4(select(vec3(0.), color.rgb / max(color.a, .00001), color.a > 0.), color.a);
+        }
+        @fragment fn present_straight(input: VertexOutput) -> @location(0) vec4<f32> { return straight(input.uv); }
+        @fragment fn present_straight_srgb(input: VertexOutput) -> @location(0) vec4<f32> {
+            let color = straight(input.uv);
             let linear = select(pow((color.rgb + vec3(.055)) / vec3(1.055), vec3(2.4)), color.rgb / vec3(12.92), color.rgb <= vec3(.04045));
             return vec4(linear, color.a);
         }

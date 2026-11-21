@@ -9,11 +9,15 @@ internal static class Win32Native
     public const int CS_VREDRAW = 0x0001;
 
     public const int WS_OVERLAPPEDWINDOW = 0x00CF0000;
+    public const int WS_POPUP = unchecked((int)0x80000000);
+    public const int WS_EX_TOOLWINDOW = 0x00000080;
+    public const int WS_EX_NOACTIVATE = 0x08000000;
     public const int WS_VISIBLE = 0x10000000;
     public const int CW_USEDEFAULT = unchecked((int)0x80000000);
 
     public const int SW_SHOW = 5;
     public const int SW_SHOWNORMAL = 1;
+    public const int SW_SHOWNOACTIVATE = 4;
 
     public const int WM_DESTROY = 0x0002;
     public const int WM_SIZE = 0x0005;
@@ -135,6 +139,25 @@ internal static class Win32Native
         public POINT ptMinTrackSize;
         public POINT ptMaxTrackSize;
     }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MONITORINFO
+    {
+        public uint Size;
+        public RECT Monitor;
+        public RECT Work;
+        public uint Flags;
+    }
+
+    [DllImport("user32.dll")]
+    public static extern nint MonitorFromWindow(nint hwnd, uint flags);
+
+    [DllImport("user32.dll")]
+    public static extern nint MonitorFromRect(in RECT rect, uint flags);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool GetMonitorInfoW(nint monitor, ref MONITORINFO info);
 
     [DllImport("user32.dll", SetLastError = true)]
     public static extern nint SetProcessDpiAwarenessContext(nint value);
@@ -265,6 +288,15 @@ internal static class Win32Native
     [DllImport("gdi32.dll")]
     public static extern nint CreateSolidBrush(int color);
 
+    [DllImport("gdi32.dll", SetLastError = true)]
+    public static extern nint CreateRectRgn(int left, int top, int right, int bottom);
+
+    [DllImport("gdi32.dll", SetLastError = true)]
+    public static extern nint CreateRoundRectRgn(int left, int top, int right, int bottom, int ellipseWidth, int ellipseHeight);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern int SetWindowRgn(nint hwnd, nint region, [MarshalAs(UnmanagedType.Bool)] bool redraw);
+
     [DllImport("gdi32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool DeleteObject(nint handle);
@@ -289,6 +321,14 @@ internal static class Win32Native
 
     [DllImport("user32.dll")]
     public static extern void SetFocus(nint hwnd);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool IsWindowEnabled(nint hwnd);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool EnableWindow(nint hwnd, [MarshalAs(UnmanagedType.Bool)] bool enabled);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]

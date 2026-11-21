@@ -6,6 +6,14 @@ namespace EclipseUI.Platform.Windows;
 public sealed partial class Win32Window
 {
     public event EventHandler<TextCompositionEventArgs>? TextComposition;
+    private bool _textInputEnabled = true;
+    public void SetTextInputEnabled(bool enabled)
+    {
+        if (IsClosed || _textInputEnabled == enabled) return;
+        // Restore the default IME context when an editable control gains focus.
+        ImmAssociateContextEx(_hwnd, 0, enabled ? 0x10u : 0u);
+        _textInputEnabled = enabled;
+    }
     public void PostText(string text)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -67,6 +75,7 @@ public sealed partial class Win32Window
     [StructLayout(LayoutKind.Sequential)] private struct CompositionForm { public uint Style; public Win32Native.POINT Position; public Win32Native.RECT Area; }
     [StructLayout(LayoutKind.Sequential)] private struct CandidateForm { public uint Index, Style; public Win32Native.POINT Position; public Win32Native.RECT Area; }
     [DllImport("imm32.dll")] private static extern nint ImmGetContext(nint hwnd);
+    [DllImport("imm32.dll")] private static extern bool ImmAssociateContextEx(nint hwnd, nint context, uint flags);
     [DllImport("imm32.dll")] private static extern bool ImmReleaseContext(nint hwnd, nint context);
     [DllImport("imm32.dll", CharSet = CharSet.Unicode)] private static extern int ImmGetCompositionStringW(nint context, uint index, [Out] byte[]? buffer, int length);
     [DllImport("imm32.dll")] private static extern bool ImmSetCompositionWindow(nint context, ref CompositionForm form);

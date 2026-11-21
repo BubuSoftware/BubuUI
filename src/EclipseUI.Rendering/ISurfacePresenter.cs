@@ -25,6 +25,8 @@ public interface ISurfacePresenter : IDisposable
     /// 宿主据此选择帧节奏策略：vsync 锁定时用 DWM 合成钟 pacing，否则用软限速。
     /// </summary>
     bool IsVsync { get; }
+    /// <summary>Whether this configured surface preserves per-pixel alpha for native window composition.</summary>
+    bool SupportsTransparency => false;
 
     /// <summary>
     /// 改变表面尺寸。同一尺寸重复调用应为 no-op。

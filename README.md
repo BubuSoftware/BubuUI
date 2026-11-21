@@ -51,6 +51,29 @@ panel.Children.Add(new Counter());
 
 宿主和内容集合自动 EnsureInitialized；如需提前读取 Ref，可显式调用它。初始化晚于对象初始化器。StyledProperty 的调用方 local 值优先于根模板默认值。
 
+## 应用窗口生命周期
+
+Windows、Linux 和 macOS 共用应用窗口规则：关闭主窗口不会关闭其他应用窗口，最后一个窗口关闭后 `Start` 返回。UI 线程可调用 `application.ShowDialog(new SettingsWindow())` 同步打开独立窗口；该调用运行自己的消息循环，关闭后恢复仍打开的上层窗口。窗口、宿主、剪贴板及焦点由框架管理，无需应用自己创建平台窗口。
+
+`application.Windows` 返回仍打开的应用窗口；`application.SetTheme(theme)` 更新所有存活窗口及后续窗口的默认主题；`application.Shutdown()` 显式关闭全部窗口。系统的退出命令同样作用于所有窗口。原生关闭时不在输入回调中同步销毁 UI，资源清理仍在各窗口消息循环结束后执行。
+
+### Popup 模态框
+
+`Popup.IsModal` 可用于主窗口或子窗口中的模态内容：
+
+```xml
+<Popup IsOpen="true" IsModal="true" HostMode="Window">
+    <StackPanel Padding="20" Gap="12">
+        <TextBlock>模态对话框</TextBlock>
+        <TextBox Width="240" />
+    </StackPanel>
+</Popup>
+```
+
+模态打开时，指针、滚轮、键盘、文本与 IME 输入以及程序化焦点均限制在最上层模态框及其附属弹出内容；Tab 在此范围内循环，输入事件不会冒泡到父界面快捷键。支持嵌套模态及内部普通下拉菜单。外部点击、切换应用不会自动关闭模态框；Escape 默认先关闭内部下拉框，再关闭模态框，`StaysOpen="true"` 则保持模态框并吞掉 Escape。也可调用 `Popup.Close()`；关闭、移除或销毁后恢复有效焦点并清理附属弹出窗口。
+
+`HostMode="Overlay"` 提供窗口内容内的模态输入边界；`Auto` 在原生模态或透明表面不可用时回退到 Overlay。`HostMode="Window"` 要求原生模态支持，不支持时抛出明确错误。原生模态使用独立无边框子窗口，普通下拉菜单仍使用原生 popup-menu。Windows 会禁用原生父窗口交互并在关闭时恢复原状态；Linux 使用 SDL 模态子窗口；macOS 使用 SDL/Cocoa 的 application-modal 会话，模态期间会限制同一应用的其他窗口，它不是 document-modal sheet。
+
 ## 开发与验证
 
 ```powershell
@@ -129,6 +152,7 @@ AppBuilder.Configure<MyApp>()
 桌面窗口由同一 UI 线程上的共享帧调度器驱动。打开子窗口或进入多层嵌套窗口循环时，其他窗口仍会处理已投递的异步续体、动画、主题、布局及按需绘制；模态关系只限制父窗口输入。每个窗口保留自己的同步上下文、剪贴板、帧率与 tick 上限，较慢的子窗口不会限制父窗口帧率。关闭或异常退出会注销调度；实际绘制期间仍禁止重入，避免重复使用渲染资源。Windows、macOS、Linux 的宿主使用同一调度机制。
 
 Windows 原生标题栏随窗口最终解析出的主题同步明暗，覆盖初次显示、运行期切换与跟随系统；保留系统标题栏、边框和窗口按钮。此行为由 Windows 宿主统一处理，不要求应用调用 DWM API；不支持该属性的旧版 Windows 保留默认标题栏。
+桌面端 Popup（包括下拉框、日期面板和菜单）默认使用独立的原生窗口，可越过主窗口边界，位置与大小受屏幕可用区域约束。内容仍在原有控件树中，共享焦点、主题、路由与资源生命周期；支持嵌套 Popup、外部点击/Escape 关闭和弹窗内文本输入。`HostMode="Overlay"` 可固定使用主窗口内浮层；`Auto`（默认）和 `Window` 在无原生弹窗工厂或无头环境中回退为浮层。自建桌面宿主的接线方式与验证范围见[Popup 契约](./design/24-control-library.md#独立-popup-窗口2026-11-21)。
 
 完整行为、使用示例及能力边界见 [控件库契约](./design/24-control-library.md)。Gallery 仅保留 Fluent 交互演示，页面和控件示例均以 `.ui` 描述，支持主题切换、重置、滑块与进度条联动，窄窗口自动收紧布局。旧页面已移入测试夹具，继续覆盖编译器与 IDE 回归。也可独立验证并导出深浅主题控件状态：
 
@@ -141,7 +165,7 @@ dotnet run --project sandbox/FluentCheck -- out/fluent
 
 泛型模板标签暂不支持。原生窗口由平台层创建，运行时不依赖具体绘制后端。AOT 发布仍受原生渲染依赖限制。GPU 路径已支持原生场景片段缓存、脏区局部光栅化和保留帧；最终上屏仍复制完整表面。数据绑定的 ListBox/ComboBox 达到 128 项后自动虚拟化，在有限滚动视口内仅实现可见范围。实现与验收边界见[框架修复报告](./design/reports/framework-hardening-2026-11-18.md)。
 
-需要软件栅格时可使用 `.UseVello(new VelloSurfaceOptions { UseSoftwareRasterizer = true })`：`VelloSparseBackend` 在 CPU 上绘制完整画面，GPU 仅上传纹理并呈现；变化帧全量重绘，空闲帧继续跳过。该模式不使用原生场景片段缓存或 GPU 局部光栅，阴影保留偏移轮廓但没有模糊效果。离屏软件渲染也可直接使用 `VelloSparseBackend`。
+需要软件栅格时可使用 `.UseVello(new VelloSurfaceOptions { UseSoftwareRasterizer = true })`：`VelloSparseBackend` 在 CPU 上绘制完整画面，GPU 仅上传纹理并呈现；变化帧全量重绘，空闲帧继续跳过。该模式不使用原生场景片段缓存或 GPU 局部光栅；圆角阴影支持高斯模糊并复用缓存。离屏软件渲染也可直接使用 `VelloSparseBackend`。
 
 当前环境有一项已在重构前代码复现的精确像素 golden 差异；未改基线掩盖。详细命令、测试数和隔离证据见 [验证报告](./design/reports/root-type-unification-2026-11-13.md)。
 

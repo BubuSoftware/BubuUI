@@ -13,7 +13,7 @@
 | 数值 | Slider、ProgressBar、NumericUpDown | 范围钳制、指针拖动、刻度吸附、键盘步进；确定/不确定进度；数字解析、上下按钮/方向键、滚轮、无效编辑回退 |
 | 集合 | ItemsControl、ListBox、ListBoxItem | Items/ItemsSource、条目工厂、集合变更通知、容器保留、单选/多选/扩展选择、Shift 范围/Ctrl 切换、方向键/Home/End/Ctrl+A、选中项进入视口 |
 | 下拉 | ComboBox | 共享 ListBox 选择模型，真实 Popup、方向键选择、Alt+Down/Enter/Escape、指针选择、关闭后恢复焦点 |
-| 浮层 | Popup、ToolTip、ContextMenu | 顶/底/左/右/指针定位，视口内钳制，外部点击/Escape 关闭；浮层绘制和命中晚于普通内容、不受中间祖先裁剪影响；提示绑定目标进入/离开，右键菜单绑定目标 |
+| 浮层 | Popup、ToolTip、ContextMenu | 顶/底/左/右/指针定位；桌面默认独立原生窗口，受屏幕可用区域约束；Overlay/无头浮层受主窗口视口约束；外部点击/Escape 关闭，不受中间祖先裁剪影响；提示绑定目标进入/离开，右键菜单绑定目标 |
 | 菜单 | Menu、MenuItem | 水平/垂直菜单、方向键遍历、具名 Submenu 插槽、命令 Click、可勾选项、叶项执行后关闭祖先菜单 |
 | 页面与树 | TabControl、TabItem、TreeView、TreeViewItem | 页签头部点击、左右键/Ctrl+Tab、隐藏非选中页面；树节点展开/折叠、选择、上下/左右/Home/End、源数据选择器和环检测 |
 | 表格 | DataGrid、DataGridColumn | 列头/宽度、属性路径或 getter/setter、定制单元格、稳定类型排序、行选择、可编辑单元格、提交/拒绝事件、集合通知、虚拟化与容器复用 |
@@ -30,8 +30,8 @@ DataGridColumn 是列描述对象，通过 C# 或表达式传入 Columns；它�
 - Element 增加 TextInput、TextComposition、PointerEntered/Exited、PreviewKeyDown、PreviewPointerPressed 路由事件。Preview 事件沿祖先隧道传播，可在文本编辑器消费输入前处理表格选择或日期快捷键。
 - KeyEventArgs 携带 Shift/Control/Alt 和重复标记；KeyUp 与字符输入均从平台转发。普通 Tab/Shift+Tab 遍历有效可见的 IsTabStop，Ctrl+Tab 可以由页签处理。
 - IsVisible=false 的元素测量为零，退出绘制、命中与焦点遍历。关闭 Popup 的整棵内容子树也退出交互。
-- Popup 内容始终保留在同一实际内容树中。ElementPainter 延后绘制浮层，InputRouter 优先命中浮层；没有额外的所有权树。嵌套浮层中的点击不会关闭其祖先。
-- Popup 保存打开前的焦点，关闭时恢复；Windows 宿主先让 Escape 关闭浮层，再执行 CloseOnEscape。
+- Popup 内容始终保留在同一实际内容树中。独立窗口只提供绘制表面与原生输入；Overlay 模式由 ElementPainter 延后绘制、InputRouter 优先命中。两种模式均沿原有父链路由事件，嵌套浮层中的点击不会关闭其祖先。
+- Popup 保存打开前的焦点，关闭时恢复；桌面宿主先让 Escape 关闭浮层，再执行 CloseOnEscape。独立 Popup 与所属窗口之间转移原生焦点时保留控件焦点；焦点离开整个窗口组时关闭 StaysOpen=false 的 Popup。
 - Win32 转发完整 UTF-16 字符（包含代理对）、键抬起和 IMM32 组合事件，设置组合/候选窗口位置。运行时只在组合提交时修改 Text。
 - IClipboard 可替换。无头默认内存实现，Windows 宿主安装 Unicode 系统剪贴板。可用 FrameAnimations.Advance 在无头环境推进光标和不确定进度动画。
 
@@ -56,6 +56,36 @@ DataGridColumn 是列描述对象，通过 C# 或表达式传入 Columns；它�
 ```
 
 Button 的文字内容继续写入 Label，任意元素内容用 Content 插槽。ContentControl/Border/TabItem/Popup 直接接受一个子元素。ContextMenu 的直接子元素写入 Items；复合控件内部元素不需要由调用方手工接线。
+
+## 独立 Popup 窗口（2026-11-21）
+
+`Popup.HostMode` 选择呈现方式：
+
+| 值 | 行为 |
+|---|---|
+| `Auto`（默认） | 桌面宿主提供原生弹窗工厂时使用所属窗口的独立原生 Popup；否则使用 Overlay。 |
+| `Window` | 显式选择独立窗口；无原生弹窗工厂或无头环境中仍回退为 Overlay。 |
+| `Overlay` | 始终画在所属窗口的表面内，保留视口内钳制行为。 |
+
+只读 `IsWindowHosted` 表示当前宿主为该 Popup 选择了原生窗口呈现。Popup 打开时创建表面，关闭、摘除、替换根内容或宿主退出时释放表面；控件内容不会被搬到另一棵树。独立 Popup 可以越过所属窗口的客户区，按屏幕可用区域测量与定位，Wayland 的最终位置由合成器约束。原生 Popup 使用独立 DPI 与绘制表面，共享所属窗口的主题、布局更新、动画时钟和 InputRouter；嵌套 Popup 使用对应的原生父窗口。
+
+```xml
+<Popup HostMode="Window" IsOpen={showDetails} Placement="Bottom">
+    <TextBox Width="240" Placeholder="在弹窗中输入" />
+</Popup>
+
+<Popup HostMode="Overlay" IsOpen={showHint}>
+    <TextBlock>保留在主窗口内的浮层</TextBlock>
+</Popup>
+```
+
+`StaysOpen=false` 时支持外部点击、Escape 和离开窗口组后的关闭；关闭后按现有规则恢复有效的先前焦点。弹窗内的按键、字符、组合输入和输入法光标位置通过同一控件输入路径处理。ToolTip 使用不接收输入的原生提示窗口；可交互的 Popup 使用接收输入的原生窗口。
+
+macOS/Linux 的独立 Popup 使用透明表面保留内容圆角与外围阴影；内容尺寸优先于屏幕边缘处的阴影留白。Windows 使用原生圆角窗口区域同步裁剪显示与输入，保持不透明表面的主题底色，不绘制窗口外阴影。渲染器无法提供透明合成时自动回退为窗口内浮层。Linux X11 的透明显示需要桌面合成器；具备 XShape 扩展时，圆角之外及阴影留白不属于原生鼠标输入区域。SDL 3.2 的 Wayland 驱动支持透明显示，但未提供对应的输入区域形状更新，因此这些透明区域仍可能由原生窗口接收指针事件，控件命中会忽略它们。
+
+`UseWindows()`、`UseLinux()`、`UseMacOS()` 的桌面生命周期自动接线。手动创建 `WindowHost` 时，在对应平台的 `WindowHostOptions` 中同时传入 `SurfaceFactory` 和 `PopupWindowFactory`；后者分别为 `new Win32PopupWindowFactory(win)`、`new LinuxPopupWindowFactory(win)` 或 `new MacOSPopupWindowFactory(win)`，其中 `win` 是该宿主的原生所属窗口。未提供这两个选项时继续使用 Overlay。
+
+Popup 回归覆盖独立表面的绘制与释放、客户区外定位、嵌套输入、外部关闭、焦点转移和文本输入。macOS 另有真实 Cocoa/Metal 原生窗口验证；Windows/Linux 当前在本机通过构建与替身宿主验证，原生桌面运行仍需各自平台验收。
 
 ## 绘制扩展与样式
 

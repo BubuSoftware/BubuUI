@@ -702,7 +702,11 @@ public abstract partial class Element : UiObject
         var root = this; while (root.Parent is not null) root = root.Parent;
         return root._focusManager;
     }
-    internal void NotifyFocusTreeChanged() => FindFocusManager()?.RefreshFocusPath();
+    internal void NotifyFocusTreeChanged()
+    {
+        Elements.Popup.InvalidateModalCache();
+        FindFocusManager()?.RefreshFocusPath();
+    }
 
     /// <summary>
     /// 自身启用声明值（E3，默认 true）。**有效值沿祖先链继承**——任一祖先为 false 则
@@ -1153,10 +1157,21 @@ public abstract partial class Element : UiObject
     public void RaiseEvent(RoutedEventArgs args)
     {
         if (args.Source is null) args.Source = this;
+        Elements.Popup? modalBoundary = null;
+        if (args is not FocusEventArgs && args.RoutedEvent != Elements.Popup.OpenedEvent &&
+            args.RoutedEvent != Elements.Popup.ClosedEvent && FindFocusManager() is { IsDispatchingInput: true })
+        {
+            var root = this; while (root.Parent is not null) root = root.Parent;
+            var modal = Elements.Popup.TopModal(root);
+            if (modal?.IsInModalScope(args.Source) == true) modalBoundary = modal;
+        }
         if (args.RoutedEvent.Strategy == RoutingStrategy.Bubble)
         {
             for (Element? node = this; node is not null && !args.Handled; node = node._parent)
+            {
+                if (modalBoundary is not null && !modalBoundary.IsInModalScope(node)) break;
                 node.InvokeHandlers(args);
+            }
         }
         else if (args.RoutedEvent.Strategy == RoutingStrategy.Direct)
         {
@@ -1166,7 +1181,10 @@ public abstract partial class Element : UiObject
         {
             var chain = new List<Element>();
             for (Element? node = this; node is not null; node = node._parent)
+            {
+                if (modalBoundary is not null && !modalBoundary.IsInModalScope(node)) break;
                 chain.Add(node);
+            }
             chain.Reverse();
             foreach (var node in chain)
             {
@@ -1207,17 +1225,21 @@ public abstract partial class Element : UiObject
     /// 命中测试：点在根坐标系；返回最深命中元素（子元素从后往前，即视觉最上层优先）。
     /// 调用前提：该元素已被 Arrange（FinalRect 有效）。
     /// </summary>
-    public Element? HitTest(Point point)
+    public Element? HitTest(Point point) => HitTest(point, null);
+
+    internal Element? HitTest(Point point, Elements.Popup? surface)
     {
         if (!IsHitTestVisible || !IsEffectivelyVisible) return null;
+        if (this is Elements.Popup { IsWindowHosted: true } popup && !ReferenceEquals(popup, surface)) return null;
+        if (this is Elements.Popup { IsWindowHosted: true } hosted && !hosted.ContainsRootPoint(point)) return null;
         var local = PointFromRoot(point);
         var inside = new Rect(default, FinalRect.Size).Contains(local);
-        if (!inside && Parent is null) return null;
+        if (!inside && Parent is null && !ReferenceEquals(this, surface)) return null;
         if (this is ScrollViewer bars && bars.TryGetScrollBar(PointFromRoot(point), out _, out _)) return this;
         if (GetVisualChildrenClip() is { } clip && !clip.Contains(local)) return inside ? this : null;
         foreach (var child in VisualChildren.Reverse())
         {
-            if (child.HitTest(point) is { } hit)
+            if (child.HitTest(point, surface) is { } hit)
                 return hit;
         }
         return inside ? this : null;

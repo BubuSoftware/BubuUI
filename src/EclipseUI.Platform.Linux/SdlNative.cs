@@ -11,6 +11,8 @@ internal static class SdlNative
     internal static extern int SDL_GetSystemTheme();
     internal const uint InitVideo = 0x20;
     internal const ulong WindowFlags = 0x8 | 0x20 | 0x2000 | 0x10000000; // hidden, resizable, high density, Vulkan
+    internal const ulong PopupMenu = 0x80000, Tooltip = 0x40000, InputFocus = 0x200, Transparent = 0x40000000;
+    internal const uint PixelFormatAbgr8888 = 0x16762004;
     internal const uint Quit = 0x100, WindowExposed = 0x204, WindowResized = 0x206,
         WindowPixelSizeChanged = 0x207, WindowMinimized = 0x209, WindowRestored = 0x20b,
         WindowMouseLeave = 0x20d, WindowFocusGained = 0x20e, WindowFocusLost = 0x20f,
@@ -94,6 +96,37 @@ internal static class SdlNative
     internal static extern nint SDL_GetCurrentVideoDriver();
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
     internal static extern nint SDL_CreateWindow([MarshalAs(UnmanagedType.LPUTF8Str)] string title, int width, int height, ulong flags);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern nint SDL_CreatePopupWindow(nint parent, int x, int y, int width, int height, ulong flags);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    internal static extern bool SDL_SetWindowParent(nint window, nint parent);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    internal static extern bool SDL_SetWindowModal(nint window, [MarshalAs(UnmanagedType.I1)] bool modal);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    internal static extern bool SDL_RaiseWindow(nint window);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern ulong SDL_GetWindowFlags(nint window);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern uint SDL_GetDisplayForWindow(nint window);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    internal static extern bool SDL_GetDisplayUsableBounds(uint display, out Rect bounds);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    internal static extern bool SDL_GetWindowPosition(nint window, out int x, out int y);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    internal static extern bool SDL_SetWindowPosition(nint window, int x, int y);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern nint SDL_CreateSurfaceFrom(int width, int height, uint format, nint pixels, int pitch);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void SDL_DestroySurface(nint surface);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    internal static extern bool SDL_SetWindowShape(nint window, nint shape);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
     internal static extern void SDL_DestroyWindow(nint window);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]

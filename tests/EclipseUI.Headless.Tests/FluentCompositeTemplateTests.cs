@@ -7,6 +7,155 @@ namespace EclipseUI.Headless.Tests;
 
 public class FluentCompositeTemplateTests
 {
+    private static Point PointIn(Element element, double x, double y)
+    {
+        var origin = element.PointFromRoot(Point.Zero);
+        return new(x - origin.X, y - origin.Y);
+    }
+
+    private static void Click(HeadlessRoot host, Point point)
+    {
+        host.PointerPress(point);
+        host.PointerRelease(point);
+        host.UpdateLayout();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ComboBoxButtonTogglesDropdownAndOutsideClickStillActivatesItsTarget(bool dark)
+    {
+        using var root = new Grid { Width = 600, Height = 600 };
+        var combo = new ComboBox
+        {
+            Width = 180, Height = 32, HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top, ItemsSource = new[] { "first", "second" }
+        };
+        var outside = new Button
+        {
+            Width = 100, Height = 32, Label = "Outside", HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Bottom
+        };
+        var outsideClicks = 0;
+        outside.AddHandler(Button.ClickEvent, _ => outsideClicks++);
+        root.Children.Add(combo);
+        root.Children.Add(outside);
+        root.SetThemeDefaults(dark ? FluentTheme.Dark : FluentTheme.Light);
+        using var host = new HeadlessRoot(root);
+        host.UpdateLayout();
+        var button = Assert.Single(combo.Descendants().OfType<DropDownButton>());
+        var visual = Assert.Single(button.Descendants().OfType<FluentDropDownButtonVisual>());
+        var popup = Assert.Single(combo.Descendants().OfType<Popup>());
+        var labelPoint = PointIn(visual, 24, visual.FinalRect.Height / 2);
+        var arrowPoint = PointIn(visual, visual.FinalRect.Width - 12, visual.FinalRect.Height / 2);
+        Assert.Same(visual, host.Input.HitTest(labelPoint));
+        Assert.Same(visual, host.Input.HitTest(arrowPoint));
+
+        Click(host, labelPoint);
+        Assert.True(combo.IsDropDownOpen);
+        Assert.True(popup.IsOpen);
+        Click(host, arrowPoint);
+        Assert.False(combo.IsDropDownOpen);
+        Assert.False(popup.IsOpen);
+        Click(host, arrowPoint);
+        Assert.True(combo.IsDropDownOpen);
+        Assert.True(popup.IsOpen);
+        Click(host, PointIn(outside, outside.FinalRect.Width / 2, outside.FinalRect.Height / 2));
+        Assert.False(combo.IsDropDownOpen);
+        Assert.False(popup.IsOpen);
+        Assert.Equal(1, outsideClicks);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void DisposingExpandedOrSelectedComboBoxDoesNotWriteBackItsBindingOrNotifySelection(bool selectItem)
+    {
+        using var root = new Grid { Width = 600, Height = 600 };
+        var combo = new ComboBox
+        {
+            Width = 180, Height = 32, HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top, ItemsSource = new[] { "system", "light", "dark" }
+        };
+        root.Children.Add(combo);
+        root.SetThemeDefaults(FluentTheme.Light);
+        var businessValue = 0;
+        var writes = 0;
+        var invalidations = 0;
+        var selectionChanges = 0;
+        using var binding = UiBinding.TwoWay(combo, ComboBox.SelectedIndexProperty,
+            () => combo.SelectedIndex, value => combo.SelectedIndex = value,
+            () => businessValue, value => { businessValue = value; writes++; }, () => invalidations++);
+        combo.AddHandler(ComboBox.SelectionChangedEvent, _ => selectionChanges++);
+        using var host = new HeadlessRoot(root);
+        host.UpdateLayout();
+        var button = Assert.Single(combo.Descendants().OfType<DropDownButton>());
+
+        Click(host, PointIn(button, button.FinalRect.Width / 2, button.FinalRect.Height / 2));
+        Assert.True(combo.IsDropDownOpen);
+        var list = Assert.Single(combo.Descendants().OfType<ListBox>());
+        if (selectItem)
+        {
+            var item = Assert.IsAssignableFrom<Element>(list.ContainerFromIndex(2));
+            Click(host, PointIn(item, item.FinalRect.Width / 2, item.FinalRect.Height / 2));
+            Assert.Equal(2, businessValue);
+            Assert.False(combo.IsDropDownOpen);
+            Assert.True(writes > 0);
+            Assert.True(selectionChanges > 0);
+        }
+        var selectedValue = businessValue;
+        writes = 0;
+        invalidations = 0;
+        selectionChanges = 0;
+
+        // Keep the binding alive while the owner recursively disposes the template's selected list.
+        root.Dispose();
+
+        Assert.True(combo.IsDisposed);
+        Assert.True(list.IsDisposed);
+        Assert.Equal(selectedValue, businessValue);
+        Assert.Equal(0, writes);
+        Assert.Equal(0, invalidations);
+        Assert.Equal(0, selectionChanges);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void DatePickerButtonTogglesDropdownAndEditorClickDismissesCalendar(bool dark)
+    {
+        using var root = new Grid { Width = 600, Height = 600 };
+        var picker = new DatePicker
+        {
+            Width = 180, Height = 32, HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top, SelectedDate = new(2026, 11, 14)
+        };
+        root.Children.Add(picker);
+        root.SetThemeDefaults(dark ? FluentTheme.Dark : FluentTheme.Light);
+        using var host = new HeadlessRoot(root);
+        host.UpdateLayout();
+        var button = Assert.Single(picker.Descendants().OfType<DropDownButton>());
+        var visual = Assert.Single(button.Descendants().OfType<FluentDropDownButtonVisual>());
+        var popup = Assert.Single(picker.Descendants().OfType<Popup>());
+        var editor = Assert.Single(picker.Descendants().OfType<TextBox>());
+        var buttonPoint = PointIn(visual, visual.FinalRect.Width - 12, visual.FinalRect.Height / 2);
+        Assert.Same(visual, host.Input.HitTest(buttonPoint));
+
+        Click(host, buttonPoint);
+        Assert.True(picker.IsDropDownOpen);
+        Assert.True(popup.IsOpen);
+        Click(host, buttonPoint);
+        Assert.False(picker.IsDropDownOpen);
+        Assert.False(popup.IsOpen);
+        Click(host, buttonPoint);
+        Assert.True(picker.IsDropDownOpen);
+        Assert.True(popup.IsOpen);
+        Click(host, PointIn(editor, editor.FinalRect.Width / 2, editor.FinalRect.Height / 2));
+        Assert.False(picker.IsDropDownOpen);
+        Assert.False(popup.IsOpen);
+        Assert.Same(editor, host.Focus.Focused);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

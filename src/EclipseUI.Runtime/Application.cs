@@ -16,6 +16,9 @@ public interface IHostTheme
 /// </summary>
 public interface IWindowHost
 {
+    /// <summary>Whether this host's UI or native window has closed.</summary>
+    bool IsClosed => false;
+
     /// <summary>运行时切换主题（S-A）：换 token 表 → 段缓存失效 → 整帧重绘。</summary>
     void SetTheme(IHostTheme theme);
 }
@@ -52,7 +55,7 @@ internal sealed class EmptyServiceProvider : IServiceProvider
 /// 里创建 <see cref="MainWindow"/>（<see cref="Window"/> 实例），平台生命周期负责为它创建
 /// 真实窗口 + 帧循环。依赖注入经 <see cref="Services"/>（Microsoft.Extensions.DependencyInjection）。
 /// </summary>
-public abstract class Application
+public abstract partial class Application
 {
     /// <summary>应用容器；<see cref="AppBuilder.Build"/> 前为空实现。</summary>
     public IServiceProvider Services { get; internal set; } = EmptyServiceProvider.Instance;
@@ -72,8 +75,28 @@ public abstract class Application
     }
 
     /// <summary>
-    /// 便捷入口：切换宿主主题（S-A 亮暗切换经此接线，替代宿主层直接持有 WindowHost）。
-    /// 宿主未运行（<see cref="Host"/> 为 null）时静默忽略。
+    /// Changes the application theme for every open window and windows opened afterwards.
+    /// Closed native windows are excluded, even while their outer message loop is unwinding.
     /// </summary>
-    public void SetTheme(IHostTheme theme) => Host?.SetTheme(theme);
+    public void SetTheme(IHostTheme theme)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        AssertWindowThread();
+        DefaultTheme = theme;
+        List<Exception>? failures = null;
+        foreach (var session in _windows.ToArray())
+        {
+            if (!session.IsOpen) continue;
+            try
+            {
+                session.Window.Theme = theme;
+                session.Host.SetTheme(theme);
+            }
+            catch (Exception error) { (failures ??= []).Add(error); }
+        }
+        // Retain support for applications that supply their own unregistered host.
+        if (_windows.Count == 0 && Host is { IsClosed: false } host)
+            host.SetTheme(theme);
+        if (failures is not null) throw new AggregateException("Window theme update failed.", failures);
+    }
 }

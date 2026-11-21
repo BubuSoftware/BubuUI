@@ -23,7 +23,11 @@ public static class WindowsAppBuilderExtensions
     private sealed class WindowsPlatformSetup : IPlatformSetup
     {
         public void RegisterServices(IServiceCollection services)
-            => services.AddSingleton<IApplicationLifetime, ClassicDesktopLifetime>();
+        {
+            services.AddSingleton<ClassicDesktopLifetime>();
+            services.AddSingleton<IApplicationLifetime>(provider => provider.GetRequiredService<ClassicDesktopLifetime>());
+            services.AddSingleton<IWindowLifetime>(provider => provider.GetRequiredService<ClassicDesktopLifetime>());
+        }
     }
 }
 
@@ -33,37 +37,24 @@ public static class WindowsAppBuilderExtensions
 /// 再按 host → presenter → 原生窗口顺序释放平台资源。
 /// </summary>
 [SupportedOSPlatform("windows")]
-internal sealed class ClassicDesktopLifetime : IApplicationLifetime
+internal sealed class ClassicDesktopLifetime : IApplicationLifetime, IWindowLifetime
 {
     public int Run(Application app, string[] args)
-    {
-        var window = app.MainWindow
+        => RunWindow(app, app.MainWindow
             ?? throw new InvalidOperationException(
-                "Application.MainWindow was not set. Create it in OnFrameworkInitializationCompleted().");
-        Exception? failure = null;
-        try { return RunWindow(app, window); }
-        catch (Exception error)
-        {
-            failure = error;
-            throw;
-        }
-        finally
-        {
-            app.Host = null;
-            window.LiveUpdater = null;
-            try { window.Dispose(); }
-            catch (Exception cleanup) when (failure is not null)
-            {
-                throw new AggregateException("Window lifetime and cleanup failed.", failure, cleanup);
-            }
-        }
-    }
+                "Application.MainWindow was not set. Create it in OnFrameworkInitializationCompleted()."));
 
-    private static int RunWindow(Application app, Window window)
+    public int RunWindow(Application app, Window window, bool modal = false)
     {
+        ArgumentNullException.ThrowIfNull(app);
+        app.ValidateWindow(window);
+        ArgumentNullException.ThrowIfNull(window);
+        ObjectDisposedException.ThrowIf(window.IsDisposed, window);
         Win32Window? win = null;
         ISurfacePresenter? presenter = null;
         WindowHost? host = null;
+        IDisposable? session = null;
+        var previousClipboard = Clipboard.Current;
         Exception? failure = null;
         try
         {
@@ -78,7 +69,7 @@ internal sealed class ClassicDesktopLifetime : IApplicationLifetime
 
             var width = window.Width > 0 ? (int)window.Width : 960;
             var height = window.Height > 0 ? (int)window.Height : 640;
-            win = new Win32Window(window.Title, width, height);
+            win = new Win32Window(window.Title, width, height, quitOnDestroy: false);
             window.LiveUpdater = new Win32WindowLiveUpdater(win);
             presenter = surfaceFactory.Create(
                 win.Handle, Math.Max(win.ClientWidth, 1), Math.Max(win.ClientHeight, 1));
@@ -92,13 +83,19 @@ internal sealed class ClassicDesktopLifetime : IApplicationLifetime
             {
                 Theme = theme,
                 TextPainter = textPainter,
+                SurfaceFactory = surfaceFactory,
+                PopupWindowFactory = new Win32PopupWindowFactory(win),
                 MaxFramesPerSecond = window.MaxFramesPerSecond,
                 AlwaysRender = window.AlwaysRender,
                 AlwaysShowFocusVisuals = window.AlwaysShowFocusVisuals,
                 CloseOnEscape = window.CloseOnEscape,
                 IdleSleepMilliseconds = window.IdleSleepMilliseconds,
             }, window);
-            app.Host = host; // 主题按钮等运行期宿主动作经 Application.SetTheme 接线
+            // The Win32 host's legacy constructor installs its clipboard immediately.
+            // Let the shared session capture the owner's clipboard before switching it.
+            var clipboard = Clipboard.Current;
+            Clipboard.Current = previousClipboard;
+            session = app.AttachWindow(window, host, win.Close, clipboard, modal);
             host.FrameTicked += (_, e) =>
             {
                 if (e.Iteration == 1)
@@ -127,11 +124,12 @@ internal sealed class ClassicDesktopLifetime : IApplicationLifetime
             // UI resource hooks run while the host, rendering surface and native window
             // are still usable, including when platform construction only partly succeeded.
             CleanUp(window);
-            app.Host = null;
             window.LiveUpdater = null;
             CleanUp(host);
             CleanUp(presenter);
             CleanUp(win);
+            CleanUp(session);
+            if (session is null) Clipboard.Current = previousClipboard;
             if (cleanupFailures is not null)
             {
                 if (failure is not null) cleanupFailures.Insert(0, failure);
