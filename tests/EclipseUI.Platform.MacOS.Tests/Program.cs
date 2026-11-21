@@ -15,6 +15,8 @@ internal static partial class Program
     public static int Main(string[] args)
     {
         if (!OperatingSystem.IsMacOS() || args is not ["--native-smoke", var scenario]) return 2;
+        if (Environment.GetEnvironmentVariable("ECLIPSEUI_NATIVE_PID_FILE") is { } pidFile)
+            File.WriteAllText(pidFile, Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
         try
         {
             switch (scenario)
@@ -33,6 +35,9 @@ internal static partial class Program
                 case "managed-windows": ManagedWindowLifetimeScenario("independent"); break;
                 case "managed-window-quit": ManagedWindowLifetimeScenario("shutdown"); break;
                 case "managed-window-three-level": ManagedWindowLifetimeScenario("three-level"); break;
+                case "popup-modal": ModalPopupScenario("basic"); break;
+                case "popup-modal-nested": ModalPopupScenario("nested"); break;
+                case "popup-modal-toggle": ModalPopupScenario("toggle"); break;
                 default: throw new ArgumentException("Unknown native scenario.");
             }
             Console.WriteLine($"macOS native {scenario}: passed");

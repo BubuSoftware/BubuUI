@@ -7,6 +7,7 @@ namespace EclipseUI.Platform.Linux;
 public sealed class LinuxPopupWindowFactory(LinuxWindow owner) : IPopupWindowFactory
 {
     public bool IsOwnerFocused => owner.IsFocused;
+    public bool SupportsModal => true;
 
     public Size AvailableSize
     {
@@ -20,7 +21,14 @@ public sealed class LinuxPopupWindowFactory(LinuxWindow owner) : IPopupWindowFac
     }
 
     public IPopupWindow Create(bool interactive, IPopupWindow? parent = null)
-        => new LinuxPopupWindow(owner, parent as LinuxPopupWindow, interactive);
+        => Create(interactive, false, parent);
+
+    public IPopupWindow Create(bool interactive, bool modal, IPopupWindow? parent = null)
+    {
+        if (parent is not null && (parent is not LinuxPopupWindow popup || !ReferenceEquals(popup.Owner, owner)))
+            throw new ArgumentException("The parent popup must belong to this desktop window.", nameof(parent));
+        return new LinuxPopupWindow(owner, parent as LinuxPopupWindow, interactive || modal, modal);
+    }
 }
 
 internal sealed class LinuxPopupWindow : IPopupWindow
@@ -35,11 +43,19 @@ internal sealed class LinuxPopupWindow : IPopupWindow
     private (int Width, int Height, Rect Content, double Radius, double UnitsX, double UnitsY)? _shape;
     private bool _shapeUnavailable;
 
-    internal LinuxPopupWindow(LinuxWindow owner, LinuxPopupWindow? parent, bool interactive)
+    internal LinuxWindow Owner => _owner;
+
+    internal LinuxPopupWindow(LinuxWindow owner, LinuxPopupWindow? parent, bool interactive, bool modal = false)
     {
         _owner = owner;
         _parent = parent;
-        _window = new LinuxWindow(parent?._window ?? owner, interactive);
+        IsModal = modal;
+        var nativeParent = parent;
+        if (modal)
+            while (nativeParent is { IsModal: false }) nativeParent = nativeParent._parent;
+        // SDL forbids making a popup-menu modal or using one as a toplevel's parent.
+        // Modal content uses a regular borderless child, owned by the nearest modal/root.
+        _window = new LinuxWindow(nativeParent?._window ?? owner, interactive, modal);
         _window.PointerMoved += (_, e) => PointerMoved?.Invoke(e.LogicalPosition);
         _window.PointerPressed += (_, e) => PointerPressed?.Invoke(e.LogicalPosition, e.Modifiers, e.Button);
         _window.PointerReleased += (_, e) => PointerReleased?.Invoke(e.LogicalPosition);
@@ -62,10 +78,12 @@ internal sealed class LinuxPopupWindow : IPopupWindow
     public bool IsClosed => _disposed || _window.IsClosed;
     public bool IsFocused => !IsClosed && _window.IsFocused;
     public bool IsTransparent => true;
+    public bool IsModal { get; }
 
     public Rect SetBounds(Rect bounds)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        if (IsModal) return SetModalBounds(bounds);
         var parent = _parent?._window ?? _owner;
         _window.RefreshMetrics();
         var origin = _parent?._bounds.Location ?? Point.Zero;
@@ -110,11 +128,58 @@ internal sealed class LinuxPopupWindow : IPopupWindow
         return _bounds;
     }
 
+    private Rect SetModalBounds(Rect bounds)
+    {
+        _window.RefreshMetrics();
+        var width = Math.Max(1, checked((int)Math.Ceiling(bounds.Width * _window.WindowUnitsPerLogicalX)));
+        var height = Math.Max(1, checked((int)Math.Ceiling(bounds.Height * _window.WindowUnitsPerLogicalY)));
+        var unitX = _owner.WindowUnitsPerLogicalX;
+        var unitY = _owner.WindowUnitsPerLogicalY;
+        var x = (int)Math.Round(bounds.X * unitX);
+        var y = (int)Math.Round(bounds.Y * unitY);
+        var originX = 0;
+        var originY = 0;
+        var hasGlobalPosition = _owner.VideoDriver != "wayland" &&
+            SdlNative.SDL_GetWindowPosition(_owner.SdlHandle, out originX, out originY);
+        if (hasGlobalPosition)
+        {
+            x += originX;
+            y += originY;
+            if (SdlNative.SDL_GetDisplayUsableBounds(SdlNative.SDL_GetDisplayForWindow(_owner.SdlHandle), out var work))
+            {
+                width = Math.Min(width, Math.Max(1, work.Width));
+                height = Math.Min(height, Math.Max(1, work.Height));
+                x = Math.Clamp(x, work.X, work.X + Math.Max(0, work.Width - width));
+                y = Math.Clamp(y, work.Y, work.Y + Math.Max(0, work.Height - height));
+            }
+        }
+        var request = (x, y, width, height);
+        if (_requestedBounds != request)
+        {
+            SdlNative.Check(SdlNative.SDL_SetWindowSize(_window.SdlHandle, width, height));
+            // Unlike SDL popup menus, regular child windows use global coordinates.
+            // Wayland chooses the dialog position; retain logical bounds for input mapping.
+            if (hasGlobalPosition) SdlNative.Check(SdlNative.SDL_SetWindowPosition(_window.SdlHandle, x, y));
+            _requestedBounds = request;
+        }
+        _window.RefreshMetrics();
+        var position = bounds.Location;
+        if (hasGlobalPosition && SdlNative.SDL_GetWindowPosition(_window.SdlHandle, out var actualX, out var actualY))
+            position = new((actualX - originX) / unitX, (actualY - originY) / unitY);
+        return _bounds = new(position, new Size(ClientWidth / ScaleFactor, ClientHeight / ScaleFactor));
+    }
+
     public void Show()
     {
         if (_shown) return;
         _shown = true;
         _window.Show();
+        if (IsModal) Activate();
+    }
+
+    public void Activate()
+    {
+        if (!IsClosed && IsModal) _window.Activate();
     }
 
     public void SetTextInputEnabled(bool enabled) => _window.SetTextInputEnabled(enabled);

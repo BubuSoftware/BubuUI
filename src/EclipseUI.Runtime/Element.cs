@@ -702,7 +702,11 @@ public abstract partial class Element : UiObject
         var root = this; while (root.Parent is not null) root = root.Parent;
         return root._focusManager;
     }
-    internal void NotifyFocusTreeChanged() => FindFocusManager()?.RefreshFocusPath();
+    internal void NotifyFocusTreeChanged()
+    {
+        Elements.Popup.InvalidateModalCache();
+        FindFocusManager()?.RefreshFocusPath();
+    }
 
     /// <summary>
     /// 自身启用声明值（E3，默认 true）。**有效值沿祖先链继承**——任一祖先为 false 则
@@ -1153,10 +1157,21 @@ public abstract partial class Element : UiObject
     public void RaiseEvent(RoutedEventArgs args)
     {
         if (args.Source is null) args.Source = this;
+        Elements.Popup? modalBoundary = null;
+        if (args is not FocusEventArgs && args.RoutedEvent != Elements.Popup.OpenedEvent &&
+            args.RoutedEvent != Elements.Popup.ClosedEvent && FindFocusManager() is { IsDispatchingInput: true })
+        {
+            var root = this; while (root.Parent is not null) root = root.Parent;
+            var modal = Elements.Popup.TopModal(root);
+            if (modal?.IsInModalScope(args.Source) == true) modalBoundary = modal;
+        }
         if (args.RoutedEvent.Strategy == RoutingStrategy.Bubble)
         {
             for (Element? node = this; node is not null && !args.Handled; node = node._parent)
+            {
+                if (modalBoundary is not null && !modalBoundary.IsInModalScope(node)) break;
                 node.InvokeHandlers(args);
+            }
         }
         else if (args.RoutedEvent.Strategy == RoutingStrategy.Direct)
         {
@@ -1166,7 +1181,10 @@ public abstract partial class Element : UiObject
         {
             var chain = new List<Element>();
             for (Element? node = this; node is not null; node = node._parent)
+            {
+                if (modalBoundary is not null && !modalBoundary.IsInModalScope(node)) break;
                 chain.Add(node);
+            }
             chain.Reverse();
             foreach (var node in chain)
             {

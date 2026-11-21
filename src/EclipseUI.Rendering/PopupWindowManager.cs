@@ -42,7 +42,15 @@ public sealed class PopupWindowManager : IDisposable
             throw new InvalidOperationException("The native popup factory must provide a finite, positive display size.");
         foreach (var popup in popups)
         {
-            popup.SetWindowHosting(popup.HostMode == PopupHostMode.Overlay || _overlayFallback.Contains(popup) ? null : available);
+            if (popup.IsModal && popup.HostMode == PopupHostMode.Window)
+            {
+                if (!_windows.SupportsModal)
+                    throw new NotSupportedException("This popup factory does not support modal child windows.");
+                // An earlier Auto fallback cannot satisfy an explicit native modal request.
+                _overlayFallback.Remove(popup);
+            }
+            popup.SetWindowHosting(popup.HostMode == PopupHostMode.Overlay || _overlayFallback.Contains(popup)
+                || popup.IsModal && !_windows.SupportsModal ? null : available);
             _configured.Add(popup);
         }
     }
@@ -50,7 +58,7 @@ public sealed class PopupWindowManager : IDisposable
     /// <summary>Defers focus loss until the native queue has finished transferring focus between owned windows.</summary>
     public bool HandleOwnerFocusLost(InputRouter input)
     {
-        if (_entries.Count == 0) return false;
+        if (_entries.Count == 0 && (_root is null || Popup.TopModal(_root) is null)) return false;
         input.CancelPointerCapture();
         _focusLossPending = true;
         return true;
@@ -60,7 +68,8 @@ public sealed class PopupWindowManager : IDisposable
     {
         // Keyboard focus can stay in a native menu while Tab moves the logical focus.
         // The native input owner must keep composing for that shared logical target.
-        return editor is not null && _entries.Values.Any(e => e.Active && e.Window.IsFocused);
+        return editor is not null && _entries.Values.Any(e => e.Active
+            && (e.Window.IsFocused || e.Popup.IsInModalScope(editor)));
     }
 
     /// <summary>Updates native geometry and paints changed popup surfaces after the owner layout.</summary>
@@ -72,12 +81,30 @@ public sealed class PopupWindowManager : IDisposable
             _focusLossPending = false;
             if (!_windows.IsOwnerFocused && !_entries.Values.Any(e => e.Window.IsFocused && !e.Window.IsClosed))
             {
-                foreach (var popup in _configured.Reverse().Where(p => p.IsOpen && !p.StaysOpen).ToArray()) popup.Close();
-                input.Reset();
+                var modal = Popup.TopModal(root);
+                foreach (var popup in _configured.Reverse().Where(p => p.IsOpen && !p.StaysOpen && !p.IsModal
+                    && (modal is null || !p.IsInModalScope(modal))).ToArray()) popup.Close();
+                input.Reset(clearFocus: modal is null);
             }
         }
-        var popups = root.Descendants().Prepend(root).OfType<Popup>()
-            .Where(p => p.IsWindowHosted && p.IsEffectivelyVisible && !p.IsDisposed).ToArray();
+        var activeModal = Popup.TopModal(root);
+        input.Focus.EnsureModalFocus();
+        var candidates = root.Descendants().Prepend(root).OfType<Popup>()
+            .Where(p => p.IsWindowHosted && p.IsEffectivelyVisible && !p.IsDisposed
+                && (activeModal is null || activeModal.IsInModalScope(p) || p.IsInModalScope(activeModal)))
+            .OrderBy(p => p.OpenOrder).ToArray();
+        // Parents must exist before their descendants, even if a child was marked open first.
+        var ordered = new List<Popup>();
+        var visited = new HashSet<Popup>();
+        void AddParentFirst(Popup popup)
+        {
+            if (!visited.Add(popup)) return;
+            for (var parent = popup.Parent; parent is not null; parent = parent.Parent)
+                if (parent is Popup ancestor && candidates.Contains(ancestor)) { AddParentFirst(ancestor); break; }
+            ordered.Add(popup);
+        }
+        foreach (var popup in candidates) AddParentFirst(popup);
+        var popups = ordered.ToArray();
         var open = popups.ToHashSet();
         Popup? NativeParent(Popup popup)
         {
@@ -87,6 +114,7 @@ public sealed class PopupWindowManager : IDisposable
         }
         foreach (var entry in _entries.Values.Reverse().ToArray())
             if (!open.Contains(entry.Popup) || entry.Window.IsClosed || entry.Interactive != entry.Popup.IsHitTestVisible ||
+                entry.Modal != entry.Popup.IsModal ||
                 !ReferenceEquals(entry.ParentEntry?.Popup, NativeParent(entry.Popup)))
                 Remove(entry.Popup);
 
@@ -105,7 +133,7 @@ public sealed class PopupWindowManager : IDisposable
             {
                 var parentPopup = NativeParent(popup);
                 var parentEntry = parentPopup is not null ? _entries.GetValueOrDefault(parentPopup) : null;
-                var native = _windows.Create(popup.IsHitTestVisible, parentEntry?.Window);
+                var native = _windows.Create(popup.IsHitTestVisible || popup.IsModal, popup.IsModal, parentEntry?.Window);
                 try
                 {
                     actual = ConfigureBounds(native, popup);
@@ -116,6 +144,8 @@ public sealed class PopupWindowManager : IDisposable
                     entry.Presenter = _surfaces.Create(native.SurfaceHandle, Math.Max(native.ClientWidth, 1), Math.Max(native.ClientHeight, 1));
                     if (native.IsTransparent && !entry.Presenter.SupportsTransparency)
                     {
+                        if (popup.IsModal && popup.HostMode == PopupHostMode.Window)
+                            throw new NotSupportedException("The rendering surface cannot present this native modal window transparently.");
                         _overlayFallback.Add(popup);
                         Remove(popup);
                         popup.SetWindowHosting(null);
@@ -145,6 +175,9 @@ public sealed class PopupWindowManager : IDisposable
                 presented = true;
             }
         }
+        if (_windows.IsOwnerFocused && activeModal is not null
+            && _entries.TryGetValue(activeModal, out var modalEntry) && !modalEntry.Window.IsFocused)
+            modalEntry.Window.Activate();
         return presented;
     }
 
@@ -237,6 +270,7 @@ public sealed class PopupWindowManager : IDisposable
         public IPopupWindow Window { get; }
         public Entry? ParentEntry { get; }
         public bool Interactive { get; }
+        public bool Modal { get; }
         public ISurfacePresenter? Presenter { get; set; }
         public ElementPainter Painter { get; }
         public Rect Bounds { get; set; }
@@ -250,6 +284,7 @@ public sealed class PopupWindowManager : IDisposable
             Window = window;
             ParentEntry = parent;
             Interactive = popup.IsHitTestVisible;
+            Modal = popup.IsModal;
             Bounds = popup.WindowBounds;
             Painter = new(theme, text);
             window.PointerMoved += p => { if (Active) owner._input?.PointerMove(ToRoot(p), popup); };

@@ -115,7 +115,10 @@ public sealed partial class Win32Window : IDisposable
     private readonly nint _hwnd;
     private readonly bool _quitOnDestroy;
     private readonly bool _isPopup;
+    private readonly Win32Window? _owner;
     private readonly int _threadId = Environment.CurrentManagedThreadId;
+    private int _modalChildren;
+    private bool _enabledBeforeModal;
     private bool _disposed;
     private bool _trackingLeave;
     private bool _initialized;
@@ -135,6 +138,7 @@ public sealed partial class Win32Window : IDisposable
 
         _quitOnDestroy = quitOnDestroy;
         _isPopup = owner is not null;
+        _owner = owner;
         InputEnabled = interactive;
 
         EnsureDpiAwareness();
@@ -177,6 +181,40 @@ public sealed partial class Win32Window : IDisposable
     public bool InputEnabled { get; set; } = true;
 
     public nint Handle => _hwnd;
+
+    internal Win32Window? Owner => _owner;
+
+    internal IDisposable BlockModalInput()
+    {
+        if (Environment.CurrentManagedThreadId != _threadId)
+            throw new InvalidOperationException("Modal windows must use their owner's UI thread.");
+        ObjectDisposedException.ThrowIf(_disposed || IsClosed, this);
+        if (_modalChildren++ == 0)
+        {
+            _enabledBeforeModal = Win32Native.IsWindowEnabled(_hwnd);
+            Win32Native.EnableWindow(_hwnd, false);
+        }
+        return new ModalInputBlock(this);
+    }
+
+    private void ReleaseModalInput()
+    {
+        if (Environment.CurrentManagedThreadId != _threadId)
+            throw new InvalidOperationException("Modal windows must use their owner's UI thread.");
+        if (--_modalChildren != 0 || _disposed || IsClosed) return;
+        Win32Native.EnableWindow(_hwnd, _enabledBeforeModal);
+    }
+
+    private sealed class ModalInputBlock(Win32Window owner) : IDisposable
+    {
+        private Win32Window? _owner = owner;
+        public void Dispose()
+        {
+            if (_owner is not { } owner) return;
+            owner.ReleaseModalInput();
+            _owner = null;
+        }
+    }
 
     public bool IsClosed { get; private set; }
     /// <summary>Windows is dispatching its nested move/size message loop on the UI thread.</summary>

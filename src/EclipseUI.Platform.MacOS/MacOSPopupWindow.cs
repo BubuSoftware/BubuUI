@@ -21,29 +21,39 @@ public sealed class MacOSPopupWindowFactory : IPopupWindowFactory
     }
 
     public bool IsOwnerFocused => _owner.IsFocused;
+    public bool SupportsModal => true;
 
     public IPopupWindow Create(bool interactive, IPopupWindow? parent = null)
+        => Create(interactive, false, parent);
+
+    public IPopupWindow Create(bool interactive, bool modal, IPopupWindow? parent = null)
     {
         if (parent is not null && (parent is not MacOSPopupWindow popup || !ReferenceEquals(popup.Owner, _owner)))
             throw new ArgumentException("The parent popup must belong to this desktop window.", nameof(parent));
-        return new MacOSPopupWindow(_owner, parent as MacOSPopupWindow, interactive);
+        return new MacOSPopupWindow(_owner, parent as MacOSPopupWindow, interactive || modal, modal);
     }
 }
 
 internal sealed class MacOSPopupWindow : IPopupWindow
 {
     private readonly MacOSPopupWindow? _parent;
+    private readonly MacOSWindow _nativeParent;
     private Rect _bounds;
     private bool _disposed;
     private (Rect Bounds, double Radius, int Width, int Height, double Scale)? _shape;
     internal MacOSWindow Owner { get; }
     internal MacOSWindow Window { get; }
 
-    internal MacOSPopupWindow(MacOSWindow owner, MacOSPopupWindow? parent, bool interactive)
+    internal MacOSPopupWindow(MacOSWindow owner, MacOSPopupWindow? parent, bool interactive, bool modal = false)
     {
         Owner = owner;
         _parent = parent;
-        Window = new MacOSWindow(parent?.Window ?? owner, interactive);
+        IsModal = modal;
+        var nativeParent = parent;
+        if (modal)
+            while (nativeParent is not null && !nativeParent.IsModal) nativeParent = nativeParent._parent;
+        _nativeParent = nativeParent?.Window ?? owner;
+        Window = new MacOSWindow(_nativeParent, interactive, modal);
         Window.PointerMoved += (_, e) => PointerMoved?.Invoke(e.LogicalPosition);
         Window.PointerPressed += (_, e) => PointerPressed?.Invoke(e.LogicalPosition, e.Modifiers, e.Button);
         Window.PointerReleased += (_, e) => PointerReleased?.Invoke(e.LogicalPosition);
@@ -66,6 +76,7 @@ internal sealed class MacOSPopupWindow : IPopupWindow
     public double ScaleFactor => Window.ScaleFactor;
     public bool IsClosed => Window.IsClosed;
     public bool IsFocused => Window.IsFocused;
+    public bool IsModal { get; }
 
     public Rect SetBounds(Rect bounds)
     {
@@ -83,22 +94,26 @@ internal sealed class MacOSPopupWindow : IPopupWindow
         x = Math.Clamp(x, area.X, area.X + Math.Max(0, area.Width - width));
         y = Math.Clamp(y, area.Y, area.Y + Math.Max(0, area.Height - height));
 
-        // SDL popup positions are relative to their immediate native parent.
+        // SDL popup menus are parent-relative; regular modal child windows use screen coordinates.
         var parentX = ownerX + (int)Math.Round((_parent?._bounds.X ?? 0) * ux);
         var parentY = ownerY + (int)Math.Round((_parent?._bounds.Y ?? 0) * uy);
         SdlNative.Check(SdlNative.SDL_GetWindowSize(Window.NativeHandle, out var currentWidth, out var currentHeight));
         if (currentWidth != width || currentHeight != height)
             SdlNative.Check(SdlNative.SDL_SetWindowSize(Window.NativeHandle, width, height));
         SdlNative.Check(SdlNative.SDL_GetWindowPosition(Window.NativeHandle, out var currentX, out var currentY));
-        if (currentX != x - parentX || currentY != y - parentY)
-            SdlNative.Check(SdlNative.SDL_SetWindowPosition(Window.NativeHandle, x - parentX, y - parentY));
+        var requestedX = IsModal ? x : x - parentX;
+        var requestedY = IsModal ? y : y - parentY;
+        if (currentX != requestedX || currentY != requestedY)
+            SdlNative.Check(SdlNative.SDL_SetWindowPosition(Window.NativeHandle, requestedX, requestedY));
         Window.RefreshMetrics();
         SdlNative.Check(SdlNative.SDL_GetWindowPosition(Window.NativeHandle, out var actualX, out var actualY));
-        return _bounds = new((actualX + parentX - ownerX) / ux, (actualY + parentY - ownerY) / uy,
+        return _bounds = new((actualX + (IsModal ? 0 : parentX) - ownerX) / ux,
+            (actualY + (IsModal ? 0 : parentY) - ownerY) / uy,
             Window.LogicalClientSize.Width, Window.LogicalClientSize.Height);
     }
 
     public void Show() => Window.Show();
+    public void Activate() { if (IsModal && !IsClosed) Window.Activate(); }
     public void SetShape(Rect contentBounds, double cornerRadius)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -136,8 +151,10 @@ internal sealed class MacOSPopupWindow : IPopupWindow
     public void Dispose()
     {
         if (_disposed) return;
+        var restoreFocus = IsModal && Window.IsFocused && !_nativeParent.IsClosed;
         _disposed = true;
-        Window.Dispose();
+        try { Window.Dispose(); }
+        finally { if (restoreFocus && !_nativeParent.IsClosed) _nativeParent.Activate(); }
     }
 
     public event Action<Point>? PointerMoved;

@@ -403,7 +403,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
         if (e.Key == Key.None) return;
         using var scope = Input.Focus.EnterInput(FocusOrigin.Keyboard, Modifiers(e));
         Input.Focus.NotifyInput(FocusOrigin.Keyboard);
-        if (e.Key == Key.Escape && Input.TryDismissPopup()) return;
+        if (e.Key == Key.Escape && Input.TryDismissPopup(e.IsRepeat)) return;
         if (_options.CloseOnEscape && e.Key == Key.Escape)
         {
             _window.Close();

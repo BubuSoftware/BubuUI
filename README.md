@@ -57,6 +57,23 @@ Windows、Linux 和 macOS 共用应用窗口规则：关闭主窗口不会关闭
 
 `application.Windows` 返回仍打开的应用窗口；`application.SetTheme(theme)` 更新所有存活窗口及后续窗口的默认主题；`application.Shutdown()` 显式关闭全部窗口。系统的退出命令同样作用于所有窗口。原生关闭时不在输入回调中同步销毁 UI，资源清理仍在各窗口消息循环结束后执行。
 
+### Popup 模态框
+
+`Popup.IsModal` 可用于主窗口或子窗口中的模态内容：
+
+```xml
+<Popup IsOpen="true" IsModal="true" HostMode="Window">
+    <StackPanel Padding="20" Gap="12">
+        <TextBlock>模态对话框</TextBlock>
+        <TextBox Width="240" />
+    </StackPanel>
+</Popup>
+```
+
+模态打开时，指针、滚轮、键盘、文本与 IME 输入以及程序化焦点均限制在最上层模态框及其附属弹出内容；Tab 在此范围内循环，输入事件不会冒泡到父界面快捷键。支持嵌套模态及内部普通下拉菜单。外部点击、切换应用不会自动关闭模态框；Escape 默认先关闭内部下拉框，再关闭模态框，`StaysOpen="true"` 则保持模态框并吞掉 Escape。也可调用 `Popup.Close()`；关闭、移除或销毁后恢复有效焦点并清理附属弹出窗口。
+
+`HostMode="Overlay"` 提供窗口内容内的模态输入边界；`Auto` 在原生模态或透明表面不可用时回退到 Overlay。`HostMode="Window"` 要求原生模态支持，不支持时抛出明确错误。原生模态使用独立无边框子窗口，普通下拉菜单仍使用原生 popup-menu。Windows 会禁用原生父窗口交互并在关闭时恢复原状态；Linux 使用 SDL 模态子窗口；macOS 使用 SDL/Cocoa 的 application-modal 会话，模态期间会限制同一应用的其他窗口，它不是 document-modal sheet。
+
 ## 开发与验证
 
 ```powershell

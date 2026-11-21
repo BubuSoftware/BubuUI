@@ -9,6 +9,13 @@ public sealed class FocusManager
     private readonly Queue<Request> _requests = new();
     private readonly record struct Request(Element? Target, FocusOrigin Origin, FocusVisibility Visibility, KeyModifiers Modifiers);
     private bool _committing, _refresh, _showRequested, _alwaysShow;
+    private int _inputDepth;
+    private ModalFocusState? _modal;
+    private Element? _modalRestore;
+    private bool _closingModalChildren;
+    private sealed record ModalFocusState(Elements.Popup Popup, long Order, WeakReference<Element>? Previous, ModalFocusState? Parent);
+    internal bool IsDispatchingInput => _inputDepth > 0;
+    internal event Action? ModalScopeChanged;
     private FocusOrigin _dispatchOrigin = FocusOrigin.Programmatic;
     private KeyModifiers _dispatchModifiers;
     public FocusOrigin InputMode { get; private set; } = FocusOrigin.Keyboard;
@@ -21,6 +28,7 @@ public sealed class FocusManager
         var previous = root._focusManager;
         root._focusManager = this;
         previous?.ClearFocus();
+        EnsureModalFocus();
     }
     public static FocusManager? GetFor(Element element) => element.FindFocusManager();
 
@@ -36,6 +44,7 @@ public sealed class FocusManager
     {
         if (element is null || element.IsDisposed || !element.IsFocusable || !element.IsEffectiveEnabled || !element.IsEffectivelyVisible ||
             _root.IsDisposed || _root.Parent is not null || !ReferenceEquals(_root._focusManager, this)) return false;
+        if (Elements.Popup.TopModal(_root) is { } modal && !modal.IsInModalScope(element)) return false;
         for (var e = element; e is not null; e = e.Parent) if (ReferenceEquals(e, _root)) return true;
         return false;
     }
@@ -43,7 +52,8 @@ public sealed class FocusManager
     public bool Focus(Element? element, FocusOrigin origin = FocusOrigin.Auto, FocusVisibility visibility = FocusVisibility.Auto)
     {
         UiThreadGuard.AssertUiThread(_root, nameof(Focus));
-        if (!IsValid(element)) return false;
+        UpdateModalScope();
+        if (!IsValid(element)) { Drain(); return false; }
         if (origin == FocusOrigin.Auto) origin = _dispatchOrigin;
         if (origin is FocusOrigin.Pointer or FocusOrigin.Keyboard) NotifyInput(origin);
         _requests.Enqueue(new(element, origin, visibility, _dispatchModifiers));
@@ -70,17 +80,86 @@ public sealed class FocusManager
     internal InputScope EnterInput(FocusOrigin origin, KeyModifiers modifiers)
     {
         var scope = new InputScope(this, _dispatchOrigin, _dispatchModifiers);
+        _inputDepth++;
         _dispatchOrigin = origin; _dispatchModifiers = modifiers;
         return scope;
     }
     internal readonly struct InputScope(FocusManager manager, FocusOrigin previous, KeyModifiers modifiers) : IDisposable
     {
-        public void Dispose() { manager._dispatchOrigin = previous; manager._dispatchModifiers = modifiers; }
+        public void Dispose() { manager._dispatchOrigin = previous; manager._dispatchModifiers = modifiers; manager._inputDepth--; }
+    }
+
+    /// <summary>Keeps keyboard and programmatic focus inside the currently active modal popup.</summary>
+    public void EnsureModalFocus()
+    {
+        UiThreadGuard.AssertUiThread(_root, nameof(EnsureModalFocus));
+        UpdateModalScope();
+        if (Elements.Popup.TopModal(_root) is not null && !IsValid(Focused)) _refresh = true;
+        Drain();
+    }
+
+    private void UpdateModalScope()
+    {
+        CloseOrphanedModalChildren();
+        var popup = Elements.Popup.TopModal(_root);
+        if (ReferenceEquals(_modal?.Popup, popup) && (popup is null || _modal!.Order == popup.OpenOrder)) return;
+        var previous = _modal;
+        ModalFocusState? returning = null;
+        if (popup is not null)
+            for (var state = _modal; state is not null; state = state.Parent)
+                if (ReferenceEquals(state.Popup, popup) && state.Order == popup.OpenOrder) { returning = state; break; }
+        if (popup is not null && returning is null)
+        {
+            var restore = Focused;
+            if (popup.IsInModalScope(restore) && popup.PreviousFocus is { } hint && !popup.IsInModalScope(hint)) restore = hint;
+            _modal = new(popup, popup.OpenOrder, restore is null ? null : new(restore), _modal);
+            _modalRestore = null;
+        }
+        else
+        {
+            _modal = returning;
+            _modalRestore = null;
+            for (var state = previous; state is not null && !ReferenceEquals(state, returning); state = state.Parent)
+                if (state.Previous?.TryGetTarget(out var restore) == true && IsValid(restore))
+                { _modalRestore = restore; break; }
+        }
+        _refresh = true;
+        ModalScopeChanged?.Invoke();
+    }
+
+    private void CloseOrphanedModalChildren()
+    {
+        if (_closingModalChildren || _modal is null || _root.IsDisposed) return;
+        CloseOrphanedModalChildrenCore();
+    }
+
+    private void CloseOrphanedModalChildrenCore()
+    {
+        var abandoned = new List<Elements.Popup>();
+        for (var state = _modal; state is not null; state = state.Parent)
+        {
+            var attachedToRoot = false;
+            for (Element? node = state.Popup; node is not null; node = node.Parent)
+                if (ReferenceEquals(node, _root)) { attachedToRoot = true; break; }
+            if (state.Popup.IsDisposed || !state.Popup.IsOpen || !state.Popup.IsEffectivelyVisible || !attachedToRoot)
+                abandoned.Add(state.Popup);
+        }
+        if (abandoned.Count == 0) return;
+        var owned = _root.Descendants().Prepend(_root).OfType<Elements.Popup>()
+            .Where(p => p.IsOpen && !p.IsDisposed && abandoned.Any(owner =>
+                !ReferenceEquals(owner, p) && owner.IsInModalScope(p))).OrderByDescending(p => p.OpenOrder).ToArray();
+        _closingModalChildren = true;
+        try
+        {
+            foreach (var popup in owned) popup.Close();
+        }
+        finally { _closingModalChildren = false; }
     }
 
     internal void RefreshFocusPath()
     {
-        if (Focused is null && _path.Count == 0) return;
+        UpdateModalScope();
+        if (Focused is null && _path.Count == 0 && !_refresh) return;
         _refresh = true; Drain();
     }
     public bool ClearFocusIfDetached()
@@ -110,7 +189,10 @@ public sealed class FocusManager
                 else
                 {
                     _refresh = false;
-                    try { Commit(IsValid(Focused) ? Focused : null, LastFocusOrigin, _dispatchModifiers); }
+                    var target = IsValid(_modalRestore) ? _modalRestore : IsValid(Focused) ? Focused :
+                        Elements.Popup.TopModal(_root) is not null ? Focusables.FirstOrDefault() : null;
+                    _modalRestore = null;
+                    try { Commit(target, LastFocusOrigin, _dispatchModifiers); }
                     catch (Exception error) { (failures ??= []).Add(error); }
                 }
                 if (Focused is not null && !IsValid(Focused)) _refresh = true;

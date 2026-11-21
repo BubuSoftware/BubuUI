@@ -11,6 +11,7 @@ public sealed class Win32PopupWindowFactory(Win32Window owner) : IPopupWindowFac
     private readonly Win32Window _owner = owner ?? throw new ArgumentNullException(nameof(owner));
 
     public bool IsOwnerFocused => !_owner.IsClosed && Win32Native.GetFocus() == _owner.Handle;
+    public bool SupportsModal => true;
 
     public Size AvailableSize
     {
@@ -22,7 +23,15 @@ public sealed class Win32PopupWindowFactory(Win32Window owner) : IPopupWindowFac
     }
 
     public IPopupWindow Create(bool interactive, IPopupWindow? parent = null)
-        => new Win32PopupWindow(_owner, parent is Win32PopupWindow popup ? popup.Window : _owner, interactive);
+        => Create(interactive, false, parent);
+
+    public IPopupWindow Create(bool interactive, bool modal, IPopupWindow? parent = null)
+    {
+        if (parent is not null && (parent is not Win32PopupWindow popup || !ReferenceEquals(popup.Owner, _owner)))
+            throw new ArgumentException("The parent popup must belong to this desktop window.", nameof(parent));
+        return new Win32PopupWindow(_owner, parent is Win32PopupWindow nativeParent ? nativeParent.Window : _owner,
+            interactive || modal, modal);
+    }
 
     internal static Win32Native.RECT WorkArea(nint monitor)
     {
@@ -39,13 +48,17 @@ internal sealed class Win32PopupWindow : IPopupWindow
     private readonly Win32Window _owner;
     private readonly Win32Window _nativeOwner;
     private bool _disposed;
+    private bool _restoreFocusOnClose;
+    private List<IDisposable>? _modalBlocks;
     private (int Left, int Top, int Right, int Bottom, int Diameter)? _shape;
     internal Win32Window Window { get; }
+    internal Win32Window Owner => _owner;
 
-    internal Win32PopupWindow(Win32Window owner, Win32Window nativeOwner, bool interactive)
+    internal Win32PopupWindow(Win32Window owner, Win32Window nativeOwner, bool interactive, bool modal = false)
     {
         _owner = owner;
         _nativeOwner = nativeOwner;
+        IsModal = modal;
         Window = new Win32Window(nativeOwner, interactive);
         Window.PointerMoved += (_, e) => PointerMoved?.Invoke(e.LogicalPosition);
         Window.PointerPressed += (_, e) => PointerPressed?.Invoke(e.LogicalPosition, Win32Window.CurrentModifiers,
@@ -64,7 +77,11 @@ internal sealed class Win32PopupWindow : IPopupWindow
         Window.FocusLost += (_, _) => FocusLost?.Invoke();
         Window.PaintRequested += (_, _) => PaintRequested?.Invoke();
         Window.Resized += (_, _) => PaintRequested?.Invoke();
-        Window.Closing += (_, _) => Closed?.Invoke();
+        Window.Closing += (_, _) =>
+        {
+            _restoreFocusOnClose |= IsModal && Win32Native.GetFocus() == Window.Handle;
+            Closed?.Invoke();
+        };
     }
 
     public NativeWindowHandle SurfaceHandle => NativeWindowHandle.FromWin32(Window.Handle);
@@ -73,6 +90,7 @@ internal sealed class Win32PopupWindow : IPopupWindow
     public double ScaleFactor => Window.ScaleFactor;
     public bool IsClosed => _disposed || Window.IsClosed;
     public bool IsFocused => !IsClosed && Win32Native.GetFocus() == Window.Handle;
+    public bool IsModal { get; }
 
     public Rect SetBounds(Rect bounds)
     {
@@ -104,7 +122,54 @@ internal sealed class Win32PopupWindow : IPopupWindow
             ClientWidth / ScaleFactor, ClientHeight / ScaleFactor);
     }
 
-    public void Show() => Window.Show();
+    public void Show()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (IsModal && _modalBlocks is null)
+        {
+            _modalBlocks = [];
+            try
+            {
+                for (Win32Window? owner = _nativeOwner; owner is not null; owner = owner.Owner)
+                    if (!owner.IsClosed) _modalBlocks.Add(owner.BlockModalInput());
+            }
+            catch (Exception error)
+            {
+                try { ReleaseModalBlocks(); }
+                catch (Exception cleanup) { throw new AggregateException("Modal owner setup and cleanup failed.", error, cleanup); }
+                throw;
+            }
+        }
+        try
+        {
+            Window.Show();
+            if (IsModal) Activate();
+        }
+        catch (Exception error)
+        {
+            try { ReleaseModalBlocks(); }
+            catch (Exception cleanup) { throw new AggregateException("Modal window show and cleanup failed.", error, cleanup); }
+            throw;
+        }
+    }
+
+    public void Activate()
+    {
+        if (IsClosed) return;
+        Win32Native.SetForegroundWindow(Window.Handle);
+        Win32Native.SetFocus(Window.Handle);
+    }
+
+    private void ReleaseModalBlocks()
+    {
+        var blocks = _modalBlocks;
+        _modalBlocks = null;
+        if (blocks is null) return;
+        List<Exception>? failures = null;
+        foreach (var block in blocks.AsEnumerable().Reverse())
+            try { block.Dispose(); } catch (Exception error) { (failures ??= []).Add(error); }
+        if (failures is not null) throw new AggregateException("Modal owner restoration failed.", failures);
+    }
     public void SetShape(Rect contentBounds, double cornerRadius)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -165,8 +230,16 @@ internal sealed class Win32PopupWindow : IPopupWindow
         if (_disposed) return;
         _disposed = true;
         // Closing an active popup returns native keyboard focus to its owner.
-        var restoreFocus = Win32Native.GetFocus() == Window.Handle && !_nativeOwner.IsClosed;
-        Window.Dispose();
-        if (restoreFocus) Win32Native.SetFocus(_nativeOwner.Handle);
+        var restoreFocus = _restoreFocusOnClose || Win32Native.GetFocus() == Window.Handle;
+        List<Exception>? failures = null;
+        try { Window.Dispose(); } catch (Exception error) { (failures ??= []).Add(error); }
+        try { ReleaseModalBlocks(); } catch (Exception error) { (failures ??= []).Add(error); }
+        try
+        {
+            if (restoreFocus && !_nativeOwner.IsClosed && Win32Native.IsWindowEnabled(_nativeOwner.Handle))
+                Win32Native.SetFocus(_nativeOwner.Handle);
+        }
+        catch (Exception error) { (failures ??= []).Add(error); }
+        if (failures is not null) throw new AggregateException("Popup window cleanup failed.", failures);
     }
 }

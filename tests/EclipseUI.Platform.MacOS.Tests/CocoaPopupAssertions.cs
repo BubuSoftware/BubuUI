@@ -10,9 +10,26 @@ internal static class CocoaPopupAssertions
     private const string CoreGraphics = "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics";
 
     [DllImport(ObjC)] private static extern nint sel_registerName(string name);
+    [DllImport(ObjC)] private static extern nint objc_getClass(string name);
     [DllImport(ObjC, EntryPoint = "objc_msgSend")] private static extern nint SendPointer(nint target, nint selector);
     [DllImport(ObjC, EntryPoint = "objc_msgSend")]
     [return: MarshalAs(UnmanagedType.I1)] private static extern bool SendBool(nint target, nint selector);
+
+    public static void ModalSession(nint sdlWindow)
+    {
+        var window = SdlNative.SDL_GetPointerProperty(SdlNative.SDL_GetWindowProperties(sdlWindow), "SDL.window.cocoa.window", 0);
+        Assert.NotEqual(0, window);
+        Assert.Equal(window, CurrentModalWindow());
+    }
+
+    public static void NoModalSession() => Assert.Equal(nint.Zero, CurrentModalWindow());
+
+    private static nint CurrentModalWindow()
+    {
+        var application = SendPointer(objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
+        Assert.NotEqual(0, application);
+        return SendPointer(application, sel_registerName("modalWindow"));
+    }
 
     public static void Transparent(NativeWindowHandle surface)
     {

@@ -175,10 +175,22 @@ public sealed class ElementPainter
             origin = new(-parentOrigin.X - bounds.X, -parentOrigin.Y - bounds.Y);
         }
         PaintElement(root, origin, isRoot: popupBounds is null, tracker, overlay: popupBounds is not null);
-        for (var i = 0; i < _popups.Count; i++)
+        if (_popups.Count != 0)
         {
-            var entry = _popups[i];
-            PaintElement(entry.Popup, entry.Offset, false, tracker, overlay: true);
+            var modalRoot = root;
+            while (modalRoot.Parent is not null) modalRoot = modalRoot.Parent;
+            var modal = Elements.Popup.TopModal(modalRoot);
+            var paintedPopups = new HashSet<Elements.Popup>();
+            while (true)
+            {
+                var pending = _popups.Where(entry => !paintedPopups.Contains(entry.Popup)
+                        && (modal is null || modal.IsInModalScope(entry.Popup) || entry.Popup.IsInModalScope(modal)))
+                    .OrderBy(entry => entry.Popup.OpenOrder).ToArray();
+                if (pending.Length == 0) break;
+                var entry = pending[0];
+                paintedPopups.Add(entry.Popup);
+                PaintElement(entry.Popup, entry.Offset, false, tracker, overlay: true);
+            }
         }
 
         if (clipSurface) list.Add(new PopClip());

@@ -19,32 +19,44 @@ public sealed class MacOSWindow : IMacOSWindow, ISystemThemeProvider
     private nint _metalView;
     private uint _id;
     private bool _ownsVideo;
+    private readonly bool _popup;
+    private bool _modalActive;
     private bool _minimized;
     private bool _textInput;
     private bool _pendingCompositionEnd;
     private double _densityX = 1, _densityY = 1;
     private readonly MacOSComposition _composition = new();
 
-    public MacOSWindow(string title, int width, int height) : this(title, width, height, null, true) { }
+    public MacOSWindow(string title, int width, int height) : this(title, width, height, null, true, false) { }
 
-    internal MacOSWindow(MacOSWindow parent, bool interactive) : this("", 1, 1, parent, interactive) { }
+    internal MacOSWindow(MacOSWindow parent, bool interactive, bool modal = false) : this("", 1, 1, parent, interactive, modal) { }
 
-    private MacOSWindow(string title, int width, int height, MacOSWindow? parent, bool interactive)
+    private MacOSWindow(string title, int width, int height, MacOSWindow? parent, bool interactive, bool modal)
     {
         _eventWatch = WatchEvent;
         SdlNative.VerifyMainThread();
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
+        _popup = parent is not null && !modal;
         try
         {
             SdlNative.SDL_SetMainReady();
             SdlNative.Check(SdlNative.SDL_InitSubSystem(SdlNative.InitVideo));
             _ownsVideo = true;
-            _window = parent is null
-                ? SdlNative.SDL_CreateWindow(title, width, height, SdlNative.WindowFlags)
+            _window = parent is null || modal
+                ? SdlNative.SDL_CreateWindow(title, width, height, modal
+                    ? 0x8 | 0x10 | 0x2000 | 0x20000000UL | 0x40000000UL : SdlNative.WindowFlags)
                 : SdlNative.SDL_CreatePopupWindow(parent._window, 0, 0, width, height,
                     0x8 | 0x2000 | 0x20000000UL | 0x40000000UL | (interactive ? 0x80000UL : 0x40000UL));
             SdlNative.Check(_window != 0);
+            if (modal)
+            {
+                // SDL popup-menu windows cannot be modal. Use a regular transparent
+                // child window and let Cocoa own its native modal session.
+                SdlNative.Check(SdlNative.SDL_SetWindowParent(_window, parent!._window));
+                SdlNative.Check(SdlNative.SDL_SetWindowModal(_window, true));
+                _modalActive = true;
+            }
             VideoDriver = SdlNative.Utf8(SdlNative.SDL_GetCurrentVideoDriver());
             if (VideoDriver != "cocoa")
                 throw new PlatformNotSupportedException($"SDL video driver '{VideoDriver}' is not Cocoa. macOS desktop requires the Cocoa driver.");
@@ -112,6 +124,12 @@ public sealed class MacOSWindow : IMacOSWindow, ISystemThemeProvider
         if (IsClosed) return;
         SdlNative.Check(SdlNative.SDL_ShowWindow(_window));
         UpdateMetrics();
+    }
+
+    internal void Activate()
+    {
+        VerifyAccess();
+        if (!_popup && !IsClosed) SdlNative.Check(SdlNative.SDL_RaiseWindow(_window));
     }
 
     public void Close()
@@ -328,6 +346,13 @@ public sealed class MacOSWindow : IMacOSWindow, ISystemThemeProvider
     public void Dispose()
     {
         SdlNative.VerifyMainThread();
+        Exception? modalFailure = null;
+        if (_modalActive && _window != 0)
+        {
+            try { SdlNative.Check(SdlNative.SDL_SetWindowModal(_window, false)); }
+            catch (Exception error) { modalFailure = error; }
+            finally { _modalActive = false; }
+        }
         IsClosed = true;
         if (_watchRegistered)
         {
@@ -350,6 +375,7 @@ public sealed class MacOSWindow : IMacOSWindow, ISystemThemeProvider
             SdlNative.SDL_QuitSubSystem(SdlNative.InitVideo);
             _ownsVideo = false;
         }
+        if (modalFailure is not null) throw new AggregateException("Native modal cleanup failed.", modalFailure);
     }
 }
 

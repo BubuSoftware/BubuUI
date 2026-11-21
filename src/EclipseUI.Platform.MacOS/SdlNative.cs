@@ -144,6 +144,19 @@ internal static class SdlNative
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
     internal static extern nint SDL_GetWindows(out int count);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern ulong SDL_GetWindowFlags(nint window);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern nint SDL_GetWindowParent(nint window);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    internal static extern bool SDL_SetWindowParent(nint window, nint parent);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    internal static extern bool SDL_SetWindowModal(nint window, [MarshalAs(UnmanagedType.I1)] bool modal);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    internal static extern bool SDL_RaiseWindow(nint window);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
     internal static extern uint SDL_GetDisplayForWindow(nint window);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
     [return: MarshalAs(UnmanagedType.I1)]

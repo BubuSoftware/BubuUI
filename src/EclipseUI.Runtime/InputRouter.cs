@@ -13,13 +13,26 @@ public sealed class InputRouter
     private Element? _hoverOwner;
     private PointerButton _button;
     private KeyModifiers _modifiers;
+    private bool _suppressEscapeRelease;
+    private HashSet<Key>? _pressedKeys, _suppressedKeyReleases;
 
     public InputRouter(Element root)
     {
         _root = root ?? throw new ArgumentNullException(nameof(root));
         Focus = new FocusManager(root);
         root._focusManager = Focus;
+        Focus.ModalScopeChanged += () =>
+        {
+            if (_pressedKeys is not null)
+                foreach (var key in _pressedKeys) (_suppressedKeyReleases ??= []).Add(key);
+            if (Captured is { } captured && !CanRoutePointer(captured)) CancelPointerCapture();
+            if (Hovered is { } hovered && !AllowsModalInput(hovered)) UpdateHover(null);
+        };
     }
+
+    private bool AllowsModalInput(Element target)
+        => Elements.Popup.TopModal(_root) is not { } modal || modal.IsInModalScope(target);
+
 
     public FocusManager Focus { get; }
 
@@ -48,9 +61,17 @@ public sealed class InputRouter
         }
     }
 
+    private bool CanRouteInput(Element target)
+    {
+        if (target.IsDisposed || !target.IsEffectiveEnabled || !target.IsEffectivelyVisible || _root.IsDisposed || !AllowsModalInput(target)) return false;
+        for (Element? node = target; node is not null; node = node.Parent)
+            if (ReferenceEquals(node, _root)) return true;
+        return false;
+    }
+
     private bool CanRoutePointer(Element target)
     {
-        if (target.IsDisposed || !target.IsEffectiveEnabled || !target.IsEffectivelyVisible || _root.IsDisposed) return false;
+        if (!CanRouteInput(target)) return false;
         for (Element? node = target; node is not null; node = node.Parent)
         {
             if (!node.IsHitTestVisible) return false;
@@ -60,12 +81,15 @@ public sealed class InputRouter
     }
 
     /// <summary>Ends input ownership without synthesizing a release/click on the previous tree.</summary>
-    internal void Reset()
+    internal void Reset(bool clearFocus = true)
     {
         var hovered = Hovered;
         var owner = _hoverOwner;
         _hoverOwner = null;
         Hovered = null;
+        _suppressEscapeRelease = false;
+        _pressedKeys?.Clear();
+        _suppressedKeyReleases?.Clear();
         List<Exception>? failures = null;
         try { CancelPointerCapture(); }
         catch (Exception error) { (failures ??= new()).Add(error); }
@@ -73,7 +97,7 @@ public sealed class InputRouter
         catch (Exception error) { (failures ??= new()).Add(error); }
         try { if (owner is not null && !ReferenceEquals(owner, hovered)) owner.IsHovered = false; }
         catch (Exception error) { (failures ??= new()).Add(error); }
-        try { Focus.ClearFocus(); }
+        try { if (clearFocus) Focus.ClearFocus(); }
         catch (Exception error) { (failures ??= new()).Add(error); }
         if (failures is not null) throw new AggregateException("Input reset failed.", failures);
     }
@@ -82,9 +106,11 @@ public sealed class InputRouter
 
     internal Element? HitTest(Point point, Elements.Popup? surface)
     {
-        foreach (var popup in OpenPopups().Reverse())
-            if (IsOnSurface(popup, surface) && popup.HitTest(point, surface) is { } hit) return hit;
-        return (surface as Element ?? _root).HitTest(point, surface);
+        Focus.EnsureModalFocus();
+        foreach (var popup in OpenPopups().OrderByDescending(p => p.OpenOrder))
+            if (AllowsModalInput(popup) && IsOnSurface(popup, surface) && popup.HitTest(point, surface) is { } hit && AllowsModalInput(hit)) return hit;
+        var target = (surface as Element ?? _root).HitTest(point, surface);
+        return target is not null && AllowsModalInput(target) ? target : null;
     }
     private static bool IsOnSurface(Elements.Popup popup, Elements.Popup? surface)
     {
@@ -110,13 +136,20 @@ public sealed class InputRouter
     {
         using var scope = Focus.EnterInput(FocusOrigin.Pointer, modifiers);
         Focus.NotifyInput(FocusOrigin.Pointer);
+        Focus.EnsureModalFocus();
         CancelPointerCapture();
-        var popups = OpenPopups().Reverse().ToArray();
+        var modal = Elements.Popup.TopModal(_root);
+        var popups = OpenPopups().OrderByDescending(p => p.OpenOrder).ToArray();
         var hit = popups.Length > 0 ? HitTest(point, surface) : null;
         foreach (var popup in popups)
-            if (!popup.StaysOpen && !popup.ContainsRootPoint(point)
+            if (!popup.IsModal && (modal is null || modal.IsInModalScope(popup)) && !popup.StaysOpen && !popup.ContainsRootPoint(point)
                 && !(button == PointerButton.Left && hit is { IsEffectiveEnabled: true } && popup.IsLightDismissExcluded(hit))
                 && !popup.Descendants().OfType<Elements.Popup>().Any(p => p.IsOpen && p.ContainsRootPoint(point))) popup.Close();
+        if (!ReferenceEquals(modal, Elements.Popup.TopModal(_root)))
+        {
+            UpdateHover(null);
+            return; // A dismissal callback changed modality; do not click through the new boundary.
+        }
         hit = HitTest(point, surface);
         if (hit is not null && !hit.IsEffectiveEnabled)
             return; // :disabled 吞按下
@@ -135,7 +168,7 @@ public sealed class InputRouter
         var preview = new PointerEventArgs(Element.PreviewPointerPressedEvent, point, modifiers, button) { Source = Captured };
         var pressed = Captured;
         pressed.RaiseEvent(preview);
-        if (preview.Handled || !ReferenceEquals(Captured, pressed) || pressed.IsDisposed || !pressed.IsEffectivelyVisible) { Captured = null; return; }
+        if (preview.Handled || !ReferenceEquals(Captured, pressed) || !CanRoutePointer(pressed)) { Captured = null; return; }
         Captured.IsPressed = true;
         for (var ancestor = Captured.Parent; ancestor is not null; ancestor = ancestor.Parent)
             if (ancestor is Elements.Button or Elements.CheckBox or Elements.ListBoxItem or Elements.TreeViewItem) ancestor.IsPressed = true;
@@ -170,6 +203,8 @@ public sealed class InputRouter
 
     internal void PointerMove(Point point, Elements.Popup? surface)
     {
+        using var scope = Focus.EnterInput(FocusOrigin.Pointer, _modifiers);
+        Focus.EnsureModalFocus();
         if (Captured is { } captured && !CanRoutePointer(captured)) CancelPointerCapture();
         var target = Captured ?? HitTest(point, surface);
         UpdateHover(target);
@@ -215,6 +250,7 @@ public sealed class InputRouter
 
     internal void PointerWheel(Point point, double delta, KeyModifiers modifiers, Elements.Popup? surface)
     {
+        using var scope = Focus.EnterInput(FocusOrigin.Pointer, modifiers);
         var target = HitTest(point, surface);
         if (target is null || !target.IsEffectiveEnabled) return;
         target.RaiseEvent(new WheelEventArgs(Element.PointerWheelChangedEvent, point, delta, modifiers) { Source = target });
@@ -227,12 +263,25 @@ public sealed class InputRouter
         if (key == Key.None) return;
         using var scope = Focus.EnterInput(FocusOrigin.Keyboard, modifiers);
         Focus.NotifyInput(FocusOrigin.Keyboard);
-        if (key == Key.Escape && TryDismissPopup()) return;
-        var target = Focus.Focused ?? _root;
-        if (!target.IsEffectiveEnabled || !target.IsEffectivelyVisible) return;
+        Focus.EnsureModalFocus();
+        if (isRepeat)
+        {
+            if (_suppressedKeyReleases?.Contains(key) == true) return;
+        }
+        else
+        {
+            // A native popup can close before delivering KeyUp. A new physical press starts
+            // another key lifecycle even when that popup left stale release suppression behind.
+            _suppressedKeyReleases?.Remove(key);
+            if (key == Key.Escape) _suppressEscapeRelease = false;
+        }
+        (_pressedKeys ??= []).Add(key);
+        if (key == Key.Escape && TryDismissPopup(isRepeat)) return;
+        var target = Focus.Focused ?? Elements.Popup.TopModal(_root) ?? _root;
+        if (!CanRouteInput(target)) return;
         var preview = new KeyEventArgs(Element.PreviewKeyDownEvent, key, modifiers, isRepeat) { Source = target };
         target.RaiseEvent(preview);
-        if (preview.Handled) return;
+        if (preview.Handled || !CanRouteInput(target)) return;
         var args = new KeyEventArgs(Element.KeyDownEvent, key, modifiers, isRepeat) { Source = target };
         if (key == Key.Tab)
         {
@@ -243,26 +292,54 @@ public sealed class InputRouter
         target.RaiseEvent(args);
     }
 
-    public bool TryDismissPopup()
+    public bool TryDismissPopup(bool isRepeat = false)
     {
-        var popup = OpenPopups().LastOrDefault(p => !p.StaysOpen);
-        if (popup is null) return false;
-        popup.Close(); return true;
+        // Native owner windows check Escape before KeyPress so CloseOnEscape can run afterwards.
+        // Keep a held key consumed there too, even after its first press closed the last popup.
+        if (isRepeat && _suppressEscapeRelease) return true;
+        Focus.EnsureModalFocus();
+        if (!isRepeat)
+        {
+            _suppressEscapeRelease = false;
+            _suppressedKeyReleases?.Remove(Key.Escape);
+        }
+        var modal = Elements.Popup.TopModal(_root);
+        var popup = OpenPopups().Where(p => !p.StaysOpen &&
+            (modal is null || modal.IsInModalScope(p))).OrderByDescending(p => p.OpenOrder)
+            .FirstOrDefault(p => modal is null || !p.IsModal);
+        if (popup is not null) { _suppressEscapeRelease = true; popup.Close(); return true; }
+        if (modal is null) return false;
+        _suppressEscapeRelease = true;
+        if (!modal.StaysOpen) modal.Close();
+        return true; // A non-dismissible modal must still stop Escape reaching its owner window.
     }
     public void KeyRelease(Key key, KeyModifiers modifiers = KeyModifiers.None)
     {
-        var target = Focus.Focused ?? _root;
-        if (target.IsEffectiveEnabled && target.IsEffectivelyVisible)
+        _pressedKeys?.Remove(key);
+        if (_suppressedKeyReleases?.Remove(key) == true)
+        {
+            if (key == Key.Escape) _suppressEscapeRelease = false;
+            return;
+        }
+        if (key == Key.Escape && _suppressEscapeRelease) { _suppressEscapeRelease = false; return; }
+        using var scope = Focus.EnterInput(FocusOrigin.Keyboard, modifiers);
+        Focus.EnsureModalFocus();
+        var target = Focus.Focused ?? Elements.Popup.TopModal(_root) ?? _root;
+        if (CanRouteInput(target))
             target.RaiseEvent(new KeyEventArgs(Element.KeyUpEvent, key, modifiers));
     }
     public void TextInput(string text)
     {
+        using var scope = Focus.EnterInput(FocusOrigin.Keyboard, _modifiers);
+        Focus.EnsureModalFocus();
         var target = Focus.Focused;
-        if (target is { IsEffectiveEnabled: true, IsEffectivelyVisible: true }) target.RaiseEvent(new TextInputEventArgs(text));
+        if (target is not null && CanRouteInput(target)) target.RaiseEvent(new TextInputEventArgs(text));
     }
     public void TextComposition(string text, CompositionStage stage)
     {
+        using var scope = Focus.EnterInput(FocusOrigin.Keyboard, _modifiers);
+        Focus.EnsureModalFocus();
         var target = Focus.Focused;
-        if (target is { IsEffectiveEnabled: true, IsEffectivelyVisible: true }) target.RaiseEvent(new TextCompositionEventArgs(text, stage));
+        if (target is not null && CanRouteInput(target)) target.RaiseEvent(new TextCompositionEventArgs(text, stage));
     }
 }

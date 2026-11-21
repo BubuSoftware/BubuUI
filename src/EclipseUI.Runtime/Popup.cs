@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+
 namespace EclipseUI.Elements;
 
 public enum Placement { Bottom, Top, Left, Right, Pointer }
@@ -11,12 +13,15 @@ public class Popup : ContentControl
     public override Rect? GetDrawingClip() => null;
     public override Rect? GetContentClip() => (TemplateRoot ?? Content)?.FinalRect ?? new Rect(Point.Zero, Size.Empty);
     public static readonly StyledProperty<bool> IsOpenProperty = StyledProperty<bool>.Register<Popup>("IsOpen", false, new() { Invalidate = InvalidateKind.Measure });
+    public static readonly StyledProperty<bool> IsModalProperty = StyledProperty<bool>.Register<Popup>("IsModal", false, new() { Invalidate = InvalidateKind.Render });
     public static readonly StyledProperty<bool> StaysOpenProperty = StyledProperty<bool>.Register<Popup>("StaysOpen", false, new() { Invalidate = InvalidateKind.Render });
     public static readonly StyledProperty<Placement> PlacementProperty = StyledProperty<Placement>.Register<Popup>("Placement", Placement.Bottom, new() { Invalidate = InvalidateKind.Arrange });
     public static readonly StyledProperty<PopupHostMode> HostModeProperty = StyledProperty<PopupHostMode>.Register<Popup>("HostMode", PopupHostMode.Auto, new() { Invalidate = InvalidateKind.Measure });
     public static readonly RoutedEvent OpenedEvent = new("Opened");
     public static readonly RoutedEvent ClosedEvent = new("Closed");
     public bool IsOpen { get => GetValue(IsOpenProperty); set => SetValue(IsOpenProperty, value); }
+    /// <summary>Restricts owner input and focus to this popup and its owned popup content while open.</summary>
+    public bool IsModal { get => GetValue(IsModalProperty); set => SetValue(IsModalProperty, value); }
     public bool StaysOpen { get => GetValue(StaysOpenProperty); set => SetValue(StaysOpenProperty, value); }
     public Placement Placement { get => GetValue(PlacementProperty); set => SetValue(PlacementProperty, value); }
     /// <summary>Auto uses a native popup when the desktop host supports it. Overlay keeps the popup inside its owner surface.</summary>
@@ -40,34 +45,149 @@ public class Popup : ContentControl
     private Element? _placementTarget;
     private Point _pointerPosition;
     private double _horizontalOffset, _verticalOffset;
-    public Element? PlacementTarget { get => _placementTarget; set { _placementTarget = value; InvalidateArrange(); } }
+    public Element? PlacementTarget
+    {
+        get => _placementTarget;
+        set
+        {
+            if (ReferenceEquals(_placementTarget, value)) return;
+            _placementTarget = value;
+            InvalidateModalCache();
+            FindFocusManager()?.EnsureModalFocus();
+            InvalidateArrange();
+        }
+    }
     public Point PointerPosition { get => _pointerPosition; set { _pointerPosition = value; InvalidateArrange(); } }
     public double HorizontalOffset { get => _horizontalOffset; set { _horizontalOffset = value; InvalidateArrange(); } }
     public double VerticalOffset { get => _verticalOffset; set { _verticalOffset = value; InvalidateArrange(); } }
+    private static long _nextOpenOrder;
+    private static long _modalEpoch;
+    private static readonly ConditionalWeakTable<Element, ModalCache> ModalCaches = new();
+    private sealed class ModalCache { public long Epoch = -1; public Popup? Modal; }
+    internal static void InvalidateModalCache() => Interlocked.Increment(ref _modalEpoch);
     private WeakReference<Element>? _previousFocus;
+    private WeakReference<FocusManager>? _openingFocus;
+    internal long OpenOrder { get; private set; }
+    internal Element? PreviousFocus => _previousFocus?.TryGetTarget(out var previous) == true ? previous : null;
+
     public Popup()
     {
         PropertyChanged += (_, property) =>
         {
-            if (property == IsOpenProperty)
+            if (property == IsModalProperty)
             {
-                InvalidateRender();
-                var root = this as Element; while (root.Parent is not null) root = root.Parent;
-                var focus = root._focusManager;
-                if (IsOpen) _previousFocus = focus?.Focused is { } previous ? new(previous) : null;
-                else
-                {
-                    var previous = _previousFocus; _previousFocus = null;
-                    if (focus?.Focused is { } current && Descendants().Contains(current))
-                    {
-                        focus.ClearFocus();
-                        if (previous?.TryGetTarget(out var target) == true) focus.Focus(target, FocusOrigin.Restore);
-                    }
-                    focus?.RefreshFocusPath();
-                }
-                RaiseEvent(new(IsOpen ? OpenedEvent : ClosedEvent));
+                InvalidateModalCache();
+                if (IsOpen && IsModal) OpenOrder = Interlocked.Increment(ref _nextOpenOrder);
+                FindFocusManager()?.EnsureModalFocus();
+                return;
             }
+            if (property != IsOpenProperty) return;
+            InvalidateModalCache();
+            InvalidateRender();
+            var focus = FindFocusManager();
+            if (IsOpen)
+            {
+                OpenOrder = Interlocked.Increment(ref _nextOpenOrder);
+                _previousFocus = focus?.Focused is { } previous ? new(previous) : null;
+                _openingFocus = focus is null ? null : new(focus);
+                focus?.EnsureModalFocus();
+            }
+            else
+            {
+                if (IsModal)
+                {
+                    // The focus manager unwinds nested modal history, including closed
+                    // or detached intermediate popups whose focus can no longer be restored.
+                    focus?.EnsureModalFocus();
+                    _previousFocus = null;
+                    _openingFocus = null;
+                }
+                else RestoreFocus();
+                focus?.RefreshFocusPath();
+            }
+            RaiseEvent(new(IsOpen ? OpenedEvent : ClosedEvent));
         };
+    }
+
+    internal static Popup? TopModal(Element root)
+    {
+        if (root.IsDisposed) return null;
+        var epoch = Volatile.Read(ref _modalEpoch);
+        var cache = ModalCaches.GetValue(root, static _ => new ModalCache());
+        if (cache.Epoch == epoch) return cache.Modal;
+        var modals = root.Descendants().Prepend(root).OfType<Popup>()
+            .Where(p => p.IsModal && p.IsOpen && !p.IsDisposed && p.IsEffectivelyVisible)
+            .OrderByDescending(p => p.OpenOrder).ToArray();
+        Popup? result = null;
+        foreach (var candidate in modals)
+        {
+            if (result is null) { result = candidate; continue; }
+            // Compare activation branches. A nested modal wins over its ancestor even
+            // if it was configured IsOpen before the ancestor became visible.
+            foreach (var activation in modals)
+            {
+                var candidateOwned = activation.IsInModalScope(candidate);
+                var resultOwned = activation.IsInModalScope(result);
+                if (candidateOwned == resultOwned) continue;
+                if (candidateOwned) result = candidate;
+                break;
+            }
+        }
+        cache.Modal = result;
+        cache.Epoch = epoch;
+        return result;
+    }
+
+    internal bool IsInModalScope(Element? target)
+    {
+        for (var node = target; node is not null; node = node.Parent)
+            if (ReferenceEquals(node, this)) return true;
+        for (var node = target; node is not null; node = node.Parent)
+            if (node is Popup { PlacementTarget: not null })
+                return ContainsOwnedElement(target!, new HashSet<Popup>());
+        return false;
+    }
+
+    private bool ContainsOwnedElement(Element target, HashSet<Popup> visited)
+    {
+        for (Element? node = target; node is not null; node = node.Parent)
+        {
+            if (ReferenceEquals(node, this)) return true;
+            // Context menus can be declared beside their target instead of inside its tree.
+            if (node is Popup popup && visited.Add(popup) && popup.PlacementTarget is { } placement &&
+                ContainsOwnedElement(placement, visited)) return true;
+        }
+        return false;
+    }
+
+    private void RestoreFocus()
+    {
+        var focus = FindFocusManager();
+        if (focus is null && _openingFocus?.TryGetTarget(out var opening) == true) focus = opening;
+        var previous = _previousFocus;
+        _previousFocus = null;
+        _openingFocus = null;
+        if (focus?.Focused is { } current && IsInModalScope(current))
+        {
+            focus.ClearFocus();
+            if (previous?.TryGetTarget(out var target) == true) focus.Focus(target, FocusOrigin.Restore);
+        }
+        focus?.EnsureModalFocus();
+    }
+
+    protected override void OnDetached()
+    {
+        base.OnDetached();
+        if (_openingFocus?.TryGetTarget(out var focus) == true) focus.EnsureModalFocus();
+    }
+
+    protected override void OnDispose()
+    {
+        InvalidateModalCache();
+        if (_openingFocus?.TryGetTarget(out var focus) == true) focus.EnsureModalFocus();
+        _previousFocus = null;
+        _openingFocus = null;
+        base.OnDispose();
     }
     public void Open() => IsOpen = true;
     public void Close() => IsOpen = false;
