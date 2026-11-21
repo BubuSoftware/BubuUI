@@ -142,6 +142,8 @@ internal static class SdlNative
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
     internal static extern nint SDL_GetKeyboardFocus();
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern nint SDL_GetWindows(out int count);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
     internal static extern uint SDL_GetDisplayForWindow(nint window);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
     [return: MarshalAs(UnmanagedType.I1)]

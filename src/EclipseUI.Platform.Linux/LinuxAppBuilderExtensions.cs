@@ -21,7 +21,11 @@ public static class LinuxAppBuilderExtensions
     private sealed class LinuxPlatformSetup : IPlatformSetup
     {
         public void RegisterServices(IServiceCollection services)
-            => services.AddSingleton<IApplicationLifetime, LinuxDesktopLifetime>();
+        {
+            services.AddSingleton<LinuxDesktopLifetime>();
+            services.AddSingleton<IApplicationLifetime>(provider => provider.GetRequiredService<LinuxDesktopLifetime>());
+            services.AddSingleton<IWindowLifetime>(provider => provider.GetRequiredService<LinuxDesktopLifetime>());
+        }
     }
 }
 
@@ -30,37 +34,23 @@ public static class LinuxAppBuilderExtensions
 /// 诊断输出沿用原画廊宿主（backend/首帧/统计）；退出时先释放 UI 对象，
 /// 再按 host → presenter → 原生窗口顺序释放平台资源。
 /// </summary>
-internal sealed class LinuxDesktopLifetime : IApplicationLifetime
+internal sealed class LinuxDesktopLifetime : IApplicationLifetime, IWindowLifetime
 {
     public int Run(Application app, string[] args)
-    {
-        var window = app.MainWindow
+        => RunWindow(app, app.MainWindow
             ?? throw new InvalidOperationException(
-                "Application.MainWindow was not set. Create it in OnFrameworkInitializationCompleted().");
-        Exception? failure = null;
-        try { return RunWindow(app, window); }
-        catch (Exception error)
-        {
-            failure = error;
-            throw;
-        }
-        finally
-        {
-            app.Host = null;
-            window.LiveUpdater = null;
-            try { window.Dispose(); }
-            catch (Exception cleanup) when (failure is not null)
-            {
-                throw new AggregateException("Window lifetime and cleanup failed.", failure, cleanup);
-            }
-        }
-    }
+                "Application.MainWindow was not set. Create it in OnFrameworkInitializationCompleted()."));
 
-    private static int RunWindow(Application app, Window window)
+    public int RunWindow(Application app, Window window, bool modal = false)
     {
+        ArgumentNullException.ThrowIfNull(app);
+        app.ValidateWindow(window);
+        ArgumentNullException.ThrowIfNull(window);
+        ObjectDisposedException.ThrowIf(window.IsDisposed, window);
         LinuxWindow? win = null;
         ISurfacePresenter? presenter = null;
         WindowHost? host = null;
+        IDisposable? session = null;
         Exception? failure = null;
         try
         {
@@ -99,7 +89,7 @@ internal sealed class LinuxDesktopLifetime : IApplicationLifetime
                 CloseOnEscape = window.CloseOnEscape,
                 IdleSleepMilliseconds = window.IdleSleepMilliseconds,
             }, window);
-            app.Host = host; // 主题按钮等运行期宿主动作经 Application.SetTheme 接线
+            session = app.AttachWindow(window, host, win.Close, win.Clipboard, modal);
             host.FrameTicked += (_, e) =>
             {
                 if (e.Iteration == 1)
@@ -128,11 +118,11 @@ internal sealed class LinuxDesktopLifetime : IApplicationLifetime
             // UI resource hooks run while the host, rendering surface and native window
             // are still usable, including when platform construction only partly succeeded.
             CleanUp(window);
-            app.Host = null;
             window.LiveUpdater = null;
             CleanUp(host);
             CleanUp(presenter);
             CleanUp(win);
+            CleanUp(session);
             if (cleanupFailures is not null)
             {
                 if (failure is not null) cleanupFailures.Insert(0, failure);

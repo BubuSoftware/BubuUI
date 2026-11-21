@@ -388,7 +388,9 @@ public class ListBox : ItemsControl
     }
     protected override void OnItemsChanged()
     {
-        if (_sync) return;
+        // Disposing item containers removes them from Children. This is teardown,
+        // not a selection change to publish through events or two-way bindings.
+        if (_sync || IsDisposed) return;
         foreach (var item in RealizedContainers.OfType<ListBoxItem>()) item.FocusVisualOwner = this;
         Selection.Mode = SelectionMode;
         var requested = SelectedIndex;
@@ -401,7 +403,7 @@ public class ListBox : ItemsControl
     }
     private void SynchronizeSelection()
     {
-        if (_sync) return;
+        if (_sync || IsDisposed) return;
         _sync = true;
         var changed = !_reportedIndices.SequenceEqual(Selection.SelectedIndices) || !_reportedItems.SequenceEqual(Selection.SelectedItems);
         try

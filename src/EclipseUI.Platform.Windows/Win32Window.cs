@@ -115,6 +115,7 @@ public sealed partial class Win32Window : IDisposable
     private readonly nint _hwnd;
     private readonly bool _quitOnDestroy;
     private readonly bool _isPopup;
+    private readonly int _threadId = Environment.CurrentManagedThreadId;
     private bool _disposed;
     private bool _trackingLeave;
     private bool _initialized;
@@ -239,7 +240,7 @@ public sealed partial class Win32Window : IDisposable
 
     public void SetTitle(string title) => Win32Native.SetWindowTextW(_hwnd, title);
 
-    /// <summary>请求关闭窗口（走正常 WM_CLOSE → WM_DESTROY → WM_QUIT 流程）。</summary>
+    /// <summary>请求关闭此窗口；是否投递线程退出消息由构造选项决定。</summary>
     public void Close()
     {
         if (_disposed || IsClosed) return;
@@ -318,7 +319,7 @@ public sealed partial class Win32Window : IDisposable
         {
             if (message.message == 0x0012 /* WM_QUIT */)
             {
-                IsClosed = true;
+                CloseThreadWindows();
                 return false;
             }
 
@@ -333,7 +334,12 @@ public sealed partial class Win32Window : IDisposable
     public bool WaitForMessage()
     {
         var result = Win32Native.GetMessageW(out var message, nint.Zero, 0, 0);
-        if (result == 0 || result == -1)
+        if (result == 0)
+        {
+            CloseThreadWindows();
+            return false;
+        }
+        if (result == -1)
         {
             IsClosed = true;
             return false;
@@ -342,6 +348,35 @@ public sealed partial class Win32Window : IDisposable
         Win32Native.TranslateMessage(ref message);
         Win32Native.DispatchMessageW(ref message);
         return !IsClosed;
+    }
+
+    private static void CloseThreadWindows()
+    {
+        var threadId = Environment.CurrentManagedThreadId;
+        Win32Window[] windows;
+        lock (ClassLock)
+            windows = Windows.Values.Where(window => window._threadId == threadId).Reverse().ToArray();
+        List<Exception>? failures = null;
+        foreach (var window in windows)
+        {
+            try { window.CloseNative(); }
+            catch (Exception error) { (failures ??= new()).Add(error); }
+        }
+        if (failures is not null)
+            throw new AggregateException("Thread window shutdown failed.", failures);
+    }
+
+    private void CloseNative()
+    {
+        if (_disposed || IsClosed) return;
+        IsClosed = true;
+        try { Closing?.Invoke(this, EventArgs.Empty); }
+        finally
+        {
+            // Popup presenters borrow their HWND until their manager releases the surface.
+            if (_isPopup) Win32Native.ShowWindow(_hwnd, 0);
+            else Win32Native.DestroyWindow(_hwnd);
+        }
     }
 
     public void Dispose()
@@ -653,11 +688,7 @@ public sealed partial class Win32Window : IDisposable
                 return 0;
 
             case Win32Native.WM_CLOSE:
-                Closing?.Invoke(this, EventArgs.Empty);
-                IsClosed = true;
-                // The popup presenter borrows this HWND until the manager disposes it.
-                if (_isPopup) Win32Native.ShowWindow(_hwnd, 0);
-                else Win32Native.DestroyWindow(_hwnd);
+                CloseNative();
                 return 0;
 
             case Win32Native.WM_DESTROY:

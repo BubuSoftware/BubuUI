@@ -21,7 +21,11 @@ public static class MacOSAppBuilderExtensions
     private sealed class MacOSPlatformSetup : IPlatformSetup
     {
         public void RegisterServices(IServiceCollection services)
-            => services.AddSingleton<IApplicationLifetime, MacOSDesktopLifetime>();
+        {
+            services.AddSingleton<MacOSDesktopLifetime>();
+            services.AddSingleton<IApplicationLifetime>(provider => provider.GetRequiredService<MacOSDesktopLifetime>());
+            services.AddSingleton<IWindowLifetime>(provider => provider.GetRequiredService<MacOSDesktopLifetime>());
+        }
     }
 }
 
@@ -30,37 +34,27 @@ public static class MacOSAppBuilderExtensions
 /// 诊断输出沿用原画廊宿主（backend/首帧/统计）；退出时先释放 UI 对象，
 /// 再按 host → presenter → 原生窗口顺序释放平台资源。
 /// </summary>
-internal sealed class MacOSDesktopLifetime : IApplicationLifetime
+internal sealed class MacOSDesktopLifetime : IApplicationLifetime, IWindowLifetime
 {
     public int Run(Application app, string[] args)
     {
         var window = app.MainWindow
             ?? throw new InvalidOperationException(
                 "Application.MainWindow was not set. Create it in OnFrameworkInitializationCompleted().");
-        Exception? failure = null;
-        try { return RunWindow(app, window); }
-        catch (Exception error)
-        {
-            failure = error;
-            throw;
-        }
-        finally
-        {
-            app.Host = null;
-            window.LiveUpdater = null;
-            try { window.Dispose(); }
-            catch (Exception cleanup) when (failure is not null)
-            {
-                throw new AggregateException("Window lifetime and cleanup failed.", failure, cleanup);
-            }
-        }
+        return RunWindow(app, window);
     }
 
-    private static int RunWindow(Application app, Window window)
+    public int RunWindow(Application app, Window window, bool modal = false)
+        => RunPreparedWindow(app, window, null, modal);
+
+    internal static int RunPreparedWindow(Application app, Window window, MacOSWindow? preparedWindow, bool modal)
     {
+        ArgumentNullException.ThrowIfNull(app);
+        app.ValidateWindow(window);
         MacOSWindow? win = null;
         ISurfacePresenter? presenter = null;
         WindowHost? host = null;
+        IDisposable? session = null;
         Exception? failure = null;
         try
         {
@@ -75,8 +69,13 @@ internal sealed class MacOSDesktopLifetime : IApplicationLifetime
 
             var width = window.Width > 0 ? (int)window.Width : 960;
             var height = window.Height > 0 ? (int)window.Height : 640;
-            win = new MacOSWindow(window.Title, width, height);
+            win = preparedWindow ?? new MacOSWindow(window.Title, width, height);
             window.LiveUpdater = win;
+            if (preparedWindow is not null)
+            {
+                win.SetTitle(window.Title);
+                win.SetClientSize(width, height);
+            }
             win.Show();
             Console.WriteLine($"window: SDL3/{win.VideoDriver}");
             presenter = surfaceFactory.Create(
@@ -99,7 +98,7 @@ internal sealed class MacOSDesktopLifetime : IApplicationLifetime
                 CloseOnEscape = window.CloseOnEscape,
                 IdleSleepMilliseconds = window.IdleSleepMilliseconds,
             }, window);
-            app.Host = host; // 主题按钮等运行期宿主动作经 Application.SetTheme 接线
+            session = app.AttachWindow(window, host, win.Close, win.Clipboard, modal);
             host.FrameTicked += (_, e) =>
             {
                 if (e.Iteration == 1)
@@ -128,11 +127,11 @@ internal sealed class MacOSDesktopLifetime : IApplicationLifetime
             // UI resource hooks run while the host, rendering surface and native window
             // are still usable, including when platform construction only partly succeeded.
             CleanUp(window);
-            app.Host = null;
             window.LiveUpdater = null;
             CleanUp(host);
             CleanUp(presenter);
-            CleanUp(win);
+            if (preparedWindow is null) CleanUp(win);
+            CleanUp(session);
             if (cleanupFailures is not null)
             {
                 if (failure is not null) cleanupFailures.Insert(0, failure);

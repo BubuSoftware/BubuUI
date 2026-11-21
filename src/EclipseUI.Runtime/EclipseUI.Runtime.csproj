@@ -16,6 +16,7 @@
     <InternalsVisibleTo Include="EclipseUI.Platform.Windows" />
     <InternalsVisibleTo Include="EclipseUI.Platform.Linux" />
     <InternalsVisibleTo Include="EclipseUI.Platform.MacOS" />
+    <InternalsVisibleTo Include="EclipseUI.WindowLifetime.Tests" />
   </ItemGroup>
 
 </Project>

@@ -69,6 +69,59 @@ public class FluentCompositeTemplateTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public void DisposingExpandedOrSelectedComboBoxDoesNotWriteBackItsBindingOrNotifySelection(bool selectItem)
+    {
+        using var root = new Grid { Width = 600, Height = 600 };
+        var combo = new ComboBox
+        {
+            Width = 180, Height = 32, HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top, ItemsSource = new[] { "system", "light", "dark" }
+        };
+        root.Children.Add(combo);
+        root.SetThemeDefaults(FluentTheme.Light);
+        var businessValue = 0;
+        var writes = 0;
+        var invalidations = 0;
+        var selectionChanges = 0;
+        using var binding = UiBinding.TwoWay(combo, ComboBox.SelectedIndexProperty,
+            () => combo.SelectedIndex, value => combo.SelectedIndex = value,
+            () => businessValue, value => { businessValue = value; writes++; }, () => invalidations++);
+        combo.AddHandler(ComboBox.SelectionChangedEvent, _ => selectionChanges++);
+        using var host = new HeadlessRoot(root);
+        host.UpdateLayout();
+        var button = Assert.Single(combo.Descendants().OfType<DropDownButton>());
+
+        Click(host, PointIn(button, button.FinalRect.Width / 2, button.FinalRect.Height / 2));
+        Assert.True(combo.IsDropDownOpen);
+        var list = Assert.Single(combo.Descendants().OfType<ListBox>());
+        if (selectItem)
+        {
+            var item = Assert.IsAssignableFrom<Element>(list.ContainerFromIndex(2));
+            Click(host, PointIn(item, item.FinalRect.Width / 2, item.FinalRect.Height / 2));
+            Assert.Equal(2, businessValue);
+            Assert.False(combo.IsDropDownOpen);
+            Assert.True(writes > 0);
+            Assert.True(selectionChanges > 0);
+        }
+        var selectedValue = businessValue;
+        writes = 0;
+        invalidations = 0;
+        selectionChanges = 0;
+
+        // Keep the binding alive while the owner recursively disposes the template's selected list.
+        root.Dispose();
+
+        Assert.True(combo.IsDisposed);
+        Assert.True(list.IsDisposed);
+        Assert.Equal(selectedValue, businessValue);
+        Assert.Equal(0, writes);
+        Assert.Equal(0, invalidations);
+        Assert.Equal(0, selectionChanges);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public void DatePickerButtonTogglesDropdownAndEditorClickDismissesCalendar(bool dark)
     {
         using var root = new Grid { Width = 600, Height = 600 };

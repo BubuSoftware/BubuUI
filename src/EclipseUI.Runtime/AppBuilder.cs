@@ -114,7 +114,7 @@ public sealed class AppBuilder
     }
 
     /// <summary>
-    /// 装配并运行桌面生命周期（阻塞到窗口关闭，返回退出码）。
+    /// 装配并运行桌面生命周期（阻塞到最后一个应用窗口关闭，返回退出码）。
     /// 未注册 <see cref="IApplicationLifetime"/>（缺 <c>UseWindows()</c> 之类平台装配）时 fail-fast。
     /// </summary>
     public int Start(string[] args)

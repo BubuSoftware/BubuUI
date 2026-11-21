@@ -181,6 +181,9 @@ public sealed class WindowHost : IDisposable, IWindowHost
     /// <summary>窗口即将关闭。</summary>
     public bool IsExiting { get; private set; }
 
+    /// <summary>Whether this host can no longer own an application window.</summary>
+    public bool IsClosed => _disposed || _uiRoot.IsDisposed || _window.IsClosed || IsExiting;
+
     /// <summary>每个循环 tick 触发一次；<see cref="HostFrameEventArgs.Presented"/> 区分是否上屏。</summary>
     public event EventHandler<HostFrameEventArgs>? FrameTicked;
 

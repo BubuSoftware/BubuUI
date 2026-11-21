@@ -33,6 +33,28 @@ public class ControlInteractionRegressionTests
         list.ItemsSource = new[] { "a", "b", "c" }; Assert.Equal("b", list.SelectedItem); Assert.Equal(1, changed);
         list.SelectedIndex = 2; Assert.Equal(2, changed); list.SelectedIndex = 2; Assert.Equal(2, changed);
     }
+
+    [Fact]
+    public void DisposingASelectedListBoxDoesNotPublishSelectionChanges()
+    {
+        using var list = new ListBox { ItemsSource = new[] { "one", "two", "three" }, SelectedIndex = 1 };
+        list.SetThemeDefaults(FluentTheme.Light);
+        using var host = new HeadlessRoot(list);
+        host.UpdateLayout();
+        Assert.Equal("two", list.SelectedItem);
+        Assert.NotNull(list.ContainerFromIndex(1));
+        var selectionChanges = 0;
+        var selectedItemChanges = 0;
+        list.AddHandler(ListBox.SelectionChangedEvent, _ => selectionChanges++);
+        list.SelectedItemChanged += _ => selectedItemChanges++;
+
+        list.Dispose();
+
+        Assert.True(list.IsDisposed);
+        Assert.Equal(0, selectionChanges);
+        Assert.Equal(0, selectedItemChanges);
+    }
+
     [Fact]
     public void TooltipWorksWhenTargetContainsOtherElements()
     {

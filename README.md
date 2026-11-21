@@ -51,6 +51,12 @@ panel.Children.Add(new Counter());
 
 宿主和内容集合自动 EnsureInitialized；如需提前读取 Ref，可显式调用它。初始化晚于对象初始化器。StyledProperty 的调用方 local 值优先于根模板默认值。
 
+## 应用窗口生命周期
+
+Windows、Linux 和 macOS 共用应用窗口规则：关闭主窗口不会关闭其他应用窗口，最后一个窗口关闭后 `Start` 返回。UI 线程可调用 `application.ShowDialog(new SettingsWindow())` 同步打开独立窗口；该调用运行自己的消息循环，关闭后恢复仍打开的上层窗口。窗口、宿主、剪贴板及焦点由框架管理，无需应用自己创建平台窗口。
+
+`application.Windows` 返回仍打开的应用窗口；`application.SetTheme(theme)` 更新所有存活窗口及后续窗口的默认主题；`application.Shutdown()` 显式关闭全部窗口。系统的退出命令同样作用于所有窗口。原生关闭时不在输入回调中同步销毁 UI，资源清理仍在各窗口消息循环结束后执行。
+
 ## 开发与验证
 
 ```powershell

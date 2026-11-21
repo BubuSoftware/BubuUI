@@ -14,6 +14,18 @@ public sealed class MacOSDesktopFactAttribute : FactAttribute
 public class NativeDesktopTests
 {
     [MacOSDesktopFact]
+    public Task ClosingTheMainWindowKeepsItsIndependentDialogRunning()
+        => RunNativeScenario("managed-windows");
+
+    [MacOSDesktopFact]
+    public Task ApplicationShutdownClosesEveryManagedNativeWindow()
+        => RunNativeScenario("managed-window-quit");
+
+    [MacOSDesktopFact]
+    public Task ClosingAMiddleWindowRestoresTheNearestLiveHostAndTheme()
+        => RunNativeScenario("managed-window-three-level");
+
+    [MacOSDesktopFact]
     public Task OwnedPopupPresentsOutsideOwnerAndRoutesNestedInput()
         => RunNativeScenario("popup");
 

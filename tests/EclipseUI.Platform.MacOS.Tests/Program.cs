@@ -9,7 +9,7 @@ using Xunit;
 
 namespace EclipseUI.Platform.MacOS.Tests;
 
-internal static class Program
+internal static partial class Program
 {
     // Deliberately synchronous: awaiting before AppKit initialization may change the OS thread.
     public static int Main(string[] args)
@@ -30,6 +30,9 @@ internal static class Program
                 case "popup-alpha": PopupAlphaScenario(); break;
                 case "popup-shadow": PopupShadowScenario(); break;
                 case "popup-shadow-software": PopupShadowScenario(true); break;
+                case "managed-windows": ManagedWindowLifetimeScenario("independent"); break;
+                case "managed-window-quit": ManagedWindowLifetimeScenario("shutdown"); break;
+                case "managed-window-three-level": ManagedWindowLifetimeScenario("three-level"); break;
                 default: throw new ArgumentException("Unknown native scenario.");
             }
             Console.WriteLine($"macOS native {scenario}: passed");
