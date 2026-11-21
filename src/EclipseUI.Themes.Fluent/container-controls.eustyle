@@ -6,6 +6,8 @@
     Padding: 8;
     CornerRadius: 4;
     Background: resource(FluentResources.ListItemBackground);
+    Foreground: resource(FluentResources.Foreground);
+    &:disabled { Foreground: resource(FluentResources.DisabledForeground); }
 }
 @theme FluentItemsControl for ItemsControl {
     Template: template(FluentItemsControlTemplate);
@@ -15,9 +17,12 @@
 }
 @theme FluentScrollViewer for ScrollViewer {
     Template: template(FluentScrollViewerTemplate);
-    ScrollBarInset: 4;
+    ScrollBarInset: 3;
     ScrollBarThickness: 6;
-    ScrollBarHitThickness: 14;
+    ScrollBarHitThickness: 12;
+    ScrollBarMinimumThumbLength: 24;
+    ScrollBarButtonLength: 12;
+    ScrollBarThumbPadding: 3;
 }
 @theme FluentPopup for Popup {
     Template: template(FluentPopupTemplate);

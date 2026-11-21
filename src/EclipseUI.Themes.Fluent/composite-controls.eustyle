@@ -59,9 +59,10 @@
     SubmenuIndicatorWidth: 16;
     Background: #00000000;
     &:hover { Background: resource(FluentResources.ItemHoverBackground); }
+    &:pressed { Background: resource(FluentResources.ItemPressedBackground); Foreground: resource(FluentResources.PressedForeground); }
     Foreground: resource(FluentResources.Foreground);
     CornerRadius: 4;
-    &:disabled { Foreground: resource(FluentResources.DisabledForeground); }
+    &:disabled { Background: #00000000; Foreground: resource(FluentResources.DisabledForeground); }
 }
 @theme FluentTreeViewItem for TreeViewItem {
     Template: template(FluentTreeViewItemTemplate);

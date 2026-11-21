@@ -63,6 +63,20 @@ Button.primary {
 
 资源按接收属性值的元素解析，能够响应亮暗、状态和主题变化。编译器验证公开静态字段及目标属性值类型，并生成直接调用，不执行资源初始化器，不使用运行时反射或字符串注册表。同模块控件主题仍可使用 `Theme: resource(MyButtonTheme)`。这些资源不是通用动态资源字典。
 
+## 滚动条与交互状态（2026-11-22）
+
+Fluent 滚动条按 [WinUI ScrollBar 模板](https://github.com/microsoft/microsoft-ui-xaml/blob/main/controls/dev/CommonStyles/ScrollBar_themeresources.xaml) 的鼠标模式校正：轨道和两端按钮宽度 12 个逻辑像素，细线为 2 像素，展开后的可见滑块为 6 像素。指针停留 400ms 后，用 167ms 展开；离开后等待 500ms 再收起，细线向外侧平移 2 像素。滑块使用半透明的 ControlStrongFillColorDefault（浅色黑色 114/255，深色白色 139/255），不额外加深悬停或按下颜色。两端为实心小箭头，按下时缩小为 87.5%，并只改变命中的箭头状态。轨道采用原生 Acrylic 的实色回退值 #F9F9F9 / #2C2C2C；当前没有实现背景模糊，不能视为逐像素原生一致。
+
+滑块最小命中长度为 30 像素，沿长度方向扣除两端各 3 像素透明边距后可见长度为 24 像素（空间不足时钳制）。视觉动画不改变拖动几何。箭头单次滚动 16 像素，按住后沿用 400ms 延迟、60ms 间隔的重复操作；移出按钮暂停，释放或失去捕获停止。横纵滚动条同时出现时避开右下角。禁用时隐藏滑块，轨道和箭头降低不透明度。
+
+指针位于内容区时保持细线，离开且停止滚动 2 秒后用 83ms 淡出；拖动期间保持展开，滚轮、键盘和程序滚动重新显示指示器。`Visible` 强制常显，`Hidden` 和 `Disabled` 继续遵守原有滚动契约。动画结束不产生持续渲染失效。
+
+`SystemInteractionPreferences` 每秒最多读取一次 Windows 的 `DynamicScrollbars` 与 `SPI_GETCLIENTAREAANIMATION`，仅查询，不修改系统设置；“始终显示滚动条”关闭自动隐藏并保持展开，关闭系统动画时直接切换状态。非 Windows 默认启用自动隐藏和动画。测试或宿主可通过 `new FluentTheme(light, IFluentInteractionPreferences)` 注入偏好；也尊重元素祖先链的 `AnimationsEnabled = false`。参考：[WinUI 滚动控件](https://learn.microsoft.com/windows/apps/develop/ui/controls/scroll-controls)、[Microsoft Accessibility DSC 的滚动条偏好](https://github.com/microsoft/winget-dsc/blob/main/resources/Microsoft.Windows.Setting.Accessibility/Microsoft.Windows.Setting.Accessibility.psm1)、[客户区动画设置](https://learn.microsoft.com/windows/win32/winauto/client-area-animation)。
+
+菜单补齐按下与禁用反馈；选中的列表项和树项仍响应悬停、按下，离开后恢复选中背景。显式外观覆盖保持优先。Windows 主窗口的指针离开事件与输入重置会清除祖先悬停状态，不伪造拖动位移。
+
+编译器表面快照新增 `ScrollBarButtonLength`、`ScrollBarMinimumThumbLength`、`ScrollBarThumbPadding` 三个样式属性，并同步记录之前已合入的 `Popup.IsModal` 在 Popup、ContextMenu、ToolTip 上的继承项。
+
 ## 离屏与验证
 
 离屏使用同一主题和测量链路：

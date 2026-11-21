@@ -12,8 +12,11 @@ public sealed class FluentTheme : ElementTheme, IElementThemeDefaults
     public override bool IsLight { get; }
     private readonly Dictionary<StyledProperty, object> _defaults;
 
-    private FluentTheme(bool light)
+    public IFluentInteractionPreferences InteractionPreferences { get; }
+
+    public FluentTheme(bool light, IFluentInteractionPreferences? interactionPreferences = null)
     {
+        InteractionPreferences = interactionPreferences ?? SystemInteractionPreferences.Instance;
         IsLight = light;
         Surface = light ? new(243, 243, 243) : new(32, 32, 32);
         PanelBackground = light ? new(255, 255, 255) : new(43, 43, 43);
@@ -30,7 +33,8 @@ public sealed class FluentTheme : ElementTheme, IElementThemeDefaults
         FocusRing = light ? new(0, 0, 0, 228) : new(255, 255, 255);
         DisabledForeground = light ? new(0, 0, 0, 92) : new(255, 255, 255, 93);
         DisabledBackground = light ? new(249, 249, 249, 77) : new(255, 255, 255, 11);
-        ScrollBarThumb = light ? new(138, 138, 138) : new(161, 161, 161);
+        ScrollBarThumb = light ? new(0, 0, 0, 114) : new(255, 255, 255, 139);
+        ScrollBarTrack = light ? new(249, 249, 249) : new(44, 44, 44);
         PanelRadius = 8; ItemRadius = 4; ButtonRadius = 4; CheckBoxRadius = 4;
         FocusRingWidth = 2; FocusRingOffset = 2; MutedFontSizeBelow = 0;
         _defaults = new()
@@ -44,6 +48,7 @@ public sealed class FluentTheme : ElementTheme, IElementThemeDefaults
     }
 
     public override Color FocusRingInner => IsLight ? new(255, 255, 255, 179) : new(0, 0, 0, 179);
+    public Color ScrollBarDisabled => IsLight ? new(0, 0, 0, 81) : new(255, 255, 255, 63);
     public override Color AccentHover => Accent with { A = 230 };
     public override Color ButtonBackground => ControlBackground;
     public override Color ButtonHoverBackground => ControlHoverBackground;

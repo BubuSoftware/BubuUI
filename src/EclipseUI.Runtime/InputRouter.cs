@@ -43,6 +43,9 @@ public sealed class InputRouter
     /// 捕获期间冻结在捕获元素上，释放后重算。</summary>
     public Element? Hovered { get; private set; }
 
+    /// <summary>Leaves a native surface without moving or cancelling a captured drag.</summary>
+    public void PointerLeave() => UpdateHover(null);
+
     /// <summary>Cancels a drag/hold without synthesizing a release or click.</summary>
     public void CancelPointerCapture()
     {
@@ -97,6 +100,11 @@ public sealed class InputRouter
         catch (Exception error) { (failures ??= new()).Add(error); }
         try { if (owner is not null && !ReferenceEquals(owner, hovered)) owner.IsHovered = false; }
         catch (Exception error) { (failures ??= new()).Add(error); }
+        for (var element = hovered; element is not null; element = element.Parent)
+        {
+            try { element.RaiseEvent(new RoutedEventArgs(Element.PointerExitedEvent)); }
+            catch (Exception error) { (failures ??= new()).Add(error); }
+        }
         try { if (clearFocus) Focus.ClearFocus(); }
         catch (Exception error) { (failures ??= new()).Add(error); }
         if (failures is not null) throw new AggregateException("Input reset failed.", failures);

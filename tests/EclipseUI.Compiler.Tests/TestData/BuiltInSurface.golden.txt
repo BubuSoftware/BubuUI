@@ -1,6 +1,6 @@
 # EclipseUI 内置模板表面（design/14 §14.11.1）。
 # 由 CatalogScannerTests.Surface_MatchesGoldenSnapshotFile 生成/比对；控件 API 变化时必须连同变更记录一起更新。
-# 标签 48 / 属性项 1139 / 事件项 693 / 附加属性项 7
+# 标签 48 / 属性项 1145 / 事件项 693 / 附加属性项 7
 
 [Border] global::EclipseUI.Elements.Border content=Children:Content
     prop   Background EclipseUI.UiColor declared=global::EclipseUI.Elements.Border field=BackgroundProperty writable=True
@@ -358,6 +358,7 @@
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   HostMode EclipseUI.Elements.PopupHostMode declared=global::EclipseUI.Elements.Popup field=HostModeProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
+    prop   IsModal bool declared=global::EclipseUI.Elements.Popup field=IsModalProperty writable=True
     prop   IsOpen bool declared=global::EclipseUI.Elements.Popup field=IsOpenProperty writable=True
     prop   IsTabStop bool declared=global::EclipseUI.Element field=IsTabStopProperty writable=True
     prop   IsVisible bool declared=global::EclipseUI.Element field=IsVisibleProperty writable=True
@@ -1206,6 +1207,7 @@
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   HostMode EclipseUI.Elements.PopupHostMode declared=global::EclipseUI.Elements.Popup field=HostModeProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
+    prop   IsModal bool declared=global::EclipseUI.Elements.Popup field=IsModalProperty writable=True
     prop   IsOpen bool declared=global::EclipseUI.Elements.Popup field=IsOpenProperty writable=True
     prop   IsTabStop bool declared=global::EclipseUI.Element field=IsTabStopProperty writable=True
     prop   IsVisible bool declared=global::EclipseUI.Element field=IsVisibleProperty writable=True
@@ -1391,9 +1393,12 @@
     prop   MinHeight double declared=global::EclipseUI.Element field=MinHeightProperty writable=True
     prop   MinWidth double declared=global::EclipseUI.Element field=MinWidthProperty writable=True
     prop   Padding double declared=global::EclipseUI.Elements.Panel field=PaddingProperty writable=True
+    prop   ScrollBarButtonLength double declared=global::EclipseUI.Elements.ScrollViewer field=ScrollBarButtonLengthProperty writable=True
     prop   ScrollBarHitThickness double declared=global::EclipseUI.Elements.ScrollViewer field=ScrollBarHitThicknessProperty writable=True
     prop   ScrollBarInset double declared=global::EclipseUI.Elements.ScrollViewer field=ScrollBarInsetProperty writable=True
+    prop   ScrollBarMinimumThumbLength double declared=global::EclipseUI.Elements.ScrollViewer field=ScrollBarMinimumThumbLengthProperty writable=True
     prop   ScrollBarThickness double declared=global::EclipseUI.Elements.ScrollViewer field=ScrollBarThicknessProperty writable=True
+    prop   ScrollBarThumbPadding double declared=global::EclipseUI.Elements.ScrollViewer field=ScrollBarThumbPaddingProperty writable=True
     prop   Template EclipseUI.ControlTemplate declared=global::EclipseUI.Element field=TemplateProperty writable=True
     prop   Theme EclipseUI.ControlTheme declared=global::EclipseUI.Element field=ThemeProperty writable=True
     prop   VerticalAlignment EclipseUI.VerticalAlignment declared=global::EclipseUI.Element field=VerticalAlignmentProperty writable=True
@@ -1859,6 +1864,7 @@
     prop   HorizontalAlignment EclipseUI.HorizontalAlignment declared=global::EclipseUI.Element field=HorizontalAlignmentProperty writable=True
     prop   HostMode EclipseUI.Elements.PopupHostMode declared=global::EclipseUI.Elements.Popup field=HostModeProperty writable=True
     prop   IsHitTestVisible bool declared=global::EclipseUI.Element field=IsHitTestVisibleProperty writable=True
+    prop   IsModal bool declared=global::EclipseUI.Elements.Popup field=IsModalProperty writable=True
     prop   IsOpen bool declared=global::EclipseUI.Elements.Popup field=IsOpenProperty writable=True
     prop   IsTabStop bool declared=global::EclipseUI.Element field=IsTabStopProperty writable=True
     prop   IsVisible bool declared=global::EclipseUI.Element field=IsVisibleProperty writable=True

@@ -5,6 +5,45 @@ namespace EclipseUI.Headless.Tests;
 
 public class ScrollBarInteractionTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ArrowButtonsStepRepeatAndStopOutsideTheirOwnButton(bool horizontal)
+    {
+        var (host, viewer) = Create(horizontal); using var scope = host;
+        viewer.ScrollBarButtonLength = 16; viewer.ScrollBarMinimumThumbLength = 24; host.UpdateLayout();
+        viewer.TryGetScrollBarGeometry(horizontal, out var bar);
+        Assert.True((horizontal ? bar.Thumb.Width : bar.Thumb.Height) >= 24);
+        var rect = bar.IncreaseButton;
+        var press = At(viewer, rect.X + rect.Width / 2, rect.Y + rect.Height / 2);
+        host.Input.PointerPress(press);
+        Assert.Equal(16, horizontal ? viewer.HorizontalOffset : viewer.VerticalOffset);
+        FrameAnimations.Advance(viewer, TimeSpan.FromMilliseconds(500));
+        var offset = horizontal ? viewer.HorizontalOffset : viewer.VerticalOffset;
+        Assert.True(offset > 16);
+        host.Input.PointerMove(At(viewer, 40, 40)); FrameAnimations.Advance(viewer, TimeSpan.FromSeconds(1));
+        Assert.Equal(offset, horizontal ? viewer.HorizontalOffset : viewer.VerticalOffset);
+        host.Input.PointerRelease(press);
+        FrameAnimations.Advance(viewer, TimeSpan.FromSeconds(1));
+        Assert.Equal(offset, horizontal ? viewer.HorizontalOffset : viewer.VerticalOffset);
+    }
+
+    [Fact]
+    public void TwoAxesLeaveAnEmptyCornerAndRespectHiddenAndDisabledModes()
+    {
+        var (host, viewer) = Create(); using var scope = host;
+        viewer.Children[0].Width = 1200;
+        viewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Auto;
+        viewer.ScrollBarButtonLength = 16; host.UpdateLayout();
+        Assert.False(viewer.TryGetScrollBar(new(118, 118), out _, out _));
+        Assert.True(viewer.TryGetScrollBarGeometry(true, out _));
+        viewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden; host.UpdateLayout();
+        Assert.False(viewer.TryGetScrollBarGeometry(true, out _));
+        Assert.True(viewer.ScrollableWidth > 0);
+        viewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled; host.UpdateLayout();
+        Assert.Equal(0, viewer.ScrollableWidth);
+    }
+
     private static (HeadlessRoot Host, ScrollViewer Viewer) Create(bool horizontal = false)
     {
         var viewer = new ScrollViewer { Width = 120, Height = 120, Padding = 8, ScrollBarInset = 4, ScrollBarThickness = 6, ScrollBarHitThickness = 14,

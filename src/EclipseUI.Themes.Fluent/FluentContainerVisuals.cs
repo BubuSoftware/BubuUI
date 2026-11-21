@@ -14,17 +14,6 @@ public class FluentListBoxItemVisual : FluentVisual<ListBoxItem>
     }
 }
 
-public class FluentScrollBarVisual : FluentVisual<ScrollViewer>
-{
-    public FluentScrollBarVisual() => IsHitTestVisible = false;
-    public override void Render(IElementDrawingContext context)
-    {
-        foreach (var horizontal in new[] { false, true })
-            if (Owner.TryGetScrollBarGeometry(horizontal, out var bar))
-                context.FillRectangle(bar.Thumb, ColorOf(Palette.ScrollBarThumb), Owner.ScrollBarThickness / 2);
-    }
-}
-
 public class FluentPopupVisual : FluentVisual<Popup>
 {
     public FluentPopupVisual() => IsHitTestVisible = false;

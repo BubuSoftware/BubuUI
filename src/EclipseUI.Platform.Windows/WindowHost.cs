@@ -120,6 +120,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
         _window.PaintRequested += OnPaintRequested;
         _window.LiveResizeFrameRequested += OnLiveResizeFrameRequested;
         _window.PointerMoved += OnPointerMoved;
+        _window.PointerLeft += OnPointerLeft;
         _window.PointerPressed += OnPointerPressed;
         _window.PointerCaptureLost += OnPointerCaptureLost;
         _window.PointerReleased += OnPointerReleased;
@@ -442,6 +443,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
 
     private void OnPointerMoved(object? sender, Win32PointerEventArgs e)
         => Input.PointerMove(e.LogicalPosition);
+    private void OnPointerLeft(object? sender, EventArgs e) => Input.PointerLeave();
 
     private void OnPointerPressed(object? sender, Win32PointerEventArgs e)
         => Input.PointerPress(e.LogicalPosition, Win32Window.CurrentModifiers, e.IsRightButton ? PointerButton.Right : PointerButton.Left);
@@ -547,6 +549,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
         _window.PaintRequested -= OnPaintRequested;
         _window.LiveResizeFrameRequested -= OnLiveResizeFrameRequested;
         _window.PointerMoved -= OnPointerMoved;
+        _window.PointerLeft -= OnPointerLeft;
         _window.PointerPressed -= OnPointerPressed;
         _window.PointerCaptureLost -= OnPointerCaptureLost;
         _window.PointerReleased -= OnPointerReleased;

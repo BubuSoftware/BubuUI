@@ -24,12 +24,15 @@ public static class FluentResources
     public static readonly ThemeResource<UiColor> PopupBackground = Color(theme => theme.PopupBackground);
     public static readonly ThemeResource<UiColor> PopupBorder = Color(theme => theme.PopupBorder);
     public static readonly ThemeResource<UiColor> ListItemBackground = Color((element, theme) =>
-        element is ListBoxItem { IsSelected: true } ? theme.SelectionBackground :
+        !element.IsEffectiveEnabled ? theme.ItemBackground :
+        element is ListBoxItem { IsSelected: true } ? element.IsPressed ? theme.ItemPressedBackground : element.IsHovered ? theme.ControlAltPressedBackground : theme.SelectionBackground :
         element.IsPressed ? theme.ItemPressedBackground : element.IsHovered ? theme.ItemHoverBackground : theme.ItemBackground);
     public static readonly ThemeResource<UiColor> TreeItemBackground = Color((element, theme) =>
-        element is TreeViewItem { IsSelected: true } ? theme.SelectionBackground :
+        !element.IsEffectiveEnabled ? theme.ItemBackground :
+        element is TreeViewItem { IsSelected: true } ? element.IsPressed ? theme.ItemPressedBackground : element.IsHovered ? theme.ControlAltPressedBackground : theme.SelectionBackground :
         element.IsPressed ? theme.ItemPressedBackground : element.IsHovered ? theme.ItemHoverBackground : theme.ItemBackground);
     public static readonly ThemeResource<UiColor> ItemHoverBackground = Color(theme => theme.ItemHoverBackground);
+    public static readonly ThemeResource<UiColor> ItemPressedBackground = Color(theme => theme.ItemPressedBackground);
     public static readonly ThemeResource<UiColor> ControlAltBackground = Color(theme => theme.ControlAltBackground);
     public static readonly ThemeResource<UiColor> ControlAltHoverBackground = Color(theme => theme.ControlAltHoverBackground);
     public static readonly ThemeResource<UiColor> ControlAltPressedBackground = Color(theme => theme.ControlAltPressedBackground);

@@ -6,6 +6,26 @@ namespace EclipseUI.Rendering.Tests;
 
 public class FluentAppearanceOverrideTests
 {
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public void MenuItemHasPressedFeedbackAndDisabledItemsLoseHoverFill(bool dark)
+    {
+        var theme = dark ? FluentTheme.Dark : FluentTheme.Light;
+        using var root = new Canvas { Width = 200, Height = 100 };
+        var item = new MenuItem { Label = "Action", Width = 160, Height = 36 };
+        root.Children.Add(item);
+        new ElementPainter(theme).Prepare(root);
+        using var host = new HeadlessRoot(root); host.UpdateLayout();
+        host.PointerMove(new(20, 20));
+        Assert.Equal(ToUi(theme.ItemHoverBackground), item.Background);
+        host.PointerPress(new(20, 20));
+        Assert.Equal(ToUi(theme.ItemPressedBackground), item.Background);
+        Assert.Equal(ToUi(theme.PressedForeground), item.Foreground);
+        item.IsEnabled = false;
+        Assert.Equal(UiColor.Transparent, item.Background);
+        Assert.Equal(ToUi(theme.DisabledForeground), item.Foreground);
+    }
+
     private static readonly Size Surface = new(260, 180);
     private static readonly UiColor Red = new(220, 30, 50);
     private static readonly Color Ink = new(220, 30, 50);
@@ -72,12 +92,16 @@ public class FluentAppearanceOverrideTests
         Assert.True(item.IsPressed);
         Assert.Equal(ToUi(theme.ItemPressedBackground), item.Background);
         item.IsSelected = true;
-        Assert.Equal(ToUi(theme.SelectionBackground), item.Background);
+        Assert.Equal(ToUi(theme.ItemPressedBackground), item.Background);
         host.PointerRelease(new(20, 20));
         Assert.False(item.IsPressed);
         var replacement = dark ? FluentTheme.Light : FluentTheme.Dark;
         painter.ReplaceTheme(replacement); painter.Prepare(root); host.UpdateLayout();
+        Assert.Equal(ToUi(replacement.ControlAltPressedBackground), item.Background);
+        host.Input.PointerLeave();
         Assert.Equal(ToUi(replacement.SelectionBackground), item.Background);
+        item.IsEnabled = false;
+        Assert.Equal(ToUi(replacement.DisabledForeground), item.Foreground);
     }
 
     [Theory]
@@ -115,11 +139,13 @@ public class FluentAppearanceOverrideTests
         Assert.True(item.IsPressed);
         Assert.Equal(ToUi(theme.ItemPressedBackground), item.Background);
         item.IsSelected = true;
-        Assert.Equal(ToUi(theme.SelectionBackground), item.Background);
+        Assert.Equal(ToUi(theme.ItemPressedBackground), item.Background);
         host.PointerRelease(new(20, 20));
         Assert.False(item.IsPressed);
         var replacement = dark ? FluentTheme.Light : FluentTheme.Dark;
         painter.ReplaceTheme(replacement); painter.Prepare(root); host.UpdateLayout();
+        Assert.Equal(ToUi(replacement.ControlAltPressedBackground), item.Background);
+        host.Input.PointerLeave();
         Assert.Equal(ToUi(replacement.SelectionBackground), item.Background);
         Assert.Contains(painter.Build(root, Surface).Commands.OfType<FillRoundedRect>(), fill =>
             fill.Rect == new Rect(0, 0, 160, item.HeaderHeight) &&

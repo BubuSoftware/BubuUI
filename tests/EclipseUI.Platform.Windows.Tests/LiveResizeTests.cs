@@ -64,6 +64,36 @@ public sealed class LiveResizeTests : IDisposable
     }
 
     [WindowsFact]
+    public void NativePointerLeaveClearsHoverWithoutCancellingCapture()
+    {
+        using var window = new Win32Window("EclipseUI pointer leave test", 240, 180);
+        using var presenter = new Presenter();
+        using var root = new ScrollViewer { ScrollBarThickness = 6, ScrollBarHitThickness = 16, ScrollBarInset = 4 };
+        root.Children.Add(new Border { Height = 1000 });
+        using var host = new WindowHost(window, presenter, root);
+        var checkedLeave = false;
+        host.FrameTicked += (_, e) =>
+        {
+            if (e.Iteration != 1) return;
+            root.TryGetScrollBarGeometry(false, out var bar);
+            var point = new Point(bar.Thumb.X + 2, bar.Thumb.Y + 2);
+            host.Input.PointerMove(point); host.Input.PointerPress(point);
+            Assert.True(root.IsPointerWithinScrollArea);
+            Native.SendMessageW(window.Handle, 0x02A3, 0, 0);
+            Assert.Null(host.Input.Hovered);
+            Assert.False(root.IsPointerWithinScrollArea);
+            Assert.Same(root, host.Input.Captured);
+            host.Input.PointerRelease(new(-10, -10));
+            host.Input.PointerMove(point);
+            Native.SendMessageW(window.Handle, 0x0008, 0, 0); // WM_KILLFOCUS resets ancestor hover state too.
+            Assert.False(root.IsPointerWithinScrollArea);
+            checkedLeave = true;
+        };
+        host.Run(2);
+        Assert.True(checkedLeave);
+    }
+
+    [WindowsFact]
     public void ResizeReflowsAndPresentsBeforeNativeSizeMessageReturns()
     {
         using var window = new Win32Window("EclipseUI live resize test", 600, 320);
