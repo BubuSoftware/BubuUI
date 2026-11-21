@@ -126,6 +126,10 @@ AppBuilder.Configure<MyApp>()
 
 当前目录包含 Window、基础视觉元素、通用呈现器和交互控件。除文本、按钮和布局控件外，已提供 TextBox/PasswordBox、ListBox/ComboBox、开关与数值输入、浮层和菜单、TabControl、TreeView、DataGrid、DatePicker/Calendar、图像与形状，以及 Canvas/DockPanel。Grid 支持跨行跨列，滚动条可拖动，虚拟列表支持变高和可选容器复用。
 
+桌面窗口由同一 UI 线程上的共享帧调度器驱动。打开子窗口或进入多层嵌套窗口循环时，其他窗口仍会处理已投递的异步续体、动画、主题、布局及按需绘制；模态关系只限制父窗口输入。每个窗口保留自己的同步上下文、剪贴板、帧率与 tick 上限，较慢的子窗口不会限制父窗口帧率。关闭或异常退出会注销调度；实际绘制期间仍禁止重入，避免重复使用渲染资源。Windows、macOS、Linux 的宿主使用同一调度机制。
+
+Windows 原生标题栏随窗口最终解析出的主题同步明暗，覆盖初次显示、运行期切换与跟随系统；保留系统标题栏、边框和窗口按钮。此行为由 Windows 宿主统一处理，不要求应用调用 DWM API；不支持该属性的旧版 Windows 保留默认标题栏。
+
 完整行为、使用示例及能力边界见 [控件库契约](./design/24-control-library.md)。Gallery 仅保留 Fluent 交互演示，页面和控件示例均以 `.ui` 描述，支持主题切换、重置、滑块与进度条联动，窄窗口自动收紧布局。旧页面已移入测试夹具，继续覆盖编译器与 IDE 回归。也可独立验证并导出深浅主题控件状态：
 
 ```powershell

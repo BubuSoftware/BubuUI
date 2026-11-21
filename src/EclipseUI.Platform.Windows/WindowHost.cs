@@ -78,8 +78,11 @@ public sealed class WindowHost : IDisposable, IWindowHost
     private readonly ThemeBinding _themeBinding;
     private bool _disposed;
     private bool _running;
+    private readonly IClipboard _clipboard;
+    private IClipboard? _previousClipboard;
     private UiSynchronizationContext? _activeContext;
     private bool _renderingFrame;
+    private int _drainingWork;
     private bool _pendingResize;
     private bool _pendingFullFrame;
     private long _animationTime;
@@ -104,7 +107,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
 
         _themeBinding = new ThemeBinding(_options.Theme ?? ElementTheme.Light, _options.SystemTheme);
         _painter = new ElementPainter(_themeBinding.Current, _options.TextPainter);
-        _themeBinding.Update(_painter, root);
+        UpdateTheme(root);
         _input = new InputRouter(root);
         _input.Focus.AlwaysShowFocusVisuals = _options.AlwaysShowFocusVisuals;
 
@@ -121,7 +124,9 @@ public sealed class WindowHost : IDisposable, IWindowHost
         _window.CharacterTyped += OnCharacterTyped;
         _window.TextComposition += OnTextComposition;
         _window.FocusLost += OnWindowFocusLost;
-        Clipboard.Current = new Win32Clipboard(_window.Handle);
+        _clipboard = new Win32Clipboard(_window.Handle);
+        _previousClipboard = Clipboard.Current;
+        Clipboard.Current = _clipboard;
         _window.Closing += OnClosing;
     }
 
@@ -141,8 +146,9 @@ public sealed class WindowHost : IDisposable, IWindowHost
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         _themeBinding.SetSource(theme);
-        _themeBinding.Update(_painter, Root);
+        UpdateTheme(Root);
         _painter.ResetDamage(); // 当前帧可能已构建过：再保证下一帧整帧
+        _window.Invalidate();
     }
 
     /// <summary>Replace a palette or a follow-system source on the UI thread.</summary>
@@ -150,7 +156,14 @@ public sealed class WindowHost : IDisposable, IWindowHost
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         _themeBinding.SetSource(theme);
-        _themeBinding.Update(_painter, Root);
+        UpdateTheme(Root);
+        _window.Invalidate();
+    }
+
+    private void UpdateTheme(Element root)
+    {
+        _themeBinding.Update(_painter, root);
+        _window.SetDarkTitleBar(!_themeBinding.Current.IsLight);
     }
 
     public InputRouter Input
@@ -158,7 +171,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
         get { SyncRoot(); return _input; }
     }
 
-    /// <summary>本次 Run 的外层循环次数；原生缩放期间的补帧不增加此计数。</summary>
+    /// <summary>本次 Run 的调度 tick 数，包含子窗口循环代为调度的帧；原生重绘补帧不计入。</summary>
     public int Ticks { get; private set; }
 
     /// <summary>本次 Run 实际 Present 的帧数，包含原生消息触发的补帧。</summary>
@@ -193,6 +206,8 @@ public sealed class WindowHost : IDisposable, IWindowHost
         // design/15 §15.14.2：帧循环在 UI 线程装单线程同步上下文，退出时还原。
         // async void 事件处理器的 await 续体从此 Post 回来，而不是落线程池跨线程写状态。
         using var uiScope = UiSynchronizationContext.Install(SyncRoot());
+        if (!ReferenceEquals(Clipboard.Current, _clipboard)) _previousClipboard = Clipboard.Current;
+        Clipboard.Current = _clipboard;
         _running = true;
         Exception? failure = null;
         try
@@ -209,6 +224,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
         {
             _activeContext = null;
             _running = false;
+            RestoreClipboard();
             try { _uiRoot.DetachFromHost(this); }
             catch (Exception cleanup) when (failure is not null)
             {
@@ -237,36 +253,32 @@ public sealed class WindowHost : IDisposable, IWindowHost
         var clock = Stopwatch.StartNew();
         _animationTime = Stopwatch.GetTimestamp();
         _animationPaused = false;
+        using var frames = new WindowFrameScheduler(() => TickFrame(context, maxFrames), context,
+            Clipboard.Current, _options.MaxFramesPerSecond, _options.IdleSleepMilliseconds);
 
         while (!_disposed && !_uiRoot.IsDisposed && _window.PumpMessages())
         {
             _nativeFrameFailure?.Throw();
             if (_disposed || _uiRoot.IsDisposed || _window.IsClosed || IsExiting) break;
-            var result = RenderFrame(context);
+            frames.PumpOthers();
+            frames.MarkFrame();
+            var result = TickFrame(context, maxFrames);
             if (result is not { } frame)
             {
-                Thread.Sleep(8);
+                if (maxFrames is { } reached && Ticks >= reached) break;
+                frames.Wait(8);
                 continue;
             }
-            Ticks++;
-            FrameTicked?.Invoke(this, new HostFrameEventArgs(
-                Ticks, frame.Presented, frame.Milliseconds, frame.Size, frame.Damage));
-            _nativeFrameFailure?.Throw();
 
             if (frameInterval > 0)
             {
-                // 提前 1ms 唤醒、末段自旋补足：依赖 Win32Window 已把定时器分辨率提到 1ms，
-                // 直接 Sleep(remaining) 仍会带 ~1ms 量化误差，提前醒来可把 pacing 收敛到亚毫秒。
-                // （DwmFlush 合成钟 pacing 实测过：在合成节奏抖动的虚拟显示链上反而拖垮到 43.5fps，
-                // 见 design/reports/target-machine-60fps-2026-11-08.md §7，物理面板上可再评估。）
-                var remaining = frameInterval - clock.Elapsed.TotalMilliseconds;
-                if (remaining > 2.0) Thread.Sleep((int)(remaining - 1.0));
-                while (clock.Elapsed.TotalMilliseconds < frameInterval) Thread.SpinWait(64);
+                // Keep every window responsive while pacing this loop.
+                frames.Wait(frameInterval - clock.Elapsed.TotalMilliseconds);
             }
             else if (!frame.Presented && _options.IdleSleepMilliseconds > 0)
             {
                 // 无脏区时跳过上屏，sleep 避免空转；消息仍在下一轮及时处理。
-                Thread.Sleep(_options.IdleSleepMilliseconds);
+                frames.Wait(_options.IdleSleepMilliseconds);
             }
             clock.Restart();
 
@@ -277,13 +289,39 @@ public sealed class WindowHost : IDisposable, IWindowHost
         return RenderedFrames;
     }
 
+    private FrameResult? TickFrame(UiSynchronizationContext context, int? maxFrames)
+    {
+        _nativeFrameFailure?.Throw();
+        if (maxFrames is { } limit && Ticks >= limit) return null;
+        var result = RenderFrame(context);
+        // A posted callback may have run a child loop which already advanced this host.
+        if (maxFrames is { } reached && Ticks >= reached) return null;
+        if (result is { } frame)
+        {
+            Ticks++;
+            FrameTicked?.Invoke(this, new HostFrameEventArgs(
+                Ticks, frame.Presented, frame.Milliseconds, frame.Size, frame.Damage));
+        }
+        _nativeFrameFailure?.Throw();
+        return result;
+    }
+
     private bool CanRender => _running && !_disposed && !_uiRoot.IsDisposed && !_window.IsClosed && !IsExiting;
 
     // The normal loop and nested Win32 move/size loop use the same UI-thread frame path.
     // Callbacks never resize the surface while a frame still owns its texture/resources.
-    private FrameResult? RenderFrame(UiSynchronizationContext context)
+    private FrameResult? RenderFrame(UiSynchronizationContext context, bool drainPostedWork = true)
     {
         if (_renderingFrame || !CanRender) return null;
+        // Posted callbacks may run a nested window loop. No render resources are
+        // held yet, so native paint messages must still be able to redraw this owner.
+        if (drainPostedWork || _drainingWork == 0)
+        {
+            _drainingWork++;
+            try { if (context.Drain() > 0 && CanRender) _uiRoot.InvalidateSubtree(); }
+            finally { _drainingWork--; }
+        }
+        if (!CanRender) return null;
         _renderingFrame = true;
         FrameResult? result = null;
         try
@@ -293,9 +331,8 @@ public sealed class WindowHost : IDisposable, IWindowHost
             for (var attempt = 0; attempt < 3 && CanRender; attempt++)
             {
                 _pendingResize = false;
-                if (context.Drain() > 0) _uiRoot.InvalidateSubtree();
                 if (!CanRender) return result;
-                _themeBinding.Update(_painter, Root);
+                UpdateTheme(Root);
                 Input.Focus.ClearFocusIfDetached();
                 _uiRoot.ProcessInvalidations();
                 if (!CanRender) return result;
@@ -351,8 +388,20 @@ public sealed class WindowHost : IDisposable, IWindowHost
         if (_activeContext is null || _renderingFrame || !CanRender || _nativeFrameFailure is not null) return;
         // Never let managed layout/render exceptions cross the reverse P/Invoke WndProc.
         // The outer managed loop rethrows with the original stack and performs normal cleanup.
-        try { RenderFrame(_activeContext); }
+        var previous = SynchronizationContext.Current;
+        var previousClipboard = Clipboard.Current;
+        try
+        {
+            SynchronizationContext.SetSynchronizationContext(_activeContext);
+            Clipboard.Current = _clipboard;
+            RenderFrame(_activeContext, drainPostedWork: false);
+        }
         catch (Exception error) { _nativeFrameFailure = ExceptionDispatchInfo.Capture(error); }
+        finally
+        {
+            Clipboard.Current = previousClipboard;
+            SynchronizationContext.SetSynchronizationContext(previous);
+        }
     }
 
     /// <summary>下一次循环重新同步表面尺寸（例如窗口在 Show 之前创建）。</summary>
@@ -447,11 +496,17 @@ public sealed class WindowHost : IDisposable, IWindowHost
         throw new InvalidOperationException("UI content replacement exceeded 100 rounds while resetting input.");
     }
 
+    private void RestoreClipboard()
+    {
+        if (_previousClipboard is not null && ReferenceEquals(Clipboard.Current, _clipboard))
+            Clipboard.Current = _previousClipboard;
+    }
     public void Dispose()
     {
         if (_disposed) return;
         UiThreadGuard.AssertUiThread(_uiRoot, "WindowHost.Dispose");
         _disposed = true;
+        RestoreClipboard();
         _activeContext = null;
 
         _window.Resized -= OnResized;

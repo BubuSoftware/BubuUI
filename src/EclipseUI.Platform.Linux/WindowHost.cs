@@ -75,6 +75,10 @@ public sealed class WindowHost : IDisposable, IWindowHost
     private readonly ThemeBinding _themeBinding;
     private bool _disposed;
     private bool _running;
+    private bool _renderingFrame;
+    private long _animationTime;
+    private bool _animationPaused;
+    private readonly record struct FrameResult(bool Presented, Size Size, FrameDamage Damage, double Milliseconds);
     private IClipboard? _previousClipboard;
 
     public WindowHost(
@@ -146,7 +150,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
         get { SyncRoot(); return _input; }
     }
 
-    /// <summary>本次 Run 的循环次数（包含跳过上屏的空闲帧）。</summary>
+    /// <summary>本次 Run 的调度 tick 数，包含空闲帧及子窗口循环代为调度的帧。</summary>
     public int Ticks { get; private set; }
 
     /// <summary>本次 Run 实际 Present 的帧数。</summary>
@@ -222,32 +226,59 @@ public sealed class WindowHost : IDisposable, IWindowHost
             ? 1000.0 / _options.MaxFramesPerSecond
             : 0;
         var clock = Stopwatch.StartNew();
-        var animationTime = Stopwatch.GetTimestamp();
-        var animationPaused = false;
+        _animationTime = Stopwatch.GetTimestamp();
+        _animationPaused = false;
+        using var frames = new WindowFrameScheduler(() => TickFrame(context, maxFrames), context,
+            Clipboard.Current, _options.MaxFramesPerSecond, _options.IdleSleepMilliseconds);
 
         while (!_disposed && !_uiRoot.IsDisposed && _window.PumpMessages())
         {
             if (_disposed || _uiRoot.IsDisposed || _window.IsClosed || IsExiting) break;
-            _themeBinding.Update(_painter, Root);
-
-            // tick 顺序：PumpMessages → Drain →（自动失效）→ ProcessInvalidations → 布局 → present。
-            // drain 按快照批执行，回调里新 Post 的续体下一 tick 再跑；只要跑过回调就按批
-            // 整体失效当前 UI 子树一次，续体可能修改任意后代的普通 CLR 状态。
-            // 放在最小化分支之前：最小化时也不能把后台续体饿死。
-            if (context.Drain() > 0)
+            frames.PumpOthers();
+            frames.MarkFrame();
+            var result = TickFrame(context, maxFrames);
+            if (result is not { } frame)
             {
-                _uiRoot.InvalidateSubtree();
+                if (maxFrames is { } reached && Ticks >= reached) break;
+                frames.Wait(8);
+                continue;
             }
-            if (_disposed || _uiRoot.IsDisposed || _window.IsClosed || IsExiting) break;
 
+            if (frameInterval > 0)
+            {
+                frames.Wait(frameInterval - clock.Elapsed.TotalMilliseconds);
+            }
+            else if (!frame.Presented && _options.IdleSleepMilliseconds > 0)
+            {
+                // 无脏区时跳过上屏，sleep 避免空转；消息仍在下一轮及时处理。
+                frames.Wait(_options.IdleSleepMilliseconds);
+            }
+            clock.Restart();
+
+            if (maxFrames is { } limit && Ticks >= limit) break;
+        }
+
+        return RenderedFrames;
+    }
+
+    private bool CanRender => _running && !_disposed && !_uiRoot.IsDisposed && !_window.IsClosed && !IsExiting;
+
+    private FrameResult? RenderFrame(UiSynchronizationContext context)
+    {
+        if (_renderingFrame || !CanRender) return null;
+        if (context.Drain() > 0 && CanRender) _uiRoot.InvalidateSubtree();
+        if (!CanRender) return null;
+        _renderingFrame = true;
+        try
+        {
+            _themeBinding.Update(_painter, Root);
             var size = _window.LogicalClientSize;
             if (size.IsEmpty)
             {
                 FrameAnimations.SetPaused(SyncRoot(), true);
-                animationPaused = true;
+                _animationPaused = true;
                 // 最小化：没有可绘制的客户区，等消息但不要空转。
-                Thread.Sleep(8);
-                continue;
+                return null;
             }
 
             var start = Stopwatch.GetTimestamp();
@@ -255,14 +286,14 @@ public sealed class WindowHost : IDisposable, IWindowHost
             // 卸载/摘除后焦点元素可能已离树：布局前修剪（G4/K33）。
             Input.Focus.ClearFocusIfDetached();
             _uiRoot.ProcessInvalidations();
-            if (_disposed || _uiRoot.IsDisposed) break;
+            if (_disposed || _uiRoot.IsDisposed) return null;
             var root = SyncRoot();
             _painter.Prepare(root);
             var animationNow = Stopwatch.GetTimestamp();
             FrameAnimations.SetPaused(root, false);
-            FrameAnimations.Advance(root, TimeSpan.FromSeconds((animationNow - animationTime) / (double)Stopwatch.Frequency), !animationPaused);
-            animationPaused = false;
-            animationTime = animationNow;
+            FrameAnimations.Advance(root, TimeSpan.FromSeconds((animationNow - _animationTime) / (double)Stopwatch.Frequency), !_animationPaused);
+            _animationPaused = false;
+            _animationTime = animationNow;
             root.Measure(size);
             root.Arrange(new Rect(Point.Zero, size));
 
@@ -284,27 +315,23 @@ public sealed class WindowHost : IDisposable, IWindowHost
                 SkippedFrames++;
             }
 
+            return new(presented, size, frame.Damage, Elapsed(start));
+        }
+        finally { _renderingFrame = false; }
+    }
+
+    private FrameResult? TickFrame(UiSynchronizationContext context, int? maxFrames)
+    {
+        if (maxFrames is { } limit && Ticks >= limit) return null;
+        var result = RenderFrame(context);
+        if (maxFrames is { } reached && Ticks >= reached) return null;
+        if (result is { } frame)
+        {
             Ticks++;
             FrameTicked?.Invoke(this, new HostFrameEventArgs(
-                Ticks, presented, Elapsed(start), size, frame.Damage));
-
-            if (frameInterval > 0)
-            {
-                var remaining = frameInterval - clock.Elapsed.TotalMilliseconds;
-                if (remaining > 2.0) Thread.Sleep((int)(remaining - 1.0));
-                while (clock.Elapsed.TotalMilliseconds < frameInterval) Thread.SpinWait(64);
-            }
-            else if (!presented && _options.IdleSleepMilliseconds > 0)
-            {
-                // 无脏区时跳过上屏，sleep 避免空转；消息仍在下一轮及时处理。
-                Thread.Sleep(_options.IdleSleepMilliseconds);
-            }
-            clock.Restart();
-
-            if (maxFrames is { } limit && Ticks >= limit) break;
+                Ticks, frame.Presented, frame.Milliseconds, frame.Size, frame.Damage));
         }
-
-        return RenderedFrames;
+        return result;
     }
 
     /// <summary>下一次循环重新同步表面尺寸（例如窗口在 Show 之前创建）。</summary>

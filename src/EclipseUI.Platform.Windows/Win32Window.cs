@@ -119,8 +119,11 @@ public sealed partial class Win32Window : IDisposable
     private const int SizeMoveTimerId = 0xE100;
     private nint _sizeMoveTimer;
 
-    public Win32Window(string title, int width, int height)
+    private readonly bool _quitOnDestroy;
+
+    public Win32Window(string title, int width, int height, bool quitOnDestroy = true)
     {
+        _quitOnDestroy = quitOnDestroy;
         if (!OperatingSystem.IsWindows())
             throw new PlatformNotSupportedException("Win32Window requires Windows.");
 
@@ -407,19 +410,31 @@ public sealed partial class Win32Window : IDisposable
             if (ClassAtom != 0) return;
 
             StaticWndProc = StaticWindowProc;
+            nint largeIcon = 0, smallIcon = 0;
+            if (Environment.ProcessPath is { } executable)
+                Win32Native.ExtractIconExW(executable, 0, out largeIcon, out smallIcon, 1);
+
             var windowClass = new Win32Native.WNDCLASSEX
             {
                 cbSize = (uint)Marshal.SizeOf<Win32Native.WNDCLASSEX>(),
                 style = Win32Native.CS_HREDRAW | Win32Native.CS_VREDRAW,
                 lpfnWndProc = StaticWndProc,
                 hInstance = Win32Native.GetModuleHandleW(null),
+                hIcon = largeIcon,
+                hIconSm = smallIcon,
                 hCursor = Win32Native.LoadCursorW(nint.Zero, Win32Native.IDC_ARROW),
                 lpszClassName = DefaultClassName,
             };
 
             ClassAtom = Win32Native.RegisterClassExW(ref windowClass);
             if (ClassAtom == 0)
-                throw new InvalidOperationException($"RegisterClassEx failed: {Marshal.GetLastWin32Error()}");
+            {
+                var error = Marshal.GetLastWin32Error();
+                if (largeIcon != 0) Win32Native.DestroyIcon(largeIcon);
+                if (smallIcon != 0) Win32Native.DestroyIcon(smallIcon);
+                throw new InvalidOperationException($"RegisterClassEx failed: {error}");
+            }
+            // The registered class and its icons remain alive until the process exits.
         }
     }
 
@@ -644,7 +659,7 @@ public sealed partial class Win32Window : IDisposable
                 EndSizeMove();
                 IsClosed = true;
                 lock (ClassLock) Windows.Remove(_hwnd);
-                Win32Native.PostQuitMessage(0);
+                if (_quitOnDestroy) Win32Native.PostQuitMessage(0);
                 return 0;
         }
 

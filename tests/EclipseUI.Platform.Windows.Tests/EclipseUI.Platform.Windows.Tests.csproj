@@ -6,4 +6,6 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" PrivateAssets="all" />
     <ProjectReference Include="../../src/EclipseUI.Platform.Windows/EclipseUI.Platform.Windows.csproj" />
   </ItemGroup>
+<PropertyGroup><DefineConstants>$(DefineConstants);SCHEDULER_WINDOWS</DefineConstants></PropertyGroup>
+<ItemGroup><Compile Include="../Shared/NestedWindowLoopTests.cs" Link="NestedWindowLoopTests.cs" /></ItemGroup>
 </Project>

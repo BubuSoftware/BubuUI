@@ -13,4 +13,6 @@
     <ProjectReference Include="../../src/EclipseUI.Themes.Fluent/EclipseUI.Themes.Fluent.csproj" />
     <ProjectReference Include="../../src/EclipseUI.Rendering.Vello/EclipseUI.Rendering.Vello.csproj" />
   </ItemGroup>
+<PropertyGroup><DefineConstants>$(DefineConstants);SCHEDULER_MACOS</DefineConstants></PropertyGroup>
+<ItemGroup><Compile Include="../Shared/NestedWindowLoopTests.cs" Link="NestedWindowLoopTests.cs" /></ItemGroup>
 </Project>

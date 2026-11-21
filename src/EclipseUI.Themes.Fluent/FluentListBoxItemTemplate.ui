@@ -2,7 +2,7 @@
 @using EclipseUI.Elements
 @template ListBoxItem
 
-<Grid>
-    <FluentListBoxItemVisual Owner={Owner} IsHitTestVisible="false" />
-    <ItemsPresenter Owner={Owner} />
+<Grid ColumnDefinitions="8,*">
+    <FluentListBoxItemVisual Grid.ColumnSpan="2" Owner={Owner} IsHitTestVisible="false" />
+    <ItemsPresenter Grid.Column="1" Owner={Owner} />
 </Grid>

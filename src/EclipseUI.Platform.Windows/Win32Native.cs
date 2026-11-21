@@ -243,6 +243,13 @@ internal static class Win32Native
     [DllImport("user32.dll")]
     public static extern nint LoadCursorW(nint hInstance, nint cursorName);
 
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+    public static extern uint ExtractIconExW(string file, int index, out nint largeIcon, out nint smallIcon, uint count);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool DestroyIcon(nint icon);
+
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool SetCursorPos(int x, int y);

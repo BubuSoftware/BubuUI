@@ -79,6 +79,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
     private IClipboard? _previousClipboard;
     private UiSynchronizationContext? _activeContext;
     private bool _renderingFrame;
+    private int _drainingWork;
     private bool _pendingResize;
     private bool _pendingFullFrame;
     private long _animationTime;
@@ -155,7 +156,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
         get { SyncRoot(); return _input; }
     }
 
-    /// <summary>本次 Run 的循环次数（包含跳过上屏的空闲帧）。</summary>
+    /// <summary>本次 Run 的调度 tick 数，包含空闲帧及子窗口循环代为调度的帧。</summary>
     public int Ticks { get; private set; }
 
     /// <summary>本次 Run 实际 Present 的帧数。</summary>
@@ -237,32 +238,31 @@ public sealed class WindowHost : IDisposable, IWindowHost
         var clock = Stopwatch.StartNew();
         _animationTime = Stopwatch.GetTimestamp();
         _animationPaused = false;
+        using var frames = new WindowFrameScheduler(() => TickFrame(context, maxFrames), context,
+            Clipboard.Current, _options.MaxFramesPerSecond, _options.IdleSleepMilliseconds);
 
         while (!_disposed && !_uiRoot.IsDisposed && _window.PumpMessages())
         {
             _nativeFrameFailure?.Throw();
             if (_disposed || _uiRoot.IsDisposed || _window.IsClosed || IsExiting) break;
-            var result = RenderFrame(context);
+            frames.PumpOthers();
+            frames.MarkFrame();
+            var result = TickFrame(context, maxFrames);
             if (result is not { } frame)
             {
-                Thread.Sleep(8);
+                if (maxFrames is { } reached && Ticks >= reached) break;
+                frames.Wait(8);
                 continue;
             }
-            Ticks++;
-            FrameTicked?.Invoke(this, new HostFrameEventArgs(
-                Ticks, frame.Presented, frame.Milliseconds, frame.Size, frame.Damage));
-            _nativeFrameFailure?.Throw();
 
             if (frameInterval > 0)
             {
-                var remaining = frameInterval - clock.Elapsed.TotalMilliseconds;
-                if (remaining > 2.0) Thread.Sleep((int)(remaining - 1.0));
-                while (clock.Elapsed.TotalMilliseconds < frameInterval) Thread.SpinWait(64);
+                frames.Wait(frameInterval - clock.Elapsed.TotalMilliseconds);
             }
             else if (!frame.Presented && _options.IdleSleepMilliseconds > 0)
             {
                 // 无脏区时跳过上屏，sleep 避免空转；消息仍在下一轮及时处理。
-                Thread.Sleep(_options.IdleSleepMilliseconds);
+                frames.Wait(_options.IdleSleepMilliseconds);
             }
             clock.Restart();
 
@@ -273,13 +273,37 @@ public sealed class WindowHost : IDisposable, IWindowHost
         return RenderedFrames;
     }
 
+    private FrameResult? TickFrame(UiSynchronizationContext context, int? maxFrames)
+    {
+        _nativeFrameFailure?.Throw();
+        if (maxFrames is { } limit && Ticks >= limit) return null;
+        var result = RenderFrame(context);
+        // A posted callback may have run a child loop which already advanced this host.
+        if (maxFrames is { } reached && Ticks >= reached) return null;
+        if (result is { } frame)
+        {
+            Ticks++;
+            FrameTicked?.Invoke(this, new HostFrameEventArgs(
+                Ticks, frame.Presented, frame.Milliseconds, frame.Size, frame.Damage));
+        }
+        _nativeFrameFailure?.Throw();
+        return result;
+    }
+
     private bool CanRender => _running && !_disposed && !_uiRoot.IsDisposed && !_window.IsClosed && !IsExiting;
 
     // The normal loop and nested Cocoa live-resize loop use the same UI-thread frame path.
     // Callbacks never resize the surface while a frame still owns its texture/resources.
-    private FrameResult? RenderFrame(UiSynchronizationContext context)
+    private FrameResult? RenderFrame(UiSynchronizationContext context, bool drainPostedWork = true)
     {
         if (_renderingFrame || !CanRender) return null;
+        if (drainPostedWork || _drainingWork == 0)
+        {
+            _drainingWork++;
+            try { if (context.Drain() > 0 && CanRender) _uiRoot.InvalidateSubtree(); }
+            finally { _drainingWork--; }
+        }
+        if (!CanRender) return null;
         _renderingFrame = true;
         FrameResult? result = null;
         try
@@ -289,7 +313,6 @@ public sealed class WindowHost : IDisposable, IWindowHost
             for (var attempt = 0; attempt < 3 && CanRender; attempt++)
             {
                 _pendingResize = false;
-                if (context.Drain() > 0) _uiRoot.InvalidateSubtree();
                 if (!CanRender) return result;
                 _themeBinding.Update(_painter, Root);
                 Input.Focus.ClearFocusIfDetached();
@@ -348,8 +371,20 @@ public sealed class WindowHost : IDisposable, IWindowHost
         if (_activeContext is null || _renderingFrame || !CanRender || _nativeFrameFailure is not null) return;
         // Never let managed layout/render exceptions cross the reverse P/Invoke SDL callback.
         // The outer managed loop rethrows with the original stack and performs normal cleanup.
-        try { RenderFrame(_activeContext); }
+        var previous = SynchronizationContext.Current;
+        var previousClipboard = Clipboard.Current;
+        try
+        {
+            SynchronizationContext.SetSynchronizationContext(_activeContext);
+            Clipboard.Current = _window.Clipboard;
+            RenderFrame(_activeContext, drainPostedWork: false);
+        }
         catch (Exception error) { _nativeFrameFailure = ExceptionDispatchInfo.Capture(error); }
+        finally
+        {
+            Clipboard.Current = previousClipboard;
+            SynchronizationContext.SetSynchronizationContext(previous);
+        }
     }
 
     /// <summary>下一次循环重新同步表面尺寸（例如窗口在 Show 之前创建）。</summary>
