@@ -1,5 +1,7 @@
 namespace EclipseUI;
 
+public enum PointerCursor { Arrow, ResizeHorizontal }
+
 public enum Key
 {
     None = 0,

@@ -1207,6 +1207,11 @@ public abstract partial class Element : UiObject
 
     // ---- 命中测试 ----
 
+    public static readonly StyledProperty<PointerCursor> CursorProperty =
+        StyledProperty<PointerCursor>.Register<Element>(nameof(Cursor), PointerCursor.Arrow);
+
+    public PointerCursor Cursor { get => GetValue(CursorProperty); set => SetValue(CursorProperty, value); }
+
     public static readonly StyledProperty<bool> IsHitTestVisibleProperty =
         StyledProperty<bool>.Register<Element>("IsHitTestVisible", true);
 

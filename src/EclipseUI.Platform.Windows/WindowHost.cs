@@ -120,6 +120,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
         _window.PaintRequested += OnPaintRequested;
         _window.LiveResizeFrameRequested += OnLiveResizeFrameRequested;
         _window.PointerMoved += OnPointerMoved;
+        _window.CursorResolver = () => Input.Cursor;
         _window.PointerLeft += OnPointerLeft;
         _window.PointerPressed += OnPointerPressed;
         _window.PointerCaptureLost += OnPointerCaptureLost;
@@ -574,6 +575,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
         _window.PaintRequested -= OnPaintRequested;
         _window.LiveResizeFrameRequested -= OnLiveResizeFrameRequested;
         _window.PointerMoved -= OnPointerMoved;
+        _window.CursorResolver = null;
         _window.PointerLeft -= OnPointerLeft;
         _window.PointerPressed -= OnPointerPressed;
         _window.PointerCaptureLost -= OnPointerCaptureLost;

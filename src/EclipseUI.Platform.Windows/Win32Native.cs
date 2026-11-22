@@ -49,6 +49,7 @@ internal static class Win32Native
     public const uint PM_REMOVE = 0x0001;
 
     public const int IDC_ARROW = 32512;
+    public const int IDC_SIZEWE = 32644;
 
     public const int TME_LEAVE = 0x00000002;
 
@@ -265,6 +266,9 @@ internal static class Win32Native
 
     [DllImport("user32.dll")]
     public static extern nint LoadCursorW(nint hInstance, nint cursorName);
+
+    [DllImport("user32.dll")]
+    public static extern nint SetCursor(nint cursor);
 
     [DllImport("shell32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
     public static extern uint ExtractIconExW(string file, int index, out nint largeIcon, out nint smallIcon, uint count);

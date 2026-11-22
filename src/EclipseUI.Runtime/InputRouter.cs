@@ -43,6 +43,10 @@ public sealed class InputRouter
     /// 捕获期间冻结在捕获元素上，释放后重算。</summary>
     public Element? Hovered { get; private set; }
 
+    /// <summary>The captured control keeps its cursor while dragging outside its bounds.</summary>
+    public PointerCursor Cursor => (Captured ?? Hovered) is { } target && CanRoutePointer(target)
+        ? target.Cursor : PointerCursor.Arrow;
+
     /// <summary>Leaves a native surface without moving or cancelling a captured drag.</summary>
     public void PointerLeave() => UpdateHover(null);
 

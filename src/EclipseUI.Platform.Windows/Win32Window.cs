@@ -232,6 +232,13 @@ public sealed partial class Win32Window : IDisposable
     public event EventHandler<Win32ResizeEventArgs>? Resized;
 
     public event EventHandler<Win32PointerEventArgs>? PointerMoved;
+    internal Func<PointerCursor>? CursorResolver { get; set; }
+
+    private void ApplyPointerCursor()
+    {
+        var id = CursorResolver?.Invoke() == PointerCursor.ResizeHorizontal ? Win32Native.IDC_SIZEWE : Win32Native.IDC_ARROW;
+        Win32Native.SetCursor(Win32Native.LoadCursorW(0, id));
+    }
 
     public event EventHandler<Win32PointerEventArgs>? PointerPressed;
     public event EventHandler? PointerCaptureLost;
@@ -545,6 +552,9 @@ public sealed partial class Win32Window : IDisposable
         if (ProcessIme(message, lParam)) return 0;
         switch (message)
         {
+            case Win32Native.WM_SETCURSOR when LowWord(lParam) == 1 && InputEnabled: // HTCLIENT; preserve native frame cursors.
+                ApplyPointerCursor();
+                return 1;
             case 0x0084 /* WM_NCHITTEST */ when _isPopup && !InputEnabled:
                 return -1; // Noninteractive tooltips let the owner receive pointer input.
             case Win32Native.WM_ENTERSIZEMOVE:
@@ -629,6 +639,7 @@ public sealed partial class Win32Window : IDisposable
                     {
                         var position = PointFromLParam(lParam);
                         PointerMoved?.Invoke(this, new Win32PointerEventArgs(position, ToLogical(position), false));
+                        ApplyPointerCursor();
 
                         if (!_trackingLeave)
                         {
@@ -675,6 +686,7 @@ public sealed partial class Win32Window : IDisposable
                         try { PointerReleased?.Invoke(this, new Win32PointerEventArgs(
                             position, ToLogical(position), message == Win32Native.WM_RBUTTONUP)); }
                         finally { Win32Native.ReleaseCapture(); }
+                        ApplyPointerCursor();
                     }
                     return 0;
                 }
