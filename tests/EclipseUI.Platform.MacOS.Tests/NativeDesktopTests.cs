@@ -14,6 +14,10 @@ public sealed class MacOSDesktopFactAttribute : FactAttribute
 public class NativeDesktopTests
 {
     [MacOSDesktopFact]
+    public Task NativeWindowAppearanceFollowsResolvedThemeWithoutChangingOtherWindows()
+        => RunNativeScenario("window-theme");
+
+    [MacOSDesktopFact]
     public Task ModalPopupInAChildWindowRestrictsInputAndRestoresOwnerFocus()
         => RunNativeScenario("popup-modal");
 

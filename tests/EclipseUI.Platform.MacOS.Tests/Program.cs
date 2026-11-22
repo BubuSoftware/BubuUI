@@ -22,6 +22,7 @@ internal static partial class Program
             switch (scenario)
             {
                 case "window": WindowScenario(); break;
+                case "window-theme": WindowThemeScenario(); break;
                 case "live-resize": LiveResizeScenario(); break;
                 case "lifetime": LifetimeScenario(); break;
                 case "thread": ThreadScenario(); break;

@@ -107,7 +107,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
 
         _themeBinding = new ThemeBinding(_options.Theme ?? ElementTheme.Light, _options.SystemTheme ?? window as ISystemThemeProvider);
         _painter = new ElementPainter(_themeBinding.Current, _options.TextPainter);
-        _themeBinding.Update(_painter, root);
+        UpdateTheme(root);
         _input = new InputRouter(root);
         _input.Focus.AlwaysShowFocusVisuals = _options.AlwaysShowFocusVisuals;
         if (_options.SurfaceFactory is { } surfaces && _options.PopupWindowFactory is { } popups)
@@ -144,7 +144,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         _themeBinding.SetSource(theme);
-        _themeBinding.Update(_painter, Root);
+        UpdateTheme(Root);
         _painter.ResetDamage(); // 当前帧可能已构建过：再保证下一帧整帧
     }
 
@@ -153,7 +153,14 @@ public sealed class WindowHost : IDisposable, IWindowHost
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         _themeBinding.SetSource(theme);
-        _themeBinding.Update(_painter, Root);
+        UpdateTheme(Root);
+    }
+
+    private void UpdateTheme(Element root)
+    {
+        _themeBinding.Update(_painter, root);
+        // Follow the resolved palette, including custom and dynamically changing sources.
+        _window.SetDarkTitleBar(!_themeBinding.Current.IsLight);
     }
 
     public InputRouter Input
@@ -326,7 +333,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
             {
                 _pendingResize = false;
                 if (!CanRender) return result;
-                _themeBinding.Update(_painter, Root);
+                UpdateTheme(Root);
                 Input.Focus.ClearFocusIfDetached();
                 _uiRoot.ProcessInvalidations();
                 if (!CanRender) return result;

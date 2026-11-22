@@ -15,6 +15,16 @@ internal static class CocoaPopupAssertions
     [DllImport(ObjC, EntryPoint = "objc_msgSend")]
     [return: MarshalAs(UnmanagedType.I1)] private static extern bool SendBool(nint target, nint selector);
 
+    public static void Appearance(nint sdlWindow, bool dark)
+    {
+        var window = SdlNative.SDL_GetPointerProperty(SdlNative.SDL_GetWindowProperties(sdlWindow), "SDL.window.cocoa.window", 0);
+        Assert.NotEqual(0, window);
+        var appearance = SendPointer(window, sel_registerName("effectiveAppearance"));
+        var name = SendPointer(appearance, sel_registerName("name"));
+        var actual = Marshal.PtrToStringUTF8(SendPointer(name, sel_registerName("UTF8String")));
+        Assert.Equal(dark ? "NSAppearanceNameDarkAqua" : "NSAppearanceNameAqua", actual);
+    }
+
     public static void ModalSession(nint sdlWindow)
     {
         var window = SdlNative.SDL_GetPointerProperty(SdlNative.SDL_GetWindowProperties(sdlWindow), "SDL.window.cocoa.window", 0);

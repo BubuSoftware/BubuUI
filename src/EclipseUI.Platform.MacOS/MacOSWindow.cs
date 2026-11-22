@@ -20,6 +20,8 @@ public sealed class MacOSWindow : IMacOSWindow, ISystemThemeProvider
     private uint _id;
     private bool _ownsVideo;
     private readonly bool _popup;
+    private readonly MacOSWindow? _appearanceParent;
+    private bool? _darkTitleBar;
     private bool _modalActive;
     private bool _minimized;
     private bool _textInput;
@@ -33,6 +35,7 @@ public sealed class MacOSWindow : IMacOSWindow, ISystemThemeProvider
 
     private MacOSWindow(string title, int width, int height, MacOSWindow? parent, bool interactive, bool modal)
     {
+        _appearanceParent = parent;
         _eventWatch = WatchEvent;
         SdlNative.VerifyMainThread();
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
@@ -64,6 +67,7 @@ public sealed class MacOSWindow : IMacOSWindow, ISystemThemeProvider
             SdlNative.Check(_metalView != 0);
             _id = SdlNative.SDL_GetWindowID(_window);
             Windows.Add(_id, this);
+            if (parent?._darkTitleBar is { } dark) SetDarkTitleBar(dark);
             UpdateMetrics();
             SetClientSize(width, height);
             SdlNative.Check(SdlNative.SDL_AddEventWatch(_eventWatch, 0));
@@ -117,6 +121,21 @@ public sealed class MacOSWindow : IMacOSWindow, ISystemThemeProvider
     public event EventHandler<TextCompositionEventArgs>? TextComposition;
     public event EventHandler? FocusLost;
     public event EventHandler? Closing;
+
+    /// <summary>Apply the resolved content appearance to this window and its native popups.</summary>
+    public void SetDarkTitleBar(bool enabled)
+    {
+        VerifyAccess();
+        if (IsClosed || _window == 0 || _darkTitleBar == enabled) return;
+        var cocoaWindow = SdlNative.SDL_GetPointerProperty(
+            SdlNative.SDL_GetWindowProperties(_window), "SDL.window.cocoa.window", 0);
+        var previous = _darkTitleBar;
+        _darkTitleBar = enabled; // AppKit can synchronously request a frame during appearance changes.
+        try { CocoaWindowAppearance.SetDark(cocoaWindow, enabled); }
+        catch { _darkTitleBar = previous; throw; }
+        foreach (var child in Windows.Values.ToArray())
+            if (ReferenceEquals(child._appearanceParent, this)) child.SetDarkTitleBar(enabled);
+    }
 
     public void Show()
     {

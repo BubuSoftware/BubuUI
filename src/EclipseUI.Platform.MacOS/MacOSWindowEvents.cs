@@ -46,6 +46,8 @@ public interface IMacOSWindow : IDisposable, IWindowLiveUpdater
     Size LogicalClientSize { get; }
     bool IsClosed { get; }
     IClipboard Clipboard { get; }
+    /// <summary>Match native window chrome to the resolved content palette.</summary>
+    void SetDarkTitleBar(bool enabled) { }
     void Show();
     void Close();
     bool PumpMessages();

@@ -19,11 +19,12 @@ public class WindowHostTests
         var preference = new ThemePreference { Variant = ThemeVariant.Light };
         using var host = new WindowHost(window, presenter, root, new WindowHostOptions { SystemTheme = preference, Theme = EclipseUI.Themes.Fluent.FluentTheme.System });
         Assert.Same(EclipseUI.Themes.Fluent.FluentTheme.Light, host.Painter.Theme);
+        Assert.False(window.DarkTitleBar);
         host.FrameTicked += (_, e) =>
         {
             if (e.Iteration == 1) preference.Variant = ThemeVariant.Dark;
-            if (e.Iteration == 2) { Assert.Same(EclipseUI.Themes.Fluent.FluentTheme.Dark, host.Painter.Theme); host.SetTheme(EclipseUI.Themes.Fluent.FluentTheme.Light); }
-            if (e.Iteration == 3) Assert.Same(EclipseUI.Themes.Fluent.FluentTheme.Light, host.Painter.Theme);
+            if (e.Iteration == 2) { Assert.Same(EclipseUI.Themes.Fluent.FluentTheme.Dark, host.Painter.Theme); Assert.True(window.DarkTitleBar); host.SetTheme(EclipseUI.Themes.Fluent.FluentTheme.Light); }
+            if (e.Iteration == 3) { Assert.Same(EclipseUI.Themes.Fluent.FluentTheme.Light, host.Painter.Theme); Assert.False(window.DarkTitleBar); }
         };
         Assert.Equal(3, host.Run(4));
         Assert.Equal(1, host.SkippedFrames);
@@ -202,6 +203,8 @@ internal sealed class TestWindow : IMacOSWindow
     public IClipboard Clipboard { get; } = new MemoryClipboard();
     public bool TextInputEnabled { get; private set; }
     public Rect? Caret { get; private set; }
+    public bool? DarkTitleBar { get; private set; }
+    public void SetDarkTitleBar(bool enabled) => DarkTitleBar = enabled;
     public void Show() { }
     public void Close() { IsClosed = true; Closing?.Invoke(this, EventArgs.Empty); }
     public bool PumpMessages() => !IsClosed;

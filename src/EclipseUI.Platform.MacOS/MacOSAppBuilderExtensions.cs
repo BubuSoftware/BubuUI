@@ -76,7 +76,7 @@ internal sealed class MacOSDesktopLifetime : IApplicationLifetime, IWindowLifeti
                 win.SetTitle(window.Title);
                 win.SetClientSize(width, height);
             }
-            win.Show();
+            // WindowHost applies the native appearance before its Run method shows the window.
             Console.WriteLine($"window: SDL3/{win.VideoDriver}");
             presenter = surfaceFactory.Create(
                 win.SurfaceHandle, Math.Max(win.ClientWidth, 1), Math.Max(win.ClientHeight, 1));

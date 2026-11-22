@@ -123,6 +123,7 @@ internal static partial class Program
                         SetTheme(FluentTheme.Dark);
                         Assert.Same(FluentTheme.Dark, DefaultTheme);
                         Assert.False(host.Painter.Theme.IsLight);
+                        CocoaPopupAssertions.Appearance(((MacOSWindow)host.Window).NativeHandle, true);
                     }
                     if (frame.Iteration != 7) return;
                     Assert.True(ticksWithoutMain >= 4);
@@ -175,6 +176,8 @@ internal static partial class Program
                                     SetTheme(FluentTheme.Dark);
                                     Assert.False(_rootHost.Painter.Theme.IsLight);
                                     Assert.False(childHost.Painter.Theme.IsLight);
+                                    CocoaPopupAssertions.Appearance(((MacOSWindow)_rootHost.Window).NativeHandle, true);
+                                    CocoaPopupAssertions.Appearance(((MacOSWindow)childHost.Window).NativeHandle, true);
                                     Assert.Same(middleTheme, middle.Theme);
                                 }
                                 if (childFrame.Iteration == 6) childHost.Window.Close();
@@ -199,6 +202,7 @@ internal static partial class Program
             var future = CreateWindow("Managed future window", host =>
             {
                 Assert.False(host.Painter.Theme.IsLight);
+                CocoaPopupAssertions.Appearance(((MacOSWindow)host.Window).NativeHandle, true);
                 inheritedTheme = true;
                 host.FrameTicked += (_, frame) =>
                 {
