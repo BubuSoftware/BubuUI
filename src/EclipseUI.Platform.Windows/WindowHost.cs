@@ -120,7 +120,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
         _window.PaintRequested += OnPaintRequested;
         _window.LiveResizeFrameRequested += OnLiveResizeFrameRequested;
         _window.PointerMoved += OnPointerMoved;
-        _window.CursorResolver = () => Input.Cursor;
+        _window.CursorResolver = () => IsClosed ? PointerCursor.Arrow : Input.Cursor;
         _window.PointerLeft += OnPointerLeft;
         _window.PointerPressed += OnPointerPressed;
         _window.PointerCaptureLost += OnPointerCaptureLost;
@@ -468,22 +468,27 @@ public sealed class WindowHost : IDisposable, IWindowHost
     private void OnLiveResizeFrameRequested(object? sender, EventArgs e) => RenderNativeFrame();
 
     private void OnPointerMoved(object? sender, Win32PointerEventArgs e)
-        => Input.PointerMove(e.LogicalPosition);
-    private void OnPointerLeft(object? sender, EventArgs e) => Input.PointerLeave();
+    { if (!IsClosed) Input.PointerMove(e.LogicalPosition); }
+    // The UI root can be disposed before WM_CLOSE destroys the HWND. Messages
+    // already queued (especially WM_MOUSELEAVE after clicking Confirm) must not
+    // access that disposed tree or throw across the native WndProc boundary.
+    private void OnPointerLeft(object? sender, EventArgs e)
+    { if (!IsClosed) Input.PointerLeave(); }
 
     private void OnPointerPressed(object? sender, Win32PointerEventArgs e)
-        => Input.PointerPress(e.LogicalPosition, Win32Window.CurrentModifiers, e.IsRightButton ? PointerButton.Right : PointerButton.Left);
+    { if (!IsClosed) Input.PointerPress(e.LogicalPosition, Win32Window.CurrentModifiers, e.IsRightButton ? PointerButton.Right : PointerButton.Left); }
 
     private void OnPointerReleased(object? sender, Win32PointerEventArgs e)
-        => Input.PointerRelease(e.LogicalPosition);
-    private void OnPointerCaptureLost(object? sender, EventArgs e) => Input.CancelPointerCapture();
+    { if (!IsClosed) Input.PointerRelease(e.LogicalPosition); }
+    private void OnPointerCaptureLost(object? sender, EventArgs e)
+    { if (!IsClosed) Input.CancelPointerCapture(); }
 
     private void OnPointerWheel(object? sender, Win32WheelEventArgs e)
-        => Input.PointerWheel(e.LogicalPosition, e.Delta, Win32Window.CurrentModifiers);
+    { if (!IsClosed) Input.PointerWheel(e.LogicalPosition, e.Delta, Win32Window.CurrentModifiers); }
 
     private void OnKeyDown(object? sender, Win32KeyEventArgs e)
     {
-        if (e.Key == Key.None) return;
+        if (IsClosed || e.Key == Key.None) return;
         using var scope = Input.Focus.EnterInput(FocusOrigin.Keyboard, Modifiers(e));
         Input.Focus.NotifyInput(FocusOrigin.Keyboard);
         if (e.Key == Key.Escape && Input.TryDismissPopup(e.IsRepeat)) return;
@@ -498,14 +503,16 @@ public sealed class WindowHost : IDisposable, IWindowHost
     }
 
     private static KeyModifiers Modifiers(Win32KeyEventArgs e) => (e.Shift ? KeyModifiers.Shift : 0) | (e.Control ? KeyModifiers.Control : 0) | (e.Alt ? KeyModifiers.Alt : 0);
-    private void OnKeyUp(object? sender, Win32KeyEventArgs e) => Input.KeyRelease(e.Key, Modifiers(e));
+    private void OnKeyUp(object? sender, Win32KeyEventArgs e)
+    { if (!IsClosed) Input.KeyRelease(e.Key, Modifiers(e)); }
     private void OnCharacterTyped(object? sender, Win32TextEventArgs e)
     {
-        if (Win32Window.CurrentModifiers.HasFlag(KeyModifiers.Control)) return;
+        if (IsClosed || Win32Window.CurrentModifiers.HasFlag(KeyModifiers.Control)) return;
         Input.TextInput(e.Text);
     }
     private void OnTextComposition(object? sender, TextCompositionEventArgs e)
     {
+        if (IsClosed) return;
         if (Input.Focus.Focused is EclipseUI.Elements.TextBox editor && _popups?.OwnsEditor(editor) != true)
         {
             var rect = editor.CaretRect; var zero = editor.PointFromRoot(Point.Zero);
@@ -525,6 +532,7 @@ public sealed class WindowHost : IDisposable, IWindowHost
     }
     private void OnWindowFocusLost(object? sender, EventArgs e)
     {
+        if (IsClosed) return;
         if (_popups?.HandleOwnerFocusLost(Input) != true) Input.Reset();
     }
 

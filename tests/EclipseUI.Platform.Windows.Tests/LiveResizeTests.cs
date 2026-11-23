@@ -64,6 +64,32 @@ public sealed class LiveResizeTests : IDisposable
     }
 
     [WindowsFact]
+    public void NativeInputAfterUiDisposalDoesNotAccessTheDisposedTree()
+    {
+        using var window = new Win32Window("EclipseUI pending input after close", 240, 180, quitOnDestroy: false);
+        using var presenter = new Presenter();
+        using var root = new StackPanel();
+        using var host = new WindowHost(window, presenter, root);
+        root.Dispose(); // The HWND is still alive until the pending WM_CLOSE is processed.
+        Assert.True(host.IsClosed);
+
+        // Invoke once through managed code so a regression reports a test failure
+        // rather than terminating the runner across reverse P/Invoke.
+        var leave = typeof(WindowHost).GetMethod("OnPointerLeft",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        Assert.Null(Record.Exception(() => leave.Invoke(host, [window, EventArgs.Empty])));
+        foreach (var message in new uint[] {
+            0x02A3, // WM_MOUSELEAVE (the BubuZip crash)
+            0x0200, 0x0201, 0x0202, 0x020A, 0x0215, // move, down, up, wheel, capture changed
+            0x0100, 0x0101, 0x0102, 0x0008, // key down/up, character, focus lost
+        })
+            Native.SendMessageW(window.Handle, message, 0x41, 0);
+        Native.SendMessageW(window.Handle, 0x0020, window.Handle, 1); // WM_SETCURSOR, HTCLIENT
+        Native.SendMessageW(window.Handle, 0x0010, 0, 0); // WM_CLOSE
+        Assert.True(window.IsClosed);
+    }
+
+    [WindowsFact]
     public void NativePointerLeaveClearsHoverWithoutCancellingCapture()
     {
         using var window = new Win32Window("EclipseUI pointer leave test", 240, 180);
