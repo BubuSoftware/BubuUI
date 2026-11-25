@@ -121,6 +121,18 @@ dotnet publish samples/Gallery.Desktop -c Release -r osx-arm64 --self-contained 
 
 自建应用使用 `.UseMacOS().UseVello().UseHarfBuzzText()`；从进程主线程同步调用 `Start(args)`。Intel 发布使用 `osx-x64`。依赖、平台契约与验证范围见 [macOS 平台说明](./design/27-macos-platform.md)。
 
+## Android 实验宿主
+
+Android arm64 样例使用与桌面相同的 Gallery 页面和 Fluent 控件模板。Activity 承载 EclipseView，按屏幕密度换算布局和触摸坐标，按 Android 分配给视图的实际像素尺寸进行 CPU 光栅化。支持单指点击、拖动、纵向列表滚动和主题切换。Activity 暂停时停止刷新，返回时恢复现有页面。
+
+安装 .NET 11 Android 工作负载、Android SDK 和 JDK，将 ANDROID_NDK_HOME 指向解压后的 Android NDK（已验证 r28c），然后独立发布样例：
+
+```powershell
+dotnet publish samples/Gallery.Android -c Release
+```
+
+宿主从 NDK 打包 arm64 C++ 运行库；也可通过 MSBuild 属性 AndroidCppRuntime 指定官方 arm64 libc++_shared.so 的完整路径。已在 4 KB 页 arm64 真机验证 Release 冷启动、触摸按钮、滑动和前后台切换。当前 Vello 和 HarfBuzz 原生包仍报告 16 KB 对齐警告。点击可编辑的 TextBox 会打开 Android 系统键盘。已在真机验证中文候选词提交和返回键收起键盘，输入内容同步到 TextBox 和 TextChanged 事件。惯性滚动、无障碍桥接和 GPU 上屏尚未接入。
+
 ## 当前能力
 
 - 保留静态树、编译期动态槽和 if/foreach/switch 块；普通 CLR 状态＋显式失效，无依赖追踪或运行时通用树 diff。
