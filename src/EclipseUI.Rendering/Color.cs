@@ -24,11 +24,9 @@ public readonly record struct Color(byte R, byte G, byte B, byte A = 255)
     public static Color Lerp(Color from, Color to, double t)
     {
         t = Math.Clamp(t, 0, 1);
-        return new Color(
-            ToByte(from.R + (to.R - from.R) * t),
-            ToByte(from.G + (to.G - from.G) * t),
-            ToByte(from.B + (to.B - from.B) * t),
-            ToByte(from.A + (to.A - from.A) * t));
+        byte Channel(byte a, byte b) => (byte)Math.Round(a + (b - a) * t);
+        return new Color(Channel(from.R, to.R), Channel(from.G, to.G),
+            Channel(from.B, to.B), Channel(from.A, to.A));
     }
 
     private static byte ToByte(double value)

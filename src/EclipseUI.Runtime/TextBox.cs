@@ -85,6 +85,12 @@ public class TextBox : Element, IFrameAnimation
                 if (!_editing) { _undo.Clear(); _redo.Clear(); }
                 NotifyPresentationChanged(); RaiseEvent(new(TextChangedEvent));
             }
+            else if (property == IsReadOnlyProperty && IsReadOnly && _composition.Length > 0)
+            {
+                _composition = "";
+                InvalidateMeasure();
+                NotifyPresentationChanged();
+            }
             else if (property == PlaceholderProperty || property == TextBlock.FontSizeProperty ||
                      property == HorizontalPaddingProperty || property == VerticalPaddingProperty ||
                      property == AcceptsReturnProperty || property == PasswordBox.PasswordCharProperty)

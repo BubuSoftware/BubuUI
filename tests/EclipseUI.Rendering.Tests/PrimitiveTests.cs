@@ -7,6 +7,17 @@ namespace EclipseUI.Rendering.Tests;
 public class PrimitiveTests
 {
     [Fact]
+    public void ColorInterpolation_PreservesByteChannelsAndAlpha()
+    {
+        var start = new Color(200, 10, 60, 20);
+        var end = new Color(0, 110, 40, 180);
+
+        Assert.Equal(start, Color.Lerp(start, end, 0));
+        Assert.Equal(new Color(100, 60, 50, 100), Color.Lerp(start, end, 0.5));
+        Assert.Equal(end, Color.Lerp(start, end, 1));
+    }
+
+    [Fact]
     public void FillRect_CenterIsExact_OutsideIsTransparent()
     {
         var red = new Color(220, 30, 30);

@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Gallery\Gallery.csproj" />
+    <ProjectReference Include="..\Gallery.Offscreen\Gallery.Offscreen.csproj" />
     <ProjectReference Include="..\..\src\EclipseUI.Platform.Windows\EclipseUI.Platform.Windows.csproj" />
     <ProjectReference Include="..\..\src\EclipseUI.Platform.Linux\EclipseUI.Platform.Linux.csproj" />
     <ProjectReference Include="..\..\src\EclipseUI.Platform.MacOS\EclipseUI.Platform.MacOS.csproj" />

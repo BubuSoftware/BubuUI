@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\samples\Gallery\Gallery.csproj" />
+    <ProjectReference Include="..\..\samples\Gallery.Offscreen\Gallery.Offscreen.csproj" />
     <ProjectReference Include="..\..\src\EclipseUI.Platform.Windows\EclipseUI.Platform.Windows.csproj" />
     <ProjectReference Include="..\..\src\EclipseUI.Rendering.Vello\EclipseUI.Rendering.Vello.csproj" />
   </ItemGroup>

@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <Description>Offscreen rendering helpers for the desktop Gallery and its verification tools.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/EclipseUI.Rendering.Vello/EclipseUI.Rendering.Vello.csproj" />
+  </ItemGroup>
+</Project>

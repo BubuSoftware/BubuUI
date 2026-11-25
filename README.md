@@ -80,9 +80,9 @@ Windows、Linux 和 macOS 共用应用窗口规则：关闭主窗口不会关闭
 
 仓库统一使用 .NET 11 SDK（`global.json`），运行时、平台、样例、测试和语言服务器目标均为 .NET 11。Roslyn 源生成器及其共享编译器组件保留 `netstandard2.0`，VS 进程内扩展保留 `net472`，以满足各自加载宿主的兼容要求；它们同样由 .NET 11 SDK 构建。
 
-画廊采用共享 UI 加平台入口结构：`samples/Gallery` 是共享库，包含 `.ui`、交互逻辑和 `GalleryApp`；`samples/Gallery.Desktop` 提供 Windows / Linux / macOS 桌面入口（`net11.0`），`samples/Gallery.Android` 提供 Android 入口（`net11.0-android`）。Visual Studio 中将对应入口项目设为启动项目，Android 设备在 Android 项目中选择。
+画廊采用共享 UI 加平台入口结构：`samples/Gallery` 是共享库，包含 `.ui`、交互逻辑和 `GalleryApp`；`samples/Gallery.Desktop` 提供 Windows / Linux / macOS 桌面入口（`net11.0`），`samples/Gallery.Android` 和 `samples/Gallery.iOS` 分别提供 Android、iOS 入口。调试时将对应平台的入口项目设为启动项目。
 
-桌面入口和共享 UI 只需 .NET 11 SDK。Android 入口及整个解决方案的构建需要 Android 工作负载；未安装该工作负载时，直接构建或运行 `Gallery.Desktop` 项目。
+桌面入口和共享 UI 只需 .NET 11 SDK。解决方案的默认平台 `Any CPU` 构建桌面和 Android 项目，需准备 Android 工具链。选择解决方案平台 `iOS`（命令行追加 `-p:Platform=iOS`）会构建桌面和 iOS 项目。单独开发某个平台时，可直接构建或运行对应的入口项目。
 
 ```powershell
 dotnet build EclipseUI.slnx
@@ -156,6 +156,25 @@ dotnet publish samples/Gallery.Android -c Release
 
 宿主从 NDK 打包 arm64 C++ 运行库；也可通过 MSBuild 属性 AndroidCppRuntime 指定官方 arm64 libc++_shared.so 的完整路径。已在 4 KB 页 arm64 真机验证 Release 冷启动、触摸按钮、滑动和前后台切换。当前 Vello 和 HarfBuzz 原生包仍报告 16 KB 对齐警告。点击可编辑的 TextBox 会打开 Android 系统键盘。已在真机验证中文候选词提交和返回键收起键盘，输入内容同步到 TextBox 和 TextChanged 事件。惯性滚动、无障碍桥接和 GPU 上屏尚未接入。
 
+## iOS 实验宿主
+
+`samples/Gallery.iOS` 支持 iOS / iPadOS 15 及以上。每个 UIKit 窗口场景通过 `IActivityApplicationLifetime.MainViewFactory` 加载共享页面。Core Graphics 在 Retina 视图上绘制控件，Core Text 使用系统字体完成文本测量、绘制和字体回退。视图适配安全区、旋转和屏幕键盘，支持单指点击、拖动、滚动以及系统明暗主题。
+
+在 Mac 上安装 .NET 11 SDK、与 iOS 工作负载匹配的 Xcode 和 iOS 模拟器，然后运行：
+
+```sh
+dotnet workload install ios
+cd samples/Gallery.iOS
+xcrun simctl list devices available
+dotnet run -r iossimulator-arm64 --device YOUR_SIMULATOR_UDID
+```
+
+以上命令适用于 Apple 芯片的 Mac。将 `YOUR_SIMULATOR_UDID` 替换为列表中目标模拟器的标识符。在同一目录下使用 `dotnet publish -c Release -r ios-arm64` 发布真机版本，需配置与应用标识匹配的 Apple 签名证书及描述文件。
+
+自建应用可参照 [Gallery 的启动入口](./samples/Gallery.iOS/Program.cs) 和 [场景配置](./samples/Gallery.iOS/Info.plist)。在 `EclipseAppDelegate.CreateAppBuilder()` 中调用 `AppBuilder.Configure<MyApp>().UseiOS()`，在应用初始化回调中设置 `MainViewFactory`。切回前台会继续使用已连接场景的页面，场景断开时会释放页面。
+
+已在 iOS 27 的 iPhone 模拟器验证按钮、滚动、下拉框、明暗主题、前后台恢复和系统键盘输入，并在 iPad 模拟器验证中文、Emoji、渐变与阴影绘制。真机 arm64 Release 已通过未签名构建，真机安装和运行仍待验证。
+
 ## FreeOTP 桌面应用
 
 [FreeOTP](https://github.com/CeSun/FreeOTP) 已独立为单独仓库，通过 Git submodule 引用 EclipseUI。支持导入 FreeOTP Android 加密备份、TOTP/HOTP、验证码复制和本地加密保存。
@@ -215,7 +234,7 @@ dotnet run --project sandbox/FluentCheck -- out/fluent
 | [spec](./spec/README.md) | 当前语言、生成、更新与元数据契约 |
 | [design](./design/README.md) | 架构、实施计划与报告 |
 | src | Runtime、Compiler、Rendering、平台与文本模块 |
-| samples | Gallery 与桌面入口 |
+| samples | 共享 Gallery、桌面、Android 和 iOS 入口 |
 | sandbox | 渲染和交互验证壳 |
 | tests | 编译器、无头、IDE、渲染回归 |
 | [ide](./ide/README.md) | Visual Studio / VS Code / Rider 与 LSP 工具链 |

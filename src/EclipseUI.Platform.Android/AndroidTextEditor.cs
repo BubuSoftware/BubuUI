@@ -1,4 +1,3 @@
-using System.Globalization;
 using Android.Content;
 using Android.Text;
 using Android.Views;
@@ -110,27 +109,12 @@ internal sealed class AndroidTextEditor : EditText
         var next = Text ?? "";
         var old = client.Text;
         if (old == next) return;
-        // Replace whole graphemes so combining marks and surrogate pairs stay intact in TextBox undo history.
-        var oldOffsets = StringInfo.ParseCombiningCharacters(old).Append(old.Length).ToArray();
-        var newOffsets = StringInfo.ParseCombiningCharacters(next).Append(next.Length).ToArray();
-        int first = 0, oldEnd = oldOffsets.Length - 1, newEnd = newOffsets.Length - 1;
-
-        bool SameGrapheme(int oldIndex, int newIndex) =>
-            old.AsSpan(oldOffsets[oldIndex]..oldOffsets[oldIndex + 1])
-                .SequenceEqual(next.AsSpan(newOffsets[newIndex]..newOffsets[newIndex + 1]));
-
-        while (first < oldEnd && first < newEnd && SameGrapheme(first, first)) first++;
-        while (oldEnd > first && newEnd > first && SameGrapheme(oldEnd - 1, newEnd - 1))
-        {
-            oldEnd--;
-            newEnd--;
-        }
-
+        var edit = MobileTextEdit.GetReplacement(old, next);
         _updating = true;
         try
         {
-            client.Select(oldOffsets[first], oldOffsets[oldEnd] - oldOffsets[first]);
-            client.InsertText(next[newOffsets[first]..newOffsets[newEnd]]);
+            client.Select(edit.Start, edit.Length);
+            client.InsertText(edit.Replacement);
             _lastSelection = ModelSelection(client);
         }
         finally { _updating = false; }

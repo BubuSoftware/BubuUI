@@ -71,6 +71,16 @@ public class TextEditingTests
         host.Input.TextComposition("hao", CompositionStage.Updated); host.Input.TextComposition("", CompositionStage.Cancelled); Assert.Equal("你", editor.Text);
     }
     [Fact]
+    public void SwitchingToReadOnlyCancelsPendingComposition()
+    {
+        var (editor, host) = Create("saved"); using var lifetime = host;
+        host.Input.TextComposition("ni", CompositionStage.Updated);
+        editor.IsReadOnly = true;
+        Assert.Empty(editor.CompositionText);
+        host.Input.TextComposition("你", CompositionStage.Committed);
+        Assert.Equal("saved", editor.Text);
+    }
+    [Fact]
     public void MaxLengthDoesNotSplitSurrogatePairs()
     {
         var (editor, host) = Create(); using var lifetime = host; editor.MaxLength = 2;

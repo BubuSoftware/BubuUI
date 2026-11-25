@@ -1,6 +1,6 @@
 # Fluent control gallery
 
-Gallery is a shared UI library used by the Gallery.Desktop and Gallery.Android entry projects. All layout and fourteen control examples are declared in `.ui` files; `@code` contains interaction and state logic.
+Gallery is a shared UI library used by the Gallery.Desktop, Gallery.Android and Gallery.iOS entry projects. All layout and fourteen control examples are declared in `.ui` files; `@code` contains interaction and state logic.
 
 ```sh
 dotnet run --project samples/Gallery.Desktop
@@ -14,11 +14,18 @@ Build the Android entry project (requires the .NET 11 Android workload, SDK, JDK
 dotnet publish samples/Gallery.Android -c Release
 ```
 
-`Gallery.Desktop/Program.cs` selects the Windows, Linux or macOS platform at runtime. `Gallery.Android/MainApplication.cs` and `MainActivity.cs` provide the Android lifecycle. Both entry projects reference `Gallery.csproj`; shared UI compiles once as a `net11.0` library. Building the desktop entry does not require Android tools.
+Run Gallery on an Apple silicon Mac with matching Xcode and an iOS simulator. Replace `YOUR_SIMULATOR_UDID` with the identifier of a simulator from the list.
 
-In Visual Studio, set Gallery.Desktop as the startup project for desktop debugging and hot reload, or Gallery.Android for Android device deployment. Reload the solution after migrating from the single entry project. Gallery itself is a library and cannot be launched. Entry projects use native SDK capabilities rather than advertising MAUI compatibility.
+```sh
+dotnet workload install ios
+cd samples/Gallery.iOS
+xcrun simctl list devices available
+dotnet run -r iossimulator-arm64 --device YOUR_SIMULATOR_UDID
+```
 
-`MainWindow.ui` hosts `FluentGalleryPage.ui`. `FluentControlExamples.ui` declares the controls, and `FluentExampleRow.ui` provides each label and control slot. Both platform builders apply the Fluent theme.
+`Gallery.Desktop/Program.cs` selects Windows, Linux or macOS. `Gallery.Android/MainApplication.cs` and `MainActivity.cs` provide the Android lifecycle. `Gallery.iOS/Program.cs` configures the UIKit scene host. Select the entry project for the platform you want to debug. Each entry references the same `net11.0` Gallery library. The desktop entry and verification tools use `Gallery.Offscreen` for snapshots.
+
+`MainWindow.ui` hosts `FluentGalleryPage.ui`. `FluentControlExamples.ui` declares the controls, and `FluentExampleRow.ui` provides each label and control slot. All three platform entries apply the Fluent theme.
 
 `FluentGalleryPage.ui` also owns the theme button event, current mode and System → Light → Dark cycle. `GalleryApp` supplies the initial mode and a host theme callback; it contains no theme switching logic.
 

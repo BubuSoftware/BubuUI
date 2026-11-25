@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net11.0-ios</TargetFramework>
+    <SupportedOSPlatformVersion>15.0</SupportedOSPlatformVersion>
+    <OutputType>Exe</OutputType>
+    <ApplicationId>org.eclipseui.gallery.ios</ApplicationId>
+    <ApplicationTitle>EclipseUI Gallery</ApplicationTitle>
+    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationDisplayVersion>0.1</ApplicationDisplayVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Gallery/Gallery.csproj" />
+    <ProjectReference Include="../../src/EclipseUI.Platform.iOS/EclipseUI.Platform.iOS.csproj" />
+  </ItemGroup>
+</Project>

@@ -4,6 +4,7 @@
     <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../EclipseUI.Platform.Shared/MobileTextEdit.cs" Link="MobileTextEdit.cs" />
     <ProjectReference Include="../EclipseUI.Rendering.Vello/EclipseUI.Rendering.Vello.csproj" />
   </ItemGroup>
 </Project>
