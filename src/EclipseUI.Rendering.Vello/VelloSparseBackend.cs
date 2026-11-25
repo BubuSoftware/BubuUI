@@ -50,6 +50,7 @@ public sealed class VelloSparseBackend : IRenderBackend
 
     private readonly Dictionary<FontFace, Font> _fonts = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<FontFace> _sbixFonts = new(ReferenceEqualityComparer.Instance);
+    private readonly HashSet<FontFace> _colrFonts = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<ImageHandle, Image> _images = new(ReferenceEqualityComparer.Instance);
     private readonly SparseShadowCache _shadows = new();
 
@@ -200,6 +201,30 @@ public sealed class VelloSparseBackend : IRenderBackend
             BrushAlpha = (float)Math.Clamp(command.Opacity, 0, 1),
         };
 
+        // The native COLR path sizes an intermediate bitmap using the affine
+        // scale, then applies that scale again when drawing it. Move the scale
+        // into FontSize and normalize the affine basis to avoid double scaling.
+        // Put glyph positions in the affine origin so shaping stays unchanged.
+        if (_colrFonts.Contains(command.Font))
+        {
+            var scale = Math.Max(Math.Sqrt((double)glyphOrigin.M11 * glyphOrigin.M11 + (double)glyphOrigin.M12 * glyphOrigin.M12),
+                Math.Sqrt((double)glyphOrigin.M21 * glyphOrigin.M21 + (double)glyphOrigin.M22 * glyphOrigin.M22));
+            if (scale == 0) return;
+            options.FontSize = (float)(shaped.FontSize * scale);
+            foreach (var glyph in glyphs)
+            {
+                var origin = Transform.Translation(command.Origin.X + glyph.X, command.Origin.Y + glyph.Y);
+                if (command.Transform is { } glyphLocal) origin *= glyphLocal;
+                var placement = origin * transform;
+                options.Transform = Matrix(new Transform(
+                    (float)(placement.M11 / scale), (float)(placement.M12 / scale),
+                    (float)(placement.M21 / scale), (float)(placement.M22 / scale),
+                    placement.M31, placement.M32));
+                scene.DrawGlyphRun(font, [new Glyph(glyph.Id, 0, 0)], options);
+            }
+            return;
+        }
+
         // The native sbix path scales bitmap images but leaves per-glyph positions
         // untransformed. Put each position into its affine origin so Retina scale,
         // rotation and shear apply to both the image and its placement.
@@ -246,11 +271,12 @@ public sealed class VelloSparseBackend : IRenderBackend
         if (_fonts.TryGetValue(face, out var font)) return font;
         font = Font.Load(face.Data.Span, (uint)face.FaceIndex);
         _fonts[face] = font;
-        if (HasSbixTable(face)) _sbixFonts.Add(face);
+        if (HasTable(face, 0x73626978)) _sbixFonts.Add(face); // sbix
+        if (HasTable(face, 0x434F4C52)) _colrFonts.Add(face); // COLR
         return font;
     }
 
-    private static bool HasSbixTable(FontFace face)
+    private static bool HasTable(FontFace face, uint tag)
     {
         var data = face.Data.Span;
         if (data.Length < 12) return false;
@@ -266,7 +292,7 @@ public sealed class VelloSparseBackend : IRenderBackend
         var tables = BinaryPrimitives.ReadUInt16BigEndian(data[(offset + 4)..]);
         if (tables > (data.Length - offset - 12) / 16) return false;
         for (var index = 0; index < tables; index++)
-            if (BinaryPrimitives.ReadUInt32BigEndian(data[(offset + 12 + index * 16)..]) == 0x73626978) return true; // sbix
+            if (BinaryPrimitives.ReadUInt32BigEndian(data[(offset + 12 + index * 16)..]) == tag) return true;
         return false;
     }
 
@@ -422,6 +448,7 @@ public sealed class VelloSparseBackend : IRenderBackend
         foreach (var font in _fonts.Values) font.Dispose();
         _fonts.Clear();
         _sbixFonts.Clear();
+        _colrFonts.Clear();
         foreach (var image in _images.Values) image.Dispose();
         _images.Clear();
         _shadows.Dispose();
