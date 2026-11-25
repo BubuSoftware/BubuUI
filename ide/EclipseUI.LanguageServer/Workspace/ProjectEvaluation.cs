@@ -116,7 +116,21 @@ public static class ProjectEvaluator
         var full = Path.GetFullPath(path);
         var existing = collection.LoadedProjects.FirstOrDefault(p =>
             string.Equals(Path.GetFullPath(p.FullPath), full, StringComparison.OrdinalIgnoreCase));
-        return existing ?? new Microsoft.Build.Evaluation.Project(full, null, null, collection);
+        var project = existing ?? new Microsoft.Build.Evaluation.Project(full, null, null, collection);
+        // An outer multi-target build has no Compile items or platform references.
+        // Use its first declared target for the standalone language-server context.
+        if (string.IsNullOrWhiteSpace(project.GetPropertyValue("TargetFramework")))
+        {
+            var framework = project.GetPropertyValue("TargetFrameworks")
+                .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .FirstOrDefault();
+            if (framework is not null)
+            {
+                project.SetGlobalProperty("TargetFramework", framework);
+                project.ReevaluateIfNecessary();
+            }
+        }
+        return project;
     }
 
     private static IReadOnlyList<string> ResolvePaths(string directory, IEnumerable<string> includes)
@@ -159,7 +173,10 @@ public static class ProjectEvaluator
                 !root.TryGetProperty("packageFolders", out var folders)) return result;
 
             var folderPaths = folders.EnumerateObject().Select(p => p.Name).ToArray();
-            var target = targets.EnumerateObject().FirstOrDefault();
+            var framework = project.GetPropertyValue("TargetFramework");
+            var target = targets.EnumerateObject().FirstOrDefault(t => t.Name == framework);
+            if (target.Value.ValueKind != JsonValueKind.Object)
+                target = targets.EnumerateObject().FirstOrDefault();
             if (target.Value.ValueKind != JsonValueKind.Object) return result;
 
             foreach (var lib in target.Value.EnumerateObject())

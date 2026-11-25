@@ -32,7 +32,7 @@ if (options.Offscreen)
 if (OperatingSystem.IsWindows()) builder.UseWindows();
 else if (OperatingSystem.IsLinux()) builder.UseLinux();
 else if (OperatingSystem.IsMacOS()) builder.UseMacOS();
-else throw new PlatformNotSupportedException("Gallery.Desktop supports Windows, Linux and macOS.");
+else throw new PlatformNotSupportedException("Gallery supports Windows, Linux and macOS.");
 
 return builder.Start(args);
 
@@ -46,7 +46,7 @@ static GalleryLaunchOptions? ParseArgs(string[] args)
     {
         Console.Error.WriteLine(ex.Message);
         Console.Error.WriteLine(
-            "usage: Gallery.Desktop [--width N] [--height N] [--frames N] [--max-fps N] " +
+            "usage: Gallery [--width N] [--height N] [--frames N] [--max-fps N] " +
             "[--no-vsync] [--always-render] [--theme system|light|dark] [--cpu] [--shot path]");
         return null;
     }

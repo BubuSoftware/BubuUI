@@ -4,7 +4,7 @@ namespace Gallery;
 
 /// <summary>
 /// 画廊启动选项（D101）：CLI 解析结果作为服务进容器，<see cref="GalleryApp"/> 经 DI 消费——
-/// 演示「应用配置走依赖注入」的典型形态。解析在平台壳（Gallery.Desktop），消费在应用层。
+/// 演示「应用配置走依赖注入」的典型形态。解析在桌面入口（Gallery.Desktop），消费在应用层。
 /// </summary>
 public sealed record GalleryLaunchOptions
 {

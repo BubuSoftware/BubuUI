@@ -58,7 +58,7 @@ public sealed class ShellTests : IDisposable
     {
         var configured = CreateFile("custom/Server.dll");
         var bundled = CreateFile("extension/server/EclipseUI.LanguageServer.dll");
-        var development = CreateFile("repo/ide/EclipseUI.LanguageServer/bin/Release/net10.0/EclipseUI.LanguageServer.dll");
+        var development = CreateFile("repo/ide/EclipseUI.LanguageServer/bin/Release/net11.0/EclipseUI.LanguageServer.dll");
         var extension = Path.Combine(_root, "extension");
         var workspace = Path.Combine(_root, "repo", "samples", "app");
         Assert.Equal(configured, ServerLaunchSettings.ResolveServer(extension, workspace, configured));

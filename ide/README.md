@@ -4,7 +4,7 @@
 
 ```
 ide/
-  EclipseUI.LanguageServer/   LSP server（C#/.NET 10，stdio）——全部 IDE 能力都在这里
+  EclipseUI.LanguageServer/   LSP server（C#/.NET 11，stdio）——全部 IDE 能力都在这里
     Workspace/                L1–L4：MSBuild 求值 / 精确引用 / 项目 Compilation / 真生成器
     Analysis/                 诊断 / 补全 / 悬停 / 大纲 / 跳转 / 重命名 / 内嵌 C# 语言服务
     Server/                   JSON-RPC 协议层（声明能力、翻译 LSP 模型）
@@ -28,7 +28,7 @@ pwsh -File ide/package.ps1
 并检查三个包里的服务器依赖逐文件 SHA-256 一致、语法文件一致、版本一致。
 只生成本地包，不安装插件，也不上传商店。已经验证测试时可用 `-SkipTests`；依赖已安装可用 `-SkipNpm`。
 
-三个插件都携带同一版语言服务器和元数据目录，目标机器需要 .NET 10 SDK；Rider 还需要
+三个插件都携带同一版语言服务器和元数据目录，目标机器需要 .NET 11 SDK；Rider 还需要
 LSP4IJ 和 TextMate 插件。VS Code 使用“Install from VSIX”，Rider 使用“Install Plugin from Disk”，
 Visual Studio 双击对应 VSIX 安装。
 
@@ -56,7 +56,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ide/visualstudio/build.ps1
 ```
 
 产物：`ide/visualstudio/bin/Release/net472/EclipseUI.VisualStudio.vsix`，双击安装并重启 VS。
-VSIX 包含语言服务器及共享高亮语法，本机需 .NET SDK 10+。
+VSIX 包含语言服务器及共享高亮语法，本机需 .NET SDK 11+。
 安装、环境变量配置、日志、客户端测试和验证边界见 [Visual Studio 说明](visualstudio/README.md)。
 
 ## 0. 架构：一个项目系统，一份项目 Compilation
@@ -127,7 +127,7 @@ powershell -ExecutionPolicy Bypass -File ide/build.ps1
 **临时安装**（`code --extensionDevelopmentPath=<repo>/ide/vscode`）。
 
 开发机不发布也能用：扩展会自己找到
-`ide/EclipseUI.LanguageServer/bin/{Release,Debug}/net10.0/EclipseUI.LanguageServer.dll`。
+`ide/EclipseUI.LanguageServer/bin/{Release,Debug}/net11.0/EclipseUI.LanguageServer.dll`。
 改完服务端要重跑 `ide/build.ps1` 并 **Developer: Reload Window**；server 是常驻进程，
 重载前一直连旧 dll，旧进程还会锁住 `ide/vscode/server/*.dll`（MSB3026/3027）。
 
@@ -215,7 +215,7 @@ export JAVA_HOME=$(/usr/libexec/java_home -v 21)  # macOS：使用已安装的 J
 # 已验证测试后，可用 ./ide/rider/build.sh --skip-tests
 ```
 
-需要 .NET 10 SDK、Node.js 和 JDK 21–24（推荐 21；当前 Gradle 9.0 不支持 JDK 25）。
+需要 .NET 11 SDK、Node.js 和 JDK 21–24（推荐 21；当前 Gradle 9.0 不支持 JDK 25）。
 脚本发布同一份语言服务器和 Runtime/Rendering 元数据，运行共享语言服务测试、
 Rider 壳断言和 Java 测试，再构建并检查插件结构。
 产物为 `ide/rider/build/distributions/eclipseui-rider-0.2.0.zip`；ZIP 可用于三种桌面系统，
@@ -245,7 +245,7 @@ SHA-256：默认 URL 走华为云镜像（国内可达且与官方包校验和�
 安装 zip（Settings → Plugins → Install Plugin from Disk）或直接用 `runIde`。
 server DLL 的查找顺序：Settings → Languages & Frameworks → EclipseUI 的 `Server DLL`
 → `ECLIPSEUI_SERVER_DLL` → 插件目录下的 `server/` → 从项目根向上找仓库根，依次找
-`ide/vscode/server`（`build.ps1` 的产物）、`ide/EclipseUI.LanguageServer/bin/{Release,Debug}/net10.0`。
+`ide/vscode/server`（`build.ps1` 的产物）、`ide/EclipseUI.LanguageServer/bin/{Release,Debug}/net11.0`。
 也就是说开发机上打开本仓库即可用；找不到会弹通知并在 lsp4ij 的 LSP console 留下原因。
 设置页的四个字段与 VS Code 的 `eclipseui.server.*` 一一对应。
 
@@ -272,7 +272,7 @@ lsp4ij → Settings → Languages & Frameworks → Language Servers → `+` User
 |---|---|
 | Name | EclipseUI |
 | Command | `dotnet` |
-| Arguments | `<repo>/ide/EclipseUI.LanguageServer/bin/Release/net10.0/EclipseUI.LanguageServer.dll --stdio --workspace <repo>` |
+| Arguments | `<repo>/ide/EclipseUI.LanguageServer/bin/Release/net11.0/EclipseUI.LanguageServer.dll --stdio --workspace <repo>` |
 | Mappings | `*.ui` → `eclipseui`；`*.eustyle` → `eustyle` |
 
 这条路径没有自定义 Language/FileType（高亮靠手动导入 TextMate bundle），但同样能拿到

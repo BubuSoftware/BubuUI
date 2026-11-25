@@ -137,7 +137,7 @@ public sealed class EclipseUiLanguageClient : ILanguageClient, ILanguageClientCu
         StopProcess();
         return Task.FromResult<InitializationFailureContext?>(new InitializationFailureContext
         {
-            FailureMessage = "EclipseUI language server failed to initialize. Install .NET SDK 10 or later " +
+            FailureMessage = "EclipseUI language server failed to initialize. Install .NET SDK 11 or later " +
                 "and check ECLIPSEUI_SERVER_DLL / ECLIPSEUI_DOTNET if configured.\nLog: " + _logPath +
                 "\n" + initializationState.InitializationException?.Message,
         });

@@ -18,8 +18,9 @@ public sealed class EclipseView : FrameLayout, ISystemThemeProvider
 {
     private readonly AndroidTextEditor _editor;
     private readonly HeadlessRoot _host;
-    private readonly HarfBuzzTextShaper _font;
-    private readonly HarfBuzzTextPainter _text;
+    private readonly HarfBuzzTextShaper? _font;
+    private readonly ITextPainter _text;
+    private readonly bool _ownsText;
     private readonly ThemeBinding _theme;
     private readonly ElementPainter _painter;
     private readonly VelloSparseBackend _renderer = new();
@@ -35,10 +36,23 @@ public sealed class EclipseView : FrameLayout, ISystemThemeProvider
     private ScrollViewer? _viewer;
     private double _startOffset;
 
-    public EclipseView(Context context, Element root, IHostTheme theme) : base(context)
+    public EclipseView(Context context, Element root, IHostTheme theme)
+        : this(context, root, theme, new HarfBuzzTextShaper("/system/fonts/Roboto-Regular.ttf"))
     {
-        _font = new HarfBuzzTextShaper("/system/fonts/Roboto-Regular.ttf");
-        _text = new HarfBuzzTextPainter(_font, ["/system/fonts/NotoSansCJK-Regular.ttc", "/system/fonts/NotoColorEmoji.ttf"]);
+    }
+
+    private EclipseView(Context context, Element root, IHostTheme theme, HarfBuzzTextShaper font)
+        : this(context, root, theme, new HarfBuzzTextPainter(font,
+            ["/system/fonts/NotoSansCJK-Regular.ttc", "/system/fonts/NotoColorEmoji.ttf"]))
+    {
+        _font = font;
+        _ownsText = true;
+    }
+
+    /// <summary>Uses an application-owned text service; closing this view does not dispose it.</summary>
+    public EclipseView(Context context, Element root, IHostTheme theme, ITextPainter textPainter) : base(context)
+    {
+        _text = textPainter ?? throw new ArgumentNullException(nameof(textPainter));
         _host = new HeadlessRoot(root);
         _theme = new ThemeBinding(theme, this);
         _painter = new ElementPainter(_theme.Current, _text);
@@ -82,7 +96,7 @@ public sealed class EclipseView : FrameLayout, ISystemThemeProvider
         var previous = TextMeasurer.Current;
         try
         {
-            TextMeasurer.Current = _text;
+            TextMeasurer.Current = _text as ITextMeasurer ?? previous;
             var now = Stopwatch.GetTimestamp();
             if (_lastTick != 0) _host.AdvanceAnimations(Stopwatch.GetElapsedTime(_lastTick, now));
             _lastTick = now;
@@ -200,7 +214,7 @@ public sealed class EclipseView : FrameLayout, ISystemThemeProvider
         _renderer.Dispose();
         _bitmap?.Dispose();
         _paint.Dispose();
-        _text.Dispose();
-        _font.Dispose();
+        if (_ownsText) (_text as IDisposable)?.Dispose();
+        _font?.Dispose();
     }
 }

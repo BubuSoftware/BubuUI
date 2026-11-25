@@ -205,6 +205,7 @@ def parser():
     result.add_argument("--executable", default="Gallery.Desktop")
     result.add_argument("--bundle-id", default="io.eclipseui.gallery")
     result.add_argument("--version", default="1.0.0")
+    result.add_argument("--framework", default="net11.0")
     result.add_argument("--configuration", default="Release")
     result.add_argument("--rid", choices=("osx-arm64", "osx-x64"), default="osx-arm64" if os.uname().machine == "arm64" else "osx-x64")
     result.add_argument("--library-dir", action="append", default=[], help="Search directory for target-architecture external dylibs; repeatable")
@@ -251,7 +252,7 @@ def main():
             project = Path(options.project)
             if not project.is_absolute():
                 project = repo / project
-            run("dotnet", "publish", project, "-c", options.configuration, "-r", options.rid,
+            run("dotnet", "publish", project, "-f", options.framework, "-c", options.configuration, "-r", options.rid,
                 "--self-contained", "true", "-o", publish)
         executable = publish / options.executable
         if not executable.is_file():

@@ -7,7 +7,7 @@ Language support for EclipseUI `.ui` templates and `.eustyle` stylesheets.
 - Control themes, typed selectors, template boundaries, template factories and theme resources.
 - Embedded C# editing through the shared EclipseUI language server.
 
-Requires the .NET 10 SDK for project analysis. The language server and standalone
+Requires the .NET 11 SDK for project analysis. The language server and standalone
 metadata catalog are bundled. Open the folder containing your `.csproj` and include
 `.ui` and `.eustyle` sources as `AdditionalFiles` in the project.
 

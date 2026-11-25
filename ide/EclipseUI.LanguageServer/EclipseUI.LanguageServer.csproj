@@ -2,11 +2,9 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
-    <!-- server 通过 MSBuildLocator 加载「本机 SDK 自带」的 MSBuild。只装了比 net10 更新的
-         SDK（例如 .NET 11 SDK）时，那份 MSBuild 引用 System.Runtime 11，跑在 .NET 10 上会
-         FileNotFoundException。允许前滚到更高的主版本运行时，让进程与 SDK 的主版本一致；
-         只有 .NET 10 时仍原样跑在 10 上。 -->
+    <TargetFramework>net11.0</TargetFramework>
+    <!-- MSBuildLocator loads the installed SDK's MSBuild; allow a newer runtime
+         when a future SDK requires it. The minimum runtime is .NET 11. -->
     <RollForward>LatestMajor</RollForward>
     <RootNamespace>EclipseUI.LanguageServer</RootNamespace>
     <AssemblyName>EclipseUI.LanguageServer</AssemblyName>

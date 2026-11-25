@@ -179,8 +179,8 @@ check('server launch command mirrors the VS Code client', () => {
         has(clientJs, "'" + flag + "'", 'VS Code client is missing flag');
     }
     has(command, 'root.resolve("ide").resolve("vscode").resolve("server")');
-    has(command, '"Release").resolve("net10.0")');
-    has(command, '"Debug").resolve("net10.0")');
+    has(command, '"Release").resolve("net11.0")');
+    has(command, '"Debug").resolve("net11.0")');
     has(command, 'project.getBasePath()');
     has(provider, 'extends ProcessStreamConnectionProvider');
     has(command, 'DotnetExecutable.resolve(state.dotnet, EnvironmentUtil.getEnvironmentMap())');

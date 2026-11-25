@@ -14,6 +14,34 @@ namespace EclipseUI.Headless.Tests;
 /// </summary>
 public class AppBuilderTests
 {
+    private sealed class ActivityLifetime : IActivityApplicationLifetime
+    {
+        public Func<Element>? MainViewFactory { get; set; }
+    }
+
+    [Fact]
+    public void GalleryApp_ActivityLifetime_CreatesFreshViewsWithoutDesktopOptions()
+    {
+        var lifetime = new ActivityLifetime();
+        var app = AppBuilder.Configure<GalleryApp>()
+            .ConfigureServices(s => s.AddSingleton<IActivityApplicationLifetime>(lifetime))
+            .UseTheme(ElementTheme.Dark)
+            .Build();
+        try
+        {
+            Assert.Null(app.MainWindow);
+            var factory = Assert.IsType<Func<Element>>(lifetime.MainViewFactory);
+            var first = factory();
+            first.Dispose();
+            using var second = factory();
+            Assert.NotSame(first, second);
+            Assert.False(second.IsDisposed);
+            Assert.IsType<FluentGalleryPage>(second).ApplyTheme!(ElementTheme.Light);
+            Assert.Same(ElementTheme.Light, app.DefaultTheme);
+        }
+        finally { (app.Services as IDisposable)?.Dispose(); }
+    }
+
     private sealed class TestApp : Application
     {
         public int Initialized;

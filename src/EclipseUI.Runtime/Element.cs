@@ -470,6 +470,32 @@ public abstract partial class Element : UiObject
         return new TemplateValueScope(this, previousDepth);
     }
 
+    internal void ResetTemplateValues()
+    {
+        var properties = _templateValues?.Keys.ToArray();
+        _templateValues = null;
+        if (properties is not null)
+            foreach (var property in properties) ApplyValueChange(property);
+        ApplyTemplateClasses(null);
+        InvalidateMeasure();
+        InvalidateRender();
+    }
+
+    /// <summary>Registers a template-root event for cleanup when its UI is rebuilt.</summary>
+    public void AddTemplateHandler(RoutedEvent routedEvent, Action<RoutedEventArgs> handler)
+    {
+        AddHandler(routedEvent, handler);
+        Track(new TemplateHandler(this, routedEvent, handler));
+    }
+
+    public void AddTemplateHandler(RoutedEvent routedEvent, Action handler)
+        => AddTemplateHandler(routedEvent, _ => handler());
+
+    private sealed class TemplateHandler(Element owner, RoutedEvent routedEvent, Action<RoutedEventArgs> handler) : IDisposable
+    {
+        public void Dispose() => owner.RemoveHandler(routedEvent, handler);
+    }
+
     public struct TemplateValueScope : IDisposable
     {
         private Element? _owner;

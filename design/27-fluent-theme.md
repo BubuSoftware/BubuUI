@@ -94,8 +94,8 @@ var frame = painter.BuildFrame(root, size);
 ```powershell
 dotnet build EclipseUI.slnx
 dotnet test EclipseUI.slnx --no-build --no-restore -m:1
-dotnet run --project samples/Gallery.Desktop -- --cpu --theme light --shot out/fluent-gallery-light.png
-dotnet run --project samples/Gallery.Desktop -- --cpu --theme dark --shot out/fluent-gallery-dark.png
+dotnet run --project samples/Gallery -f net11.0 -p:EnableAndroid=false -- --cpu --theme light --shot out/fluent-gallery-light.png
+dotnet run --project samples/Gallery -f net11.0 -p:EnableAndroid=false -- --cpu --theme dark --shot out/fluent-gallery-dark.png
 ```
 
 [早期验证报告](./reports/fluent-theme-2026-11-14.md)和 [WinUI 外观对照报告](./reports/fluent-winui-fidelity-2026-11-14.md)保留当时的测试与截图记录，不代表本轮测试结果或逐像素 WinUI 一致性。当前未提供系统材质、模糊、高对比专用配色或系统强调色自动导入。

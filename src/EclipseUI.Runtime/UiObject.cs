@@ -28,6 +28,11 @@ public abstract class UiObject : IDisposable
     private bool _attachmentNotified;
     private bool _detachmentPending;
     private long _attachmentVersion;
+    private int _hotReloadPending;
+    private bool _hotReloadFailed;
+    private WeakReference<UiObject>[]? _initializedChildren;
+    private List<IDisposable>? _initializationResources;
+    private bool _buildingUi;
 
     public bool IsInitialized => _initialized;
     public bool IsDisposed => _disposed;
@@ -45,8 +50,9 @@ public abstract class UiObject : IDisposable
         _initializing = true;
         try
         {
-            InitializeUi();
+            BuildUi();
             ObjectDisposedException.ThrowIf(_disposed, this);
+            HotReload.Register(this);
             _initialized = true;
             OnInitialized();
             ObjectDisposedException.ThrowIf(_disposed, this);
@@ -66,6 +72,58 @@ public abstract class UiObject : IDisposable
 
     /// <summary>Generated overrides set constructor inputs, initialize the base, then populate the root instance.</summary>
     protected virtual void InitializeUi() { }
+    /// <summary>Override in C# UI types to call RebuildUi, or implement a custom refresh.</summary>
+    protected virtual void ReloadUi() => Invalidate();
+
+    internal void RequestHotReload()
+    {
+        Interlocked.Exchange(ref _hotReloadPending, 1);
+        Invalidate();
+    }
+
+    private void BuildUi()
+    {
+        var existing = new HashSet<UiObject>(UiChildren);
+        _buildingUi = true;
+        try { InitializeUi(); }
+        finally
+        {
+            _buildingUi = false;
+            _initializedChildren = UiChildren.Where(child => !existing.Contains(child))
+                .Select(child => new WeakReference<UiObject>(child)).ToArray();
+        }
+    }
+
+    /// <summary>
+    /// Rebuilds InitializeUi content while retaining this instance and its user fields.
+    /// Child control state is recreated. OnInitialized is not repeated.
+    /// </summary>
+    protected void RebuildUi()
+    {
+        UiThreadGuard.AssertUiThread(this, nameof(RebuildUi));
+        List<Exception>? failures = null;
+        if (_initializationResources is { } resources)
+        {
+            _initializationResources = null;
+            foreach (var resource in resources.AsEnumerable().Reverse())
+            {
+                _resources?.Remove(resource);
+                try { resource.Dispose(); }
+                catch (Exception error) { (failures ??= new()).Add(error); }
+            }
+        }
+        var children = _initializedChildren;
+        _initializedChildren = null;
+        if (children is not null)
+            foreach (var reference in children.Reverse())
+                if (reference.TryGetTarget(out var child) && ReferenceEquals(child.UpdateParent, this))
+                    try { child.Dispose(); }
+                    catch (Exception error) { (failures ??= new()).Add(error); }
+        if (failures is not null) throw new AggregateException("Hot reload cleanup failed.", failures);
+        if (this is Element element) element.ResetTemplateValues();
+        BuildUi();
+        InvalidateSubtree();
+    }
     protected virtual void Render() { }
     protected virtual bool ShouldRender() => true;
 
@@ -409,6 +467,21 @@ public abstract class UiObject : IDisposable
                     continue;
                 }
                 UiThreadGuard.AssertUiThread(node, "UiObject.Render");
+                if (Interlocked.Exchange(ref node._hotReloadPending, 0) != 0)
+                {
+                    try
+                    {
+                        node.ReloadUi();
+                        node._hotReloadFailed = false;
+                    }
+                    catch (Exception error)
+                    {
+                        node._hotReloadFailed = true;
+                        System.Diagnostics.Trace.TraceError($"EclipseUI hot reload failed for {node.GetType()}: {error}");
+                    }
+                    didWork = true;
+                }
+                if (node._hotReloadFailed || node._disposed) continue;
                 var shouldRender = node.ShouldRender();
                 if (node._disposed) continue;
                 if (!ReferenceEquals(node.UpdateRoot, root))
@@ -461,6 +534,7 @@ public abstract class UiObject : IDisposable
         ArgumentNullException.ThrowIfNull(resource);
         if (_disposed) { resource.Dispose(); return; }
         (_resources ??= new()).Add(resource);
+        if (_buildingUi) (_initializationResources ??= new()).Add(resource);
     }
 
     public virtual void Dispose()
@@ -470,6 +544,8 @@ public abstract class UiObject : IDisposable
             throw new InvalidOperationException("An object awaiting OnDetached cannot be disposed before its notification.");
         UiThreadGuard.AssertUiThread(this, nameof(Dispose));
         _disposed = true;
+        _initializedChildren = null;
+        _initializationResources = null;
         _updates?.Clear();
         List<Exception>? failures = null;
         try { RemoveFromParent(); }

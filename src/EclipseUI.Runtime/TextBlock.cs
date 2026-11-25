@@ -125,7 +125,23 @@ public class TextBlock : Panel, ITextContentHost
         _runs.Add(run);
         // run 的文字画在 TextBlock 的 retained 段里（段键是 block.RenderVersion）：
         // run 属性变化必须连带失效 block 渲染，否则复用段保留旧文字。
-        run.PropertyChanged += (_, _) => InvalidateRender();
+        run.PropertyChanged += OnRunPropertyChanged;
+    }
+
+    private void OnRunPropertyChanged(Element sender, StyledProperty property) => InvalidateRender();
+
+    protected internal override void OnChildrenChanged()
+    {
+        // Rebuilding a generated TextBlock disposes its old child runs. Keep
+        // the text layout cache in step with the actual content tree.
+        for (var i = _runs.Count - 1; i >= 0; i--)
+            if (!ReferenceEquals(_runs[i].Parent, this))
+            {
+                _runs[i].PropertyChanged -= OnRunPropertyChanged;
+                _runs.RemoveAt(i);
+            }
+        _textLines.Clear();
+        base.OnChildrenChanged();
     }
 
     public TextRun AddRun(string text)

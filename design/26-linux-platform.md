@@ -1,6 +1,6 @@
 # Linux 桌面平台
 
-`EclipseUI.Platform.Linux` 面向 glibc Linux x64 / arm64，使用 SDL3 3.2+ 管理 X11 / Wayland 窗口，复用 Runtime 的元素树、输入路由和生命周期，以及 Vello 的 GPU 呈现。`Gallery.Desktop` 根据运行系统选择 `UseWindows()` / `UseLinux()`，目标框架统一为 `net10.0`；Win32 API 仍有 Windows 平台标注和运行时保护。
+`EclipseUI.Platform.Linux` 面向 glibc Linux x64 / arm64，使用 SDL3 3.2+ 管理 X11 / Wayland 窗口，复用 Runtime 的元素树、输入路由和生命周期，以及 Vello 的 GPU 呈现。`Gallery` 根据运行系统选择 `UseWindows()` / `UseLinux()`，目标框架统一为 `net11.0`；Win32 API 仍有 Windows 平台标注和运行时保护。
 
 ## 启动与依赖
 
@@ -50,7 +50,7 @@ dotnet publish samples/Gallery.Desktop -c Release -r linux-arm64 --self-containe
 
 ## WSL 调试
 
-已在 Ubuntu 26.04.1 / WSL2 / WSLg 上验证，SDL 3.4.2，.NET 10.0.15，Mesa llvmpipe 软件 Vulkan。X11、Wayland 及 Xvfb 1.25 倍缩放的平台测试均为 34 通过、0 跳过；Release 裁剪发布版已实际运行。
+已在 Ubuntu 26.04.1 / WSL2 / WSLg 上验证，SDL 3.4.2，.NET 11.0.15，Mesa llvmpipe 软件 Vulkan。X11、Wayland 及 Xvfb 1.25 倍缩放的平台测试均为 34 通过、0 跳过；Release 裁剪发布版已实际运行。
 
 Ubuntu 26.04 可直接安装运行依赖：
 

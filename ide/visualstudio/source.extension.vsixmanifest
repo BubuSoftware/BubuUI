@@ -3,7 +3,7 @@
   <Metadata>
     <Identity Id="EclipseUI.VisualStudio" Version="0.2.0" Language="en-US" Publisher="EclipseUI" />
     <DisplayName>EclipseUI</DisplayName>
-    <Description xml:space="preserve">EclipseUI .ui and .eustyle language support: highlighting, completion, diagnostics, hover, navigation, rename and formatting through the shared EclipseUI language server. Requires .NET SDK 10 or later.</Description>
+    <Description xml:space="preserve">EclipseUI .ui and .eustyle language support: highlighting, completion, diagnostics, hover, navigation, rename and formatting through the shared EclipseUI language server. Requires .NET SDK 11 or later.</Description>
   </Metadata>
   <Installation>
     <InstallationTarget Id="Microsoft.VisualStudio.Community" Version="[17.14,19.0)">

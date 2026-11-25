@@ -27,7 +27,7 @@ if ($LASTEXITCODE -ne 0) {
 dotnet build (Join-Path $here '..\src\EclipseUI.Rendering') -c $Configuration --nologo
 if ($LASTEXITCODE -ne 0) { throw "Runtime/rendering build failed ($LASTEXITCODE)." }
 foreach ($name in @('EclipseUI.Runtime', 'EclipseUI.Rendering')) {
-    $assembly = Join-Path $here "..\src\$name\bin\$Configuration\net10.0\$name.dll"
+    $assembly = Join-Path $here "..\src\$name\bin\$Configuration\net11.0\$name.dll"
     if (-not (Test-Path -LiteralPath $assembly)) { throw "Required metadata assembly not found: $assembly" }
     Copy-Item -LiteralPath $assembly -Destination $serverOutput -Force
 }

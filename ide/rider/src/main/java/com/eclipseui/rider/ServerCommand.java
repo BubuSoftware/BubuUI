@@ -55,9 +55,9 @@ public final class ServerCommand {
         Path[] candidates = {
                 root.resolve("ide").resolve("vscode").resolve("server").resolve(SERVER_DLL),
                 root.resolve("ide").resolve("EclipseUI.LanguageServer").resolve("bin")
-                        .resolve("Release").resolve("net10.0").resolve(SERVER_DLL),
+                        .resolve("Release").resolve("net11.0").resolve(SERVER_DLL),
                 root.resolve("ide").resolve("EclipseUI.LanguageServer").resolve("bin")
-                        .resolve("Debug").resolve("net10.0").resolve(SERVER_DLL),
+                        .resolve("Debug").resolve("net11.0").resolve(SERVER_DLL),
         };
         for (Path candidate : candidates) {
             if (Files.isRegularFile(candidate)) return candidate;

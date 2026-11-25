@@ -21,10 +21,10 @@ function resolveServer(context) {
 
   // 1) 打包形态：build.ps1 把 publish 产物放进扩展的 server/ 目录。
   const bundled = path.join(context.extensionPath, 'server', 'EclipseUI.LanguageServer.dll');
-  // 2) 仓库形态：ide/vscode → ../../ide/EclipseUI.LanguageServer/bin/<cfg>/net10.0/
+  // 2) 仓库形态：ide/vscode → ../../ide/EclipseUI.LanguageServer/bin/<cfg>/net11.0/
   const repoRoot = path.resolve(context.extensionPath, '..', '..');
   const devBuilds = ['Release', 'Debug'].map((configuration) =>
-    path.join(repoRoot, 'ide', 'EclipseUI.LanguageServer', 'bin', configuration, 'net10.0',
+    path.join(repoRoot, 'ide', 'EclipseUI.LanguageServer', 'bin', configuration, 'net11.0',
       'EclipseUI.LanguageServer.dll'));
 
   return firstExisting([bundled, ...devBuilds]);

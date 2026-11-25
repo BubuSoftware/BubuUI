@@ -1,8 +1,10 @@
 <Solution>
   <Folder Name="/samples/">
     <Project Path="samples/Gallery/Gallery.csproj" />
-    <Project Path="samples/Gallery.Android/Gallery.Android.csproj" />
     <Project Path="samples/Gallery.Desktop/Gallery.Desktop.csproj" />
+    <Project Path="samples/Gallery.Android/Gallery.Android.csproj">
+      <Deploy Solution="Debug|*" />
+    </Project>
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/EclipseUI.Compiler.Generator/EclipseUI.Compiler.Generator.csproj" />

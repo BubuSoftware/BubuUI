@@ -47,7 +47,7 @@ internal static class ServerLaunchSettings
         foreach (var configuration in new[] { "Release", "Debug" })
         {
             var candidate = Path.Combine(root, "ide", "EclipseUI.LanguageServer", "bin",
-                configuration, "net10.0", "EclipseUI.LanguageServer.dll");
+                configuration, "net11.0", "EclipseUI.LanguageServer.dll");
             if (File.Exists(candidate)) return candidate;
         }
         throw new FileNotFoundException("EclipseUI language server not found. Reinstall the VSIX, " +

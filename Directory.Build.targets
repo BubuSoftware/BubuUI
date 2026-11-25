@@ -1,0 +1,8 @@
+<Project>
+  <!-- Template inputs must participate in dotnet watch's compilation updates. -->
+  <ItemGroup>
+    <!-- Absolute paths keep referenced UI libraries relative to their own
+         project, rather than the Desktop/Android entry project's directory. -->
+    <Watch Include="@(AdditionalFiles->'%(FullPath)')" />
+  </ItemGroup>
+</Project>

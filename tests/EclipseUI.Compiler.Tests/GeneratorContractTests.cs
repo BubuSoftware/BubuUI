@@ -696,7 +696,7 @@ public class GeneratorContractTests
     [InlineData("TextBlock", "OnKeyUp", "global::EclipseUI.Element.KeyUpEvent")]
     [InlineData("Button", "OnGotFocus", "global::EclipseUI.Element.GotFocusEvent")]
     [InlineData("CheckBox", "OnLostFocus", "global::EclipseUI.Element.LostFocusEvent")]
-    public void EventAttribute_EmitsAddHandlerAgainstTheDeclaringType(
+    public void EventAttribute_EmitsTrackedRootHandlerAgainstTheDeclaringType(
         string tag, string attribute, string fieldReference)
     {
         var ui = "@using EclipseUI.Elements\n" + $"<{tag} {attribute}={{() => Bump()}} />";
@@ -704,7 +704,8 @@ public class GeneratorContractTests
 
         var result = RunWithReferences("/templates/Probe.ui", ui, codeBehind);
         Assert.Empty(result.Diagnostics);
-        Assert.Contains($"AddHandler({fieldReference},", Generated(result));
+        Assert.Contains($"AddTemplateHandler({fieldReference},", Generated(result));
+        Assert.Contains("protected override void ReloadUi() => RebuildUi();", Generated(result));
     }
 
     /// <summary>§14.10.3 的缓存前提：同一批引用、无关源码变化下目录必须按值相等（不手写缓存）。</summary>

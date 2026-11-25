@@ -78,7 +78,7 @@ public class UnimportedTypeCompletionTests
                 Nullable = "disable",
                 LangVersion = "preview",
                 OutputType = "Library",
-                TargetFramework = "net10.0",
+                TargetFramework = "net11.0",
                 CompileFiles = Array.Empty<string>(),
                 AdditionalFiles = new[] { UiPath },
                 UsingNamespaces = Array.Empty<string>(),

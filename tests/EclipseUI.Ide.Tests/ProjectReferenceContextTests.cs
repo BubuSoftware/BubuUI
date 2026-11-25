@@ -17,6 +17,9 @@ public class ProjectReferenceContextTests
     public void FluentGalleryTemplatesGenerateAndResolveWithoutCompilationErrors()
     {
         var snapshot = Gallery.Value;
+        Assert.Equal("net11.0", snapshot.Evaluation.TargetFramework);
+        Assert.Contains(snapshot.Evaluation.CompileFiles, path => path.EndsWith("Program.cs", StringComparison.Ordinal));
+        Assert.DoesNotContain(snapshot.Evaluation.CompileFiles, path => path.EndsWith("MainActivity.cs", StringComparison.Ordinal));
         var templates = snapshot.Evaluation.AdditionalFiles
             .Where(path => path.EndsWith(".ui", StringComparison.OrdinalIgnoreCase)).ToArray();
         Assert.NotEmpty(templates);
@@ -51,7 +54,8 @@ public class ProjectReferenceContextTests
     public void ProjectCompileAssetsTakePrecedenceOverServerRuntimeAssemblies()
     {
         var snapshot = Gallery.Value;
-        const string name = "Microsoft.Extensions.DependencyInjection.Abstractions";
+        // Abstractions ships in the .NET 11 shared framework; use the NuGet implementation.
+        const string name = "Microsoft.Extensions.DependencyInjection";
         var expected = Assert.Single(snapshot.Evaluation.References, reference =>
             string.Equals(Path.GetFileNameWithoutExtension(reference), name, StringComparison.OrdinalIgnoreCase));
         var actual = Assert.Single(snapshot.Compilation.References, reference =>

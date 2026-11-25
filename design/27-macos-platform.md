@@ -1,6 +1,6 @@
 # macOS 桌面平台
 
-`EclipseUI.Platform.MacOS` 使用 SDL3 Cocoa 窗口，Vello 通过 Metal 直接呈现。项目目标为 `net10.0`，`Gallery.Desktop` 自动选择 macOS 平台；Runtime、模板、元素树与其他平台共享。
+`EclipseUI.Platform.MacOS` 使用 SDL3 Cocoa 窗口，Vello 通过 Metal 直接呈现。项目目标为 `net11.0`，`Gallery` 自动选择 macOS 平台；Runtime、模板、元素树与其他平台共享。
 
 ## 启动
 

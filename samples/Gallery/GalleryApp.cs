@@ -3,11 +3,17 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Gallery;
 
-/// <summary>Fluent gallery application; the desktop shell supplies platform and launch options.</summary>
+/// <summary>Fluent gallery application; platform entries supply services and launch options.</summary>
 public sealed class GalleryApp : Application
 {
     public override void OnFrameworkInitializationCompleted()
     {
+        if (Services.GetService<IActivityApplicationLifetime>() is { } activities)
+        {
+            activities.MainViewFactory = () => new FluentGalleryPage { ApplyTheme = SetTheme };
+            return;
+        }
+
         var options = Services.GetRequiredService<GalleryLaunchOptions>();
 
         var window = new MainWindow

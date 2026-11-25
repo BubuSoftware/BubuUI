@@ -11,8 +11,8 @@ Visual Studio 的 VSIX 客户端。`.ui` / `.eustyle` 复用仓库现有的
 ## 安装
 
 支持 Windows x64，Visual Studio 2022 **17.14+** / Visual Studio 2026。
-本机需要 **.NET SDK 10 或更高版本**，用于运行服务器、求值项目及读取项目引用。
-插件支持 VS 2022 编辑文件；EclipseUI 框架本身目标为 .NET 10，
+本机需要 **.NET SDK 11 或更高版本**，用于运行服务器、求值项目及读取项目引用。
+插件支持 VS 2022 编辑文件；EclipseUI 框架本身目标为 .NET 11，
 在 VS 内构建这类项目需要 VS 2026。
 
 1. 运行下述构建命令，得到 `bin/Release/net472/EclipseUI.VisualStudio.vsix`。
@@ -88,7 +88,7 @@ F5 启动 `/RootSuffix Exp` 实验实例。普通构建默认不自动安装插�
 
 指定了不存在的服务器路径时明确报错，不会悄悄回退到其他版本。
 无显式配置时，先找内嵌服务器，再从工作区及扩展目录向上探测仓库的
-`ide/EclipseUI.LanguageServer/bin/{Release,Debug}/net10.0`。
+`ide/EclipseUI.LanguageServer/bin/{Release,Debug}/net11.0`。
 
 日志位于 `%LOCALAPPDATA%\EclipseUI\VisualStudio\logs\server-*.log`。
 有高亮但无补全时，先检查日志中的项目求值结果、文件所属项目和 restore 提示；

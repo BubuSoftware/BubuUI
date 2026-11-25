@@ -1,0 +1,8 @@
+@namespace EclipseUI.Headless.Tests
+@using EclipseUI.Elements
+
+<Button OnClick={() => Clicks++}>reload</Button>
+
+@code {
+    public int Clicks;
+}

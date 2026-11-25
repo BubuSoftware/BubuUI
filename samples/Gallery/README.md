@@ -1,6 +1,6 @@
 # Fluent control gallery
 
-The desktop app opens one Fluent interactive gallery. All layout and fourteen control examples are declared in `.ui` files; `@code` contains interaction and state logic.
+Gallery is a shared UI library used by the Gallery.Desktop and Gallery.Android entry projects. All layout and fourteen control examples are declared in `.ui` files; `@code` contains interaction and state logic.
 
 ```sh
 dotnet run --project samples/Gallery.Desktop
@@ -8,7 +8,17 @@ dotnet run --project samples/Gallery.Desktop -- --theme light
 dotnet run --project samples/Gallery.Desktop -- --cpu --theme dark --shot out/fluent-gallery/dark.png
 ```
 
-`MainWindow.ui` hosts `FluentGalleryPage.ui`. `FluentControlExamples.ui` declares the controls, and `FluentExampleRow.ui` provides each label and control slot. The Fluent theme is applied by the desktop app builder.
+Build the Android entry project (requires the .NET 11 Android workload, SDK, JDK and `ANDROID_NDK_HOME`):
+
+```sh
+dotnet publish samples/Gallery.Android -c Release
+```
+
+`Gallery.Desktop/Program.cs` selects the Windows, Linux or macOS platform at runtime. `Gallery.Android/MainApplication.cs` and `MainActivity.cs` provide the Android lifecycle. Both entry projects reference `Gallery.csproj`; shared UI compiles once as a `net11.0` library. Building the desktop entry does not require Android tools.
+
+In Visual Studio, set Gallery.Desktop as the startup project for desktop debugging and hot reload, or Gallery.Android for Android device deployment. Reload the solution after migrating from the single entry project. Gallery itself is a library and cannot be launched. Entry projects use native SDK capabilities rather than advertising MAUI compatibility.
+
+`MainWindow.ui` hosts `FluentGalleryPage.ui`. `FluentControlExamples.ui` declares the controls, and `FluentExampleRow.ui` provides each label and control slot. Both platform builders apply the Fluent theme.
 
 `FluentGalleryPage.ui` also owns the theme button event, current mode and System → Light → Dark cycle. `GalleryApp` supplies the initial mode and a host theme callback; it contains no theme switching logic.
 

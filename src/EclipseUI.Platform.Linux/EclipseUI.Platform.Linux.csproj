@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net11.0</TargetFramework>
     <RootNamespace>EclipseUI.Platform.Linux</RootNamespace>
     <Description>EclipseUI Linux desktop host: SDL3, X11/Wayland, DPI, input and clipboard.</Description>
   </PropertyGroup>

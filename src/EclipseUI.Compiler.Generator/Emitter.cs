@@ -209,6 +209,8 @@ public sealed class Emitter
         AppendMapped(_sb, _body);
         _sb.AppendLine("    }");
 
+        _sb.AppendLine("    protected override void ReloadUi() => RebuildUi();");
+
         if (_renderCalls.Count > 0)
         {
             _sb.AppendLine();
@@ -693,7 +695,7 @@ public sealed class Emitter
                 var wrapper = handlerType == "global::System.Action"
                     ? $"() => {{ {h}(); Invalidate(); }}"
                     : $"e => {{ {h}(e); Invalidate(); }}";
-                Line($"{v}.AddHandler({evt.DeclaringTypeName}.{evt.FieldName}, {wrapper});");
+                Line($"{v}.{(receiver is null ? "AddHandler" : "AddTemplateHandler")}({evt.DeclaringTypeName}.{evt.FieldName}, {wrapper});");
             }
             else if (attr.ParamDef is { } parameter)
             {

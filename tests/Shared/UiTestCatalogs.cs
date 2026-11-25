@@ -13,7 +13,7 @@ namespace EclipseUI.TestKit;
 /// <summary>
 /// 测试用目录：一律扫描已编译的 <c>EclipseUI.Runtime.dll</c> 得到（design/14 §14.11.1）。
 /// 不得再手写一份固定目录——那会制造 T1 禁止的第二事实源。
-/// 本项目（net10.0）可以引用 Roslyn，生产侧的 <c>EclipseUI.Compiler</c> 保持零 Roslyn 依赖。
+/// 本项目（net11.0）可以引用 Roslyn，生产侧的 <c>EclipseUI.Compiler</c> 保持零 Roslyn 依赖。
 /// </summary>
 public static class UiTestCatalogs
 {

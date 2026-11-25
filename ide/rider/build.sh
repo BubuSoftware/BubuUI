@@ -46,7 +46,7 @@ dotnet publish "$ide_dir/EclipseUI.LanguageServer" -c Release -o "$server_dir" \
 # The metadata catalog uses these assemblies without loading platform code.
 dotnet build "$repo_dir/src/EclipseUI.Rendering" -c Release --nologo
 for assembly in EclipseUI.Runtime EclipseUI.Rendering; do
-    cp "$repo_dir/src/$assembly/bin/Release/net10.0/$assembly.dll" "$server_dir/"
+    cp "$repo_dir/src/$assembly/bin/Release/net11.0/$assembly.dll" "$server_dir/"
 done
 
 if [[ "$skip_tests" == false ]]; then

@@ -1,5 +1,7 @@
 # EclipseUI
 
+开发时修改 `.ui` / C# 的使用方式与限制见 [热重载](./design/hot-reload.md)。
+
 模板引擎优先的自绘 UI 框架。`.ui` 和纯 C# 是相同 UI 类型的两种编写方式：**根标签决定生成类基类，生成对象本身就是 UI 实例。**
 
 当前规范见 [spec](./spec/README.md)，统一实施与验证见 [design/21](./design/21-root-type-unification.md)。样式和 C# 属性过渡的用法见 [动画系统](./design/29-animation-system.md)。
@@ -76,6 +78,12 @@ Windows、Linux 和 macOS 共用应用窗口规则：关闭主窗口不会关闭
 
 ## 开发与验证
 
+仓库统一使用 .NET 11 SDK（`global.json`），运行时、平台、样例、测试和语言服务器目标均为 .NET 11。Roslyn 源生成器及其共享编译器组件保留 `netstandard2.0`，VS 进程内扩展保留 `net472`，以满足各自加载宿主的兼容要求；它们同样由 .NET 11 SDK 构建。
+
+画廊采用共享 UI 加平台入口结构：`samples/Gallery` 是共享库，包含 `.ui`、交互逻辑和 `GalleryApp`；`samples/Gallery.Desktop` 提供 Windows / Linux / macOS 桌面入口（`net11.0`），`samples/Gallery.Android` 提供 Android 入口（`net11.0-android`）。Visual Studio 中将对应入口项目设为启动项目，Android 设备在 Android 项目中选择。
+
+桌面入口和共享 UI 只需 .NET 11 SDK。Android 入口及整个解决方案的构建需要 Android 工作负载；未安装该工作负载时，直接构建或运行 `Gallery.Desktop` 项目。
+
 ```powershell
 dotnet build EclipseUI.slnx
 dotnet test EclipseUI.slnx --no-build -m:1
@@ -93,7 +101,7 @@ Windows 拖动窗口边框时会按最新客户区实时重新布局和上屏，
 
 ## Linux 桌面
 
-`Gallery.Desktop` 自动选择 Windows / Linux / macOS 平台。Linux 使用 SDL3 3.2+ 创建 X11 或 Wayland 窗口，Vello 通过 Vulkan 上屏；需安装 `libSDL3.so.0`、Vulkan loader/驱动和字体（建议 DejaVu Sans、Noto CJK、Noto Color Emoji）。
+`Gallery` 自动选择 Windows / Linux / macOS 平台。Linux 使用 SDL3 3.2+ 创建 X11 或 Wayland 窗口，Vello 通过 Vulkan 上屏；需安装 `libSDL3.so.0`、Vulkan loader/驱动和字体（建议 DejaVu Sans、Noto CJK、Noto Color Emoji）。
 
 ```bash
 dotnet run --project samples/Gallery.Desktop
@@ -125,7 +133,22 @@ dotnet publish samples/Gallery.Desktop -c Release -r osx-arm64 --self-contained 
 
 Android arm64 样例使用与桌面相同的 Gallery 页面和 Fluent 控件模板。Activity 承载 EclipseView，按屏幕密度换算布局和触摸坐标，按 Android 分配给视图的实际像素尺寸进行 CPU 光栅化。支持单指点击、拖动、纵向列表滚动和主题切换。Activity 暂停时停止刷新，返回时恢复现有页面。
 
-安装 .NET 11 Android 工作负载、Android SDK 和 JDK，将 ANDROID_NDK_HOME 指向解压后的 Android NDK（已验证 r28c），然后独立发布样例：
+Android 与桌面共用 `AppBuilder`。带 `[Application]` 的 `MainApplication` 继承 `EclipseAndroidApplication<GalleryApp>`，基类在进程启动时执行 `AppBuilder.Configure<GalleryApp>().UseAndroid()`，经 `CustomizeAppBuilder` 配置后调用 `Build()`：
+
+```csharp
+protected override AppBuilder CustomizeAppBuilder(AppBuilder builder)
+    => builder
+        .UseHarfBuzzText(options =>
+        {
+            options.FontPaths = ["/system/fonts/Roboto-Regular.ttf"];
+            options.FallbackFontPaths = ["/system/fonts/NotoSansCJK-Regular.ttc", "/system/fonts/NotoColorEmoji.ttf"];
+        })
+        .UseFluentTheme();
+```
+
+可继续链式调用 `ConfigureServices` / `UseStyles`。共享 `GalleryApp` 在初始化回调中取得 `IActivityApplicationLifetime`，设置 `MainViewFactory`；桌面仍创建 `MainWindow`。`MainActivity` 只需继承 `EclipseActivity`，基类负责创建视图、暂停/恢复和释放。Activity 重建会创建新页面，应用与服务容器保留，当前应用主题继续生效。页面内容状态尚未自动保存。Android 的生命周期由系统驱动，不调用桌面的阻塞式 `Start()`；当前视图仍使用 Vello CPU 渲染，不需要桌面的 `UseVello()` 表面工厂。
+
+安装 .NET 11 Android 工作负载、Android SDK 和 JDK，将 ANDROID_NDK_HOME 指向解压后的 Android NDK（已验证 r28c），然后从 Android 入口项目发布样例：
 
 ```powershell
 dotnet publish samples/Gallery.Android -c Release
