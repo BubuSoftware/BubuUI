@@ -349,7 +349,9 @@ public sealed class VelloSceneBuilder : IDisposable
         _ => ExtendMode.Pad,
     };
 
-    private static VLayerBlend NoBlend() => new(LayerMix.Normal, LayerCompose.SrcOver);
+    // Pure clips must not allocate isolated blend layers. Nested normal layers
+    // consume Vello blend-spill storage across the viewport and can blank large GPU frames.
+    private static VLayerBlend NoBlend() => new(LayerMix.Clip, LayerCompose.SrcOver);
 
     private static VLayerBlend MapBlend(Rendering.LayerBlend blend)
     {
