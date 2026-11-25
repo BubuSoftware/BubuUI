@@ -156,6 +156,10 @@ dotnet publish samples/Gallery.Android -c Release
 
 宿主从 NDK 打包 arm64 C++ 运行库；也可通过 MSBuild 属性 AndroidCppRuntime 指定官方 arm64 libc++_shared.so 的完整路径。已在 4 KB 页 arm64 真机验证 Release 冷启动、触摸按钮、滑动和前后台切换。当前 Vello 和 HarfBuzz 原生包仍报告 16 KB 对齐警告。点击可编辑的 TextBox 会打开 Android 系统键盘。已在真机验证中文候选词提交和返回键收起键盘，输入内容同步到 TextBox 和 TextChanged 事件。惯性滚动、无障碍桥接和 GPU 上屏尚未接入。
 
+## FreeOTP 桌面应用
+
+[FreeOTP](https://github.com/CeSun/FreeOTP) 已独立为单独仓库，通过 Git submodule 引用 EclipseUI。支持导入 FreeOTP Android 加密备份、TOTP/HOTP、验证码复制和本地加密保存。
+
 ## 当前能力
 
 - 保留静态树、编译期动态槽和 if/foreach/switch 块；普通 CLR 状态＋显式失效，无依赖追踪或运行时通用树 diff。
