@@ -6,7 +6,7 @@
 
 <Grid RowDefinitions="Auto,*">
     <StackPanel Padding="24" Gap="8">
-        <TextBlock FontSize="28">Fluent / Windows 11</TextBlock>
+        <TextBlock FontSize="28">Fluent / Windows 12</TextBlock>
         <TextBlock FontSize="14" Style="Foreground: theme(#FFFFFFC5, #0000009E)">Hover, click or press Tab to explore</TextBlock>
         <WrapPanel Gap="8">
             <Button Ref={ThemeButton} MinWidth="144" OnClick={CycleTheme}>Theme: System</Button>
