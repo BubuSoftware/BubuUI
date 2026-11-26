@@ -7,6 +7,7 @@ using EclipseUI.Themes.Fluent;
 using EclipseUI.Rendering.Vello;
 using EclipseUI.Text.Shaping;
 using Gallery;
+using Gallery.Services;
 using Microsoft.Extensions.DependencyInjection;
 
 // EclipseUI 画廊 · Windows/Linux/macOS 桌面入口；共享 UI 在 samples/Gallery。
@@ -23,7 +24,12 @@ var builder = AppBuilder.Configure<GalleryApp>()
     .UseVello(new VelloSurfaceOptions { PreferVsync = options.Vsync })
     .UseHarfBuzzText()
     .UseFluentTheme(options.Theme)
-    .ConfigureServices(s => s.AddSingleton(options));
+    .ConfigureServices(s =>
+    {
+        s.AddSingleton(options);
+        // K37 @inject 示例：DependencyInjectionExample.ui 经 @inject 解析的单例状态服务。
+        s.AddSingleton<IGalleryDemoState, GalleryDemoState>();
+    });
 
 // --cpu / --shot：离屏 CPU 快照路径（不开窗口）——Build() 装配后直接 measure/arrange 出图。
 if (options.Offscreen)

@@ -18,7 +18,9 @@ public class ProjectReferenceContextTests
     {
         var snapshot = Gallery.Value;
         Assert.Equal("net11.0", snapshot.Evaluation.TargetFramework);
-        Assert.Contains(snapshot.Evaluation.CompileFiles, path => path.EndsWith("Program.cs", StringComparison.Ordinal));
+        // 入口点在平台宿主项目（Gallery.Desktop/Gallery.Android，b66bc44）；共享 Gallery 是类库，
+        // 断言的是应用类在此、平台入口不在此。
+        Assert.Contains(snapshot.Evaluation.CompileFiles, path => path.EndsWith("GalleryApp.cs", StringComparison.Ordinal));
         Assert.DoesNotContain(snapshot.Evaluation.CompileFiles, path => path.EndsWith("MainActivity.cs", StringComparison.Ordinal));
         var templates = snapshot.Evaluation.AdditionalFiles
             .Where(path => path.EndsWith(".ui", StringComparison.OrdinalIgnoreCase)).ToArray();

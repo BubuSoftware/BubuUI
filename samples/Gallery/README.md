@@ -29,6 +29,8 @@ dotnet run -r iossimulator-arm64 --device YOUR_SIMULATOR_UDID
 
 `FluentGalleryPage.ui` also owns the theme button event, current mode and System → Light → Dark cycle. `GalleryApp` supplies the initial mode and a host theme callback; it contains no theme switching logic.
 
+`DependencyInjectionExample.ui` demonstrates K37 template dependency injection: `@inject IGalleryDemoState DemoState` generates a property that `InitializeUi` resolves from `Application.Current.Services` first thing (fail-fast when unregistered, per spec/02 R11). Both platform entries register `IGalleryDemoState` as a singleton (`GalleryDemoState`), so the example row's click count survives `Reset controls` — the visual tree is rebuilt and the property re-resolves to the same instance — while its build count grows on every rebuild. The row is mounted only when the service is registered, so harness code that constructs the templates without a built application keeps the plain fourteen-row catalog. `GalleryLaunchOptions` shows the complementary pattern: C#-side consumption via `GetRequiredService`.
+
 Buttons report clicks, fields accept edits, radios share a group, switches update their captions, and the slider updates the progress bar. Reset restores initial values and releases removed controls, including open popups. Keyboard focus reveals controls when needed. Theme cycles through System, Light and Dark.
 
 The layout fits a 360 DIP viewport without horizontal scrolling. The default window is 720×960. Hover, press and focus states are shown by interacting with the controls directly.

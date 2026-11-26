@@ -4,6 +4,8 @@ using EclipseUI;
 using EclipseUI.Platform.Android;
 using EclipseUI.Text.Shaping;
 using EclipseUI.Themes.Fluent;
+using Gallery.Services;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Gallery.Android;
 
@@ -18,5 +20,7 @@ public sealed class MainApplication(nint handle, JniHandleOwnership ownership)
                 options.FontPaths = ["/system/fonts/Roboto-Regular.ttf"];
                 options.FallbackFontPaths = ["/system/fonts/NotoSansCJK-Regular.ttc", "/system/fonts/NotoColorEmoji.ttf"];
             })
-            .UseFluentTheme();
+            .UseFluentTheme()
+            // K37 @inject 示例：DependencyInjectionExample.ui 经 @inject 解析的单例状态服务。
+            .ConfigureServices(s => s.AddSingleton<IGalleryDemoState, GalleryDemoState>());
 }

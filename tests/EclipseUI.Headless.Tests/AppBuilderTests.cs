@@ -2,6 +2,7 @@ using EclipseUI;
 using EclipseUI.Elements;
 using EclipseUI.Rendering;
 using Gallery;
+using Gallery.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -169,7 +170,11 @@ public class AppBuilderTests
             var app = AppBuilder.Configure<GalleryApp>()
                 .UseTheme(ElementTheme.Dark)
                 .UseStyles(StyleRegistry.Instance, Gallery.StyleBootstrap.Apply)
-                .ConfigureServices(s => s.AddSingleton(options))
+                .ConfigureServices(s =>
+                {
+                    s.AddSingleton(options);
+                    s.AddSingleton<IGalleryDemoState, GalleryDemoState>();
+                })
                 .Build();
 
             var window = app.MainWindow;
@@ -178,7 +183,8 @@ public class AppBuilderTests
             Assert.Equal(options.Width, window.Width);
             Assert.Equal(options.Height, window.Height);
             Assert.NotNull(window.Content);
-            Assert.Equal(14, Assert.IsType<MainWindow>(window).Page.LiveControls.Count);
+            // 14 行控件目录 + 1 行 K37 @inject 示例（服务已注册 → DependencyInjectionExample 挂载）
+            Assert.Equal(15, Assert.IsType<MainWindow>(window).Page.LiveControls.Count);
             Assert.Same(ElementTheme.Dark, app.DefaultTheme);
             Assert.Same(StyleRegistry.Instance, Styling.Provider);
         }

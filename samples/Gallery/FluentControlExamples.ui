@@ -1,6 +1,7 @@
 @namespace Gallery
 @using EclipseUI
 @using EclipseUI.Elements
+@using Gallery.Services
 
 <StackPanel Padding="24" Gap="0" MaxWidth="640" HorizontalAlignment="Left">
     <Grid ColumnDefinitions="*,180" Height="48">
@@ -54,4 +55,19 @@
 @code {
     private readonly string[] Choices = ["Alpha", "Beta", "Gamma"];
     public IReadOnlyList<FluentExampleRow> Rows => Children.OfType<FluentExampleRow>().ToArray();
+
+    protected override void OnInitialized()
+    {
+        base.OnInitialized();
+        // K37 @inject 示例行（DependencyInjectionExample）：仅当宿主注册了 IGalleryDemoState 时挂载。
+        // 测试/沙箱直接 new 本模板时没有 Application/服务容器（解析会 fail-fast 抛出），
+        // 跳过挂载以保持 14 行控件目录不变；真实宿主（Gallery.Desktop / Gallery.Android）
+        // 在 ConfigureServices 注册服务后即可见。
+        if (Application.Current?.Services.GetService(typeof(IGalleryDemoState)) is not null)
+        {
+            var demo = new DependencyInjectionExample();
+            demo.EnsureInitialized();
+            Children.Add(demo);
+        }
+    }
 }
