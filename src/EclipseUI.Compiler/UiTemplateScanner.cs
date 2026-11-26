@@ -37,11 +37,22 @@ public static class UiTemplateScanner
             blocks.Add(new UiCodeBlockText(block.Code, block.CodeSpan.Start, block.CodeSpan.Length,
                 line, character));
         }
+        // K37：@inject 声明按属性名去重、首条生效（重复由分析器 EUI065 报，这里只保证
+        // 符号视图 stub 不产生重复成员噪声——与 EUI065 短路生成不冲突，stub 永远单份）。
+        var injects = new List<UiInjectText>();
+        var injectNames = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var node in doc.Nodes)
+        {
+            if (node is not UiInjectDirective inject) continue;
+            if (!injectNames.Add(inject.PropertyName)) continue;
+            injects.Add(new UiInjectText(inject.TypeName, inject.PropertyName));
+        }
         return new UiTemplateDeclaration(tag, doc.Namespace)
         {
             Path = path,
             TemplateTarget = doc.TemplateTarget,
             CodeBlocks = blocks,
+            Injects = injects,
             RootTag = doc.Nodes.OfType<UiElement>().FirstOrDefault()?.Tag,
             Usings = TemplateAnalyzer.CollectUsingLines(doc.Nodes),
         };

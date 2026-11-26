@@ -198,6 +198,9 @@ public sealed record UiTemplateDeclaration(string Tag, string? Namespace)
     /// <summary>根层 <c>@code</c> 块（文档顺序）；无 <c>@code</c> 时为空。</summary>
     public IReadOnlyList<UiCodeBlockText> CodeBlocks { get; init; } = Array.Empty<UiCodeBlockText>();
 
+    /// <summary>K37：根层 <c>@inject</c> 声明（文档顺序，按属性名去重、首条生效）；无 <c>@inject</c> 时为空。</summary>
+    public IReadOnlyList<UiInjectText> Injects { get; init; } = Array.Empty<UiInjectText>();
+
     public bool Equals(UiTemplateDeclaration? other) =>
         other is not null
         && Tag == other.Tag
@@ -206,7 +209,8 @@ public sealed record UiTemplateDeclaration(string Tag, string? Namespace)
         && RootTag == other.RootTag
         && TemplateTarget == other.TemplateTarget
         && CatalogValueEq.Sequence(Usings, other.Usings)
-        && CatalogValueEq.Sequence(CodeBlocks, other.CodeBlocks);
+        && CatalogValueEq.Sequence(CodeBlocks, other.CodeBlocks)
+        && CatalogValueEq.Sequence(Injects, other.Injects);
 
     public override int GetHashCode()
     {
@@ -216,7 +220,8 @@ public sealed record UiTemplateDeclaration(string Tag, string? Namespace)
         hash = CatalogValueEq.Add(hash, RootTag);
         hash = CatalogValueEq.Add(hash, TemplateTarget);
         hash = CatalogValueEq.AddSequence(hash, Usings);
-        return CatalogValueEq.AddSequence(hash, CodeBlocks);
+        hash = CatalogValueEq.AddSequence(hash, CodeBlocks);
+        return CatalogValueEq.AddSequence(hash, Injects);
     }
 }
 
@@ -236,6 +241,20 @@ public sealed record UiCodeBlockText(
         CatalogValueEq.Add(CatalogValueEq.Add(CatalogValueEq.Add(
             CatalogValueEq.Add(CatalogValueEq.Add(CatalogValueEq.Start, Code), SpanStart), SpanLength),
             StartLine), StartCharacter);
+}
+
+/// <summary>
+/// 一条 <c>@inject</c> 声明的清单快照（K37）：服务类型名 + 属性名。类型名按模板 <c>@using</c>/
+/// 别名原样记录（不解析成 CLR 全名——符号视图 stub 与生成代码同样按原样发射，由 C# 侧解析）。
+/// 手写结构相等（与 <see cref="UiCodeBlockText"/> 同因：增量管道值比较）。
+/// </summary>
+public sealed record UiInjectText(string TypeName, string PropertyName)
+{
+    public bool Equals(UiInjectText? other) =>
+        other is not null && TypeName == other.TypeName && PropertyName == other.PropertyName;
+
+    public override int GetHashCode() =>
+        CatalogValueEq.Add(CatalogValueEq.Add(CatalogValueEq.Start, TypeName), PropertyName);
 }
 
 /// <summary>

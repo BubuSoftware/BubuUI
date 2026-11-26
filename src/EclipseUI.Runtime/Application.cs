@@ -62,6 +62,15 @@ public abstract partial class Application
     /// <summary>应用容器；<see cref="AppBuilder.Build"/> 前为空实现。</summary>
     public IServiceProvider Services { get; internal set; } = EmptyServiceProvider.Instance;
 
+    /// <summary>
+    /// 当前应用实例（K37）：<see cref="AppBuilder.Build"/> 装配完成后置位，供 <c>@inject</c>
+    /// 生成代码在 InitializeUi 最前解析服务（spec/02 §4.7/R11）。未构建应用时为 null——
+    /// 生成的解析表达式经 <c>Current?.Services.GetService(…)</c> 回落
+    /// <see cref="InvalidOperationException"/>（fail-fast，不构建内容树）。
+    /// 与 <c>Clipboard.Current</c> 同一静态入口形态。
+    /// </summary>
+    public static Application? Current { get; set; }
+
     /// <summary>主窗口对象；子类在 <see cref="OnFrameworkInitializationCompleted"/> 里设置。</summary>
     public Window? MainWindow { get; set; }
 

@@ -101,6 +101,9 @@ public sealed class AppBuilder
         var app = (Application)Activator.CreateInstance(_appType)!;
         app.Services = provider;
         app.DefaultTheme = _defaultTheme;
+        // K37：@inject 解析的静态入口（spec/02 §4.7/R11）——置位先于
+        // OnFrameworkInitializationCompleted，回调里创建的窗口/组件在 InitializeUi 即可解析服务。
+        Application.Current = app;
 
         // 样式装配（S-B）：Provider 先接线（晚装配补应用），再注册类定义。
         if (_styleProvider is not null)

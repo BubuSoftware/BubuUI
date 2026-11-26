@@ -31,6 +31,9 @@ public sealed class Token
     public TextSpan Span { get; set; }
     public TextSpan InnerSpan { get; set; }
 
+    /// <summary>K37：<c>@inject</c> 属性名的 span（类型名在 <see cref="InnerSpan"/>）。</summary>
+    public TextSpan InnerSpan2 { get; set; }
+
     public override string ToString() => $"{Kind} '{Text}'";
 }
 
@@ -564,6 +567,55 @@ public sealed class Lexer
         };
     }
 
+    /// <summary>
+    /// K37（spec/01 §4.18）：<c>@inject TypeName PropertyName</c>。同一行内写完、结尾分号可选
+    /// （与 @using/@namespace 同口径）；类型名形态同 @using 别名目标（可带 <c>global::</c>，非泛型），
+    /// 属性名是单个 C# 标识符。失败一律返回携带专属消息的 Error token 并吞掉整行
+    /// （<see cref="DirectiveError"/> 同款，绝不把残余字符交回文本模式）。
+    /// </summary>
+    private Token ParseInjectDirective(int start)
+    {
+        const string usage = "'@inject' requires a type name and a property name: '@inject My.Services.ICache Cache'";
+
+        // 只跨行内空白：跳过 '\n' 会把下一行的元素吞进指令（见 DirectiveError 的整行推进）
+        while (_i < _s.Length && (_s[_i] == ' ' || _s[_i] == '\t')) _i++;
+        int typeBegin = _i;
+        while (_i < _s.Length && (char.IsLetterOrDigit(_s[_i]) || _s[_i] == '_' || _s[_i] == '.' || _s[_i] == ':'))
+            _i++;
+        var type = _s.Substring(typeBegin, _i - typeBegin);
+        if (type.Length == 0 || !IsTypeName(type))
+            return DirectiveError(start, usage);
+        if (_i < _s.Length && _s[_i] == '<')
+            return DirectiveError(start,
+                "generic type names are not supported in '@inject'; inject a non-generic service interface");
+
+        // 属性名必须以至少一个空白与类型名分隔（'@inject IFoo' 单参数是常见漏写）
+        if (_i >= _s.Length || (_s[_i] != ' ' && _s[_i] != '\t'))
+            return DirectiveError(start, usage);
+        while (_i < _s.Length && (_s[_i] == ' ' || _s[_i] == '\t')) _i++;
+
+        int nameBegin = _i;
+        while (_i < _s.Length && (char.IsLetterOrDigit(_s[_i]) || _s[_i] == '_'))
+            _i++;
+        var name = _s.Substring(nameBegin, _i - nameBegin);
+        if (!IsIdentifier(name))
+            return DirectiveError(start, usage);
+
+        if (!ReadDirectiveTerminator())
+            return DirectiveError(start, usage);
+
+        return new Token
+        {
+            Kind = TokenKind.Directive,
+            Text = "inject",
+            Aux = type,
+            Aux2 = name,
+            Span = new TextSpan(start, _i - start),
+            InnerSpan = new TextSpan(typeBegin, type.Length),
+            InnerSpan2 = new TextSpan(nameBegin, name.Length),
+        };
+    }
+
     /// <summary>Line directives accept one optional semicolon, with horizontal whitespace around it.</summary>
     private bool ReadDirectiveTerminator()
     {
@@ -641,6 +693,11 @@ public sealed class Lexer
             return ParseNamespaceDirective(start);
         if (name == "template")
             return ParseNamespaceDirective(start, "template");
+
+        // @inject {TypeName} {PropertyName}（K37，spec/01 §4.18）：服务注入声明。单行、
+        // 结尾分号可选；类型名形态与 @using 别名目标同口径（可带 global::，非泛型）。
+        if (name == "inject")
+            return ParseInjectDirective(start);
 
         // @code { ... }（K21，D86）与 @style { ... }（E1，design/17 §4.8）：块体整块捕获
         //（C# 感知的括号匹配——注释/字符串安全，样式块的 /* */ 注释同样覆盖），原文透传。

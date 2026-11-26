@@ -27,6 +27,7 @@ public static class CompletionProvider
             CursorKind.Expression => Expressions(analysis, catalog, context, offset),
             CursorKind.Directive => Directives(replacement),
             CursorKind.DirectiveArgument when context.Directive == "template" => TemplateTargets(analysis, catalog, context, replacement),
+            CursorKind.DirectiveArgument when context.Directive == "inject" => InjectTarget(analysis, catalog, context, replacement),
             CursorKind.DirectiveArgument => Namespaces(analysis, catalog, context, replacement),
             _ => UiCompletionList.Empty,
         };
@@ -50,6 +51,18 @@ public static class CompletionProvider
                 "Control template target; Owner has this type.", AdditionalEdits: edit is null ? null : new[] { edit });
         });
         return new(replacement, aliases.Concat(types).ToArray());
+    }
+
+    /// <summary>
+    /// K37 <c>@inject</c> 双参数补全（spec/02 §8）：参数①是服务类型名——命名空间 + 项目符号里
+    /// 的非泛型可访问类型（服务不限 UI 目录，比 <c>@using</c> 别名目标放开目录过滤）；参数②是
+    /// 自由属性名——无候选，不猜。
+    /// </summary>
+    private static UiCompletionList InjectTarget(
+        DocumentAnalysis analysis, UiCatalog catalog, CursorContext context, TextSpan replacement)
+    {
+        if (context.DirectiveArgIndex >= 1) return UiCompletionList.Empty;
+        return Namespaces(analysis, catalog, context, replacement, serviceTypes: true);
     }
 
     // ---- 表达式（C# 投影，design/06 §6.3）----
@@ -454,6 +467,9 @@ public static class CompletionProvider
             new("@using", UiCompletionKind.Directive, "import a namespace",
                 "tags resolve only inside imported namespaces (K22)",
                 "@using ${1:EclipseUI.Elements}", IsSnippet: true),
+            new("@inject", UiCompletionKind.Directive, "inject a service into the generated class",
+                "resolved from Application.Current.Services at the top of InitializeUi; unregistered services fail fast (K37)",
+                "@inject ${1:TypeName} ${2:Name}", IsSnippet: true),
             new("@template", UiCompletionKind.Directive, "declare a control template factory",
                 "Owner is the typed templated control; each application creates a fresh visual tree",
                 "@template ${1:Button}", IsSnippet: true),
@@ -468,7 +484,8 @@ public static class CompletionProvider
     }
 
     private static UiCompletionList Namespaces(
-        DocumentAnalysis analysis, UiCatalog catalog, CursorContext context, TextSpan replacement)
+        DocumentAnalysis analysis, UiCatalog catalog, CursorContext context, TextSpan replacement,
+        bool serviceTypes = false)
     {
         var items = new List<UiCompletionItem>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -495,7 +512,7 @@ public static class CompletionProvider
         {
             foreach (var ns in NamespaceTree(compilation.GlobalNamespace))
                 AddNamespace(ns.ToDisplayString());
-            if (context.IsUsingAliasTarget)
+            if (context.IsUsingAliasTarget || serviceTypes)
             {
                 int dot = lookupPrefix.LastIndexOf('.');
                 var containerName = dot < 0 ? "" : lookupPrefix[..dot];
@@ -542,16 +559,21 @@ public static class CompletionProvider
             foreach (var type in types.OrderBy(static t => t.Name, StringComparer.Ordinal))
             {
                 if (!type.CanBeReferencedByName || !compilation!.IsSymbolAccessibleWithin(type, compilation.Assembly)) continue;
+                // K37：@inject 的类型名不收泛型（词法层拒绝，spec/01 §4.18）；别名目标的泛型
+                // 由目录过滤兜住，这里显式同口径。
+                if (serviceTypes && type.Arity != 0) continue;
                 var name = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat.WithMiscellaneousOptions(
                     SymbolDisplayFormat.FullyQualifiedFormat.MiscellaneousOptions & ~SymbolDisplayMiscellaneousOptions.UseSpecialTypes));
                 // Use the compiler's exposure catalog: deriving UiObject alone is not
                 // enough for nested, abstract, generic or explicitly ignored UI types.
-                if (catalog.FindByTypeDisplayName(name) is null) continue;
+                // @inject 的服务类型不限 UI 目录（任何可访问类型都可能是服务）。
+                if (!serviceTypes && catalog.FindByTypeDisplayName(name) is null) continue;
                 if (name.StartsWith("global::", StringComparison.Ordinal)) name = name[8..];
                 if (!(allowSimplePrefix ? type.Name : name).StartsWith(lookupPrefix, StringComparison.OrdinalIgnoreCase)) continue;
                 name = globalPrefix + name;
                 if (!seen.Add(name)) continue;
-                items.Add(new UiCompletionItem(name, UiCompletionKind.Class, "UI type alias target",
+                items.Add(new UiCompletionItem(name, UiCompletionKind.Class,
+                    serviceTypes ? "service type" : "UI type alias target",
                     SortText: "0" + name));
             }
         }

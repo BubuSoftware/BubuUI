@@ -128,6 +128,10 @@ public static class UiDiagnostics
     public const string TemplateRootMisuse = "EUI060";
     public const string TemplateBaseInvalid = "EUI064";
 
+    // K37（spec/01 §4.18）：@inject 声明问题——同一模板多条 @inject 声明同一属性名。
+    // 与生成保留名/用户成员的冲突归 EUI045（成员冲突同码）；形态/位置错误归 EUI100。
+    public const string InjectInvalid = "EUI065";
+
     // 语法诊断
     public const string Syntax = "EUI100";
 

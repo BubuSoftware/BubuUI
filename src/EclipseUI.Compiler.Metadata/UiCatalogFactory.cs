@@ -104,6 +104,11 @@ public static class UiCatalogFactory
                 .Append(declaration.RootTag).AppendLine(" {");
             if (declaration.TemplateTarget is { } ownerType)
                 text.Append("public ").Append(ownerType).AppendLine(" Owner { get; set; } = null!;");
+            // K37：@inject 服务属性——与生成代码同形态（spec/02 §4.7），让 {Cache.Value} 之类的
+            // @code 表达式在符号视图里可解析。重复属性名由 EUI065 在语法层挡住，此处单份。
+            foreach (var inject in declaration.Injects)
+                text.Append("public ").Append(inject.TypeName).Append(' ').Append(inject.PropertyName)
+                    .AppendLine(" { get; private set; } = null!;");
             foreach (var block in declaration.CodeBlocks)
             {
                 text.Append("#line ").Append(block.StartLine + 1).Append(" \"")

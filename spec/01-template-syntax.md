@@ -236,21 +236,21 @@ bind-attr  ::= "@bind-" attr-base
 
 - `@name` 后可选 `(...)`；括号按平衡圆括号捕获（同 §2.6 的 C# 片段扫描：字符串/注释/插值感知）；
   指令名只含字母/数字/`_`。
-- 指令全集（K21–K31，✅ S6 + K31）：`@if (...)`、`@foreach (...)`、`@switch (...)`、`@code { ... }`、
-  `@using Ns`、`@using Alias = Ns.Type`；`else` / `else if (...)` 是不带 `@` 的续接（紧接前一分支的 `}`，
+- 指令全集（K21–K31 + K37，✅ S6 + K31）：`@if (...)`、`@foreach (...)`、`@switch (...)`、`@code { ... }`、
+  `@using Ns`、`@using Alias = Ns.Type`、`@inject TypeName PropertyName`；`else` / `else if (...)` 是不带 `@` 的续接（紧接前一分支的 `}`，
   由词法一次性识别）。
 - `@using` 只接受两种形态，**同一行内写完**：命名空间导入与类型别名。`@using (...)`、`@using static`、
   泛型别名、`A.B = ...`（别名必须是单个标识符）都在词法层报 `EUI100` 专属消息，
   且错误 token 吞掉整行——绝不把残余字符交回文本模式（否则会报成与写法无关的 `EUI006`）。
   别名语法与语义见 §4.17。
-- `@using`（含别名）、`@namespace`、`@template` 是单行声明指令，结尾分号可选，分号前后允许空格和制表符；
+- `@using`（含别名）、`@namespace`、`@template`、`@inject` 是单行声明指令，结尾分号可选，分号前后允许空格和制表符；
   名称与源码名称范围不包含分号。`.eustyle` 的 `@using` 遵循同一规则。
 - `@switch` 的块体形态见 §4.16；`EUI008` 随其转实现而停用，停用码保持停用。
 - `@bind-属性名` 只在标记模式属性位置识别，不是指令；文本模式写 `@bind` 仍是未知指令 `EUI009`。
 - 其它 `@name`：`EUI009`（收窄到明确拒绝清单：`@for`/`@while`/`@do` 给 `@foreach` 改写建议，K24；
   `@page`/`@rendermode` 等 Web/类形状指令按 K23 ② 永久不提供）。
 - `@` 没有文本转义；要输出字面 `@`，写 `{"@"}`。`@` 后跟 `{`（代码语句块）按 K28 不采纳，报 `EUI100`。
-- 文档顶层（根层）除唯一元素外，还允许 `@code` / `@using` / 注释（K21/K22）；
+- 文档顶层（根层）除唯一元素外，还允许 `@code` / `@using` / `@inject` / 注释（K21/K22/K37）；
   其它指令出现在根层仍是 `EUI012`（元素根数量）或 `EUI100`。
   孤立出现的裸 `else`（前面没有 `@if` 分支）不是续接，按普通文本处理并落 `EUI006`。
 
@@ -297,7 +297,7 @@ bind-attr  ::= "@bind-" attr-base
 ### 3.1 EBNF
 
 ```ebnf
-document      ::= { using-directive | code-block | node } EOF
+document      ::= { using-directive | inject-directive | code-block | node } EOF
 node          ::= element | text-run | if-block | foreach-block | switch-block
 
 element       ::= "<" tag-name attribute* ( "/>" | ">" node* "</" tag-name ">" )
@@ -316,6 +316,7 @@ section       ::= ( "case" csharp-expression ":" | "default" ":" ) node* "break"
 
 using-directive ::= "@using" namespace [ ";" ]
                  |  "@using" ident "=" type-name [ ";" ] // K31：类型别名（同时是标签别名）
+inject-directive ::= "@inject" type-name ident [ ";" ]  // K37：服务注入（§4.18）
 type-name      ::= [ "global::" ] ident ( "." ident )*
 code-block      ::= "@code" "{" csharp-member* "}"
 
@@ -325,7 +326,7 @@ string        ::= '"' raw-char* '"'
 
 说明：
 
-- 顶层（`document`）允许 `@using` / `@code` / 注释与任意节点；`@code`/`@using` 不进入元素内容（K21/K22）。
+- 顶层（`document`）允许 `@using` / `@inject` / `@code` / 注释与任意节点；`@code`/`@using`/`@inject` 不进入元素内容（K21/K22/K37）。
 - `using-directive` 的别名形态（K31）左侧必须是**单个标识符**（不能是 `A.B`），右侧是类型名（可带 `global::`），
   且整条指令写在同一行——别名用于在模板内给重名控件起短名，见 §4.17。
 - `else` / `else if` 是 `@if` 的续接，**不带 `@`**，必须紧接前一分支的 `}`（K23 ③）。
@@ -337,8 +338,8 @@ string        ::= '"' raw-char* '"'
 - `bind-attr` 的值**必须**是 `expression`：`@bind-P="true"` 报 `EUI037`（不是字面量转换）。
 - 同一元素上 `@bind-P` 与 `P=` 同时出现 → `EUI033`（同一目标重复赋值）；
   完全相同的属性名重复 → `EUI025`。
-- 根层（`document`）在去掉注释/空白后必须恰好是一个 `element`，另允许顶层 `@code`/`@using` 指令节点；
-  `text-run` 或控制流块出现在根层是 `EUI006`，0 个或多个元素根是 `EUI012`（K21/K22，D85/D86 ✅）。
+- 根层（`document`）在去掉注释/空白后必须恰好是一个 `element`，另允许顶层 `@code`/`@using`/`@inject` 指令节点；
+  `text-run` 或控制流块出现在根层是 `EUI006`，0 个或多个元素根是 `EUI012`（K21/K22/K37，D85/D86 ✅）。
 - `node*` 的合法组合由内容模型进一步限制（§4.9），句法层先接受再语义拒绝。
 - `@inherits`/`@model`/`@page`/`@rendermode` 等按 K23 ② 永久不提供；`@for`/`@while`/`@do` 按 K24 不提供；
   未知 `@` 指令是 `EUI009`，`@{}` 语句块按 K28 报 `EUI100`。
@@ -353,32 +354,24 @@ string        ::= '"' raw-char* '"'
 |---|---|---|
 | 文档恰好一个根元素 | `EUI012` | ✅ |
 | 根层不允许文本或控制流块（`@code`/`@using`/注释除外） | `EUI006` | ✅ |
-| 开始/结束标签同名且大小写一致 | `EUI064` | 根类型不可继承或根继承环 | 根标签/声明 | Error | 已实现 |
-| `EUI100` | ✅ |
-| 属性必须有 `=` 和值 | `EUI064` | 根类型不可继承或根继承环 | 根标签/声明 | Error | 已实现 |
-| `EUI100` | ✅ |
+| 开始/结束标签同名且大小写一致 | `EUI100` | ✅ |
+| 属性必须有 `=` 和值 | `EUI100` | ✅ |
 | 同一元素重复属性 | `EUI025` | ✅ C3（纯普值同名重复；任一侧是绑定的同名重叠仍 `EUI033`，见 §3.3） |
 | `@if`/`@foreach`/`@switch` 只能出现在 `Children` 内容模型内 | `EUI006` | ✅ |
 | 块内容只允许元素与嵌套块，不允许裸文本 | `EUI006` | ✅ |
-| `@switch` 非空 section 缺 `break;` | `EUI064` | 根类型不可继承或根继承环 | 根标签/声明 | Error | 已实现 |
-| `EUI100` | ✅ S6 |
-| `@switch` 空 section 未写 `break;`（多标签形态） | `EUI064` | 根类型不可继承或根继承环 | 根标签/声明 | Error | 已实现 |
-| `EUI100` | ✅ S6（K30） |
-| `@switch` 重复 `default` | `EUI064` | 根类型不可继承或根继承环 | 根标签/声明 | Error | 已实现 |
-| `EUI100` | ✅ S6 |
+| `@switch` 非空 section 缺 `break;` | `EUI100` | ✅ S6 |
+| `@switch` 空 section 未写 `break;`（多标签形态） | `EUI100` | ✅ S6（K30） |
+| `@switch` 重复 `default` | `EUI100` | ✅ S6 |
 | `@switch` case 标签非常量形态 | `EUI047` | ✅ S6（常量性由探针判定） |
-| `@switch` 嵌套块内写 `break` | `EUI064` | 根类型不可继承或根继承环 | 根标签/声明 | Error | 已实现 |
-| `EUI100` | ✅ S6 |
+| `@switch` 嵌套块内写 `break` | `EUI100` | ✅ S6 |
 | `Key` 只能出现在 `@foreach` item 模板的第一个元素根上 | `EUI010` | ✅ |
-| `@foreach` 必须写 `var 名字 in ...` | `EUI064` | 根类型不可继承或根继承环 | 根标签/声明 | Error | 已实现 |
-| `EUI100` | ✅ |
+| `@foreach` 必须写 `var 名字 in ...` | `EUI100` | ✅ |
 | `@bind-P` 的值不是 `{expr}` | `EUI037` | ✅ S3 |
 | `@bind-P` 目标非法（不可写/无属性字段/事件/保留/内容/组件缺 `PChanged`） | `EUI040` | ✅ S3+C4（控件 ✅ S3；组件 ✅ C4）；名字**存在**但不可绑时消息附原因（§4.5） |
 | `@bind-P` 源非法（非可写左值/类型不符） | `EUI037` | ✅ S3 |
 | `@bind-P` 与同名属性/`:bind`/`:value` 重复 | `EUI033` | ✅ S2（完全重复属性仍 `EUI025`，C3） |
 | `Key={}` 空表达式 | `EUI010` | ✅ S2 |
-| 注释不写在标签内部 | `EUI064` | 根类型不可继承或根继承环 | 根标签/声明 | Error | 已实现 |
-| `EUI100` | ✅ |
+| 注释不写在标签内部 | `EUI100` | ✅ |
 
 ### 3.3 内容模型的句法后果
 
@@ -739,6 +732,36 @@ Element 的 `FocusVisualMode` 是可赋值、可样式化的枚举属性，取�
   `A.B = …`、`List<string>` 都在词法层报 `EUI100` 专属消息，错误 token 吞掉整行。
 - 生成形态见 spec/02 §4.18。
 
+### 4.18 `@inject` 服务注入（K37，✅ 2026-11-26）
+
+形态：`@inject TypeName PropertyName`（整条一行，结尾分号可选）。文档顶层声明指令，可多条、位置不限。
+
+```xml
+@namespace Demo
+@using EclipseUI.Elements
+@inject Demo.Services.ICache Cache
+
+<TextBlock>Hit: {Cache.Hits}</TextBlock>
+```
+
+- **TypeName** 是类型名（可带 `global::`；可写 `@using` 导入的短名或 `@using` 别名），
+  **PropertyName** 是单个 C# 标识符。两者同一行内写完；泛型类型名的泛型实参不支持（与 K31 同口径）。
+- 生成类得到一个注入属性（`public TypeName PropertyName { get; private set; } = null!;`），
+  在 `InitializeUi` **最前**（`base.InitializeUi()` 与任何根输入之前）从应用服务容器解析一次：
+  `Application.Current.Services.GetService(typeof(TypeName))`。生成形态见 spec/02 §4.7。
+- 服务未注册、或没有已构建的 `Application`（`AppBuilder.Build()`/`Start()`）时，
+  `EnsureInitialized` 抛 `InvalidOperationException`（fail-fast，不构建内容树）。注册用
+  `AppBuilder.ConfigureServices(...)`。
+- 模板表达式（`{Cache.Hits}`）、`@code` 与 code-behind 可直接使用属性名；属性在初始化后只读
+  （`private set`）。热重载重建（`ReloadUi`）重新解析，服务实例以容器注册为准。
+- 服务解析在运行期完成，编译期只校验语法、属性名冲突与（生成代码 C# 编译的）类型可解析性——
+  类型错误经 `#line` 回映 `.ui` 的 `@inject` 行。
+- 诊断：形态/位置错误 `EUI100`（非顶层、缺属性名、多余内容、非法标识符）；
+  属性名重复声明 `EUI065`；属性名与生成保留名、`@code` 或 code-behind 成员冲突 `EUI045`。
+- **纯 C# 等价路径**（能力双路径口径）：C# 类型不写 `@inject`，直接声明属性并在构造或初始化时
+  从 `Application.Current.Services` 解析（或构造函数注入后由调用方传入）——`@inject` 只是模板侧的
+  声明式语法糖，不引入新的运行时机制。
+
 ## 5. 字面量
 
 ### 5.1 判定与转换时机
@@ -848,7 +871,7 @@ Element 的 `FocusVisualMode` 是可赋值、可样式化的枚举属性，取�
 | `EUI042` | **停用**：v3 item `@bind` 禁止组件级源；v4 允许 | — | — | — |
 | `EUI043` | **停用**：旧语法 `:bind`/`:value` 弃用告警；K27 起旧语法移除，改由 `EUI046` 报错 | — | — | — |
 | `EUI044` | **停用**：v3 非可观察组件参数不刷新；v4 所有参数推送 + `Invalidate()` | — | — | — |
-| `EUI045` | code-behind 基类与根类型不匹配，或成员与生成保留名冲突 | C#/ui 声明 | Error | 已实现 |
+| `EUI045` | code-behind 基类与根类型不匹配，或成员与生成保留名冲突；`@inject` 属性名与生成保留名、`@code`/code-behind 成员冲突 | C#/ui 声明 | Error | 已实现 |
 | `EUI046` | 旧绑定语法 `P:bind` / `P:value` 已移除（K27），提示改写为 `@bind-P` / `P=` | 属性名 | Error | ✅ S6（2026-11-08） |
 | `EUI047` | `@switch` 的 case 标签不是编译期常量（K29 ②）：语法层拒绝非常量形态，常量性由探针判定 | case 标签 | Error | ✅ S6（2026-11-08） |
 | `EUI048` | `@using` 别名不合法（K31）：目标不是目录里的已知元素/组件、同一模板重复声明、与已导入命名空间同名 | 指令 / 目标类型名 | Error | ✅ K31（2026-11-09） |
@@ -856,6 +879,7 @@ Element 的 `FocusVisualMode` 是可赋值、可样式化的枚举属性，取�
 | `EUI060` | 非 Element 类型不能赋给元素内容成员 | 标签 | Error | 已实现 |
 | `EUI061`–`EUI063` | 旧窗口专用码，停用且不复用 | — | — | 停用 |
 | `EUI064` | 根类型不可继承或根继承环 | 根标签/声明 | Error | 已实现 |
+| `EUI065` | `@inject` 属性名重复声明（同一模板多条 `@inject` 用同一属性名） | `@inject` 属性名 | Error | ✅ K37（2026-11-26） |
 | `EUI100` | 纯语法错误（标签不匹配、属性缺值、未闭合注释、未闭合 `@code`、`@{}`、（`@switch`）空 section / 缺 `break;`、非法 `@bind-` 形态等） | 语法位置 | Error | ✅ |
 
 停用码的纪律：
@@ -865,7 +889,8 @@ Element 的 `FocusVisualMode` 是可赋值、可样式化的枚举属性，取�
 - 停用码保持"停用"，不复用编号；不得用它们表达新语义。
 - 新增诊断从 `EUI046` 起：`EUI048`（K31 `@using` 别名）、`EUI050`–`EUI054`（样式表，design/17 §5）、
   `EUI055`/`EUI056`（`@namespace` 契约，spec/02 §2.2）、`EUI057` 已停用；
-  `EUI060`（内容类型不匹配）与 `EUI064`（根不可继承/继承环）；旧窗口专用码 `EUI061`–`EUI063` 已停用。
+  `EUI060`（内容类型不匹配）与 `EUI064`（根不可继承/继承环）；`EUI065`（K37 `@inject` 属性名重复）；
+  旧窗口专用码 `EUI061`–`EUI063` 已停用。
 
 ### 6.3 建议算法
 
@@ -894,7 +919,7 @@ Element 的 `FocusVisualMode` 是可赋值、可样式化的枚举属性，取�
 | **K21 / K22 / K23** | **✅ S6 已实现（2026-11-08）**：`@code` 位置不限且单文件可用（K21/K23 ④）；模板 `@using`、标签按导入命名空间解析（内置控件无豁免；**@namespace 链已由 K33/D111 修订为隐式可见**）、生成代码保留 `using Ns;`（K22）；流程控制与 Web 指令清单按 K23 ③/②。偏差 D85–D88 已全部关闭 |
 | **S6 语法对齐** | G3 之后 / G4 之前（K23 ⑦）；阶段 P0–P6 见 design/16；出口标准 = D85–D88 关闭 + 样例/golden 迁移 + 全量测试绿（2026-11-08 达成：用例 497 → 548，新增 `S6SyntaxTests` 26 / `ExpressionCaptureTests` 13 / `SwitchBlock` 运行时 6 / 生成器契约 6，全部通过；唯一红为既有像素 golden `PixelGoldens_MatchBaseline`，与 S6 无关） |
 | **K31** | **✅ 已实现（2026-11-09）**：`@using Alias = Ns.Type` 一体两用——生成 `using Alias = global::Ns.Type;`（服务 `@code`/表达式）并把 `<Alias/>` 解析为该类型（优先于目录 tag，绕过命名空间可见性）。`EUI048` 覆盖目标缺失/重复/撞命名空间；词法层把 `@using static`、`(...)`、泛型、`A.B =` 从误导性的 `EUI006` 改为专属 `EUI100`。2026-11-16 修订：结尾分号可选。回归见 `UsingAliasTests` 与生成器契约测试 |
-| ✅ 当前可用 | 元素/自闭合；属性字面量（string/bool/double/int 及 C3 扩展类型）；控件 `On*` 事件；`Text`/`TextRuns`/`Children` 文本与内容；`@if`/`else if`/`@switch`/`@foreach` 与 `Key`；`@using`、`@using Alias = Ns.Type`、`@code`、`@* *@` 与 `<!-- -->`；控件与组件 `@bind-P`（含 item 源）；组件标签（参数/委托事件/必填/默认内容）、`Ref={field}`、具名插槽 `<Slot>`/`<ContentSlot>`；空白规范化；code-behind 诊断 |
+| ✅ 当前可用 | 元素/自闭合；属性字面量（string/bool/double/int 及 C3 扩展类型）；控件 `On*` 事件；`Text`/`TextRuns`/`Children` 文本与内容；`@if`/`else if`/`@switch`/`@foreach` 与 `Key`；`@using`、`@using Alias = Ns.Type`、`@code`、`@inject`（K37）、`@* *@` 与 `<!-- -->`；控件与组件 `@bind-P`（含 item 源）；组件标签（参数/委托事件/必填/默认内容）、`Ref={field}`、具名插槽 `<Slot>`/`<ContentSlot>`；空白规范化；code-behind 诊断 |
 | **S1** ✅ | `UiObject.Invalidate/ProcessInvalidations/Render/ShouldRender`；失效队列与合并；生成字段与 `U{N}`；根级 `P=`/文本重算；控件事件自动失效（2026-10-30 通过） |
 | **S2** ✅ | 块 v4：`BlockScope.RenderActions`；`@if` 分支刷新；`@foreach` 任意 `IEnumerable<T>`、null=空、Keyed 复用；嵌套块；`EUI007`/`EUI010`/`EUI033`（文本 + 显式目标）（2026-10-30 通过） |
 | **S3** ✅ | `UiBinding` v4；控件 `@bind`；item 绑定；`EUI033`（`P=` 与绑定冲突）/`EUI037`/`EUI040` —— 控件侧已落地（2026-11-02）；组件 `PChanged` 与组件绑定目标/回调随 C4 落地（2026-11-05，D54/D56 关闭）；旧语法 `EUI043` 随 K27 停用、改报 `EUI046` |

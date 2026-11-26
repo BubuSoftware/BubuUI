@@ -242,6 +242,26 @@ public sealed class UiUsingDirective : UiNode
 }
 
 /// <summary>
+/// <c>@inject TypeName PropertyName</c>（K37，spec/01 §4.18）：文档顶层服务注入声明。
+/// 生成类得到注入属性并在 <c>InitializeUi</c> 最前从 <c>Application.Current.Services</c> 解析
+/// （spec/02 §4.7）；可多条、位置不限（位置校验与 @code/@using 同口径）。
+/// </summary>
+public sealed class UiInjectDirective : UiNode
+{
+    /// <summary>服务类型名原文（可带 <c>global::</c>；可为 @using 导入短名或 @using 别名）。</summary>
+    public string TypeName { get; set; } = "";
+
+    /// <summary>类型名在原文中的 span（生成行 #line 回映与诊断定位）。</summary>
+    public TextSpan TypeNameSpan { get; set; }
+
+    /// <summary>注入属性名（单个 C# 标识符）。</summary>
+    public string PropertyName { get; set; } = "";
+
+    /// <summary>属性名在原文中的 span（EUI065/EUI045 冲突诊断定位）。</summary>
+    public TextSpan PropertyNameSpan { get; set; }
+}
+
+/// <summary>
 /// <c>@switch (value) { case CONST: … break; default: … break; }</c>（K23 ③/K29，D87）。
 /// 无贯穿语义：每个 section 是独立分支，但非空 section 仍要求 <c>break;</c>（K29 ③）。
 /// </summary>

@@ -233,6 +233,13 @@ public sealed class TemplateGenerator : IIncrementalGenerator
         if (codeBlocks.Count > 0)
             ProbeCodeMemberConflicts(codeBlocks, codeBehindDiags);
 
+        // K37：@inject 属性名与生成保留名/生成依赖成员/@code 成员/code-behind 成员的冲突（EUI045）。
+        // 与 @code 冲突同哲学：进 codeBehindDiags（不短路生成），由 C# 编译给权威错误。
+        // 同一模板重复属性名由分析器 EUI065 在语法层报，这里不重复。
+        var injects = doc.Nodes.OfType<UiInjectDirective>().ToList();
+        if (injects.Count > 0)
+            ProbeInjectConflicts(injects, codeBlocks, type, codeBehindDiags);
+
         // 自身组件（spec/02 §4.12.5）：code-behind 符号直接派生插槽表——目录里没有
         // 根类型和 @code 成员在生成前补入同一符号视图，供目录与探针共同使用。
         var symbolCompilation = UiCatalogFactory.WithTemplateTypes(compilation, declarations);
@@ -316,6 +323,43 @@ public sealed class TemplateGenerator : IIncrementalGenerator
                 var span = new UiSpan(block.CodeSpan.Start + nameOffset, nameLength);
                 diags.Add(UiDiagnostics.Error(UiDiagnostics.CodeBehindConflict, reason, span));
             }
+        }
+    }
+
+    /// <summary>
+    /// K37：@inject 属性名冲突（EUI045，spec/01 §4.18）——撞生成保留名（InitializeUi/Render/
+    /// U{N}/R{N}/__el{N}/…）、生成依赖成员（Invalidate/…）、@code 成员或 code-behind 成员时，
+    /// 报在 .ui 的 @inject 属性名 span。与 <see cref="ProbeCodeMemberConflicts"/> 同哲学：
+    /// 进 codeBehindDiags（不短路生成），由 C# 编译给权威错误。同一模板重复属性名由分析器
+    /// EUI065 在语法层报，这里不重复。
+    /// </summary>
+    private static void ProbeInjectConflicts(IReadOnlyList<UiInjectDirective> injects,
+        IReadOnlyList<UiCodeBlock> blocks, INamedTypeSymbol? type, List<UiDiagnostic> diags)
+    {
+        // @code 成员名与 code-behind 成员名合成占用集——@inject 属性在同一个 partial 类里生成，
+        // 与任何一侧同名都是 CS0102/CS0111 的必然冲突。
+        var taken = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var block in blocks)
+            foreach (var (name, _, _) in ExtractMemberNames(block.Code))
+                taken.Add(name);
+        if (type is not null)
+            foreach (var member in type.GetMembers())
+                taken.Add(member.Name);
+
+        foreach (var inject in injects)
+        {
+            var name = inject.PropertyName;
+            string? reason = name is "InitializeUi" or "Render" or "__RegisterStyles"
+                ? $"'@inject' property '{name}' collides with a generated method name"
+                : IsGeneratedMemberName(name)
+                    ? $"'@inject' property '{name}' collides with a generated member name"
+                    : GeneratedDependencyNames.Contains(name)
+                        ? $"'@inject' property '{name}' hides a UiObject member used by generated code"
+                        : taken.Contains(name)
+                            ? $"'@inject' property '{name}' collides with a member declared in @code or code-behind"
+                            : null;
+            if (reason is null) continue;
+            diags.Add(UiDiagnostics.Error(UiDiagnostics.CodeBehindConflict, reason, inject.PropertyNameSpan));
         }
     }
 

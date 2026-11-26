@@ -27,6 +27,16 @@ public static class TemplateAnalyzer
             // 出现在元素内容/块内时由 Visit 报错（下方 UiCodeBlock/UiUsingDirective case）。
         }
 
+        // K37（spec/01 §4.18）：@inject 属性名重复声明（EUI065）——生成类的成员面只能有一个。
+        // 首条声明生效，后续报在属性名上；与保留名/用户成员的冲突归 EUI045（生成器侧）。
+        var injectNames = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var inject in doc.Nodes.OfType<UiInjectDirective>())
+            if (!injectNames.Add(inject.PropertyName))
+                diags.Add(UiDiagnostics.Error(UiDiagnostics.InjectInvalid,
+                    $"duplicate '@inject' property '{inject.PropertyName}'; " +
+                    "each injected property may be declared only once per template",
+                    inject.PropertyNameSpan));
+
         // K22（D85）/K31：标签在「@using 导入的命名空间 + @using 别名」内解析。作用域在 Visit 链中
         // 显式传参（目录保持不可变，§14.10.3 值相等不受影响）。
         // K33（D111）：`@namespace` 声明的命名空间及其外层链是**隐式可见**的——C# 在命名空间内
@@ -469,6 +479,13 @@ public static class TemplateAnalyzer
                 if (ctx != Ctx.Root)
                     diags.Add(UiDiagnostics.Error(UiDiagnostics.Syntax,
                         "'@using' is only allowed at the top level of the document (K22)",
+                        node.Span));
+                break;
+            case UiInjectDirective:
+                // K37：同上，根层合法
+                if (ctx != Ctx.Root)
+                    diags.Add(UiDiagnostics.Error(UiDiagnostics.Syntax,
+                        "'@inject' is only allowed at the top level of the document (K37)",
                         node.Span));
                 break;
         }

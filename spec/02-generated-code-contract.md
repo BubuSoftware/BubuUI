@@ -17,6 +17,7 @@
 | R8 | 资源有明确作用域；失败时清理尚未挂接对象，成功后归真实内容树管理 |
 | R9 | 同一输入逐字节生成同一输出；标识符和调用顺序稳定 |
 | R10 | 用户表达式和代码块映射回原始文件；生成辅助代码保持 hidden |
+| R11 | `@inject` 服务在 `InitializeUi` 最前解析（`base.InitializeUi()` 与根输入之前）；未注册或无已构建应用时抛 `InvalidOperationException`，不构建内容树 |
 
 ## 2. 文件与类
 
@@ -30,6 +31,8 @@
 - 生成 `partial class Name : RootClrType`。可访问性沿用同名源类型，独立模板默认 public。
 - 根类型必须是目录内可继承、可合法构造的 UiObject 派生类型。sealed 和根继承环报 EUI064。
 - code-behind 必须为顶层 partial 类；可省略基类，显式基类必须与解析后的根类型一致。
+- `@inject TypeName Name` 生成注入属性 `public TypeName Name { get; private set; } = null!;`
+  （§4.7）；属性名进入成员表面，重名报 EUI065，与生成保留名或 `@code`/code-behind 成员冲突报 EUI045。
 - 根标签属性写 `this`，不再创建第二个根对象。根 Ref 同样指向 `this`。
 - `Window` 是普通 UiObject 派生类型；它不继承 Element。内容位置按 Element 类型要求拒绝窗口，生成器无需辨认窗口标签名。
 
@@ -129,6 +132,33 @@ ConditionalBlock、ForEachBlock<T>、SwitchBlock<T> 是唯一结构协调器。�
 
 生成构建体用 try/catch 调用 scope.Abort(original)，清理成功后原样重抛；清理也失败时聚合构建根因与清理异常。foreach 刷新只在全部新条目构建成功后替换条目表；失败清理本轮新增条目并保留旧树。
 
+### 4.7 服务注入（`@inject`，K37）
+
+`@inject TypeName Name` 在生成类上发两个成员（语法见 spec/01 §4.18）：
+
+```csharp
+public TypeName Name { get; private set; } = null!;
+
+protected override void InitializeUi()
+{
+    Name = (TypeName)(global::EclipseUI.Application.Current?.Services
+        .GetService(typeof(TypeName)) ?? throw new global::System.InvalidOperationException(
+            "@inject 'Name' (TypeName) is not registered in Application.Current.Services …"));
+    // ……构造作用域、base.InitializeUi()、根输入与结构内容（§4.1）
+}
+```
+
+- 解析语句是 `InitializeUi` 的**最前语句**：先于 `UiConstructionScope`、`base.InitializeUi()`、
+  根输入和全部动态槽（R11）。`ReloadUi`/热重载重建时重新解析，实例以容器注册为准。
+- 属性 `get; private set;`：`@code`/code-behind 可读、类内可写；外部只读。
+- 类型名按模板 `@using`/别名在生成文件头解析（与 `@code` 同一可见性）；类型不可解析由生成代码的
+  C# 编译报权威错误，`#line` 回映 `@inject` 行（§2.4 同口径）。
+- 属性声明行带 span 型 `#line` 指向类型名；属性名参与成员冲突校验（EUI045/EUI065），
+  探针符号视图（目录 stub）含同一属性，模板表达式可直接引用。
+- `@template` 控件模板的 `__TemplateView` 同样支持 `@inject`（视图在 `Build` 内 `EnsureInitialized`，解析时机不变）。
+- 纯 C# 侧无对应语法：直接声明属性并从 `Application.Current.Services` 解析（或构造注入），
+  与 `@inject` 生成形态等价——不引入第二个运行时机制。
+
 ## 5. 作用域与资源
 
 | 对象 | 归属 |
@@ -161,7 +191,7 @@ StyledProperty 有效值优先级：local > template > class > template rule > c
 
 用户语句使用 span 型 `#line` 回到 `.ui` 行列；`@code` 原文透传并保存精确映射，生成辅助语句 hidden。代码块内部 C# 错误不在生成器重造语义诊断。IDE 的诊断、补全和跳转使用同一目录和生成文档；不可嵌入类型只在子内容补全中过滤，根位置仍可选择。
 
-IDE 补全需要交付完整编辑：主替换与可回映的附加编辑一起返回；未导入类型或标签的命名空间按语言规则生成去重的 `@using`，不把 C# using 写入 @code。`@using` 候选来自项目符号中的命名空间与类型，不限于 UI 目录。override 成员声明补全使用真实基类的可覆盖成员，生成器占用的 InitializeUi/Render 不作为作者 override 候选。所有编辑必须有明确源码区间或明确的指令插入规则，不允许近似套用生成代码偏移。
+IDE 补全需要交付完整编辑：主替换与可回映的附加编辑一起返回；未导入类型或标签的命名空间按语言规则生成去重的 `@using`，不把 C# using 写入 @code。`@using` 候选来自项目符号中的命名空间与类型，不限于 UI 目录。`@inject`（K37）按参数位分流：类型名参数的候选同样来自项目符号（非泛型可访问类型与命名空间，不限 UI 目录，短名按可见性过滤），属性名参数是自由标识符、无候选；指令关键字与 `@inject` 行内两处均纳入补全与悬停。override 成员声明补全使用真实基类的可覆盖成员，生成器占用的 InitializeUi/Render 不作为作者 override 候选。所有编辑必须有明确源码区间或明确的指令插入规则，不允许近似套用生成代码偏移。
 
 ## 9. AOT 与边界
 
@@ -169,12 +199,13 @@ IDE 补全需要交付完整编辑：主替换与可回映的附加编辑一起�
 
 ## 10. 契约测试
 
-必须覆盖真实生成结果的 C# 编译，而不只比较文本：根=this、同项目模板继承、C# 根、别名根、引用程序集根、继承表达式、sealed/循环根、单/多内容、根参数和槽就位顺序、双向绑定、事件签名、字段提升、资源失败清理、映射和增量确定性。
+必须覆盖真实生成结果的 C# 编译，而不只比较文本：根=this、同项目模板继承、C# 根、别名根、引用程序集根、继承表达式、sealed/循环根、单/多内容、根参数和槽就位顺序、双向绑定、事件签名、字段提升、资源失败清理、服务注入（`@inject` 属性与解析语句序）、映射和增量确定性。
 
 ## 11. 变更记录与历史
 
 - 2026-11-13 K35：根标签决定基类，UiObject 统一机制；Element 和 Window 分别表达可嵌入控件与窗口能力。
 - 2026-11-13 K36：彻底删除旧组件类型、来源分类与兼容分支；测试和宿主全部使用新机制。
+- 2026-11-26 K37：`@inject` 服务注入——生成注入属性，`InitializeUi` 最前从 `Application.Current.Services` 解析。
 
 原始 K1–K35 和 D 台账完整保存在 [历史快照](../design/history/2026-11-13-before-legacy-removal/README.md)。历史条款与本规范冲突时不再生效。
 
@@ -192,4 +223,5 @@ IDE 补全需要交付完整编辑：主替换与可回映的附加编辑一起�
 |---|---|
 | K35 | 根标签作为基类；实例即根；窗口独立于控件；内容类型决定可嵌入性 |
 | K36 | 项目只保留上述机制；无旧组件兼容层、来源枚举、窗口专用模板分支 |
+| K37 | `@inject TypeName Name` 服务注入：生成注入属性 + `InitializeUi` 最前从 `Application.Current.Services` 解析（R11）；重名 EUI065，成员冲突 EUI045；纯 C# 等价路径为手动解析 |
 | K21–K34 延续项 | @code/using/alias/namespace、普通状态、显式失效、块协调、Class/Style 与源映射按现行规范继续执行；旧类型实现细节已由 K35/K36 取代 |

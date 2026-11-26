@@ -351,6 +351,21 @@ public sealed class Parser
                         Span = directive.Span,
                     });
                 break;
+            case "inject":
+                // K37（spec/01 §4.18）：服务注入声明。位置校验与 @code/@using 同口径——
+                // 非顶层由 TemplateAnalyzer.Visit 报（EUI100），这里只收集。
+                Advance();
+                if (directive.Aux is null || directive.Aux2 is null)
+                    break; // 词法层已报专属错误
+                list.Add(new UiInjectDirective
+                {
+                    TypeName = directive.Aux,
+                    TypeNameSpan = directive.InnerSpan,
+                    PropertyName = directive.Aux2,
+                    PropertyNameSpan = directive.InnerSpan2,
+                    Span = directive.Span,
+                });
+                break;
             case "code":
                 Advance();
                 if (directive.Aux is null)

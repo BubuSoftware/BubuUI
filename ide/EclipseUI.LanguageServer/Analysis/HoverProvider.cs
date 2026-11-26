@@ -267,6 +267,7 @@ public static class HoverProvider
         "foreach" => "**@foreach** — repeated block\n\n`@foreach (var item in items) { … }`; `Key={expr}` on the item root drives reuse.",
         "switch" => "**@switch** — multi-branch block\n\n`@switch (value) { case CONST: … break; default: … break; }`",
         "using" => "**@using** — namespace import (or `@using Alias = Ns.Type`)\n\nTags resolve only inside imported namespaces (K22).",
+        "inject" => "**@inject TypeName Name** — service injection (K37)\n\nGenerates `public TypeName Name { get; private set; }`, resolved from `Application.Current.Services` at the top of `InitializeUi`; unregistered services fail fast.",
         "code" => "**@code** — class member block\n\nMembers merge into the partial class, exactly like the code-behind file.",
         "style" => "**@style** — component style block\n\nEustyle rules scoped to this component (`{Component}__{class}`).",
         "template" => "**@template ControlType** — reusable control template. `Owner` has the target control type; each application builds a fresh visual tree.",

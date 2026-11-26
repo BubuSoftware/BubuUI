@@ -109,6 +109,10 @@ public sealed record CursorContext
     /// <summary>The cursor is after the equals sign in an @using alias declaration.</summary>
     public bool IsUsingAliasTarget { get; init; }
 
+    /// <summary>K37：光标所在指令参数的序号（0 基，从指令名之后数起）。@inject 是双参数指令
+    /// （TypeName + PropertyName），补全按序号分流；其余指令恒 0。</summary>
+    public int DirectiveArgIndex { get; init; }
+
     /// <summary>尚未闭合的元素栈（内层在前），用于 <c>&lt;/</c> 补全。</summary>
     public IReadOnlyList<string> OpenTags { get; init; } = Array.Empty<string>();
 
@@ -303,7 +307,7 @@ public static class CursorScanner
 
                 // @using |（命名空间 / 别名目标）与 @namespace |（spec/02 §2.2 的必填声明）：
                 // 光标在指令名之后、行尾之前时都按「指令参数」处理，补全器按 Directive 分流。
-                if (word is "using" or "namespace" or "template")
+                if (word is "using" or "namespace" or "template" or "inject")
                 {
                     int lineEnd = text.IndexOf('\n', i);
                     if (lineEnd < 0) lineEnd = text.Length;
@@ -335,10 +339,29 @@ public static class CursorScanner
                                 while (argStart < offset && text[argStart] is ' ' or '\t') argStart++;
                             }
                         }
+                        // K37：@inject 是双参数指令（TypeName + PropertyName）——替换区间
+                        // 收敛到光标所在的当前参数 token，Prefix 才不会横跨两个参数；同时数出
+                        // 参数序号，补全器据此分流（类型名给候选、属性名是自由标识符不给）。
+                        int argIndex = 0;
+                        if (word == "inject")
+                        {
+                            int p = argStart;
+                            argStart = offset;
+                            while (p < offset)
+                            {
+                                int tokenStart = p;
+                                while (p < offset && IsInjectArgumentCharacter(text[p])) p++;
+                                if (p == offset) { argStart = tokenStart; break; }
+                                if (p == tokenStart) { argStart = tokenStart; break; }
+                                argIndex++;
+                                while (p < offset && text[p] is ' ' or '\t') p++;
+                            }
+                        }
                         return new CursorContext
                         {
                             Kind = CursorKind.DirectiveArgument,
                             Directive = word,
+                            DirectiveArgIndex = argIndex,
                             IsUsingAliasTarget = aliasTarget,
                             Prefix = text.Substring(argStart, offset - argStart),
                             TokenStart = argStart,
@@ -476,6 +499,11 @@ public static class CursorScanner
 
     private static CursorContext Plain(List<string> open, int offset) =>
         new() { Kind = CursorKind.Text, Prefix = "", TokenStart = offset, OpenTags = open };
+
+    /// <summary>K37：@inject 参数 token 的字符集——与词法器的类型名字符集对齐
+    /// （字母/数字/<c>_</c>/<c>.</c>/<c>:</c>，含未写完的泛型括号），属性名是它的子集。</summary>
+    private static bool IsInjectArgumentCharacter(char c) =>
+        char.IsLetterOrDigit(c) || c is '_' or '.' or ':' or '<' or '>' or ',' or '[' or ']' or '?';
 
     private static (int Next, CursorContext? Context, string? PushTag) ScanOpenTag(
         string text, int start, int offset, List<string> open,

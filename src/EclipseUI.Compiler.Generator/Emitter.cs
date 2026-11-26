@@ -121,8 +121,15 @@ public sealed class Emitter
     public string Emit()
     {
         var root = (UiElement)_doc.Nodes.First(n => n is UiElement);
+        // K37：@inject 声明（spec/01 §4.18）——属性声明进类壳、解析语句进 InitializeUi 最前。
+        var injects = _doc.Nodes.OfType<UiInjectDirective>().ToList();
         _out = _body;
         _indent = 2;
+        // K37（spec/02 §4.7，R11）：@inject 服务解析——InitializeUi 的最前语句，先于
+        // UiConstructionScope、base.InitializeUi() 与根输入；未注册或未构建应用时
+        // ?? throw 抛 InvalidOperationException（fail-fast，不构建内容树）。
+        foreach (var inject in injects)
+            Mapped(inject.Span, ResolutionStatement(inject));
         Line("using var __euiConstruction = new global::EclipseUI.UiConstructionScope();");
         Line("try");
         Line("{");
@@ -176,6 +183,18 @@ public sealed class Emitter
         foreach (var block in _codeBlocks)
             EmitCodeBlock(block);
         if (_codeBlocks.Count > 0) _sb.AppendLine();
+
+        // K37（spec/02 §4.7）：@inject 注入属性——get-only 对外、private set 供类内解析赋值。
+        // 声明行带 span 型 #line 指向类型名（spec/02 §2.4 口径）；属性名冲突由 EUI045/EUI065 报。
+        foreach (var inject in injects)
+        {
+            _indent = 1;
+            Mapped(inject.TypeNameSpan,
+                $"public {inject.TypeName} {inject.PropertyName} {{ get; private set; }} = null!;",
+                userOffset: "public ".Length, userLength: inject.TypeName.Length);
+            _indent = 0;
+        }
+        if (injects.Count > 0) _sb.AppendLine();
 
         foreach (var field in _fields.OrderBy(f => f.N))
             _sb.Append("    private ").Append(field.Type).Append(" __").Append(field.Prefix).Append(field.N)
@@ -305,6 +324,18 @@ public sealed class Emitter
         if (block.Code.Length > 0 && !block.Code.EndsWith("\n")) _sb.AppendLine();
         _sb.AppendLine("#line hidden");
     }
+
+    /// <summary>
+    /// K37：@inject 解析语句（spec/02 §4.7 冻结形态，单行发射）——
+    /// <c>Name = (T)(Application.Current?.Services.GetService(typeof(T)) ?? throw …);</c>。
+    /// <c>Current?</c> 短路覆盖「未构建应用」，<c>?? throw</c> 覆盖「服务未注册」，
+    /// 两者都是 <see cref="InvalidOperationException"/> fail-fast（R11：不构建内容树）。
+    /// </summary>
+    private static string ResolutionStatement(UiInjectDirective inject) =>
+        $"{inject.PropertyName} = ({inject.TypeName})(global::EclipseUI.Application.Current?.Services" +
+        $".GetService(typeof({inject.TypeName})) ?? throw new global::System.InvalidOperationException(" +
+        $"\"@inject '{inject.PropertyName}' ({inject.TypeName}) is not registered in Application.Current.Services; " +
+        "register it via AppBuilder.ConfigureServices and build the application before creating UI\"));";
 
     private void Line(string text)
     {
