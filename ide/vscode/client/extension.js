@@ -89,6 +89,7 @@ function serverArguments(context) {
 }
 
 function activate(context) {
+  require('./template-colors').activateTemplateColors(vscode, context);
   const serverPath = resolveServer(context);
   if (!serverPath) {
     vscode.window.showErrorMessage(

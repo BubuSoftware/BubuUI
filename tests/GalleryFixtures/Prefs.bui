@@ -8,7 +8,7 @@
 </StackPanel>
 
 @* spec/02 §2.7 第二组件来源：这个组件没有 .cs。状态是模板内部状态，@code 就够；
-   K34 起对外参数也可以直接写在 @code（[UiParameter]），不需要同名 partial 类。 *@
+   K34 起对外参数也可以直接写在 @code，不需要同名 partial 类。 *@
 @code {
     public bool showExtra = true;
     public bool extra;

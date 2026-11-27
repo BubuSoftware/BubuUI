@@ -317,7 +317,7 @@ public static class EmbeddedCSharpService
             Collect(projection, block.CodeSpan.Start, hits);
         }
 
-        return ToTokens(hits, positions);
+        return ToTokens(hits, analysis.Text, positions);
     }
 
     /// <summary>
@@ -349,7 +349,7 @@ public static class EmbeddedCSharpService
                 if (type < 0 || ui.Length <= 0) continue;
                 hits.Add((ui.Start, ui.Length, type));
             }
-            return ToTokens(hits, analysis.Positions);
+            return ToTokens(hits, analysis.Text, analysis.Positions);
         }
         catch (Exception)
         {
@@ -357,9 +357,9 @@ public static class EmbeddedCSharpService
         }
     }
 
-    /// <summary>按起点排序、丢弃重叠与零宽，再换算行位（两条着色路径共用，R6 同口径）。</summary>
+    /// <summary>按起点排序、丢弃重叠与零宽，并将多行分类拆成客户端都支持的单行 token。</summary>
     private static IReadOnlyList<UiSemanticToken> ToTokens(
-        List<(int Start, int Length, int Type)> hits, PositionMap positions)
+        List<(int Start, int Length, int Type)> hits, string text, PositionMap positions)
     {
         var result = new List<UiSemanticToken>();
         var lastEnd = -1;
@@ -367,10 +367,26 @@ public static class EmbeddedCSharpService
         {
             if (hit.Start < lastEnd || hit.Length <= 0) continue;
             lastEnd = hit.Start + hit.Length;
-            var (line, character) = positions.ToPosition(hit.Start);
-            result.Add(new UiSemanticToken(line, character, hit.Length, hit.Type, 0));
+            // Roslyn returns one span for a multiline comment or verbatim/raw
+            // string. Clients need multilineTokenSupport to accept it unchanged;
+            // emit single-line spans without CR/LF for every host instead.
+            var start = hit.Start;
+            for (var offset = start; offset < lastEnd; offset++)
+            {
+                if (text[offset] is not ('\r' or '\n')) continue;
+                AddLine(start, offset, hit.Type);
+                start = offset + 1;
+            }
+            AddLine(start, lastEnd, hit.Type);
         }
         return result;
+
+        void AddLine(int start, int end, int type)
+        {
+            if (end <= start) return;
+            var (line, character) = positions.ToPosition(start);
+            result.Add(new UiSemanticToken(line, character, end - start, type, 0));
+        }
     }
 
     /// <summary>
@@ -439,6 +455,15 @@ public static class EmbeddedCSharpService
         var node = token.Parent;
         if (node is null) return -1;
         var symbol = model.GetSymbolInfo(node).Symbol ?? model.GetDeclaredSymbol(node);
+        // A method group (especially an overloaded event handler) has no single
+        // symbol in the standalone `var __value = (...)` projection. Its member
+        // group still identifies it as a method, just like the declaration.
+        if (symbol is null && node is ExpressionSyntax expression)
+        {
+            var members = model.GetMemberGroup(expression);
+            if (members.Length > 0 && members.All(static member => member is IMethodSymbol))
+                return SemanticTokenTypes.IndexOf("method");
+        }
         if (symbol is null) return SemanticTokenTypes.IndexOf("variable");
         return symbol switch
         {

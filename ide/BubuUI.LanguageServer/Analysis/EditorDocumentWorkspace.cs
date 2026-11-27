@@ -15,13 +15,14 @@ namespace BubuUI.LanguageServer.Analysis;
 /// 「workspace 与 L2 编译一致」（§7.3）由构造保证，不另起一份求值。每棵树只加一次文档：
 /// 生成树不再作为源文档重复加入（partial 成员不重复）。
 ///
-/// 缓存按快照引用（<see cref="ConditionalWeakTable{TKey,TValue}"/>）：快照不可变，缓冲区
-/// 变化时 ProjectWorkspace 整体重建快照 → 新快照自然命中新 workspace；快照被丢弃后
-/// workspace 随之回收。创建后不再写 workspace，读取一律走不可变 Solution 快照，无需写锁。
+/// 缓存按快照引用。同一项目编辑会话保留文档 ID，逐文档更新不可变 Solution，复用
+/// Roslyn 的语义缓存；旧快照仍保留自己的 Solution，延迟补全说明和重命名不会读到新文本。
 /// </summary>
 public sealed class EditorDocumentWorkspace
 {
     private static readonly ConditionalWeakTable<ProjectSnapshot, EditorDocumentWorkspace> Cache = new();
+    private sealed class Session { public EditorDocumentWorkspace? Latest; }
+    private static readonly ConditionalWeakTable<object, Session> Sessions = new();
 
     // 4.9.2 的 DefaultAssemblies 已含 Features/CSharp.Features（缺的跳过）；
     // 包引用把这两份 dll 带到输出目录，CompletionService.GetService 才组合得到 provider。
@@ -29,20 +30,26 @@ public sealed class EditorDocumentWorkspace
         new(() => MefHostServices.Create(MefHostServices.DefaultAssemblies));
 
     private readonly AdhocWorkspace _workspace;
+    private readonly Solution _solution;
     private readonly Dictionary<string, DocumentId> _generatedByUiPath = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DocumentId> _sourceByPath = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<DocumentId, string> _uiPathByDocument = new();
     private readonly Dictionary<DocumentId, string> _sourcePathByDocument = new();
 
-    private EditorDocumentWorkspace(AdhocWorkspace workspace)
+    private EditorDocumentWorkspace(AdhocWorkspace workspace, Solution solution)
     {
         _workspace = workspace;
+        _solution = solution;
     }
 
     public static EditorDocumentWorkspace For(ProjectSnapshot snapshot) =>
-        Cache.GetValue(snapshot, static s => Create(s));
+        Cache.GetValue(snapshot, static snapshot =>
+        {
+            var session = Sessions.GetValue(snapshot.EditorSession, static _ => new Session());
+            lock (session) return session.Latest = Create(snapshot, session.Latest);
+        });
 
-    public Solution Solution => _workspace.CurrentSolution;
+    public Solution Solution => _solution;
 
     /// <summary>该 .bui 的生成 C# 文档（补全/重命名的 Roslyn 入口）；快照里没有则 null。</summary>
     public Document? GeneratedDocumentFor(string uiPath) =>
@@ -66,33 +73,46 @@ public sealed class EditorDocumentWorkspace
     public string? SourcePathFor(DocumentId id) =>
         _sourcePathByDocument.TryGetValue(id, out var path) ? path : null;
 
-    private static EditorDocumentWorkspace Create(ProjectSnapshot snapshot)
+    private static EditorDocumentWorkspace Create(ProjectSnapshot snapshot, EditorDocumentWorkspace? previous)
     {
         var compilation = snapshot.Compilation;
         var parseOptions = compilation.SyntaxTrees.FirstOrDefault()?.Options as CSharpParseOptions
             ?? CSharpParseOptions.Default;
 
-        var workspace = new AdhocWorkspace(HostServices.Value);
-        var project = workspace.CurrentSolution
-            .AddProject(snapshot.Evaluation.AssemblyName, snapshot.Evaluation.AssemblyName, LanguageNames.CSharp)
-            .WithCompilationOptions(compilation.Options)
-            .WithParseOptions(parseOptions)
-            .WithMetadataReferences(compilation.References);
+        var workspace = previous?._workspace ?? new AdhocWorkspace(HostServices.Value);
+        var project = previous?.Solution.Projects.Single() ?? workspace.CurrentSolution
+            .AddProject(snapshot.Evaluation.AssemblyName, snapshot.Evaluation.AssemblyName, LanguageNames.CSharp);
+        if (!Equals(project.CompilationOptions, compilation.Options)) project = project.WithCompilationOptions(compilation.Options);
+        if (!Equals(project.ParseOptions, parseOptions)) project = project.WithParseOptions(parseOptions);
+        if (!project.MetadataReferences.SequenceEqual(compilation.References)) project = project.WithMetadataReferences(compilation.References);
+        var previousDocuments = project.Documents.Where(doc => doc.FilePath is not null)
+            .ToDictionary(doc => doc.FilePath!, StringComparer.OrdinalIgnoreCase);
+        var paths = compilation.SyntaxTrees.Select(tree => tree.FilePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var document in previousDocuments.Values)
+            if (!paths.Contains(document.FilePath!)) project = project.RemoveDocument(document.Id);
 
         var generatedTrees = new HashSet<SyntaxTree>(snapshot.GeneratedTrees);
         var treeDocuments = new Dictionary<SyntaxTree, DocumentId>();
         foreach (var tree in compilation.SyntaxTrees)
         {
             var path = tree.FilePath;
-            var document = project.AddDocument(Path.GetFileName(path), tree.GetText(), filePath: path);
-            project = document.Project;
-            treeDocuments[tree] = document.Id;
+            if (previousDocuments.TryGetValue(path, out var existing))
+            {
+                var text = tree.GetText();
+                if (!existing.TryGetText(out var oldText) || !oldText.ContentEquals(text))
+                    project = project.Solution.WithDocumentText(existing.Id, text).GetProject(project.Id)!;
+                treeDocuments[tree] = existing.Id;
+            }
+            else
+            {
+                var document = project.AddDocument(Path.GetFileName(path), tree.GetText(), filePath: path);
+                project = document.Project;
+                treeDocuments[tree] = document.Id;
+            }
         }
-        // 链式 Solution 变更不会自动落回 workspace（只有当前解上的变更才自动应用），
-        // 整份解一次性 TryApplyChanges，之后 CurrentSolution 才含项目/文档。
-        workspace.TryApplyChanges(project.Solution);
-
-        var editor = new EditorDocumentWorkspace(workspace);
+        // Each result retains its immutable solution, so deferred completion resolve
+        // and rename requests still see their original document after later edits.
+        var editor = new EditorDocumentWorkspace(workspace, project.Solution);
         foreach (var (uiPath, generated) in snapshot.GeneratedDocuments)
             if (treeDocuments.TryGetValue(generated.Tree, out var id))
             {

@@ -21,15 +21,14 @@ const onigLib = oniguruma.loadWASM(wasm).then(() => ({
 }));
 
 function grammarPath(scope) {
-  return scope === 'source.bubuui'
-    ? path.join(root, 'syntaxes', 'bubuui.tmLanguage.json')
-    : path.join(root, 'syntaxes', 'bss.tmLanguage.json');
+  const name = { 'source.bubuui': 'bubuui', 'source.bss': 'bss', 'source.bubuui-csharp': 'csharp' }[scope];
+  return path.join(root, 'syntaxes', name + '.tmLanguage.json');
 }
 
 const registry = new vsctm.Registry({
   onigLib,
   loadGrammar: async (scopeName) => {
-    if (scopeName !== 'source.bubuui' && scopeName !== 'source.bss') return null;
+    if (!['source.bubuui', 'source.bss', 'source.bubuui-csharp'].includes(scopeName)) return null;
     const file = grammarPath(scopeName);
     return vsctm.parseRawGrammar(fs.readFileSync(file, 'utf8'), file);
   },
@@ -150,7 +149,7 @@ $accent: theme(#ffffff, #000000);
   expectAt(doc, 2, 'razor comment', 0, 'comment.block.bubuui', '@* *@');
 
   // 标签 / 属性 / 属性字面量
-  expectAt(doc, 3, 'StackPanel', 0, 'entity.name.tag.bubuui', 'tag name');
+  expectAt(doc, 3, 'StackPanel', 0, 'entity.name.type.class.bubuui', 'tag name');
   expectAt(doc, 3, 'Gap', 0, 'entity.other.attribute-name.bubuui', 'attribute name');
   expectAt(doc, 3, '"8"', 1, 'string.quoted.double.bubuui', 'attribute literal');
 
@@ -170,7 +169,7 @@ $accent: theme(#ffffff, #000000);
 
   // 条件块：@if 关键词、条件里的 C# 词法、else 续接
   expectAt(doc, 8, '@if', 1, 'keyword.control.conditional.bubuui', '@if');
-  expectAt(doc, 8, 'count > 0', 8, 'constant.numeric.csharp', 'condition');
+  expectAt(doc, 8, 'count > 0', 8, 'constant.numeric.decimal.cs', 'condition');
   expectAt(doc, 9, 'visible', 0, 'source.bubuui', 'block body is plain markup');
   expectAt(doc, 10, 'else', 1, 'keyword.control.conditional.bubuui', 'else');
 
@@ -179,10 +178,10 @@ $accent: theme(#ffffff, #000000);
   expectAt(doc, 15, 'Key', 0, 'entity.other.attribute-name.bubuui', 'Key');
 
   // @code 内部按 C# 上色
-  expectAt(doc, 20, 'public', 1, 'keyword.control.csharp', 'access modifier');
-  expectAt(doc, 20, 'int count', 1, 'storage.type.csharp', 'int');
-  expectAt(doc, 21, 'bool showButton', 1, 'storage.type.csharp', 'bool');
-  expectAt(doc, 21, 'false', 1, 'constant.language.csharp', 'bool literal in C#');
+  expectAt(doc, 20, 'public', 1, 'storage.modifier.public.cs', 'access modifier');
+  expectAt(doc, 20, 'int count', 1, 'keyword.type.int.cs', 'int');
+  expectAt(doc, 21, 'bool showButton', 1, 'keyword.type.bool.cs', 'bool');
+  expectAt(doc, 21, 'false', 1, 'constant.language.boolean.false.cs', 'bool literal in C#');
 
   // 回归：@bind- 与 {expr} 内的标识符必须真的拿到 scope，不能只剩默认前景。
   // 曾经的 bug：@bind- 用 keyword.operator（多数主题与正文同色），表达式里的普通标识符
@@ -204,11 +203,49 @@ $accent: theme(#ffffff, #000000);
 
   expectAt(bindDoc, 1, '@bind-p', 1, 'keyword.control.binding.bubuui', '@bind- prefix');
   expectAt(bindDoc, 1, '@bind-p', 6, 'entity.other.attribute-name.bubuui', 'lowercase bind target');
-  expectAt(bindDoc, 1, 'model.Name', 0, 'variable.other.object.csharp', 'member access object');
-  expectAt(bindDoc, 1, 'model.Name', 5, 'punctuation.accessor.csharp', 'member access dot');
-  expectAt(bindDoc, 1, 'model.Name', 6, 'variable.other.object.property.csharp', 'member access property');
-  expectAt(bindDoc, 2, '{showButton}', 2, 'variable.other.readwrite.csharp', 'identifier in bind expression');
-  expectAt(bindDoc, 4, 'count', 1, 'variable.other.readwrite.csharp', 'identifier in @code block');
+  expectAt(bindDoc, 1, 'model.Name', 0, 'variable.other.object.cs', 'member access object');
+  expectAt(bindDoc, 1, 'model.Name', 5, 'punctuation.accessor.cs', 'member access dot');
+  expectAt(bindDoc, 1, 'model.Name', 6, 'variable.other.object.property.cs', 'member access property');
+  expectAt(bindDoc, 2, '{showButton}', 2, 'variable.other.readwrite.cs', 'identifier in bind expression');
+  expectAt(bindDoc, 4, 'count', 1, 'entity.name.variable.field.cs', 'identifier in @code block');
+
+  // Real C# grammar: declarations, interpolation and braces inside strings must
+  // remain C# until the outer island closes, then return to template highlighting.
+  const nativeCSharp = await tokenize('source.bubuui', [
+    '@code {',
+    '    [Obsolete("}")] public string Caption { get; set; } = "}";',
+    '    public string Format(int value) {',
+    '        // A comment containing } must not close @code.',
+    '        var text = $"value: {value + 1}";',
+    '        var path = @"C:\\folder\\""quoted}"; ',
+    '        var raw = """',
+    '            { "text": "}" }',
+    '            """;',
+    '        return text;',
+    '    }',
+    '}',
+    '<Button OnClick={() => { var message = $"{Caption}"; Save(message); }} />',
+    '<TextBlock>{new[] { 1, 2 }.Length}</TextBlock>',
+    '<TextBlock>{$"Count: {Format(2)}"}</TextBlock>',
+    '<Button Label="not C# {value}" />',
+  ].join('\n'));
+  expectAt(nativeCSharp, 1, 'Caption', 0, 'entity.name.variable.property.cs', 'C# property declaration');
+  expectAt(nativeCSharp, 2, 'Format', 0, 'entity.name.function.cs', 'C# method declaration');
+  expectAt(nativeCSharp, 2, 'value', 0, 'entity.name.variable.parameter.cs', 'C# parameter declaration');
+  expectAt(nativeCSharp, 3, 'comment', 0, 'comment.line.double-slash.cs', 'C# comment containing brace');
+  expectAt(nativeCSharp, 4, 'value + 1', 8, 'constant.numeric.decimal.cs', 'code inside interpolated string');
+  expectAt(nativeCSharp, 5, 'quoted}', 1, 'string.quoted.double.cs', 'verbatim string with doubled quote');
+  expectAt(nativeCSharp, 7, 'text', 0, 'string.quoted.double.cs', 'multiline raw string');
+  expectAt(nativeCSharp, 9, 'return', 0, 'keyword.control.flow.return.cs', 'C# after raw string');
+  expectAt(nativeCSharp, 12, 'Save', 0, 'entity.name.function.cs', 'lambda block in attribute expression');
+  expectAt(nativeCSharp, 13, '2', 0, 'constant.numeric.decimal.cs', 'nested initializer in text expression');
+  expectAt(nativeCSharp, 14, 'Format', 0, 'entity.name.function.cs', 'method in text interpolation');
+  for (const line of [12, 13, 14, 15]) {
+    const tag = line === 12 || line === 15 ? 'Button' : 'TextBlock';
+    expectAt(nativeCSharp, line, tag, 0, 'entity.name.type.class.bubuui', 'tag after C# island');
+    expectNotAt(nativeCSharp, line, tag, 0, 'source.cs', 'C# must not consume following tags');
+  }
+  expectAt(nativeCSharp, 15, '{value}', 1, 'string.quoted.double.bubuui', 'quoted template attribute stays literal');
 
   const styleDoc = await tokenize('source.bss', style);
   if (dump) {
@@ -264,11 +301,11 @@ $accent: theme(#ffffff, #000000);
   }
 
   expectAt(multiDoc, 4, '{', 0, 'punctuation.section.block.begin.bubuui', 'lone block brace');
-  expectAt(multiDoc, 5, 'TextBlock', 0, 'entity.name.tag.bubuui', 'tag after multi-line block');
+  expectAt(multiDoc, 5, 'TextBlock', 0, 'entity.name.type.class.bubuui', 'tag after multi-line block');
   expectAt(multiDoc, 5, '{row.Id}', 1, 'meta.embedded.expression.bubuui', 'expression in block');
   expectAt(multiDoc, 6, '}', 0, 'punctuation.section.block.end.bubuui', 'lone block end');
   expectAt(multiDoc, 7, '@if', 1, 'keyword.control.conditional.bubuui', '@if');
-  expectAt(multiDoc, 9, 'Button', 0, 'entity.name.tag.bubuui', 'tag after multi-line if');
+  expectAt(multiDoc, 9, 'Button', 0, 'entity.name.type.class.bubuui', 'tag after multi-line if');
 
   const leaked = multiDoc.lines.some((tokens) =>
     tokens.some((token) => token.text.includes('<TextBlock') && token.scopes.includes('meta.directive.foreach.bubuui')));
@@ -308,9 +345,79 @@ $accent: theme(#ffffff, #000000);
   const embeddedStyle = await tokenize('source.bubuui', '@style {\n.a { &:hover { Background: #fff; } }\n.b { Background: theme(#111, #eee); }\n}\n<Border Style="Background: theme(#111, #fff); CornerRadius: 4;" />');
   expectAt(embeddedStyle, 2, 'Background', 1, 'support.type.property-name.bss', 'second rule stays inside @style');
   expectAt(embeddedStyle, 2, 'theme(', 1, 'support.function.bss', 'nested style function');
-  expectAt(embeddedStyle, 4, 'Border', 1, 'entity.name.tag.bubuui', 'leaving @style restores UI grammar');
+  expectAt(embeddedStyle, 4, 'Border', 1, 'entity.name.type.class.bubuui', 'leaving @style restores UI grammar');
   expectAt(embeddedStyle, 4, 'Background', 1, 'support.type.property-name.bss', 'inline Style property');
   expectAt(embeddedStyle, 4, '#fff', 1, 'constant.other.color.bss', 'inline Style color');
+
+  // Resolve the shipped VS theme against real tokens, not just their scope names.
+  // A grammar-specific theme can leave template tokens uncoloured even when
+  // tokenization itself is correct. Use unique test colours as classification IDs.
+  const themePath = path.join(root, '../visualstudio/Grammars/bubuui.tmLanguage.tmTheme');
+  const vsTheme = vsctm.parseRawGrammar(fs.readFileSync(themePath, 'utf8'), themePath);
+  const classColors = new Map();
+  for (const rule of vsTheme.settings) {
+    const classification = rule.settings.vsclassificationtype;
+    if (!classColors.has(classification))
+      classColors.set(classification, '#' + (0x100000 + classColors.size).toString(16).toUpperCase());
+  }
+  registry.setTheme({ settings: [
+    { settings: { foreground: '#000000', background: '#FFFFFF' } },
+    ...vsTheme.settings.map(rule => ({ scope: rule.scope,
+      settings: { foreground: classColors.get(rule.settings.vsclassificationtype) } })),
+  ] });
+  const coloredSource = [
+    '@using BubuUI.Elements',
+    '@namespace Gallery',
+    '<Grid Grid.Row="1" Width="320" OnClick={HandleClick} @bind-Width={width}>',
+    '    <TextBlock Style="FontSize: 14;">Hello</TextBlock>',
+    '</Grid>',
+    '@code {',
+    '    public int width = 42;',
+    '}',
+  ];
+  const coloredGrammar = await registry.loadGrammar('source.bubuui');
+  let coloredStack = vsctm.INITIAL;
+  const coloredLines = coloredSource.map(line => {
+    const result = coloredGrammar.tokenizeLine2(line, coloredStack);
+    coloredStack = result.ruleStack;
+    return result.tokens;
+  });
+  function expectClass(line, needle, classification, delta = 0) {
+    const offset = coloredSource[line].indexOf(needle) + delta;
+    const tokens = coloredLines[line];
+    let actual;
+    for (let i = 0; i < tokens.length; i += 2) {
+      if (tokens[i] <= offset && (i + 2 === tokens.length || tokens[i + 2] > offset)) {
+        // TextMate's encoded token foreground occupies bits 15..23.
+        actual = registry.getColorMap()[(tokens[i + 1] >>> 15) & 0x1FF];
+        break;
+      }
+    }
+    if (actual !== classColors.get(classification))
+      failures.push(`VS theme '${needle}' on line ${line + 1}: expected ${classification}, got ${actual}`);
+  }
+  expectClass(0, '@using', 'BubuUI directive');
+  expectClass(0, 'using', 'BubuUI directive');
+  expectClass(0, 'BubuUI.Elements', 'BubuUI type');
+  expectClass(1, 'namespace', 'BubuUI directive');
+  expectClass(1, 'Gallery', 'BubuUI type');
+  expectClass(2, '<', 'BubuUI punctuation');
+  expectClass(2, 'Grid', 'BubuUI type');
+  expectClass(2, 'Grid.Row', 'BubuUI type');
+  expectClass(2, 'Grid.Row', 'BubuUI attribute', 5);
+  expectClass(2, 'Width', 'BubuUI attribute');
+  expectClass(2, 'OnClick', 'BubuUI attribute');
+  expectClass(2, '@bind-', 'BubuUI directive');
+  expectClass(2, '@bind-Width', 'BubuUI attribute', 6);
+  expectClass(2, '320', 'BubuUI literal');
+  expectClass(3, 'Style', 'BubuUI attribute');
+  expectClass(3, 'FontSize', 'BubuUI attribute');
+  expectClass(4, 'Grid', 'BubuUI type');
+  expectClass(5, 'code', 'BubuUI directive');
+  expectClass(6, 'public', 'keyword');
+  expectClass(6, 'int', 'keyword');
+  expectClass(6, 'width', 'field name');
+  expectClass(6, '42', 'number');
 
   if (failures.length > 0) {
     console.error(`\n${failures.length} grammar assertion(s) failed:`);

@@ -1,0 +1,346 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+  <dict>
+    <key>name</key>
+    <string>BubuUI Visual Studio Classifications</string>
+    <key>settings</key>
+    <array>
+      <!-- Native classifications cover embedded C#. The template-only rules at
+           the end select BubuUI classifications backed by the shared palette. -->
+      <dict>
+        <key>scope</key>
+        <string>comment, punctuation.definition.comment</string>
+        <key>settings</key>
+        <dict>
+          <key>vsclassificationtype</key>
+          <string>comment</string>
+        </dict>
+      </dict>
+      <dict>
+        <key>scope</key>
+        <string>keyword, punctuation.definition.directive.bubuui</string>
+        <key>settings</key>
+        <dict>
+          <key>vsclassificationtype</key>
+          <string>control keyword</string>
+        </dict>
+      </dict>
+      <dict>
+        <key>scope</key>
+        <string>entity.other.attribute-name, support.type.property-name.bss</string>
+        <key>settings</key>
+        <dict>
+          <key>vsclassificationtype</key>
+          <string>markup attribute</string>
+        </dict>
+      </dict>
+      <dict>
+        <key>scope</key>
+        <string>string, constant.character.escape, punctuation.definition.string</string>
+        <key>settings</key>
+        <dict>
+          <key>vsclassificationtype</key>
+          <string>string</string>
+        </dict>
+      </dict>
+      <dict>
+        <key>scope</key>
+        <string>constant.numeric, constant.other.color.bss</string>
+        <key>settings</key>
+        <dict>
+          <key>vsclassificationtype</key>
+          <string>number</string>
+        </dict>
+      </dict>
+      <dict>
+        <key>scope</key>
+        <string>punctuation</string>
+        <key>settings</key>
+        <dict>
+          <key>vsclassificationtype</key>
+          <string>punctuation</string>
+        </dict>
+      </dict>
+      <dict>
+        <key>scope</key>
+        <string>entity.name.namespace.bubuui, entity.name.type.bubuui, entity.name.type.alias.bubuui, support.class.attached-owner.bubuui</string>
+        <key>settings</key>
+        <dict>
+          <key>vsclassificationtype</key>
+          <string>class name</string>
+        </dict>
+      </dict>
+      <dict>
+        <key>scope</key>
+        <string>entity.name.tag.bss, entity.name.type.bss, entity.name.namespace.bss</string>
+        <key>settings</key>
+        <dict>
+          <key>vsclassificationtype</key>
+          <string>class name</string>
+        </dict>
+      </dict>
+      <dict>
+        <key>scope</key>
+        <string>support.function.bss</string>
+        <key>settings</key>
+        <dict>
+          <key>vsclassificationtype</key>
+          <string>method name</string>
+        </dict>
+      </dict>
+      <dict>
+        <key>scope</key>
+        <string>variable.other.bss</string>
+        <key>settings</key>
+        <dict>
+          <key>vsclassificationtype</key>
+          <string>local name</string>
+        </dict>
+      </dict>
+      <dict>
+        <key>scope</key>
+        <string>entity.name.type.class.bubuui</string>
+        <key>settings</key>
+        <dict>
+          <key>vsclassificationtype</key>
+          <string>class name</string>
+        </dict>
+      </dict>
+      <dict>
+        <key>scope</key>
+        <string>source.cs keyword, source.cs storage, source.cs constant.language</string>
+        <key>settings</key>
+        <dict>
+          <key>vsclassificationtype</key>
+          <string>keyword</string>
+        </dict>
+      </dict>
+      <dict>
+        <key>scope</key>
+        <string>source.cs keyword.control</string>
+        <key>settings</key>
+        <dict>
+          <key>vsclassificationtype</key>
+          <string>control keyword</string>
+        </dict>
+      </dict>
+      <dict>
+        <key>scope</key>
+        <string>entity.name.type.cs, entity.name.type.class.cs</string>
+        <key>settings</key>
+        <dict>
+          <key>vsclassificationtype</key>
+          <string>class name</string>
+        </dict>
+      </dict>
+      <dict>
+        <key>scope</key>
+        <string>entity.name.type.struct.cs</string>
+        <key>settings</key>
+        <dict>
+          <key>vsclassificationtype</key>
+          <string>struct name</string>
+        </dict>
+      </dict>
+      <dict>
+        <key>scope</key>
+        <string>entity.name.type.interface.cs</string>
+        <key>settings</key>
+        <dict>
+          <key>vsclassificationtype</key>
+          <string>interface name</string>
+        </dict>
+      </dict>
+      <dict>
+        <key>scope</key>
+        <string>entity.name.type.enum.cs</string>
+        <key>settings</key>
+        <dict>
+          <key>vsclassificationtype</key>
+          <string>enum name</string>
+        </dict>
+      </dict>
+      <dict>
+        <key>scope</key>
+        <string>entity.name.type.delegate.cs</string>
+        <key>settings</key>
+        <dict>
+          <key>vsclassificationtype</key>
+          <string>delegate name</string>
+        </dict>
+      </dict>
+      <dict>
+        <key>scope</key>
+        <string>entity.name.type.parameter.cs</string>
+        <key>settings</key>
+        <dict>
+          <key>vsclassificationtype</key>
+          <string>type parameter name</string>
+        </dict>
+      </dict>
+      <dict>
+        <key>scope</key>
+        <string>entity.name.type.namespace.cs</string>
+        <key>settings</key>
+        <dict>
+          <key>vsclassificationtype</key>
+          <string>namespace name</string>
+        </dict>
+      </dict>
+      <dict>
+        <key>scope</key>
+        <string>entity.name.function.cs</string>
+        <key>settings</key>
+        <dict>
+          <key>vsclassificationtype</key>
+          <string>method name</string>
+        </dict>
+      </dict>
+      <dict>
+        <key>scope</key>
+        <string>entity.name.variable.property.cs, variable.other.object.property.cs</string>
+        <key>settings</key>
+        <dict>
+          <key>vsclassificationtype</key>
+          <string>property name</string>
+        </dict>
+      </dict>
+      <dict>
+        <key>scope</key>
+        <string>entity.name.variable.field.cs</string>
+        <key>settings</key>
+        <dict>
+          <key>vsclassificationtype</key>
+          <string>field name</string>
+        </dict>
+      </dict>
+      <dict>
+        <key>scope</key>
+        <string>entity.name.variable.local.cs, variable.other.readwrite.cs, variable.other.object.cs</string>
+        <key>settings</key>
+        <dict>
+          <key>vsclassificationtype</key>
+          <string>local name</string>
+        </dict>
+      </dict>
+      <dict>
+        <key>scope</key>
+        <string>entity.name.variable.parameter.cs, variable.parameter.cs</string>
+        <key>settings</key>
+        <dict>
+          <key>vsclassificationtype</key>
+          <string>parameter name</string>
+        </dict>
+      </dict>
+      <dict>
+        <key>scope</key>
+        <string>entity.name.variable.event.cs</string>
+        <key>settings</key>
+        <dict>
+          <key>vsclassificationtype</key>
+          <string>event name</string>
+        </dict>
+      </dict>
+      <dict>
+        <key>scope</key>
+        <string>source.cs comment</string>
+        <key>settings</key>
+        <dict>
+          <key>vsclassificationtype</key>
+          <string>comment</string>
+        </dict>
+      </dict>
+      <dict>
+        <key>scope</key>
+        <string>source.cs string, source.cs constant.character.escape</string>
+        <key>settings</key>
+        <dict>
+          <key>vsclassificationtype</key>
+          <string>string</string>
+        </dict>
+      </dict>
+      <dict>
+        <key>scope</key>
+        <string>source.cs constant.numeric</string>
+        <key>settings</key>
+        <dict>
+          <key>vsclassificationtype</key>
+          <string>number</string>
+        </dict>
+      </dict>
+      <dict>
+        <key>scope</key>
+        <string>source.cs keyword.operator</string>
+        <key>settings</key>
+        <dict>
+          <key>vsclassificationtype</key>
+          <string>operator</string>
+        </dict>
+      </dict>
+      <dict>
+        <key>scope</key>
+        <string>source.cs punctuation</string>
+        <key>settings</key>
+        <dict>
+          <key>vsclassificationtype</key>
+          <string>punctuation</string>
+        </dict>
+      </dict>
+      <!-- Exact template palette. Embedded C# retains its native classifications. -->
+      <dict>
+        <key>scope</key>
+        <string>entity.name.type.class.bubuui, entity.name.type.bubuui, entity.name.type.alias.bubuui, entity.name.namespace.bubuui, support.class.attached-owner.bubuui, entity.name.tag.bss, entity.name.type.bss, entity.name.namespace.bss</string>
+        <key>settings</key>
+        <dict>
+          <key>vsclassificationtype</key>
+          <string>BubuUI type</string>
+        </dict>
+      </dict>
+      <dict>
+        <key>scope</key>
+        <string>entity.other.attribute-name.bubuui, support.type.property-name.bss, entity.other.attribute-name.class.bss, entity.other.attribute-name.pseudo-class.bss</string>
+        <key>settings</key>
+        <dict>
+          <key>vsclassificationtype</key>
+          <string>BubuUI attribute</string>
+        </dict>
+      </dict>
+      <dict>
+        <key>scope</key>
+        <string>punctuation.definition.directive.bubuui, keyword.control.directive.bubuui, keyword.control.namespace.bubuui, keyword.control.import.bubuui, keyword.control.binding.bubuui, keyword.control.conditional.bubuui, keyword.control.loop.bubuui, keyword.control.switch.bubuui, punctuation.definition.directive.bss, keyword.control.directive.bss, keyword.control.bss</string>
+        <key>settings</key>
+        <dict>
+          <key>vsclassificationtype</key>
+          <string>BubuUI directive</string>
+        </dict>
+      </dict>
+      <dict>
+        <key>scope</key>
+        <string>string.quoted.double.bubuui, punctuation.definition.string.begin.bubuui, punctuation.definition.string.end.bubuui, string.quoted.double.bss</string>
+        <key>settings</key>
+        <dict>
+          <key>vsclassificationtype</key>
+          <string>BubuUI literal</string>
+        </dict>
+      </dict>
+      <dict>
+        <key>scope</key>
+        <string>comment.block.bubuui, comment.block.bss, comment.line.double-slash.bss</string>
+        <key>settings</key>
+        <dict>
+          <key>vsclassificationtype</key>
+          <string>BubuUI comment</string>
+        </dict>
+      </dict>
+      <dict>
+        <key>scope</key>
+        <string>punctuation.definition.tag.begin.bubuui, punctuation.definition.tag.end.bubuui, punctuation.definition.tag.self-close.bubuui, punctuation.separator.bubuui, punctuation.separator.key-value.bubuui, punctuation.section.expression.begin.bubuui, punctuation.section.expression.end.bubuui, punctuation.section.block.begin.bubuui, punctuation.section.block.end.bubuui, punctuation.section.parens.begin.bubuui, punctuation.section.parens.end.bubuui, punctuation.section.block.bss, punctuation.section.parens.bss, punctuation.terminator.bss, punctuation.separator.key-value.bss, punctuation.separator.selector.bss</string>
+        <key>settings</key>
+        <dict>
+          <key>vsclassificationtype</key>
+          <string>BubuUI punctuation</string>
+        </dict>
+      </dict>
+    </array>
+  </dict>
+</plist>

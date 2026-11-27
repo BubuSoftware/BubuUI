@@ -26,7 +26,6 @@ namespace BubuUI.Compiler.Generator;
 public sealed class TemplateGenerator : IIncrementalGenerator
 {
     private const string UiSlotAttributeName = "BubuUI.UiSlotAttribute";
-    private const string UiParameterAttributeName = "BubuUI.UiParameterAttribute";
     private const string UiIgnoreAttributeName = "BubuUI.UiIgnoreAttribute";
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
@@ -998,7 +997,7 @@ public sealed class TemplateGenerator : IIncrementalGenerator
 
     /// <summary>
     /// code-behind 类的插槽表（spec/02 §4.12.5）：沿基类链读 [UiSlot] 属性。
-    /// [UiParameter] 胜出（参数占表面，槽退出，与目录 EUI028 口径一致）；[UiIgnore] 胜出；
+    /// [UiIgnore] 标记的属性不参与插槽表；
     /// 类型只接受 <c>Element?</c>（单根）与 <c>IReadOnlyList&lt;Element&gt;</c>（多根），
     /// 其余不进表（声明期问题归目录 EUI021 族）。
     /// </summary>
@@ -1020,8 +1019,6 @@ public sealed class TemplateGenerator : IIncrementalGenerator
                 if (attributes.Any(a => a.AttributeClass?.ToDisplayString() == UiIgnoreAttributeName)) continue;
                 var slot = attributes.FirstOrDefault(a => a.AttributeClass?.ToDisplayString() == UiSlotAttributeName);
                 if (slot is null) continue;
-                // 参数胜出（catalog 口径："[UiParameter] and [UiSlot]; the parameter wins"）
-                if (attributes.Any(a => a.AttributeClass?.ToDisplayString() == UiParameterAttributeName)) continue;
 
                 var name = slot.ConstructorArguments.Length == 1 &&
                     slot.ConstructorArguments[0].Value is string slotName ? slotName : null;

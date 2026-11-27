@@ -14,7 +14,7 @@ namespace BubuUI.Compiler.Tests;
 /// <summary>
 /// <c>@bind-P</c> 的目标必须「支持绑定」（spec/01 §4.5）：
 /// 公开可写属性通过具名 <c>{P}Property</c> 或同类型 <c>{P}Changed</c> 回调支持双向绑定。
-/// 普通 CLR setter 可用于单向赋值，不要求声明 <c>[UiParameter]</c>。本文件盯的是不可绑目标的报法：
+/// 普通 CLR setter 可用于单向赋值，无需特性标记。本文件盯的是不可绑目标的报法：
 /// 名字存在 → EUI040 带原因；名字不存在 → 仍 EUI002。两者混为一谈会让人去改拼写。
 /// </summary>
 public class BindTargetTests
@@ -122,8 +122,8 @@ public class BindTargetTests
 
             public class Counter : global::BubuUI.Elements.StackPanel
             {
-                [global::BubuUI.UiParameter] public int Count { get; set; }
-                [global::BubuUI.UiParameter] public global::System.Action? CountChanged { get; set; }
+                public int Count { get; set; }
+                public global::System.Action? CountChanged { get; set; }
             }
             """;
 
@@ -146,8 +146,8 @@ public class BindTargetTests
 
             public class Counter : global::BubuUI.Elements.StackPanel
             {
-                [global::BubuUI.UiParameter] public int Count { get; set; }
-                [global::BubuUI.UiParameter] public global::System.Action<string?>? CountChanged { get; set; }
+                public int Count { get; set; }
+                public global::System.Action<string?>? CountChanged { get; set; }
             }
             """;
 
@@ -172,11 +172,11 @@ public class BindTargetTests
 
             public class Counter : global::BubuUI.Elements.StackPanel
             {
-                [global::BubuUI.UiParameter] public int Count { get; set; }
-                [global::BubuUI.UiParameter] public global::System.Action? CountChanged { get; set; }
+                public int Count { get; set; }
+                public global::System.Action? CountChanged { get; set; }
 
-                [global::BubuUI.UiParameter] public int Total { get; set; }
-                [global::BubuUI.UiParameter] public global::System.Action<int>? TotalChanged { get; set; }
+                public int Total { get; set; }
+                public global::System.Action<int>? TotalChanged { get; set; }
             }
             """;
 

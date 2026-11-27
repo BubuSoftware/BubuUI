@@ -17,6 +17,13 @@ ide/
 Rider 走 lsp4ij、Visual Studio 走内置 LSP 客户端接**同一个** server，所以补全/诊断共用实现，
 差别只在壳的接线方式。
 
+0.2.5 的三个客户端共用 `vscode/highlighting/palette.json`：浅色主题下，
+标签/类型/命名空间 `#267F99`、属性 `#0451A5`、指令 `#AF00DB`、
+字面量 `#A31515`、注释 `#008000`、标点 `#666666`，同时提供深色配色。
+模板配色与插件一起保存，只应用到 `.bui` / `.bss`；`@code` 和表达式继续使用 C# 高亮。
+VS Code 使用模板 token 的前景色装饰，Rider 在 TextMate 高亮器上选择独立颜色键，
+VS 使用可在“字体和颜色”中调整的 `BubuUI …` 分类。
+
 ## 三个 IDE 插件一键打包
 
 ### GitHub Actions（推荐）
@@ -138,7 +145,7 @@ design/06 §6.9 之后，目录不再是「扫 dll 元数据」，所有能力�
 | `.bss` 控件主题 | ✅ | `@namespace`、`@using`、`@theme`、typed setter、状态、`/template/`、`resource()`、`template()` 的补全/悬停/导航；按类型和命名空间作用域过滤候选，支持未保存文件及未完成输入 |
 | 主题编辑辅助 | ✅ | 同模块主题重命名（含本项目 `.cs/.bui` 可绑定引用）、大纲、语义着色、函数参数提示、导入与属性拼写快速修复、缩进及范围格式化；详见 [design/28](../design/28-lookless-controls.md) |
 | `@namespace` 契约 | ✅ | 必填；生成器报 EUI055（缺失）/ EUI056（与 code-behind 不一致），经 Tier 2 映回 `.bui`。补全提供 `@namespace` 指令与命名空间候选（自身命名空间排首位） |
-| 无 code-behind 的 `.bui` 组件 | ✅ | 目录把「同名同命名空间的 `.bui`」当组件证据（spec/02 §2.7），`<Tag />` 在编辑器与 `dotnet build` 里一致。K34：`@code` 里的 `[UiParameter]`/`[UiSlot]`/`[UiContent]` 由目录语法级提取为对外表面——补全、`@bind-` 校验与 `dotnet build` 同口径；有同名 `.cs` 时这些特性只对本文件可见（`EUI057` Warning）。`Ref={…}` 指向 `@code` 字段时 F12 落在本文档的字段声明 |
+| 无 code-behind 的 `.bui` 控件 | ✅ | `@code` 中公开可读写属性自动作为模板参数；`[UiSlot]`/`[UiContent]` 声明内容角色。模板和 partial `.cs` 合并到同一符号视图，补全、绑定与构建共享目录。`UiParameter` 特性及其必填提示已移除。 |
 | 标签补全 | ✅ | 来自项目目录；未 build 的自家控件、`.bui` 派生组件都在；选择链外未导入类型时，以同一补全项的附加编辑补入去重的 `@using`（`@namespace` 链内不需要，K33） |
 | `@using` 命名空间 / 别名补全 | ✅ | 命名空间候选来自项目 Compilation，不限于 UI 控件命名空间；支持 `System.Col` 等限定前缀与别名目标。`@using Alt = Ns.Type` 的 `Alt` 仍作为标签候选 |
 | 属性 / 事件 / 组件参数 / 附加属性补全 | ✅ | 含 `Grid.Row` 形态；事件带委托签名 |
@@ -230,6 +237,12 @@ powershell -ExecutionPolicy Bypass -File ide/build.ps1
 
 design/06 §6.5 的**首选路径已落地**：`ide/rider` 是 IntelliJ 平台插件（lsp4ij 0.21.0 /
 Rider 2024.2+），server 仍是同一个 `BubuUI.LanguageServer`，不加第二个语言服务实现。
+0.2.7 的 Rider 安装包包含补全性能优化：复用项目快照、增量生成和 Roslyn 编辑器文档，
+标签/属性补全不再等待完整生成及编译诊断；及时处理 LSP4IJ 发出的取消请求，
+跳过排队中的过期请求并取消正在执行的 C# 补全和语义着色。完整候选列表可由客户端继续筛选，
+避免因误报 `isIncomplete` 而重复请求。首次打开项目与首次 C# 补全仍需要预热。
+通过 “Install Plugin from Disk” 安装新版 ZIP 并重启 Rider 后生效；自定义 Server DLL 路径时需同步更新该 DLL。
+
 插件只做三件事：
 
 1. 把 `.bui`/`.bss` 注册为 `Language` + `FileType`，并用

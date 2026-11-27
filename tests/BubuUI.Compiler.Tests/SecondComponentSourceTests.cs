@@ -78,10 +78,10 @@ public class SecondComponentSourceTests
     public void Declaration_CodeBehindWithoutBaseClassBecomesComponent()
     {
         // 有 .cs 但没写基类（Gallery 现状）：认领后走正常 Describe，所以 .cs 里的
-        // [UiParameter] 照常进参数表——这正是「想要参数就写 .cs」的依据。
+        // 公开可读写属性照常进入参数表。
         var catalog = UiCatalogFactory.Build(Compile(
                 ("Prefs.cs", "using BubuUI;\nnamespace Demo;\npublic partial class Prefs " +
-                             "{ [UiParameter] public string? Title { get; set; } }\n")),
+                             "{ public string? Title { get; set; } }\n")),
             new[] { new UiTemplateDeclaration("Prefs", "Demo") { RootTag = "BubuUI.Elements.StackPanel" } });
 
         var def = Assert.IsType<UiElementDef>(Find(catalog, "Prefs"));
@@ -238,15 +238,14 @@ public class SecondComponentSourceTests
     [Fact]
     public void CodeBlockParameterAttribute_IsTheComponentSurface()
     {
-        // K34（D112）：纯 .bui 组件的 @code [UiParameter] 由目录语法级提取——这是对外表面，
-        // 不再警告（EUI057 收窄为「有同名 .cs 才报」，那时符号扫描真的看不到它）。
+        // 模板 @code 与 code-behind 合并到同一符号视图，公开属性作为对外参数。
         const string ui = """
             @using BubuUI
             @using BubuUI.Elements
             <StackPanel />
             @namespace Gallery
             @code {
-                [UiParameter] public string? Title { get; set; }
+                public string? Title { get; set; }
             }
             """;
 
@@ -273,7 +272,7 @@ public class SecondComponentSourceTests
             <StackPanel />
             @namespace Gallery
             @code {
-                [UiParameter] public string? Title { get; set; }
+                public string? Title { get; set; }
             }
             """;
 
@@ -297,16 +296,16 @@ public class SecondComponentSourceTests
         @code {
             public int unused;                     // 字段不进表面（Ref 目标走探针）
 
-            public string? NotAParameter { get; set; }   // 公开属性 → NonBindable 原因
+            public string? NotAParameter { get; set; }   // 公开可读写属性自动暴露
 
-            [UiParameter] public string? Title { get; set; }
-            [UiParameter] public int Count { get; set; }
-            [UiParameter] public Action<int>? CountChanged { get; set; }
-            [UiParameter] public string? Bad2 { get; set; }
-            [UiParameter] public Action<int>? Bad2Changed { get; set; }   // 形状不配：int vs string?
-            [UiParameter] public int Bad0 { get; set; }
-            [UiParameter] public Action Bad0Changed { get; set; }          // 无参回调：配对失败
-            [UiParameter(Required = true)] public string? Name { get; set; }
+            public string? Title { get; set; }
+            public int Count { get; set; }
+            public Action<int>? CountChanged { get; set; }
+            public string? Bad2 { get; set; }
+            public Action<int>? Bad2Changed { get; set; }   // 形状不配：int vs string?
+            public int Bad0 { get; set; }
+            public Action Bad0Changed { get; set; }          // 无参回调：配对失败
+            public string? Name { get; set; }
             [UiContent] public Element? Body { get; set; }
             [UiSlot("Header")] public Element? HeaderSlot { get; set; }
             string? PrivateProp { get; set; }      // 非 public：不进表面也不进原因表
@@ -321,9 +320,6 @@ public class SecondComponentSourceTests
         var title = def.Parameters["Title"];
         Assert.Equal("global::System.String", title.ClrTypeDisplayName);
         Assert.True(title.CanWrite);
-        Assert.False(title.Required);
-
-        Assert.True(def.Parameters["Name"].Required);
 
         // 绑定通道：形状正确的配对回填，形状不对的记原因（D110 规则的文本级版本）
         Assert.Equal("CountChanged", def.Parameters["Count"].ChangedCallbackName);
@@ -338,14 +334,14 @@ public class SecondComponentSourceTests
         Assert.False(def.Parameters["Body"].ContentIsMultiple);
         Assert.Equal("HeaderSlot", Assert.Single(def.Slots.Values).PropertyName);
 
-        // 公开非参数属性给出「为什么不可用」，私有属性不进表面
+        // 公开可读写属性自动暴露，私有属性不进入模板表面
         Assert.Contains("NotAParameter", def.Parameters.Keys);
         Assert.Null(def.BindRejection("NotAParameter"));
         Assert.Null(def.BindRejection("PrivateProp"));
     }
 
     [Fact]
-    public void CodeBlockMembers_ReadOnlyOrStaticAreReported()
+    public void CodeBlockMembers_ReadOnlyStaticAndFieldsAreNotParameters()
     {
         const string ui = """
             @using BubuUI
@@ -353,24 +349,18 @@ public class SecondComponentSourceTests
             <StackPanel />
             @namespace Gallery
             @code {
-                [UiParameter] public string? ro { get; }
-                [UiParameter] public static string? stat { get; set; }
-                [UiParameter] public int NotProperty;
+                public string? ro { get; }
+                public static string? stat { get; set; }
+                public int NotProperty;
             }
             """;
 
         var def = Assert.IsType<UiElementDef>(Find(CatalogOf("/templates/Card.bui", ui), "Card"));
 
-        // 只读参数照进目录（CanWrite=false，使用点由 EUI040 解释）——与符号路径一致；
-        // static 与字段不进参数表，声明问题记 EUI028。
-        var ro = Assert.IsType<UiParameterDef>(def.Parameters.GetValueOrDefault("ro"));
-        Assert.False(ro.CanWrite);
-        Assert.DoesNotContain("stat", def.Parameters);
-        Assert.Contains(def.Problems, p => p.MemberName == "ro" && p.Code == "EUI028");
-        Assert.Contains(def.Problems, p => p.MemberName == "stat");
-        Assert.Contains(def.Problems, p => p.Message.Contains("must be on a property", StringComparison.Ordinal));
-        // 问题定位在 .bui 文件里（纯数据 Source，构建期由目录级出口报告）
-        Assert.All(def.Problems, p => Assert.Equal("/templates/Card.bui", p.Source!.Path));
+        Assert.DoesNotContain("ro", def.Parameters.Keys);
+        Assert.DoesNotContain("stat", def.Parameters.Keys);
+        Assert.DoesNotContain("NotProperty", def.Parameters.Keys);
+        Assert.Empty(def.Problems);
     }
 
     [Fact]
@@ -411,9 +401,9 @@ public class SecondComponentSourceTests
             </StackPanel>
             @namespace Gallery
             @code {
-                [UiParameter] public string? Title { get; set; }
-                [UiParameter] public int Count { get; set; }
-                [UiParameter] public Action<int>? CountChanged { get; set; }
+                public string? Title { get; set; }
+                public int Count { get; set; }
+                public Action<int>? CountChanged { get; set; }
             }
             """;
         const string showcaseUi = """

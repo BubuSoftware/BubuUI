@@ -51,6 +51,8 @@ if (-not $SkipTests) {
         if ($LASTEXITCODE -ne 0) { throw "grammar assertions failed ($LASTEXITCODE)" }
         node test/extension.test.js
         if ($LASTEXITCODE -ne 0) { throw "extension assertions failed ($LASTEXITCODE)" }
+        node test/template-colors.test.js
+        if ($LASTEXITCODE -ne 0) { throw "template palette assertions failed ($LASTEXITCODE)" }
     }
     finally { Pop-Location }
 

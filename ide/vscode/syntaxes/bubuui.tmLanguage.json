@@ -81,6 +81,7 @@
         "1": { "name": "punctuation.section.parens.end.bubuui" },
         "3": { "name": "punctuation.section.block.begin.bubuui" }
       },
+      "contentName": "meta.embedded.line.csharp.bubuui source.cs",
       "patterns": [{ "include": "#csharp-in-parens" }]
     },
 
@@ -97,6 +98,7 @@
         "1": { "name": "punctuation.section.parens.end.bubuui" },
         "3": { "name": "punctuation.section.block.begin.bubuui" }
       },
+      "contentName": "meta.embedded.line.csharp.bubuui source.cs",
       "patterns": [{ "include": "#csharp-in-parens" }]
     },
 
@@ -113,6 +115,7 @@
         "1": { "name": "punctuation.section.parens.end.bubuui" },
         "3": { "name": "punctuation.section.block.begin.bubuui" }
       },
+      "contentName": "meta.embedded.line.csharp.bubuui source.cs",
       "patterns": [{ "include": "#csharp-in-parens" }]
     },
 
@@ -135,7 +138,8 @@
         "3": { "name": "punctuation.section.block.begin.bubuui" }
       },
       "endCaptures": { "1": { "name": "punctuation.section.block.end.bubuui" } },
-      "patterns": [{ "include": "#csharp" }, { "include": "#csharp-block" }]
+      "contentName": "source.cs",
+      "patterns": [{ "include": "source.bubuui-csharp#class-or-struct-members" }]
     },
 
     "style-block": {
@@ -222,7 +226,7 @@
       "match": "(</)([A-Za-z_][A-Za-z0-9_]*)(\\s*)(>)",
       "captures": {
         "1": { "name": "punctuation.definition.tag.begin.bubuui" },
-        "2": { "name": "entity.name.tag.bubuui" },
+        "2": { "name": "entity.name.type.class.bubuui" },
         "4": { "name": "punctuation.definition.tag.end.bubuui" }
       }
     },
@@ -232,7 +236,7 @@
       "name": "meta.tag.bubuui",
       "beginCaptures": {
         "1": { "name": "punctuation.definition.tag.begin.bubuui" },
-        "2": { "name": "entity.name.tag.bubuui" }
+        "2": { "name": "entity.name.type.class.bubuui" }
       },
       "endCaptures": {
         "1": { "name": "punctuation.definition.tag.self-close.bubuui" },
@@ -344,127 +348,12 @@
       "name": "meta.embedded.expression.bubuui",
       "beginCaptures": { "0": { "name": "punctuation.section.expression.begin.bubuui" } },
       "endCaptures": { "0": { "name": "punctuation.section.expression.end.bubuui" } },
-      "contentName": "meta.embedded.line.csharp.bubuui",
-      "patterns": [
-        { "include": "#csharp-comment" },
-        { "include": "#csharp-string" },
-        { "include": "#csharp-char" },
-        { "include": "#expression" },
-        { "include": "#csharp-literal" },
-        { "include": "#csharp-type" },
-        { "include": "#csharp-keyword" },
-        { "include": "#csharp-number" },
-        { "include": "#csharp-member-access" },
-        { "include": "#csharp-identifier" }
-      ]
+      "contentName": "meta.embedded.line.csharp.bubuui source.cs",
+      "patterns": [{ "include": "source.bubuui-csharp#expression" }]
     },
 
     "csharp-in-parens": {
-      "patterns": [
-        { "include": "#csharp-comment" },
-        { "include": "#csharp-string" },
-        { "include": "#csharp-char" },
-        {
-          "begin": "\\(",
-          "end": "\\)",
-          "name": "meta.group.csharp.bubuui",
-          "beginCaptures": { "0": { "name": "punctuation.section.parens.begin.bubuui" } },
-          "endCaptures": { "0": { "name": "punctuation.section.parens.end.bubuui" } },
-          "patterns": [{ "include": "#csharp-in-parens" }]
-        },
-        { "include": "#csharp-literal" },
-        { "include": "#csharp-type" },
-        { "include": "#csharp-keyword" },
-        { "include": "#csharp-number" },
-        { "include": "#csharp-member-access" },
-        { "include": "#csharp-identifier" }
-      ]
-    },
-
-    "csharp-block": {
-      "begin": "\\{",
-      "end": "\\}",
-      "name": "meta.block.csharp.bubuui",
-      "beginCaptures": { "0": { "name": "punctuation.section.block.begin.bubuui" } },
-      "endCaptures": { "0": { "name": "punctuation.section.block.end.bubuui" } },
-      "patterns": [{ "include": "#csharp" }, { "include": "#csharp-block" }]
-    },
-
-    "csharp": {
-      "patterns": [
-        { "include": "#csharp-comment" },
-        { "include": "#csharp-string" },
-        { "include": "#csharp-char" },
-        { "include": "#csharp-literal" },
-        { "include": "#csharp-type" },
-        { "include": "#csharp-keyword" },
-        { "include": "#csharp-number" },
-        { "include": "#csharp-member-access" },
-        { "include": "#csharp-identifier" }
-      ]
-    },
-
-    "csharp-comment": {
-      "patterns": [
-        { "match": "//.*$", "name": "comment.line.double-slash.csharp" },
-        {
-          "begin": "/\\*",
-          "end": "\\*/",
-          "name": "comment.block.csharp"
-        }
-      ]
-    },
-
-    "csharp-string": {
-      "patterns": [
-        {
-          "begin": "\\$?@?\"",
-          "end": "\"",
-          "name": "string.quoted.double.csharp",
-          "patterns": [{ "match": "\\\\.", "name": "constant.character.escape.csharp" }]
-        }
-      ]
-    },
-
-    "csharp-char": {
-      "match": "'(?:\\\\.|[^'\\\\])'",
-      "name": "string.quoted.single.csharp"
-    },
-
-    "csharp-literal": {
-      "match": "\\b(?:true|false|null)\\b",
-      "name": "constant.language.csharp"
-    },
-
-    "csharp-type": {
-      "match": "\\b(?:bool|byte|sbyte|char|decimal|double|float|int|uint|long|ulong|short|ushort|object|string|void|var|dynamic)\\b",
-      "name": "storage.type.csharp"
-    },
-
-    "csharp-keyword": {
-      "match": "\\b(?:if|else|for|foreach|while|do|switch|case|default|break|continue|return|await|async|yield|new|this|base|is|as|in|out|ref|params|typeof|nameof|sizeof|throw|try|catch|finally|using|lock|public|private|protected|internal|static|readonly|const|sealed|partial|override|virtual|abstract|class|struct|interface|record|enum|namespace|where|get|set|init|when|and|or|not)\\b",
-      "name": "keyword.control.csharp"
-    },
-
-    "csharp-number": {
-      "match": "\\b(?:0[xX][0-9a-fA-F_]+|\\d[\\d_]*(?:\\.\\d[\\d_]*)?(?:[eE][+-]?\\d+)?)[fFdDmMlLuU]?\\b",
-      "name": "constant.numeric.csharp"
-    },
-
-    "csharp-member-access": {
-      "comment": "没有这条时 model.Name 整段落进默认前景，{expr} 看上去不上色。放在关键字/类型/字面量之后，避免抢它们的匹配。",
-      "match": "([A-Za-z_][A-Za-z0-9_]*)(\\.)([A-Za-z_][A-Za-z0-9_]*)",
-      "captures": {
-        "1": { "name": "variable.other.object.csharp" },
-        "2": { "name": "punctuation.accessor.csharp" },
-        "3": { "name": "variable.other.object.property.csharp" }
-      }
-    },
-
-    "csharp-identifier": {
-      "comment": "兜底：普通标识符也要有 scope。embeddedLanguages 的二次着色依赖装了 C# grammar，不能把上色押在它身上。",
-      "match": "[A-Za-z_][A-Za-z0-9_]*",
-      "name": "variable.other.readwrite.csharp"
+      "patterns": [{ "include": "source.bubuui-csharp#expression" }]
     }
   }
 }

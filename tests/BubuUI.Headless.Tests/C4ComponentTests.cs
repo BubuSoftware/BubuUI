@@ -8,7 +8,7 @@ using Xunit;
 namespace BubuUI.Headless.Tests;
 
 /// <summary>
-/// C4 切片：组件标签——参数解析、委托参数（事件）、必填参数、@bind 回调、内容参数。
+/// C4 切片：组件标签——参数解析、委托参数（事件）、可选属性、@bind 回调、内容参数。
 /// 规范条文：spec/01 §4.2/§4.4/§4.14；spec/02 §4.12；design/14 §14.6。
 /// 目录从 BuiltIn() 派生，其上追加合成组件标签以驱动诊断与解析分支。
 /// </summary>
@@ -22,20 +22,20 @@ public class C4ComponentTests
         return (doc, diags);
     }
 
-    private static UiParameterDef Param(string name, string type, bool required = false,
+    private static UiParameterDef Param(string name, string type,
         bool isDelegate = false, int arity = 0, string? changed = null,
         UiTypeShapeKind shapeKind = UiTypeShapeKind.Other, string? canonical = null) => new(
         name, type, new UiTypeShape(shapeKind, canonical ?? type, []),
-        CanWrite: true, Required: required, IsDelegate: isDelegate, DelegateArity: arity,
+        CanWrite: true, IsDelegate: isDelegate, DelegateArity: arity,
         IsContent: false, ContentIsMultiple: false, ChangedCallbackName: changed);
 
     private static UiParameterDef Content(string name, string type, bool multiple) => new(
         name, type, new UiTypeShape(UiTypeShapeKind.Other, type, []),
-        CanWrite: true, Required: false, IsDelegate: false, DelegateArity: 0,
+        CanWrite: true, IsDelegate: false, DelegateArity: 0,
         IsContent: true, ContentIsMultiple: multiple, ChangedCallbackName: null);
 
     /// <summary>
-    /// 合成组件：ProbeCard（Title/Count 必填参数、OnClose 无参/OnSelect 一参委托、
+    /// 合成组件：ProbeCard（Title/Count 普通属性、OnClose 无参/OnSelect 一参委托、
     /// Color 绑定参数（带 ColorChanged）、Plain 无回调、Body 单根内容）；
     /// ProbeList（Count 可选参数、Items 多根内容）。各只含一个内容参数（spec/02 §4.12.3）。
     /// </summary>
@@ -46,7 +46,7 @@ public class C4ComponentTests
         {
             ["Title"] = Param("Title", "global::System.String?",
                 shapeKind: UiTypeShapeKind.Primitive, canonical: "string"),
-            ["Count"] = Param("Count", "global::System.Int32", required: true,
+            ["Count"] = Param("Count", "global::System.Int32",
                 shapeKind: UiTypeShapeKind.Primitive, canonical: "int"),
             ["OnClose"] = Param("OnClose", "global::System.Action", isDelegate: true),
             ["OnSelect"] = Param("OnSelect", "global::System.Action<global::System.Int32>", isDelegate: true, arity: 1),
@@ -102,14 +102,11 @@ public class C4ComponentTests
     }
 
     [Fact]
-    public void RequiredParameterMissing_IsEUI027()
+    public void OmittedOrdinaryParameter_IsAllowed()
     {
         var catalog = CatalogWithComponent();
         var (_, diags) = ParseAnalyze(catalog, "@using Probe\n" + """<ProbeCard Title="Hi" />""");
-        var diag = Assert.Single(diags);
-        Assert.Equal(UiDiagnostics.RequiredParameterMissing, diag.Code);
-        Assert.Contains("Count", diag.Message);
-        Assert.Equal(DiagnosticSeverity.Error, diag.Severity);
+        Assert.Empty(diags);
     }
 
     [Fact]

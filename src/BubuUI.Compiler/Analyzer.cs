@@ -887,7 +887,7 @@ public static class TemplateAnalyzer
             if (eventDef is null && propDef is null && paramDef is null)
             {
                 // spec/01 §4.5：`@bind-P` 的目标必须是可绑属性。名字在类型上**存在**但不可绑
-                // （只读、无 public setter、没有 {P}Property、组件上不是 [UiParameter]……）
+                // （只读、无 public setter、没有 {P}Property……）
                 // 与「压根没有这个属性」是两种错：前者要换目标或补声明，后者是拼写问题。
                 // 目录把前者记进 NonBindableProperties，这里给出原因 → EUI040；拼错仍走 EUI002。
                 if (attr.IsBind && def.BindRejection(attr.Name) is { } rejection)
@@ -913,7 +913,7 @@ public static class TemplateAnalyzer
                 }
 
                 // spec/01 §4.2：名字在类型上**存在**但不在模板表面时，说出原因（只读 / 没有
-                // {P}Property / 不是 [UiParameter]），而不是给一个 "did you mean"——那在暗示拼写错误。
+                // {P}Property），而不是给一个 "did you mean"——那在暗示拼写错误。
                 // 代码仍是 EUI002（"不可用"与"不存在"对赋值而言是同一个结果，spec/01 §4.4 口径）。
                 if (def.BindRejection(attr.Name) is { } notExposed)
                 {
@@ -942,7 +942,7 @@ public static class TemplateAnalyzer
 
             if (attr.IsBind && paramDef is not null)
             {
-                // 组件 @bind 目标（design/14 §14.6.1 / spec/02 §4.4.3）：[UiParameter] + public setter
+                // 组件 @bind 目标（design/14 §14.6.1 / spec/02 §4.4.3）：public getter/setter
                 // + {P}Changed 委托参数；内容/槽/委托/保留参数与无回调参数 → EUI040。
                 if (paramDef is null)
                 {
@@ -1045,18 +1045,6 @@ public static class TemplateAnalyzer
                     diags.Add(UiDiagnostics.Error(UiDiagnostics.LiteralFormat,
                         $"{source} '{attr.Name}' of '{element.Tag}' {error}", attr.ValueSpan));
                 }
-            }
-        }
-
-        // EUI027：必填参数缺失（design/14 §14.6.1；组件按源码目录 Required 标记）
-        if (def.Parameters.Count > 0)
-        {
-            foreach (var p in def.Parameters.Values)
-            {
-                if (p.Required && !attrSeen.ContainsKey(p.Name))
-                    diags.Add(UiDiagnostics.Error(UiDiagnostics.RequiredParameterMissing,
-                        $"required parameter '{p.Name}' of '{element.Tag}' is missing; pass it on the tag",
-                        element.TagSpan));
             }
         }
 

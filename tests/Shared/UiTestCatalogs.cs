@@ -94,7 +94,7 @@ public static class UiTestCatalogs
                     $"field={evt.Value.FieldName}");
             foreach (var parameter in element.Parameters.OrderBy(p => p.Key, StringComparer.Ordinal))
                 lines.Add($"    param  {parameter.Key} {parameter.Value.ClrTypeDisplayName} " +
-                    $"required={parameter.Value.Required} delegate={parameter.Value.IsDelegate}");
+                    $"delegate={parameter.Value.IsDelegate}");
             foreach (var slot in element.Slots.OrderBy(s => s.Key, StringComparer.Ordinal))
                 lines.Add($"    slot   {slot.Key} -> {slot.Value.PropertyName}");
             lines.Add("");

@@ -20,11 +20,11 @@ UiObject 统一初始化、更新和资源管理。Element 派生类型可占据
 
 ## 3. 可写属性
 
-公开实例 getter + public 非 init setter 的属性可用于模板。排除静态、索引器、UiIgnore、只读和不能合法参与生成的类型。普通属性不要求 UiParameter。
+公开实例 getter + public 非 init setter 的属性可用于模板。排除静态、索引器、UiIgnore、只读和不能合法参与生成的类型。普通属性自动暴露。
 
 StyledProperty<T> 字段给属性额外提供值层、继承、变更通知与几何失效能力；普通 CLR 属性依靠公开 setter 和相等保护推送。两者在目录里按成员能力分别记录，不能按 ui/C# 来源分流。
 
-UiParameter(Required=true) 声明必填输入；UiParameter 仍可标注已有普通属性，但不再用作进入模板表面的必要凭证。Required、回调与内容角色必须在 override 继承中保持，派生 getter/setter 不得因缺少重复标记丢掉角色。
+UiParameter 特性及 Required 必填约束已移除；未传入的属性保留控件默认值。回调与内容角色必须在 override 继承中保持，派生 getter/setter 不得因缺少重复标记丢掉角色。
 
 名字不存在报 EUI002 并给拼写建议；名字存在但只读等原因不可写时说明原因。缺少 StyledProperty 不能作为普通赋值失败的理由。
 

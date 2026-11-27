@@ -497,12 +497,12 @@ public class CatalogScannerTests
         namespace Probe;
         public class CardBox : global::BubuUI.Elements.StackPanel
         {
-            [UiParameter(Required = true)] public string Title { get; set; } = "";
-            [UiParameter] public int Count { get; set; }
-            [UiParameter] public Action<int>? CountChanged { get; set; }
-            [UiParameter] public Action<string>? OnDone { get; set; }
+            public string Title { get; set; } = "";
+            public int Count { get; set; }
+            public Action<int>? CountChanged { get; set; }
+            public Action<string>? OnDone { get; set; }
             public string Internal { get; set; } = "";
-            [UiIgnore] [UiParameter] public string Hidden { get; set; } = "";
+            [UiIgnore] public string Hidden { get; set; } = "";
             [UiSlot("Header")] public Element? Header { get; set; }
         }
         """;
@@ -517,14 +517,12 @@ public class CatalogScannerTests
     }
 
     [Fact]
-    public void ComponentParameters_CarryRequiredDelegateAndChangedCallback()
+    public void ComponentParameters_CarryDelegateAndChangedCallback()
     {
         var def = Scan(ComponentProbe)
             .Elements.Single(e => e.Tag == "CardBox");
 
         Assert.Equal(["Classes", "Count", "CountChanged", "Internal", "IsEnabled", "OnDone", "Title"], def.Parameters.Keys.ToArray());
-        Assert.True(def.Parameters["Title"].Required);
-        Assert.False(def.Parameters["Count"].Required);
         Assert.True(def.Parameters["OnDone"].IsDelegate);
         Assert.False(def.Parameters["Title"].IsDelegate);
         // {P}Changed 只在同名参数存在且为委托时回填
@@ -532,9 +530,9 @@ public class CatalogScannerTests
         Assert.Null(def.Parameters["Title"].ChangedCallbackName);
         // 普通 CLR 属性与显式声明共用模板属性表面。
         Assert.True(def.Parameters.ContainsKey("Internal"));
-        // [UiIgnore] 与 [UiParameter] 同时出现 → 忽略优先并记元数据问题（design/14 §14.6.1）
+        // [UiIgnore] keeps an ordinary property out of the template surface.
         Assert.False(def.Parameters.ContainsKey("Hidden"));
-        Assert.Contains(def.Problems, p => p.Code == UiDiagnostics.ParameterDeclarationInvalid && p.MemberName == "Hidden");
+        Assert.DoesNotContain(def.Problems, p => p.MemberName == "Hidden");
     }
 
     [Fact]
@@ -550,7 +548,7 @@ public class CatalogScannerTests
     }
 
     [Fact]
-    public void ComponentParameterWithoutSetter_ReportsEui028()
+    public void ComponentInitOnlyProperty_IsNotExposed()
     {
         var catalog = Scan("""
             using BubuUI;
@@ -558,12 +556,12 @@ public class CatalogScannerTests
             public class InitBox : global::BubuUI.Elements.StackPanel
             {
                 protected override void InitializeUi() { }
-                [UiParameter] public string Title { get; init; } = "";
+                public string Title { get; init; } = "";
             }
             """);
         var def = catalog.Elements.Single(e => e.Tag == "InitBox");
-        Assert.Contains(def.Problems, p => p.Code == UiDiagnostics.ParameterDeclarationInvalid && p.MemberName == "Title");
-        Assert.False(def.Parameters["Title"].CanWrite);
+        Assert.DoesNotContain("Title", def.Parameters.Keys);
+        Assert.DoesNotContain(def.Problems, p => p.MemberName == "Title");
     }
 
     [Fact]
@@ -840,7 +838,7 @@ public class CatalogScannerTests
     // ---- C4：组件参数/内容/委托的目录派生（design/14 §14.5.2/§14.6、spec/02 §4.12）----
 
     [Fact]
-    public void ComponentParameters_AreDerivedFromUiParameterAttributes()
+    public void ComponentParameters_AreDerivedFromPublicWritableProperties()
     {
         var catalog = Scan("""
             using System;
@@ -848,17 +846,14 @@ public class CatalogScannerTests
 
             public partial class Card : global::BubuUI.Elements.StackPanel
             {
-                [UiParameter(Required = true)] public int Count { get; set; }
-                [UiParameter] public string? Title { get; set; }
-                [UiParameter] public string? Hidden { private get; set; }
+                public int Count { get; set; }
+                public string? Title { get; set; }
+                public string? Hidden { private get; set; }
             }
             """);
         var card = Assert.Single(catalog.Elements, e => e.Tag == "Card");
-        Assert.Equal(5, card.Parameters.Count);
-
-        Assert.True(card.Parameters["Count"].Required);
-        Assert.False(card.Parameters["Title"].Required);
-        Assert.False(card.Parameters["Hidden"].CanWrite);
+        Assert.Equal(4, card.Parameters.Count);
+        Assert.DoesNotContain("Hidden", card.Parameters.Keys);
         Assert.Equal("global::System.Int32", card.Parameters["Count"].ClrTypeDisplayName);
         Assert.False(card.Parameters["Title"].IsDelegate);
     }
@@ -872,8 +867,8 @@ public class CatalogScannerTests
 
             public partial class Card : global::BubuUI.Elements.StackPanel
             {
-                [UiParameter] public Action? Closed { get; set; }
-                [UiParameter] public Action<int>? Picked { get; set; }
+                public Action? Closed { get; set; }
+                public Action<int>? Picked { get; set; }
             }
             """);
         var card = Assert.Single(catalog.Elements, e => e.Tag == "Card");
@@ -892,8 +887,8 @@ public class CatalogScannerTests
 
             public partial class Card : global::BubuUI.Elements.StackPanel
             {
-                [UiParameter] public string? Color { get; set; }
-                [UiParameter] public Action<string?>? ColorChanged { get; set; }
+                public string? Color { get; set; }
+                public Action<string?>? ColorChanged { get; set; }
             }
             """);
         var card = Assert.Single(catalog.Elements, e => e.Tag == "Card");
@@ -910,15 +905,15 @@ public class CatalogScannerTests
 
             public partial class Card : global::BubuUI.Elements.StackPanel
             {
-                [UiParameter] public Func<int>? Compute { get; set; }
-                [UiParameter] public ActionRef? Weird { get; set; }
+                public Func<int>? Compute { get; set; }
+                public ActionRef? Weird { get; set; }
             }
             public delegate void ActionRef(ref int value);
             """);
         var card = Assert.Single(catalog.Elements, e => e.Tag == "Card");
         var problems = card.Problems.Where(p => p.Code == UiDiagnostics.ParameterDeclarationInvalid).ToList();
-        Assert.Equal(2, problems.Count);
-        Assert.Contains(problems, p => p.MemberName == "Compute" && p.Message.Contains("void"));
+        Assert.Single(problems);
+        Assert.False(card.Parameters["Compute"].IsDelegate);
         Assert.Contains(problems, p => p.MemberName == "Weird" && p.Message.Contains("ref"));
     }
 
@@ -931,7 +926,7 @@ public class CatalogScannerTests
 
             public partial class Card : global::BubuUI.Elements.StackPanel
             {
-                [UiParameter] public Span<int> Slice { get; set; }
+                public Span<int> Slice { get; set; }
             }
             """);
         var card = Assert.Single(catalog.Elements, e => e.Tag == "Card");
@@ -950,13 +945,11 @@ public class CatalogScannerTests
 
             public partial class Card : global::BubuUI.Elements.StackPanel
             {
-                [UiParameter]
                 [UiContent]
                 public Element? Body { get; set; }
             }
             public partial class List : global::BubuUI.Elements.StackPanel
             {
-                [UiParameter]
                 [UiContent]
                 public IReadOnlyList<Element> Items { get; set; }
             }
@@ -978,7 +971,6 @@ public class CatalogScannerTests
 
             public partial class Card : global::BubuUI.Elements.StackPanel
             {
-                [UiParameter]
                 [UiContent]
                 public string? Body { get; set; }
             }
@@ -999,7 +991,6 @@ public class CatalogScannerTests
             [UiContent]
             public partial class Card : global::BubuUI.Elements.StackPanel
             {
-                [UiParameter]
                 [UiContent]
                 public Element? Body { get; set; }
             }
@@ -1020,10 +1011,8 @@ public class CatalogScannerTests
 
             public partial class Card : global::BubuUI.Elements.StackPanel
             {
-                [UiParameter]
                 [UiContent]
                 public Element? Body { get; set; }
-                [UiParameter]
                 [UiContent]
                 public IReadOnlyList<Element> Extra { get; set; }
             }
@@ -1042,17 +1031,16 @@ public class CatalogScannerTests
 
             public abstract class Base : global::BubuUI.Elements.StackPanel
             {
-                [UiParameter] public string? Name { get; set; }
-                [UiParameter] public Action<string?>? NameChanged { get; set; }
+                public string? Name { get; set; }
+                public Action<string?>? NameChanged { get; set; }
             }
             public partial class Card : Base
             {
-                [UiParameter(Required = true)] public int Count { get; set; }
+                public int Count { get; set; }
             }
             """);
         var card = Assert.Single(catalog.Elements, e => e.Tag == "Card");
         Assert.Equal(5, card.Parameters.Count);
-        Assert.True(card.Parameters["Count"].Required);
         Assert.Equal("NameChanged", card.Parameters["Name"].ChangedCallbackName);
     }
 
@@ -1210,23 +1198,21 @@ public class CatalogScannerTests
     }
 
     [Fact]
-    public void ComponentSlot_WithUiParameter_ParameterWinsAndSlotLeaves_IsEUI028()
+    public void ComponentSlot_IsNotAlsoAnOrdinaryParameter()
     {
-        // spec/01 §4.15：[UiParameter] 胜出，槽退出表面。
+        // A writable slot remains a slot, rather than becoming an ordinary value parameter.
         var catalog = Scan("""
             using BubuUI;
 
             public partial class Card : global::BubuUI.Elements.StackPanel
             {
-                [UiParameter] [UiSlot("Header")] public Element? Header { get; set; }
+                [UiSlot("Header")] public Element? Header { get; set; }
             }
             """);
         var card = Assert.Single(catalog.Elements, e => e.Tag == "Card");
-        Assert.True(card.Parameters.ContainsKey("Header"));
-        Assert.False(card.Parameters["Header"].IsContent);
-        Assert.Empty(card.Slots);
-        var problem = Assert.Single(card.Problems, p => p.Code == UiDiagnostics.ParameterDeclarationInvalid);
-        Assert.Contains("parameter wins", problem.Message);
+        Assert.False(card.Parameters.ContainsKey("Header"));
+        Assert.Equal("Header", Assert.Single(card.Slots.Values).PropertyName);
+        Assert.Empty(card.Problems);
     }
 
     [Fact]

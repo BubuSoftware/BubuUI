@@ -106,14 +106,14 @@ check('TextMate highlighter is explicitly bound (custom FileType workaround)', (
     has(highlighters.join('\n'), 'filetype="BubuUI"');
     has(highlighters.join('\n'), 'filetype="Bss"');
     for (const entry of highlighters) {
-        has(entry, 'org.jetbrains.plugins.textmate.language.syntax.highlighting.TextMateEditorHighlighterProvider');
+        has(entry, 'com.bubuui.rider.BubuUiEditorHighlighterProvider');
     }
     const factories = [...pluginXml.matchAll(/<lang\.syntaxHighlighterFactory\s+([^>]+)\/>/g)].map(m => m[1]);
     assert(factories.length === 2, 'two lang.syntaxHighlighterFactory entries expected');
     has(factories.join('\n'), 'language="BubuUI"');
     has(factories.join('\n'), 'language="Bss"');
     for (const entry of factories) {
-        has(entry, 'org.jetbrains.plugins.textmate.language.syntax.highlighting.TextMateSyntaxHighlighterFactory');
+        has(entry, 'com.bubuui.rider.BubuUiSyntaxHighlighterFactory');
     }
 });
 
@@ -150,7 +150,7 @@ check('grammars come from ide/vscode only (single shared asset)', () => {
 
 check('bundle package.json declares the same grammars/scopeNames as VS Code', () => {
     const grammars = bundleJson.contributes.grammars;
-    assert(grammars.length === 2, 'bundle must contribute both grammars');
+    assert(grammars.length === 3, 'bundle must contribute template, stylesheet and embedded C# grammars');
     for (const grammar of grammars) {
         const declared = grammar.path.replace(/^\.\//, '');
         assert(fs.existsSync(path.join(vscode, declared)), 'grammar not found: ' + declared);
@@ -161,8 +161,12 @@ check('bundle package.json declares the same grammars/scopeNames as VS Code', ()
     const vsGrammars = vscodePackage.contributes.grammars;
     assert(JSON.stringify(grammars.map(g => g.scopeName)) === JSON.stringify(vsGrammars.map(g => g.scopeName)),
         'bundle scopeName list must match the VS Code extension');
-    assert(JSON.stringify(grammars[0].embeddedLanguages) === JSON.stringify(vsGrammars[0].embeddedLanguages),
+    assert(JSON.stringify(grammars.find(g => g.language === 'bubuui').embeddedLanguages)
+        === JSON.stringify(vsGrammars.find(g => g.language === 'bubuui').embeddedLanguages),
         'embeddedLanguages must stay in sync with the VS Code extension');
+    const provider = rider('src/main/java/com/bubuui/rider/BubuUiTextMateBundleProvider.java');
+    has(provider, '"syntaxes/csharp.tmLanguage.json"');
+    has(provider, '"syntaxes/csharp-LICENSE.txt"');
     const extensions = bundleJson.contributes.languages.map(l => l.extensions[0]).sort();
     assert(JSON.stringify(extensions) === JSON.stringify(['.bss', '.bui']),
         'bundle language extensions must match the FileTypes');

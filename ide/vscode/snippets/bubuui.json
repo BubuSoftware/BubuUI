@@ -26,10 +26,10 @@
       "</${2:StackPanel}>",
       "",
       "@code {",
-      "    [UiParameter] public string ${3:Title} { get; set; } = \"\";",
+      "    public string ${3:Title} { get; set; } = \"\";",
       "}"
     ],
-    "description": "带 [UiParameter] 的组件模板（可被其它模板当标签使用）"
+    "description": "带公开属性的控件模板（可被其它模板当标签使用）"
   },
   "@namespace": {
     "prefix": "uns",

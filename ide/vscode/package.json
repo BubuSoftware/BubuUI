@@ -2,7 +2,7 @@
   "name": "bubuui",
   "displayName": "BubuUI",
   "description": "BubuUI templates, styles and control themes: completion, diagnostics, navigation, rename and embedded C#.",
-  "version": "0.2.1",
+  "version": "0.2.7",
   "publisher": "bubuui",
   "license": "MIT",
   "engines": {
@@ -55,6 +55,10 @@
     ],
     "grammars": [
       {
+        "scopeName": "source.bubuui-csharp",
+        "path": "./syntaxes/csharp.tmLanguage.json"
+      },
+      {
         "language": "bubuui",
         "scopeName": "source.bubuui",
         "path": "./syntaxes/bubuui.tmLanguage.json",
@@ -68,6 +72,53 @@
         "language": "bss",
         "scopeName": "source.bss",
         "path": "./syntaxes/bss.tmLanguage.json"
+      }
+    ],
+    "semanticTokenTypes": [
+      {
+        "id": "field",
+        "superType": "variable",
+        "description": "C# field in a BubuUI expression or code block."
+      }
+    ],
+    "semanticTokenScopes": [
+      {
+        "language": "bubuui",
+        "scopes": {
+          "namespace": [
+            "entity.name.type.namespace.cs"
+          ],
+          "type": [
+            "entity.name.type.cs"
+          ],
+          "class": [
+            "entity.name.type.class.cs"
+          ],
+          "struct": [
+            "entity.name.type.struct.cs"
+          ],
+          "enum": [
+            "entity.name.type.enum.cs"
+          ],
+          "interface": [
+            "entity.name.type.interface.cs"
+          ],
+          "method": [
+            "entity.name.function.cs"
+          ],
+          "property": [
+            "entity.name.variable.property.cs"
+          ],
+          "field": [
+            "entity.name.variable.field.cs"
+          ],
+          "variable": [
+            "entity.name.variable.local.cs"
+          ],
+          "parameter": [
+            "entity.name.variable.parameter.cs"
+          ]
+        }
       }
     ],
     "snippets": [
@@ -123,18 +174,18 @@
   },
   "scripts": {
     "build:server": "dotnet publish ../BubuUI.LanguageServer -c Release -o server",
-    "test": "node test/tokenize.test.js && node test/extension.test.js",
+    "test": "node test/tokenize.test.js && node test/extension.test.js && node test/template-colors.test.js",
     "test:grammar": "node test/tokenize.test.js",
     "test:shell": "node test/extension.test.js",
     "package": "vsce package"
   },
   "dependencies": {
-    "vscode-languageclient": "9.0.1"
-  },
-  "devDependencies": {
-    "@vscode/vsce": "3.6.2",
+    "vscode-languageclient": "9.0.1",
     "vscode-oniguruma": "^2.0.1",
     "vscode-textmate": "^9.3.2"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "3.6.2"
   },
   "repository": {
     "type": "git",

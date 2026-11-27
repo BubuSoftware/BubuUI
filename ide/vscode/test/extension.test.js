@@ -34,12 +34,16 @@ const fakeVscode = {
     workspaceFolders: [{ uri: { scheme: 'file', fsPath: workspace } }],
     createFileSystemWatcher: (pattern) => ({ pattern, dispose() {} }),
     onDidChangeConfiguration: () => ({ dispose() {} }),
+    onDidChangeTextDocument: () => ({ dispose() {} }),
     registerTextDocumentContentProvider: (scheme, provider) => {
       contentProviders.push({ scheme, provider });
       return { dispose() {} };
     },
   },
   window: {
+    visibleTextEditors: [],
+    createTextEditorDecorationType: () => ({ dispose() {} }),
+    onDidChangeVisibleTextEditors: () => ({ dispose() {} }),
     showErrorMessage: (message) => errors.push(message),
     showInformationMessage: () => {},
   },

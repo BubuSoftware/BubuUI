@@ -15,12 +15,20 @@ function Read-Entry($entry) {
     try { return $reader.ReadToEnd() } finally { $reader.Dispose() }
 }
 function Check-Grammar($archive, [string]$prefix) {
-    foreach ($name in @('bubuui', 'bss')) {
+    if (-not $archive.GetEntry("${prefix}csharp-LICENSE.txt")) { throw 'Missing embedded C# grammar license.' }
+    foreach ($name in @('bubuui', 'bss', 'csharp')) {
         $entry = $archive.GetEntry("$prefix$name.tmLanguage.json")
         if (-not $entry) { throw "Missing $name grammar." }
         $source = [IO.File]::ReadAllText((Join-Path $PSScriptRoot "vscode\syntaxes\$name.tmLanguage.json"))
         if ((Read-Entry $entry) -cne $source) { throw "Stale $name grammar." }
     }
+}
+
+function Check-Palette($archive, [string]$path) {
+    $entry = $archive.GetEntry($path)
+    if (-not $entry) { throw "Missing template palette: $path" }
+    $source = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'vscode/highlighting/palette.json'))
+    if ((Read-Entry $entry) -cne $source) { throw "Stale template palette: $path" }
 }
 
 foreach ($ide in @('VSCode', 'VisualStudio', 'Rider')) {
@@ -43,6 +51,10 @@ foreach ($ide in @('VSCode', 'VisualStudio', 'Rider')) {
             $manifest = Read-Entry ($zip.GetEntry('extension/package.json')) | ConvertFrom-Json
             if ($manifest.version -ne $version) { throw 'VS Code version mismatch.' }
             if (-not $zip.GetEntry('extension/node_modules/vscode-languageclient/lib/node/main.js')) { throw 'VS Code client dependency is missing.' }
+            foreach ($required in @('client/template-colors.js', 'node_modules/vscode-oniguruma/release/onig.wasm', 'node_modules/vscode-textmate/release/main.js')) {
+                if (-not $zip.GetEntry("extension/$required")) { throw "VS Code highlighting dependency is missing: $required" }
+            }
+            Check-Palette $zip 'extension/highlighting/palette.json'
             Check-Grammar $zip 'extension/syntaxes/'
         }
         elseif ($ide -eq 'VisualStudio') {
@@ -62,6 +74,7 @@ foreach ($ide in @('VSCode', 'VisualStudio', 'Rider')) {
                 [xml]$manifest = Read-Entry ($nested.GetEntry('META-INF/plugin.xml'))
                 if ($manifest.'idea-plugin'.version -ne $version) { throw 'Rider version mismatch.' }
                 Check-Grammar $nested 'textmate/syntaxes/'
+                Check-Palette $nested 'textmate/highlighting/palette.json'
             }
             finally { $nested.Dispose(); $memory.Dispose() }
         }

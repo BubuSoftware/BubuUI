@@ -142,6 +142,86 @@ public class SemanticColoringTests
         Assert.Equal(sync, async);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task EventHandlerReferenceAndDeclarationAreBothMethods(bool legacy)
+    {
+        const string text = """
+            @namespace Gallery
+            @using BubuUI.Elements
+            <Button OnClick={CycleTheme}>Cycle</Button>
+            @code {
+                void CycleTheme() { }
+                void CycleTheme(int value) { }
+            }
+            """;
+        IReadOnlyList<UiSemanticToken> tokens;
+        DocumentAnalysis analysis;
+        if (legacy)
+        {
+            (analysis, _) = TestHost.Analyze(text);
+            tokens = EmbeddedCSharpService.SemanticTokens(analysis);
+        }
+        else
+        {
+            var fixture = Create(text);
+            analysis = fixture.Analysis;
+            tokens = await fixture.Service.SemanticTokensAsync(fixture.Uri);
+        }
+        for (int start = text.IndexOf("CycleTheme", StringComparison.Ordinal); start >= 0;
+             start = text.IndexOf("CycleTheme", start + 1, StringComparison.Ordinal))
+        {
+            var token = Assert.Single(tokens, t => analysis.Positions.ToOffset(t.Line, t.Character) == start);
+            Assert.Equal("CycleTheme".Length, token.Length);
+            Assert.Equal(SemanticTokenTypes.IndexOf("method"), token.TokenType);
+        }
+    }
+
+    [Theory]
+    [InlineData("\n", false)]
+    [InlineData("\r\n", false)]
+    [InlineData("\n", true)]
+    [InlineData("\r\n", true)]
+    public async Task MultilineCSharpTokensDoNotCrossLineBoundaries(string newline, bool legacy)
+    {
+        var text = """
+            @namespace Gallery
+            @using BubuUI.Elements
+            <TextBlock>{Message}</TextBlock>
+            @code {
+                /* first comment line
+                   second comment line */
+                public string Message = @"first string line
+            second string line";
+            }
+            """.ReplaceLineEndings(newline);
+        IReadOnlyList<UiSemanticToken> tokens;
+        DocumentAnalysis analysis;
+        if (legacy)
+        {
+            (analysis, _) = TestHost.Analyze(text);
+            tokens = EmbeddedCSharpService.SemanticTokens(analysis);
+        }
+        else
+        {
+            var fixture = Create(text);
+            analysis = fixture.Analysis;
+            tokens = await fixture.Service.SemanticTokensAsync(fixture.Uri);
+        }
+        Assert.Contains(tokens, t => t.TokenType == SemanticTokenTypes.IndexOf("string"));
+        foreach (var token in tokens)
+        {
+            var offset = analysis.Positions.ToOffset(token.Line, token.Character);
+            var value = text.Substring(offset, token.Length);
+            Assert.DoesNotContain('\n', value);
+            Assert.DoesNotContain('\r', value);
+        }
+        // Both lines retain string colouring after splitting.
+        var secondLine = analysis.Positions.ToPosition(text.IndexOf("second string line", StringComparison.Ordinal)).Line;
+        Assert.Contains(tokens, t => t.Line == secondLine && t.TokenType == SemanticTokenTypes.IndexOf("string"));
+    }
+
     private static string FindRepositoryRoot()
     {
         for (var directory = new DirectoryInfo(AppContext.BaseDirectory);

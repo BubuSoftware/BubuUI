@@ -411,7 +411,7 @@ string        ::= '"' raw-char* '"'
 所有 ui/C# 类型通过同一符号目录解析，按成员能力处理：保留属性 → 路由事件 → StyledProperty/普通可写 CLR 属性 → 声明的附加属性 → 未知。
 
 - 名字大小写敏感。标签遵循命名空间和 alias 查找；未知 EUI001、冲突 EUI016、不可用类型报告确定原因。
-- 普通 public getter/setter 属性可赋值，无需 UiParameter。UiParameter 可声明 Required；内容和具名槽由 UiContent/UiSlot 描述。
+- 普通 public getter/setter 属性可赋值，不需要特性标记；内容和具名槽由 UiContent/UiSlot 描述。
 - StyledProperty 赋值由属性引擎相等短路；plain CLR 属性相等保护下写 setter 并使目标失效。
 - 路由事件按 OnEvent 解析；void 委托属性按真实签名包装；非 void 委托为普通值属性。
 - 绑定按 StyledProperty 或匹配 PChanged 能力选择，不按控件来源分类。只读、内容、槽、事件及保留属性不可绑定。
@@ -638,7 +638,7 @@ Element 的 `FocusVisualMode` 是可赋值、可样式化的枚举属性，取�
 
 根标签初始化当前实例：普通输入/内容参数/槽先就位 → 基类初始化 → 本层模板默认属性与结构。StyledProperty 根默认值写 template 层，调用方 local 覆盖；类集内部在前、外部在后。
 
-公开可写属性可直接使用；UiParameter(Required=true) 可声明必填（EUI027），UiContent/UiSlot 声明单/多项内容。绑定回调、插槽和资源规则对 ui 与 C# 完全相同，见 spec/03、spec/04。
+公开可写属性可直接使用，未传值时保留默认值。UiParameter 特性和必填检查已移除（EUI027 停用）；UiContent/UiSlot 声明单/多项内容。绑定回调、插槽和资源规则对 ui 与 C# 完全相同，见 spec/03、spec/04。
 
 ### 4.15 保留属性与保留语法
 
@@ -659,7 +659,7 @@ Element 的 `FocusVisualMode` 是可赋值、可样式化的枚举属性，取�
 
 - 声明侧：组件的 `[UiSlot("名字")]` 属性。类型 `Element?` → 单根；`IReadOnlyList<Element>` → 多根；
   其他类型 → 声明期 `EUI021`（槽不进表面）；重复插槽名 → 声明期 `EUI028`；同一属性同时
-  `[UiParameter]` 与 `[UiSlot]` → 参数胜出（`EUI028`，槽退出表面）；`[UiIgnore]` 胜出。
+  `[UiSlot]` 属性不作为普通值参数暴露；`[UiIgnore]` 胜出。
   基链继承：派生类同名属性**显式写了模板特性或 `[UiIgnore]`** 才算覆盖基类声明，
   否则基类的 `[UiSlot]` 继续生效（Roslyn 不把成员特性带进 override，偏差 D76）。
 - 消费侧 `<Slot Name="...">...</Slot>`：只能作为组件标签**直属子级**；属性只接受字面量 `Name`；
@@ -853,8 +853,8 @@ Element 的 `FocusVisualMode` 是可赋值、可样式化的枚举属性，取�
 | `EUI024` | 事件处理器签名不匹配（可静态判定时） | 属性值 | Error | ✅ 2026-11-08（D82；Roslyn 符号语义判定，符号未解析/`dynamic`/表达式内部错误静默交回 C#，见 spec/02 §4.6.1 规则 7） |
 | `EUI025` | 同一标签重复属性（任一侧是绑定的同名重叠 → `EUI033`） | 属性名 | Error | ✅ C3 |
 | `EUI026` | 控件/组件元数据声明非法（源项目） | 声明处 | Error/Warning | ✅ 2026-11-08（D74 ②/D81；源项目 EUI019/020/021 problem 也折叠到此码） |
-| `EUI027` | 组件必填参数缺失 | 标签 | Error | ✅ C4 |
-| `EUI028` | 组件参数/委托声明非法：非 public / 无 setter / `init` / C# `required` / 非法泛型实参 / 委托含 `ref`/`out`/`in`；C6 起含 `[UiSlot]` 声明项：重复插槽名、`[UiParameter]+[UiSlot]` 同属性（参数胜出）、`[UiIgnore]+[UiSlot]`（忽略胜出） | 声明处/属性名 | Error | ✅ C4（插槽项 ✅ C6）；声明处出口 ✅ 2026-11-08（D74 ②） |
+| `EUI027` | 已停用：UiParameter 必填约束已移除 | — | — | 保留编号，不复用 |
+| `EUI028` | 参数类型/委托声明非法：非法泛型实参 / void 委托含 `ref`/`out`/`in`；C6 起含 `[UiSlot]` 声明项：重复插槽名、`[UiIgnore]+[UiSlot]`（忽略胜出） | 声明处/属性名 | Error | ✅ C4（插槽项 ✅ C6）；声明处出口 ✅ 2026-11-08（D74 ②） |
 | `EUI029` | `Ref` 目标非法：非简单标识符（分析器，语法级）/ 字段缺失、只读、静态、类型不符（生成器探针，语义级；引用 C# 诊断） | 属性值 | Error | ✅ C5 |
 | `EUI030` | 泛型标签暂不支持 | 标签 | Error | ✅ 2026-11-08（D74 ②，泛型类型作为不可用标签在使用点分流）；泛型标签语法按 K19 暂缓、不排期（C6 实拆只做插槽，见 §4.15） |
 | `EUI031` | 语法已保留、尚未实现（`Class`/`Style`/附加属性）；C6 起还覆盖**保留标签名冲突**——控件/组件把 `Slot`/`ContentSlot` 注册为标签名（解析器特判，标签进 HiddenTags） | 标签/属性 | Error | ✅ C3（`<Slot>`/`<ContentSlot>` 使用点口径由 EUI022 接管，C6） |

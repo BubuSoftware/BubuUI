@@ -31,12 +31,12 @@ public class ComponentSurfaceMatrixTests
         {
             public class ProbeCard : StackPanel
             {
-                [UiParameter] public string Title { get; set; } = "";
-                [UiParameter] public int Count { get; set; }
-                [UiParameter] public string? Hue { get; set; }
-                [UiParameter] public Action<string?>? HueChanged { get; set; }
-                [UiParameter] public Action? Clicked { get; set; }
-                [UiParameter] public Action<int>? Picked { get; set; }
+                public string Title { get; set; } = "";
+                public int Count { get; set; }
+                public string? Hue { get; set; }
+                public Action<string?>? HueChanged { get; set; }
+                public Action? Clicked { get; set; }
+                public Action<int>? Picked { get; set; }
                 [UiSlot("Header")] public Element? Header { get; set; }
                 [UiSlot("Rows")] public IReadOnlyList<Element>? Rows { get; set; }
                 [UiContent] public IReadOnlyList<Element>? Body { get; set; }

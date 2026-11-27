@@ -31,7 +31,6 @@ public static class UiCatalogFactory
 
     private const string UiContentAttributeName = "BubuUI.UiContentAttribute";
     private const string UiIgnoreAttributeName = "BubuUI.UiIgnoreAttribute";
-    private const string UiParameterAttributeName = "BubuUI.UiParameterAttribute";
     private const string UiSlotAttributeName = "BubuUI.UiSlotAttribute";
     private const string UiLiteralParserAttributeName = "BubuUI.UiLiteralParserAttribute";
 
@@ -795,7 +794,7 @@ public static class UiCatalogFactory
             // 基链自己走（Roslyn 的 GetAttributes 不把特性带进 override，也不含继承的类型特性）。
             // 同名成员按派生优先，但只有派生侧**显式写了模板声明或 [UiIgnore]** 才算覆盖：
             // 否则 override 会把基类的参数/插槽静默丢掉。重复处理同一声明会把它误报成
-            // 重复插槽声明，并让基类定义覆盖派生定义（Required/形状以派生声明为准）。
+            // 重复插槽声明，并让基类定义覆盖派生定义。
             var seenMembers = new HashSet<string>(StringComparer.Ordinal);
             // {P}Changed 的配对在基链走完之后做（声明顺序不影响配对），但形状要按符号判：
             // UiParameterDef 只存显示名，没法可靠地做类型身份比较，所以这里另记符号。
@@ -804,64 +803,52 @@ public static class UiCatalogFactory
             for (var current = type; current is not null && current.SpecialType != SpecialType.System_Object; current = current.BaseType)
             {
                 foreach (var invalidMember in current.GetMembers().Where(m => m is not IPropertySymbol))
-                    if (FindAttribute(invalidMember, UiParameterAttributeName) is not null
-                        || FindAttribute(invalidMember, UiSlotAttributeName) is not null
+                    if (FindAttribute(invalidMember, UiSlotAttributeName) is not null
                         || FindAttribute(invalidMember, UiContentAttributeName) is not null)
                         problems.Add(Problem(UiDiagnostics.ParameterDeclarationInvalid, current, invalidMember.Name,
-                            "[UiParameter]/[UiSlot]/[UiContent] must be on a property"));
+                            "[UiSlot]/[UiContent] must be on a property"));
                 foreach (var member in current.GetMembers().OfType<IPropertySymbol>())
                 {
-                    var parameter = FindAttribute(member, UiParameterAttributeName);
                     var slot = FindAttribute(member, UiSlotAttributeName);
                     var contentMark = FindAttribute(member, UiContentAttributeName);
                     if (member.IsStatic || member.IsIndexer)
                     {
-                        if (parameter is not null || slot is not null || contentMark is not null)
+                        if (slot is not null || contentMark is not null)
                             problems.Add(Problem(UiDiagnostics.ParameterDeclarationInvalid, current, member.Name,
                                 $"'{member.Name}' must be an instance property"));
                         continue;
                     }
-                    // An unannotated override keeps the base declaration's slot/content/parameter role.
+                    // An unannotated override keeps the base declaration's slot/content role.
                     // Treating it as a plain writable property would hide that role before visiting the base.
-                    if (parameter is null && slot is null && contentMark is null && !HasIgnore(member)
+                    if (slot is null && contentMark is null && !HasIgnore(member)
                         && HasInheritedTemplateRole(member.OverriddenProperty))
                         continue;
-                    var plain = parameter is null && slot is null && contentMark is null
+                    var plain = slot is null && contentMark is null
                         && member.DeclaredAccessibility == Accessibility.Public
                         && member.GetMethod?.DeclaredAccessibility == Accessibility.Public
                         && member.SetMethod?.DeclaredAccessibility == Accessibility.Public
                         && member.SetMethod.IsInitOnly == false && !member.IsRequired
                         && FindField(type, member.Name + "Property") is null;
-                    // design/14 §14.6.1「参数属性不得是 [UiIgnore]」：忽略优先，成员退出表面并记问题。
+                    // [UiIgnore] 隐藏普通属性；与显式插槽/内容声明冲突时报告声明问题。
                     // 同时占用名字——派生侧的 [UiIgnore] 也是基类同名模板声明的显式退出。
                     if (HasIgnore(member))
                     {
                         // 显式 [UiIgnore] 占用这个名字：基类同名的模板声明随之退出表面。
                         seenMembers.Add(member.Name);
-                        if (parameter is not null || slot is not null || contentMark is not null)
+                        if (slot is not null || contentMark is not null)
                             problems.Add(Problem(UiDiagnostics.ParameterDeclarationInvalid, current, member.Name,
                                 $"'{member.Name}' is both [UiIgnore] and a template parameter/slot/content; [UiIgnore] wins and the member leaves the surface"));
                         continue;
                     }
 
-                    if (!plain && parameter is null && slot is null && contentMark is null) continue;
+                    if (!plain && slot is null && contentMark is null) continue;
                     if (!seenMembers.Add(member.Name)) continue;
 
-                    if (parameter is not null || plain)
+                    if (plain)
                     {
-                        var writable = member.DeclaredAccessibility == Accessibility.Public
-                            && member.GetMethod?.DeclaredAccessibility == Accessibility.Public
-                            && member.SetMethod?.DeclaredAccessibility == Accessibility.Public
-                            && member.SetMethod?.IsInitOnly == false
-                            && !member.IsRequired;
-                        if (!writable)
-                            problems.Add(Problem(UiDiagnostics.ParameterDeclarationInvalid, current, member.Name,
-                                $"parameter '{member.Name}' must be a public property with a public setter; use [UiParameter(Required = true)] instead of the C# required modifier"));
-
-                        var required = parameter?.NamedArguments.FirstOrDefault(a => a.Key == "Required").Value.Value as bool? ?? false;
                         var arity = 0;
                         var delegateParameter = member.Type.TypeKind == TypeKind.Delegate
-                            && (!plain || member.Type is INamedTypeSymbol { DelegateInvokeMethod.ReturnsVoid: true });
+                            && member.Type is INamedTypeSymbol { DelegateInvokeMethod.ReturnsVoid: true };
                         if (delegateParameter)
                         {
                             // EUI028：委托参数必须返回 void、无 ref/out/in（spec/02 §4.6.2 规则 6）。
@@ -881,8 +868,7 @@ public static class UiCatalogFactory
                             member.Name,
                             DisplayQualified(member.Type),
                             Shape(member.Type),
-                            CanWrite: writable,
-                            Required: required,
+                            CanWrite: true,
                             IsDelegate: delegateParameter,
                             DelegateArity: arity,
                             IsContent: false,
@@ -895,41 +881,31 @@ public static class UiCatalogFactory
 
                     if (slot is not null)
                     {
-                        if (parameter is not null)
+                        var slotName = slot.ConstructorArguments.Length == 1 ? slot.ConstructorArguments[0].Value as string : null;
+                        if (string.IsNullOrEmpty(slotName))
                         {
-                            // [UiParameter] 胜出：参数 Only 表面（design/14 §14.6.1）；槽属性退出表面并记问题。
                             problems.Add(Problem(UiDiagnostics.ParameterDeclarationInvalid, current, member.Name,
-                                $"'{member.Name}' is both [UiParameter] and [UiSlot]; the parameter wins and " +
-                                "the slot leaves the template surface"));
+                                "[UiSlot] must name the slot"));
+                        }
+                        else if (slots.ContainsKey(slotName!))
+                        {
+                            problems.Add(Problem(UiDiagnostics.ParameterDeclarationInvalid, current, member.Name,
+                                $"a slot named '{slotName}' is already declared on this component; slot names must be unique"));
+                        }
+                        else if (IsElementListType(member.Type))
+                        {
+                            // IReadOnlyList<Element> → 多根填充拼接；Element（含 ?）→ 单根取首个（§4.12.5）。
+                            slots[slotName!] = new UiSlotDef(slotName!, member.Name, DisplayQualified(member.Type), UiSlotCardinality.Multiple);
+                        }
+                        else if (IsElementType(member.Type))
+                        {
+                            slots[slotName!] = new UiSlotDef(slotName!, member.Name, DisplayQualified(member.Type), UiSlotCardinality.Single);
                         }
                         else
                         {
-                            var slotName = slot.ConstructorArguments.Length == 1 ? slot.ConstructorArguments[0].Value as string : null;
-                            if (string.IsNullOrEmpty(slotName))
-                            {
-                                problems.Add(Problem(UiDiagnostics.ParameterDeclarationInvalid, current, member.Name,
-                                    "[UiSlot] must name the slot"));
-                            }
-                            else if (slots.ContainsKey(slotName!))
-                            {
-                                problems.Add(Problem(UiDiagnostics.ParameterDeclarationInvalid, current, member.Name,
-                                    $"a slot named '{slotName}' is already declared on this component; slot names must be unique"));
-                            }
-                            else if (IsElementListType(member.Type))
-                            {
-                                // IReadOnlyList<Element> → 多根填充拼接；Element（含 ?）→ 单根取首个（§4.12.5）。
-                                slots[slotName!] = new UiSlotDef(slotName!, member.Name, DisplayQualified(member.Type), UiSlotCardinality.Multiple);
-                            }
-                            else if (IsElementType(member.Type))
-                            {
-                                slots[slotName!] = new UiSlotDef(slotName!, member.Name, DisplayQualified(member.Type), UiSlotCardinality.Single);
-                            }
-                            else
-                            {
-                                problems.Add(Problem(UiDiagnostics.ContentTargetInvalid, current, member.Name,
-                                    $"slot '{member.Name}' has type {Display(member.Type)}; [UiSlot] properties must be " +
-                                    $"Element? (single root) or IReadOnlyList<Element> (multiple roots)"));
-                            }
+                            problems.Add(Problem(UiDiagnostics.ContentTargetInvalid, current, member.Name,
+                                $"slot '{member.Name}' has type {Display(member.Type)}; [UiSlot] properties must be " +
+                                $"Element? (single root) or IReadOnlyList<Element> (multiple roots)"));
                         }
                     }
                     else if (contentMark is not null)
@@ -1040,8 +1016,7 @@ public static class UiCatalogFactory
         private static bool HasInheritedTemplateRole(IPropertySymbol? property)
         {
             for (var current = property; current is not null; current = current.OverriddenProperty)
-                if (FindAttribute(current, UiParameterAttributeName) is not null
-                    || FindAttribute(current, UiSlotAttributeName) is not null
+                if (FindAttribute(current, UiSlotAttributeName) is not null
                     || FindAttribute(current, UiContentAttributeName) is not null
                     || HasIgnore(current))
                     return true;
@@ -1080,7 +1055,7 @@ public static class UiCatalogFactory
             member.Name, DisplayQualified(member.Type), Shape(member.Type),
             CanWrite: member.DeclaredAccessibility == Accessibility.Public
                 && member.SetMethod?.DeclaredAccessibility == Accessibility.Public,
-            Required: false, IsDelegate: false, DelegateArity: 0,
+            IsDelegate: false, DelegateArity: 0,
             IsContent: true, ContentIsMultiple: multiple, ChangedCallbackName: null);
 
         // ---- 成员查找 ----

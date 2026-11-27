@@ -78,7 +78,7 @@ public sealed record UiCompletionItem(
 /// <summary>
 /// 一次补全的候选。<paramref name="Replacement"/> 是共享替换区间（目录候选：光标处只有一个
 /// token）；Roslyn 候选逐项带 <see cref="UiCompletionItem.Replacement"/>，共享区间仅作兜底。
-/// <paramref name="IsIncomplete"/>：列表未穷尽（Roslyn 建议模式），客户端应随输入重新请求。
+/// <paramref name="IsIncomplete"/>：候选被截断时客户端应重新请求；Roslyn 建议模式不代表列表未穷尽。
 /// </summary>
 public sealed record UiCompletionList(
     TextSpan Replacement, IReadOnlyList<UiCompletionItem> Items, bool IsIncomplete = false)

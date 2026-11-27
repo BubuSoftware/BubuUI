@@ -56,10 +56,10 @@ public sealed class LanguageServerHost
                 return null;
 
             case "textDocument/completion":
-                return await CompletionAsync(request.Parameters).ConfigureAwait(false);
+                return await CompletionAsync(request.Parameters, request.CancellationToken).ConfigureAwait(false);
 
             case "completionItem/resolve":
-                return await ResolveCompletionAsync(request.Parameters).ConfigureAwait(false);
+                return await ResolveCompletionAsync(request.Parameters, request.CancellationToken).ConfigureAwait(false);
 
             case "textDocument/hover":
                 return Hover(request.Parameters);
@@ -81,7 +81,7 @@ public sealed class LanguageServerHost
                 return SignatureHelp(request.Parameters);
 
             case "textDocument/semanticTokens/full":
-                return await SemanticTokensAsync(request.Parameters).ConfigureAwait(false);
+                return await SemanticTokensAsync(request.Parameters, request.CancellationToken).ConfigureAwait(false);
 
             case "textDocument/codeAction":
                 return CodeActions(request.Parameters);
@@ -169,9 +169,10 @@ public sealed class LanguageServerHost
                 {
                     _service.Documents.Open(uri, text, version);
                 }
-                _service.Forget(uri);
                 _service.ApplyBuffer(uri, text);
-                // Tier 1（~1ms）每次按键立即发；Tier 2（跑生成器 + 全编译绑定）
+                // Analyze caches by document version/text and project snapshot. Do not
+                // forget the buffer between edits: that invalidates the project twice.
+                // Tier 1 每次按键立即发；Tier 2（全编译诊断）
                 // debounce 400ms，且只在文档版本未变时发布（§6.9.4 / R3）。
                 await PublishDiagnosticsAsync(uri, _service.GetDiagnostics(uri, includeTier2: false), version)
                     .ConfigureAwait(false);
@@ -323,7 +324,7 @@ public sealed class LanguageServerHost
             _log?.Invoke($"workspace root from LSP initialize: {Path.GetFullPath(root)}");
     }
 
-    private async Task<JsonNode?> CompletionAsync(JsonNode? parameters)
+    private async Task<JsonNode?> CompletionAsync(JsonNode? parameters, CancellationToken cancellationToken)
     {
         var (uri, offset) = Position(parameters);
         if (uri is null) return null;
@@ -338,7 +339,8 @@ public sealed class LanguageServerHost
         }
 
         var watch = System.Diagnostics.Stopwatch.StartNew();
-        var list = await _service.CompleteAsync(uri, offset, trigger).ConfigureAwait(false);
+        var list = await _service.CompleteAsync(uri, offset, trigger, cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
         var items = new JsonArray();
         var descriptionKeys = new List<string>();
         var document = _service.Documents.TryGet(uri, out var doc) ? doc : null;
@@ -433,7 +435,7 @@ public sealed class LanguageServerHost
         };
     }
 
-    private async Task<JsonNode?> ResolveCompletionAsync(JsonNode? parameters)
+    private async Task<JsonNode?> ResolveCompletionAsync(JsonNode? parameters, CancellationToken cancellationToken)
     {
         if (parameters is not JsonObject item)
             throw new JsonRpcException(JsonRpcException.InvalidParams, "completion item must be an object");
@@ -441,7 +443,7 @@ public sealed class LanguageServerHost
         if (item["data"] is JsonObject data
             && data["bubuuiCompletion"] is JsonValue value && value.TryGetValue<string>(out var key)
             && _completionDescriptions.TryGetValue(key, out var description)
-            && await description.Value.ConfigureAwait(false) is { Length: > 0 } documentation)
+            && await description.Value.WaitAsync(cancellationToken).ConfigureAwait(false) is { Length: > 0 } documentation)
             result["documentation"] = new JsonObject { ["kind"] = "markdown", ["value"] = documentation };
         return result;
     }
@@ -677,14 +679,14 @@ public sealed class LanguageServerHost
 
     /// <summary>semanticTokens/full：只编码 {expr} / @code 区间，delta 编码由这里做（LSP 3.17）。
     /// 项目模式的分类走 Roslyn Classifier（异步），legacy 回落探针投影。</summary>
-    private async Task<JsonNode?> SemanticTokensAsync(JsonNode? parameters)
+    private async Task<JsonNode?> SemanticTokensAsync(JsonNode? parameters, CancellationToken cancellationToken)
     {
         var uri = String(parameters, "textDocument", "uri");
         if (uri is null) return null;
         var data = new JsonArray();
         var lastLine = 0;
         var lastCharacter = 0;
-        foreach (var token in await _service.SemanticTokensAsync(uri).ConfigureAwait(false))
+        foreach (var token in await _service.SemanticTokensAsync(uri, cancellationToken).ConfigureAwait(false))
         {
             var deltaLine = token.Line - lastLine;
             data.Add(deltaLine);
@@ -808,7 +810,9 @@ public sealed class LanguageServerHost
         {
             await Task.Delay(400, source.Token).ConfigureAwait(false);
             if (CurrentVersion(uri) != version) return;
-            await PublishDiagnosticsAsync(uri).ConfigureAwait(false);
+            var currentDiagnostics = _service.GetDiagnostics(uri);
+            if (CurrentVersion(uri) != version) return;
+            await PublishDiagnosticsAsync(uri, currentDiagnostics, version).ConfigureAwait(false);
             // Theme/template edits change diagnostics in their consumers even before save.
             foreach (var related in _service.RelatedDocuments(uri))
             {

@@ -3,7 +3,7 @@
 @using BubuUI.Elements
 
 @* 画廊主窗口（design/20 P2 模板化）：根节点 <Window> 声明窗口本体（标题/尺寸是 live 面，
-   尺寸经 [UiParameter] 从应用侧传入），页面全部 5 个分区由模板组合——GalleryScene 的手工
+   尺寸通过公开属性从应用侧传入），页面全部 5 个分区由模板组合——GalleryScene 的手工
    元素树在此退役。Ref 字段（ThemeButton/TaskListView/…）是对外锚点：应用级接线（主题切换、
    注册伪类掩码、CLR 事件桥、条目工厂）由 GalleryApp 对这些字段完成，树内不表达。 *@
 
@@ -97,8 +97,8 @@
 
 @code {
     // 窗口尺寸：创建期由 GalleryApp 从启动参数传入（<= 0 时用平台默认 960×640）。
-    [UiParameter] public double W { get; set; }
-    [UiParameter] public double H { get; set; }
+    public double W { get; set; }
+    public double H { get; set; }
 
     // ---- Ref 锚点（应用级接线用，spec/02 §4.14：字段对外可见）----
     public ScrollViewer RootViewer = null!;

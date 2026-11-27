@@ -4,7 +4,7 @@
     <TargetFramework>net472</TargetFramework>
     <RootNamespace>BubuUI.VisualStudio</RootNamespace>
     <AssemblyName>BubuUI.VisualStudio</AssemblyName>
-    <Version>0.2.1</Version>
+    <Version>0.2.7</Version>
     <ImplicitUsings>disable</ImplicitUsings>
     <GeneratePkgDefFile>false</GeneratePkgDefFile>
     <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
@@ -22,12 +22,18 @@
     <PackageReference Include="Microsoft.VisualStudio.Shell.15.0" Version="17.14.40264" ExcludeAssets="runtime" PrivateAssets="all" />
     <PackageReference Include="Microsoft.VisualStudio.CoreUtility" Version="17.14.249" ExcludeAssets="runtime" PrivateAssets="all" />
     <PackageReference Include="Microsoft.VisualStudio.Text.Logic" Version="17.14.249" ExcludeAssets="runtime" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.VisualStudio.Text.UI.Wpf" Version="17.14.249" ExcludeAssets="runtime" PrivateAssets="all" />
     <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="17.14.2142" PrivateAssets="all" />
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
     <Reference Include="System.ComponentModel.Composition" />
+    <Reference Include="PresentationCore" />
+    <Reference Include="WindowsBase" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="BubuUI.pkgdef" IncludeInVSIX="true" />
+    <EmbeddedResource Include="..\vscode\highlighting\palette.json" LogicalName="BubuUI.VisualStudio.palette.json" />
+    <Content Include="Grammars\*.tmTheme" IncludeInVSIX="true" />
+    <Content Include="..\vscode\syntaxes\csharp-LICENSE.txt" Link="Grammars\csharp-LICENSE.txt" IncludeInVSIX="true" />
     <Content Include="..\vscode\syntaxes\*.tmLanguage.json" Link="Grammars\%(Filename)%(Extension)" IncludeInVSIX="true" />
     <Content Include="..\vscode\language-configuration.json" Link="Grammars\language-configuration.json" IncludeInVSIX="true" />
     <Content Include="..\vscode\bss-language-configuration.json" Link="Grammars\bss-language-configuration.json" IncludeInVSIX="true" />
@@ -35,8 +41,11 @@
   <!-- Evaluate after publish, including when MSBuild was already running during publish. -->
   <Target Name="IncludeBubuUiServer" BeforeTargets="GetVsixSourceItems">
     <Error Condition="!Exists('server\BubuUI.LanguageServer.dll')" Text="Bundled language server missing. Run ide\visualstudio\build.ps1 first." />
+    <!-- VS locates each theme beside its grammar. Both languages share one source. -->
+    <Copy SourceFiles="Grammars\bubuui.tmLanguage.tmTheme" DestinationFiles="$(IntermediateOutputPath)bss.tmLanguage.tmTheme" />
     <ItemGroup>
       <Content Include="server\**\*" IncludeInVSIX="true" />
+      <Content Include="$(IntermediateOutputPath)bss.tmLanguage.tmTheme" Link="Grammars\bss.tmLanguage.tmTheme" IncludeInVSIX="true" />
     </ItemGroup>
   </Target>
   <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />

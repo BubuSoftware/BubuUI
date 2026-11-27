@@ -6,7 +6,7 @@ namespace BubuUI.Headless.Tests;
 /// <summary>基类初始化会消费模板传入的属性与内容，验证根与子控件采用相同输入顺序。</summary>
 public class RootInputCard : StackPanel
 {
-    [UiParameter] public string Title { get; set; } = "default";
+    public string Title { get; set; } = "default";
     [UiContent] public IReadOnlyList<Element>? Body { get; set; }
     public string? CapturedTitle { get; private set; }
 

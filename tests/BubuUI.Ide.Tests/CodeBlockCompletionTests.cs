@@ -115,6 +115,7 @@ public class CodeBlockCompletionTests
         var fixture = Create("task.|");
         var list = await fixture.Service.CompleteAsync(fixture.Uri, fixture.Offset);
         Assert.NotEmpty(list.Items);
+        Assert.False(list.IsIncomplete);
         foreach (var label in new[] { "Id", "Name", "Done", "ToString" })
             Assert.Contains(list.Items, i => i.Label == label);
 

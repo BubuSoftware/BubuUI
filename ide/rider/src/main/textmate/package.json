@@ -20,6 +20,10 @@
     ],
     "grammars": [
       {
+        "scopeName": "source.bubuui-csharp",
+        "path": "./syntaxes/csharp.tmLanguage.json"
+      },
+      {
         "language": "bubuui",
         "scopeName": "source.bubuui",
         "path": "./syntaxes/bubuui.tmLanguage.json",

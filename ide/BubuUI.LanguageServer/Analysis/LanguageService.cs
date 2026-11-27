@@ -101,12 +101,12 @@ public sealed class LanguageService
         if (!_documents.TryGet(uri, out var document)) return null;
         var (codeBehind, codeBehindPath) = ReadCodeBehind(DocumentStore.UriToPath(uri));
         return DocumentAnalysis.Create(document.Text, document.FileName, project.Catalog,
-            project.Compilation, codeBehind, codeBehindPath, project, _projects, DocumentStore.UriToPath(uri));
+            project.InputCompilation, codeBehind, codeBehindPath, project, _projects, DocumentStore.UriToPath(uri));
     }
 
     private (UiCatalog Catalog, Compilation? Compilation, bool Unowned) Current(string uri, ProjectSnapshot? project)
     {
-        if (project is not null) return (project.Catalog, project.Compilation, false);
+        if (project is not null) return (project.Catalog, project.InputCompilation, false);
         var path = DocumentStore.UriToPath(uri);
         if (_projects is not null && _projects.IsUnowned(path))
             return (CatalogProvider.EmptyCatalog(), null, true);
@@ -235,7 +235,7 @@ public sealed class LanguageService
         var (catalog, compilation, unowned) = Current(uri, project);
         if (unowned) return null;
         var files = StyleFiles(uri, project);
-        return new(path, document.Text, catalog, compilation, files, project, embedded, _projects);
+        return new(path, document.Text, catalog, project?.Compilation ?? compilation, files, project, embedded, _projects);
     }
 
     private IEnumerable<StyleLanguageProvider> EmbeddedStylesFor(string uri)
@@ -301,9 +301,11 @@ public sealed class LanguageService
     public async Task<UiCompletionList> CompleteAsync(
         string uri, int offset, char? triggerCharacter = null, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (!IsTemplate(uri)) return StyleFor(uri)?.Complete(offset) ?? UiCompletionList.Empty;
         if (EmbeddedStyleFor(uri, offset) is { } embedded) return embedded.Complete(offset);
         var analysis = Analyze(uri);
+        cancellationToken.ThrowIfCancellationRequested();
         if (analysis is null) return UiCompletionList.Empty;
         var context = CursorScanner.Scan(analysis.Text, offset);
         if (context.Kind == CursorKind.CodeBlock ||
@@ -317,6 +319,8 @@ public sealed class LanguageService
     private UiCompletionList CompleteMarkup(string uri, DocumentAnalysis analysis, int offset)
     {
         var result = CompletionProvider.Complete(analysis, CatalogFor(uri), offset);
+        var context = CursorScanner.Scan(analysis.Text, offset);
+        if (context.Kind != CursorKind.AttributeValue || context.AttributeName != "Class") return result;
         if (StyleFor(uri)?.ClassCompletion(offset) is not { Items.Count: > 0 } classes) return result;
         return classes with { Items = classes.Items.Concat(result.Items).DistinctBy(i => i.Label).ToArray() };
     }
@@ -342,7 +346,7 @@ public sealed class LanguageService
         var project = Snapshots(uri).FirstOrDefault();
         var (catalog, compilation, _) = Current(uri, project);
         var definition = DefinitionProvider.Definition(analysis, offset,
-            project?.Evaluation.Directory ?? _legacy.WorkspaceRoot, catalog, compilation);
+            project?.Evaluation.Directory ?? _legacy.WorkspaceRoot, catalog, project?.Compilation ?? compilation);
         if (definition is not null) return definition;
         var context = CursorScanner.Scan(analysis.Text, offset);
         if (context.Kind == CursorKind.AttributeValue && context.AttributeName == "Class")

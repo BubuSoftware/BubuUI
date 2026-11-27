@@ -44,8 +44,8 @@ public class EventHandlerSignatureTests
 
         public class DelegateCard : global::BubuUI.Elements.StackPanel
         {
-            [UiParameter(Required = true)] public int Count { get; set; }
-            [UiParameter] public Action? Closed { get; set; }
+            public int Count { get; set; }
+            public Action? Closed { get; set; }
         }
         """;
 

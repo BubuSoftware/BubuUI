@@ -81,6 +81,7 @@ val syncTextMateBundle by tasks.registering(Sync::class) {
     description = "Assemble the TextMate bundle from the VS Code extension assets"
 
     from(vscodeDir.dir("syntaxes")) { into("syntaxes") }
+    from(vscodeDir.dir("highlighting")) { into("highlighting") }
     from(vscodeDir.file("language-configuration.json"))
     from(vscodeDir.file("bss-language-configuration.json"))
     from(bundleTemplate.file("package.json"))

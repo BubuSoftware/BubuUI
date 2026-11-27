@@ -9,7 +9,7 @@
 
 @code {
     // 应用侧传入初值后统一初始化；动态槽直接更新当前窗口实例的属性。
-    [UiParameter] public string TitleText { get; set; } = "Shell";
-    [UiParameter] public double W { get; set; }
-    [UiParameter] public double H { get; set; }
+    public string TitleText { get; set; } = "Shell";
+    public double W { get; set; }
+    public double H { get; set; }
 }

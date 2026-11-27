@@ -132,7 +132,6 @@ public sealed record UiLiteralParserDef(
     }
 }
 
-/// <param name="Required">来自 <c>[UiParameter(Required = true)]</c>，不是 C# <c>required</c> 修饰符。</param>
 /// <param name="IsContent">来自 <c>[UiContent]</c> 标在参数属性上（design/14 §14.6.3）：默认内容参数。
 /// 类型只接受 <c>IReadOnlyList&lt;Element&gt;</c>（多根）或 <c>Element?</c>（单根），其余在扫描期进
 /// EUI021 问题。内容参数 build-once，不可作为 <c>@bind</c> 目标，也不可经 <c>P=</c> 赋值。</param>
@@ -148,7 +147,6 @@ public sealed record UiParameterDef(
     string ClrTypeDisplayName,
     UiTypeShape TypeShape,
     bool CanWrite,
-    bool Required,
     bool IsDelegate,
     int DelegateArity,
     bool IsContent,

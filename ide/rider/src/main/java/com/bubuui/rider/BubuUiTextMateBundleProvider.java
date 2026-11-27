@@ -38,6 +38,8 @@ public final class BubuUiTextMateBundleProvider implements TextMateBundleProvide
             "package.json",
             "syntaxes/bubuui.tmLanguage.json",
             "syntaxes/bss.tmLanguage.json",
+            "syntaxes/csharp.tmLanguage.json",
+            "syntaxes/csharp-LICENSE.txt",
             "language-configuration.json",
             "bss-language-configuration.json");
 

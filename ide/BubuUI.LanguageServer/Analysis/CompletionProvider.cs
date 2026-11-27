@@ -275,7 +275,6 @@ public static class CompletionProvider
         foreach (var parameter in element.Parameters.Values.OrderBy(static p => p.Name, StringComparer.Ordinal))
         {
             var flags = new List<string>();
-            if (parameter.Required) flags.Add("required");
             if (parameter.IsContent) flags.Add("content");
             if (parameter.IsDelegate) flags.Add($"event · {parameter.DelegateArity} args");
             items.Add(new UiCompletionItem(

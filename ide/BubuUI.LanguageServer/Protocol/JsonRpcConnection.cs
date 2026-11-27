@@ -1,10 +1,12 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Threading.Channels;
 
 namespace BubuUI.LanguageServer.Protocol;
 
 /// <summary>一条 JSON-RPC 请求；<see cref="Id"/> 原样回声（LSP 允许数字或字符串 id）。</summary>
-public sealed record JsonRpcRequest(JsonNode Id, string Method, JsonNode? Parameters);
+public sealed record JsonRpcRequest(JsonNode Id, string Method, JsonNode? Parameters,
+    CancellationToken CancellationToken = default);
 
 /// <summary>带 JSON-RPC 错误码的异常；宿主转成 <c>error</c> 响应而不是崩进程。</summary>
 public sealed class JsonRpcException : Exception
@@ -14,6 +16,7 @@ public sealed class JsonRpcException : Exception
     public const int MethodNotFound = -32601;
     public const int InvalidParams = -32602;
     public const int InternalError = -32603;
+    public const int RequestCancelled = -32800;
 
     public JsonRpcException(int code, string message) : base(message) => Code = code;
 
@@ -23,8 +26,8 @@ public sealed class JsonRpcException : Exception
 /// <summary>
 /// 最小 JSON-RPC 2.0 over LSP 派发器：请求/通知两路，响应由宿主用
 /// <see cref="RespondAsync"/>/<see cref="NotifyAsync"/> 主动发。
-/// 单线程顺序处理——LSP 的文档同步语义要求 <c>didChange</c> 与随后的
-/// <c>completion</c> 按到达顺序执行，并发处理反而要额外加锁。
+/// 文档同步和请求仍按到达顺序执行。独立读循环即时处理取消通知，避免
+/// 过期补全阻塞后续输入；读循环不访问文档或语言服务状态。
 /// </summary>
 public sealed class JsonRpcConnection
 {
@@ -51,29 +54,91 @@ public sealed class JsonRpcConnection
 
     public async Task RunAsync(CancellationToken cancellationToken = default)
     {
-        while (!cancellationToken.IsCancellationRequested)
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var pending = new Dictionary<string, CancellationTokenSource>(StringComparer.Ordinal);
+        var gate = new object();
+        var queue = Channel.CreateUnbounded<(JsonNode Message, string? Key, CancellationTokenSource? Source)>(
+            new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
+
+        // A separate task also keeps reading when a handler does synchronous Roslyn work.
+        var reader = Task.Run(async () =>
         {
-            JsonNode? message;
             try
             {
-                message = await _reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+                while (!lifetime.IsCancellationRequested)
+                {
+                    // Console stdin on some hosts cannot interrupt an already pending read.
+                    // Stop waiting on exit even if the stream ignores cancellation.
+                    var message = await _reader.ReadAsync(lifetime.Token).WaitAsync(lifetime.Token)
+                        .ConfigureAwait(false);
+                    if (message is null) break;
+                    string? key = null;
+                    CancellationTokenSource? source = null;
+                    if (message is JsonObject obj)
+                    {
+                        if (obj["method"] is JsonValue method && method.TryGetValue<string>(out var name))
+                        {
+                            if (name == "$/cancelRequest" && obj["id"] is null)
+                            {
+                                var cancelledId = (obj["params"] as JsonObject)?["id"];
+                                if (cancelledId is JsonValue)
+                                    lock (gate)
+                                        if (pending.TryGetValue(cancelledId.ToJsonString(), out var cancelled))
+                                            cancelled.Cancel();
+                                continue;
+                            }
+                            if (obj["id"] is JsonValue id)
+                            {
+                                // JSON encoding distinguishes numeric 1 from string "1".
+                                key = id.ToJsonString();
+                                source = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+                                lock (gate) pending[key] = source;
+                            }
+                        }
+                    }
+                    queue.Writer.TryWrite((message, key, source));
+                }
             }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
+            catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
             catch (Exception ex) when (ex is IOException or JsonException)
             {
                 _log?.Invoke($"transport closed: {ex.Message}");
-                break;
             }
+            finally { queue.Writer.TryComplete(); }
+        }, CancellationToken.None);
 
-            if (message is null) break; // 客户端关流 = 退出
-            await DispatchAsync(message, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await foreach (var entry in queue.Reader.ReadAllAsync(lifetime.Token).ConfigureAwait(false))
+            {
+                try
+                {
+                    lifetime.Token.ThrowIfCancellationRequested();
+                    await DispatchAsync(entry.Message, entry.Source?.Token ?? lifetime.Token, lifetime.Token)
+                        .ConfigureAwait(false);
+                }
+                finally
+                {
+                    lock (gate)
+                    {
+                        if (entry.Key is not null && pending.TryGetValue(entry.Key, out var current)
+                            && ReferenceEquals(current, entry.Source)) pending.Remove(entry.Key);
+                        entry.Source?.Dispose();
+                    }
+                }
+            }
+        }
+        catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
+        finally
+        {
+            lifetime.Cancel();
+            await reader.ConfigureAwait(false);
+            while (queue.Reader.TryRead(out var entry)) entry.Source?.Dispose();
         }
     }
 
-    private async Task DispatchAsync(JsonNode message, CancellationToken cancellationToken)
+    private async Task DispatchAsync(JsonNode message, CancellationToken requestToken,
+        CancellationToken cancellationToken)
     {
         if (message is not JsonObject obj)
         {
@@ -110,9 +175,20 @@ public sealed class JsonRpcConnection
 
         try
         {
-            var request = new JsonRpcRequest(id, method, parameters);
+            requestToken.ThrowIfCancellationRequested();
+            var request = new JsonRpcRequest(id, method, parameters, requestToken);
             var result = RequestHandler is null ? null : await RequestHandler(request).ConfigureAwait(false);
+            requestToken.ThrowIfCancellationRequested();
             await RespondAsync(id, result, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (requestToken.IsCancellationRequested)
+        {
+            if (!cancellationToken.IsCancellationRequested)
+            {
+                _log?.Invoke($"request '{method}' cancelled");
+                await WriteErrorAsync(id, JsonRpcException.RequestCancelled, "request cancelled", cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
         catch (JsonRpcException ex)
         {

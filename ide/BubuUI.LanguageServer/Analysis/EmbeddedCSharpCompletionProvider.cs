@@ -83,7 +83,10 @@ public static class EmbeddedCSharpCompletionProvider
             if (model is not null)
                 items.AddRange(UnimportedTypeCompletionProvider.Complete(analysis, model, generatedOffset, offset, out incomplete));
         }
-        return new UiCompletionList(replacement, items, incomplete || completions.SuggestionModeItem is not null);
+        // Suggestion mode only changes selection/commit behaviour. It does not mean
+        // the list is truncated; marking it incomplete forces an LSP round trip on
+        // every typed character instead of letting VS Code filter locally.
+        return new UiCompletionList(replacement, items, incomplete);
     }
 
     private static Dictionary<string, int>? ScopeMemberRanks(

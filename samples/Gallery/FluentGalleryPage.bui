@@ -20,8 +20,8 @@
 </Grid>
 
 @code {
-    [UiParameter] public ThemeVariant InitialTheme { get; set; } = ThemeVariant.System;
-    [UiParameter] public Action<IHostTheme> ApplyTheme { get; set; } = _ => { };
+    public ThemeVariant InitialTheme { get; set; } = ThemeVariant.System;
+    public Action<IHostTheme> ApplyTheme { get; set; } = _ => { };
     public Button ThemeButton = null!;
     public Button ResetButton = null!;
     public ScrollViewer Viewer = null!;

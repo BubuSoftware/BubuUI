@@ -25,7 +25,7 @@ public class ProjectSystemTests
     }
 
     // 求值 + 构建全部项目快照只做一次；只读夹具共用，改缓冲区的用例另建实例。
-    private static readonly Lazy<Fixture> Shared = new(Create);
+    private static readonly Lazy<Fixture> Shared = new(() => Create());
 
     [Fact]
     public async Task ControlThemeProjectUsesUnsavedTemplatesAndExcludesOtherProjects()
@@ -77,10 +77,10 @@ public class ProjectSystemTests
         Assert.Contains(fixture.Service.GetDiagnostics(styleUri), d => d.Message.Contains("Missing", StringComparison.Ordinal));
     }
 
-    private static Fixture Create()
+    private static Fixture Create(Action<string>? log = null)
     {
         var root = FindRepositoryRoot();
-        var projects = new ProjectWorkspace(new CatalogOptions { ProbeRoot = root });
+        var projects = new ProjectWorkspace(new CatalogOptions { ProbeRoot = root }, log);
         var legacy = new CatalogProvider(new CatalogOptions
         {
             RuntimePath = Path.Combine(AppContext.BaseDirectory, "BubuUI.Runtime.dll"),
@@ -102,6 +102,45 @@ public class ProjectSystemTests
             if (File.Exists(Path.Combine(directory.FullName, "BubuUI.slnx")))
                 return directory.FullName;
         throw new InvalidOperationException("cannot locate BubuUI.slnx from the test output directory");
+    }
+
+    [Fact]
+    public async Task MarkupCompletionDefersGenerationAndDiagnosticsAndKeepsSnapshotText()
+    {
+        var logs = new List<string>();
+        var fixture = Create(logs.Add);
+        var path = fixture.Gallery("Counter.bui");
+        var uri = DocumentStore.PathToUri(path);
+        const string text = "@namespace Gallery\n@using BubuUI.Elements\n<TextBlock Width=\"1\">{MissingCompletionProbe}</TextBlock>";
+        fixture.Service.Documents.Open(uri, text, 1);
+        fixture.Service.ApplyBuffer(uri, text);
+        fixture.Service.GetDiagnostics(uri, includeTier2: false);
+        var completions = await fixture.Service.CompleteAsync(uri, text.IndexOf("Width", StringComparison.Ordinal) + 2);
+        Assert.Contains(completions.Items, item => item.Label == "Width");
+        Assert.DoesNotContain(logs, line => line.Contains(": generated ") || line.Contains(" tier-2 diagnostics (gen"));
+        var old = Assert.Single(fixture.Workspace.ResolveAll(path));
+        fixture.Service.ApplyBuffer(uri, text);
+        Assert.Same(old, Assert.Single(fixture.Workspace.ResolveAll(path)));
+
+        var updated = "\n\n" + text;
+        fixture.Service.Documents.Change(uri, updated, 2);
+        fixture.Service.ApplyBuffer(uri, updated);
+        var current = Assert.Single(fixture.Workspace.ResolveAll(path));
+        Assert.NotSame(old, current);
+        Assert.Same(old.InputCompilation, current.InputCompilation);
+        var oldDiagnostic = Assert.Single(old.Diagnostics, d => d.Path == path && d.Diagnostic.Code == "CS0103"
+            && d.Diagnostic.Message.Contains("MissingCompletionProbe")).Diagnostic;
+        var newDiagnostic = Assert.Single(fixture.Service.GetDiagnostics(uri), d => d.Code == "CS0103"
+            && d.Message.Contains("MissingCompletionProbe"));
+        Assert.Equal(oldDiagnostic.Span.Start + 2, newDiagnostic.Span.Start);
+        var sourcePath = fixture.Gallery("TaskItem.cs");
+        var before = EditorDocumentWorkspace.For(current).SourceDocumentFor(sourcePath)!;
+        var originalSource = (await before.GetTextAsync()).ToString();
+        fixture.Service.ApplyBuffer(DocumentStore.PathToUri(sourcePath), originalSource + "\n// unsaved completion edit");
+        var after = EditorDocumentWorkspace.For(Assert.Single(fixture.Workspace.ResolveAll(path))).SourceDocumentFor(sourcePath)!;
+        Assert.Equal(before.Id, after.Id);
+        Assert.Equal(originalSource, (await before.GetTextAsync()).ToString());
+        Assert.EndsWith("// unsaved completion edit", (await after.GetTextAsync()).ToString());
     }
 
     /// <summary>P2/P3 的地基：本机 MSBuildLocator 求值可用，且能派生出非空目录。</summary>

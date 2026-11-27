@@ -15,7 +15,6 @@ public class Window : UiObject
     private double _height;
 
     /// <summary>窗口标题（空串 = 平台默认）。</summary>
-    [UiParameter]
     public string Title
     {
         get => _title;
@@ -28,7 +27,6 @@ public class Window : UiObject
     }
 
     /// <summary>初始客户区宽度（逻辑单位）；&lt;= 0 时用平台默认。</summary>
-    [UiParameter]
     public double Width
     {
         get => _width;
@@ -41,7 +39,6 @@ public class Window : UiObject
     }
 
     /// <summary>初始客户区高度（逻辑单位）；&lt;= 0 时用平台默认。</summary>
-    [UiParameter]
     public double Height
     {
         get => _height;
@@ -63,23 +60,23 @@ public class Window : UiObject
     internal IWindowLiveUpdater? LiveUpdater { get; set; }
 
     /// <summary>窗口主题（<c>ElementTheme.Dark/Light</c> 等）；null 回落 <see cref="Application.DefaultTheme"/>，再回落平台默认。</summary>
-    [UiParameter] public IHostTheme? Theme { get; set; }
+    public IHostTheme? Theme { get; set; }
 
     /// <summary>主动限帧；0 表示交给 surface（vsync）或 GPU 队列（语义同 WindowHostOptions）。</summary>
-    [UiParameter] public int MaxFramesPerSecond { get; set; }
+    public int MaxFramesPerSecond { get; set; }
 
     /// <summary>忽略脏区判定，每帧都上屏（性能对比 / 持续动画场景）。</summary>
-    [UiParameter] public bool AlwaysRender { get; set; }
-    [UiParameter] public bool AlwaysShowFocusVisuals { get; set; }
+    public bool AlwaysRender { get; set; }
+    public bool AlwaysShowFocusVisuals { get; set; }
 
     /// <summary>Esc 关闭窗口（应用内可关掉，自己处理键）。</summary>
-    [UiParameter] public bool CloseOnEscape { get; set; } = true;
+    public bool CloseOnEscape { get; set; } = true;
 
     /// <summary>无脏区且未限帧时的休眠时长，避免空转占满 CPU。</summary>
-    [UiParameter] public int IdleSleepMilliseconds { get; set; } = 4;
+    public int IdleSleepMilliseconds { get; set; } = 4;
 
     /// <summary>调试用：最多跑多少个循环 tick 后自动退出（null = 跑到窗口关闭）。</summary>
-    [UiParameter] public int? MaxTicks { get; set; }
+    public int? MaxTicks { get; set; }
 
     protected override void OnDispose()
     {

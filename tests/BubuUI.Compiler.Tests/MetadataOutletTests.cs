@@ -158,7 +158,7 @@ using BubuUI.Elements;
 public partial class Probe { }
 public sealed class BadCard : global::BubuUI.Elements.StackPanel
 {
-[UiParameter] public int Count { get; }
+public System.Span<int> Count { get; set; }
 }
 """;
 
@@ -168,7 +168,7 @@ public sealed class BadCard : global::BubuUI.Elements.StackPanel
         var sourceLine = source.Replace("\r\n", "\n").Split('\n')[line.StartLinePosition.Line];
 
         Assert.Equal("Probe.cs", line.Path);
-        Assert.Contains("[UiParameter] public int Count", sourceLine);
+        Assert.Contains("public System.Span<int> Count", sourceLine);
         Assert.Equal(sourceLine.IndexOf("Count {", StringComparison.Ordinal), line.StartLinePosition.Character);
     }
 

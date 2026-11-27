@@ -31,8 +31,8 @@ public sealed record GeneratorResult(
 ///
 /// design/18 §5.2：跑驱动期间开生成器旁路窗口（<c>IdeSourceMappingSideband</c>），
 /// 发射器在写 #line 的同时记录 SourceMapping；跑完按 .bui 路径 Take，与 hint name
-/// 对应的生成树配对成 <see cref="GeneratedDocument"/>。每次 Run 新建驱动 → 全部文件
-/// 必然重新发射，取到的就是本轮产物。旁路 API 只有 BCL 类型，不跨 alias 传 Roslyn 类型。
+/// 对应的生成树配对成 <see cref="GeneratedDocument"/>。项目会话保留增量驱动；未重新发射的
+/// 文件只有在原文与生成树均未变时才复用旧映射。旁路 API 不跨 alias 传 Roslyn 类型。
 /// </summary>
 public static class GeneratorHost
 {
@@ -44,30 +44,45 @@ public static class GeneratorHost
         Compilation compilation,
         IEnumerable<(string Path, string Text)> additionalFiles,
         CSharpParseOptions parseOptions,
-        string rootNamespace)
+        string rootNamespace,
+        Session? session = null)
     {
-        lock (RunGate) return RunCore(compilation, additionalFiles, parseOptions, rootNamespace);
+        lock (RunGate) return RunCore(compilation, additionalFiles, parseOptions, rootNamespace, session ?? new Session());
+    }
+
+    public sealed class Session
+    {
+        internal GeneratorDriver? Driver;
+        internal CSharpParseOptions? Options;
+        internal string? RootNamespace;
+        internal Dictionary<string, (string Text, AdditionalText Input)> Inputs = new(StringComparer.OrdinalIgnoreCase);
+        internal IReadOnlyDictionary<string, GeneratedDocument> Documents = new Dictionary<string, GeneratedDocument>();
     }
 
     private static GeneratorResult RunCore(
         Compilation compilation,
         IEnumerable<(string Path, string Text)> additionalFiles,
         CSharpParseOptions parseOptions,
-        string rootNamespace)
+        string rootNamespace,
+        Session session)
     {
         var files = additionalFiles
             .Where(static f => Path.GetExtension(f.Path) is ".bui" or ".bss")
             .ToArray();
-        var texts = files
-            .Select(static f => (AdditionalText)new InMemoryAdditionalText(f.Path, f.Text))
-            .ToArray();
+        var inputs = files.ToDictionary(f => f.Path,
+            f => (Text: f.Text, Input: session.Inputs.TryGetValue(f.Path, out var previous) && previous.Text == f.Text
+                ? previous.Input : (AdditionalText)new InMemoryAdditionalText(f.Path, f.Text)), StringComparer.OrdinalIgnoreCase);
+        var texts = inputs.Values.Select(f => f.Input).ToImmutableArray();
 
         var provider = new FixedOptionsProvider(new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["build_property.rootnamespace"] = rootNamespace,
         });
 
-        GeneratorDriver driver = CSharpGeneratorDriver.Create(
+        GeneratorDriver driver = session.Driver is not null && Equals(session.Options, parseOptions)
+            && session.RootNamespace == rootNamespace
+            ? session.Driver.ReplaceAdditionalTexts(texts)
+            : CSharpGeneratorDriver.Create(
             new ISourceGenerator[]
             {
                 new euiGen::BubuUI.Compiler.Generator.TemplateGenerator().AsSourceGenerator(),
@@ -88,7 +103,20 @@ public static class GeneratorHost
         {
             if (Path.GetExtension(file.Path) != ".bui") continue;
             var sideband = euiGen::BubuUI.Compiler.Generator.IdeSourceMappingSideband.Take(file.Path);
-            if (sideband is null) continue;
+            if (sideband is null)
+            {
+                // Cached source outputs do not re-enter the sideband. Never retain a
+                // mapping for a changed/deleted/erroring file or a changed generated tree.
+                var fullPath = Path.GetFullPath(file.Path);
+                if (session.Inputs.TryGetValue(file.Path, out var oldInput) && oldInput.Text == file.Text
+                    && session.Documents.TryGetValue(fullPath, out var previous))
+                {
+                    var cachedTree = generated.FirstOrDefault(t => t.FilePath == previous.Tree.FilePath);
+                    if (cachedTree is not null && cachedTree.GetText().ContentEquals(previous.Tree.GetText()))
+                        documents[fullPath] = previous with { Tree = cachedTree };
+                }
+                continue;
+            }
             // Roslyn 4.9.2 的生成树 FilePath 带生成器前缀（程序集名\生成器类型\hintName），
             // 只有末段才是 AddSource 的 hint name——按末段匹配。
             var tree = generated.FirstOrDefault(t =>
@@ -101,6 +129,11 @@ public static class GeneratorHost
             documents[Path.GetFullPath(file.Path)] = new GeneratedDocument(
                 sideband.HintName, tree, DocumentMappingService.Create(mappings));
         }
+        session.Driver = driver;
+        session.Options = parseOptions;
+        session.RootNamespace = rootNamespace;
+        session.Inputs = inputs;
+        session.Documents = documents;
         return new GeneratorResult(output, generated, diagnostics, documents);
     }
 

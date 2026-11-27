@@ -265,7 +265,7 @@ public sealed class DocumentAnalysis
     public ProjectSnapshot? Project => _project;
 
     /// <summary>The current project/reference symbols, available even while template emission fails.</summary>
-    public Compilation? Compilation => _baseCompilation;
+    public Compilation? Compilation => _project?.Compilation ?? _baseCompilation;
 
     /// <summary>工作区内的全部项目快照（L6 跨项目源码符号查询用）。</summary>
     public ProjectWorkspace? Workspace => _workspace;
@@ -321,7 +321,7 @@ public sealed class DocumentAnalysis
         try
         {
             var usings = TemplateAnalyzer.CollectUsingLines(Ast.Nodes).ToImmutableArray();
-            var compilation = _baseCompilation;
+            var compilation = _project?.Compilation ?? _baseCompilation;
             var probeClassName = Ast.ClassName + (Ast.TemplateTarget is null ? "" : "__TemplateView");
 
             // ---- 项目模式（L2/L3）：只查符号，不加树 ----

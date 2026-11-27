@@ -162,6 +162,28 @@ public class SourceMappingTests
         return (start, end);
     }
 
+    [Fact]
+    public void IncrementalSessionRetainsUnchangedMappingsAndDropsRemovedOrInvalidFiles()
+    {
+        const string first = "@namespace ProbeApp\n@using BubuUI.Elements\n<TextBlock>{1 + 2}</TextBlock>";
+        var baseline = Run(first);
+        var input = baseline.Compilation.RemoveSyntaxTrees(baseline.GeneratedTrees);
+        var session = new GeneratorHost.Session();
+        var initial = GeneratorHost.Run(input, new[] { (UiPath, first) }, CSharpParseOptions.Default, "ProbeApp", session);
+        var unchanged = GeneratorHost.Run(input, new[] { (UiPath, first) }, CSharpParseOptions.Default, "ProbeApp", session);
+        Assert.Same(initial.GeneratedDocuments[UiPath].Mappings, unchanged.GeneratedDocuments[UiPath].Mappings);
+        AssertExpressionsRoundTrip(first, unchanged.GeneratedDocuments[UiPath]);
+        var edited = "\n" + first;
+        var changed = GeneratorHost.Run(input, new[] { (UiPath, edited) }, CSharpParseOptions.Default, "ProbeApp", session);
+        AssertExpressionsRoundTrip(edited, changed.GeneratedDocuments[UiPath]);
+        var invalid = GeneratorHost.Run(input, new[] { (UiPath, "@namespace ProbeApp\n<NoSuchRoot />") }, CSharpParseOptions.Default, "ProbeApp", session);
+        Assert.Empty(invalid.GeneratedDocuments);
+        var restored = GeneratorHost.Run(input, new[] { (UiPath, first) }, CSharpParseOptions.Default, "ProbeApp", session);
+        AssertExpressionsRoundTrip(first, restored.GeneratedDocuments[UiPath]);
+        var removed = GeneratorHost.Run(input, Array.Empty<(string, string)>(), CSharpParseOptions.Default, "ProbeApp", session);
+        Assert.Empty(removed.GeneratedDocuments);
+    }
+
     /// <summary>验收 §7：每个 {expr} span 正向 → 文本逐字一致 → 反向回到原 span；光标位置同。</summary>
     private static void AssertExpressionsRoundTrip(string ui, GeneratedDocument document)
     {

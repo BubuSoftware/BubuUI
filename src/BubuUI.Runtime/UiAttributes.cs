@@ -48,13 +48,6 @@ public sealed class UiIgnoreAttribute : Attribute
 {
 }
 
-/// <summary>组件参数（design/14 §14.6.1）。必填用 <c>Required = true</c>，不是 C# <c>required</c>。</summary>
-[AttributeUsage(AttributeTargets.Property)]
-public sealed class UiParameterAttribute : Attribute
-{
-    public bool Required { get; set; }
-}
-
 /// <summary>具名插槽（design/14 §14.6.3，G4 实现）。</summary>
 [AttributeUsage(AttributeTargets.Property)]
 public sealed class UiSlotAttribute : Attribute

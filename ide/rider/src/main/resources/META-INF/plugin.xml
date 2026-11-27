@@ -43,16 +43,16 @@
              is coloured. -->
         <editorHighlighterProvider
                 filetype="BubuUI"
-                implementationClass="org.jetbrains.plugins.textmate.language.syntax.highlighting.TextMateEditorHighlighterProvider"/>
+                implementationClass="com.bubuui.rider.BubuUiEditorHighlighterProvider"/>
         <lang.syntaxHighlighterFactory
                 language="BubuUI"
-                implementationClass="org.jetbrains.plugins.textmate.language.syntax.highlighting.TextMateSyntaxHighlighterFactory"/>
+                implementationClass="com.bubuui.rider.BubuUiSyntaxHighlighterFactory"/>
         <editorHighlighterProvider
                 filetype="Bss"
-                implementationClass="org.jetbrains.plugins.textmate.language.syntax.highlighting.TextMateEditorHighlighterProvider"/>
+                implementationClass="com.bubuui.rider.BubuUiEditorHighlighterProvider"/>
         <lang.syntaxHighlighterFactory
                 language="Bss"
-                implementationClass="org.jetbrains.plugins.textmate.language.syntax.highlighting.TextMateSyntaxHighlighterFactory"/>
+                implementationClass="com.bubuui.rider.BubuUiSyntaxHighlighterFactory"/>
 
         <!-- TextMate supplies colours; these parsers only split the PSI into
              words and punctuation so navigation highlights one name at a time. -->

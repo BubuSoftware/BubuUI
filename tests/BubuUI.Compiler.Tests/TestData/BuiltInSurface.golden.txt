@@ -42,8 +42,8 @@
     event  OnPreviewPointerPressed PreviewPointerPressed declared=global::BubuUI.Element field=PreviewPointerPressedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
 
 [Button] global::BubuUI.Elements.Button content=Text:Label
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -87,8 +87,8 @@
     event  OnPreviewPointerPressed PreviewPointerPressed declared=global::BubuUI.Element field=PreviewPointerPressedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
     slot   Content -> Content
 
 [Calendar] global::BubuUI.Elements.Calendar content=None
@@ -134,10 +134,10 @@
     event  OnSelectedDateChanged SelectedDateChanged declared=global::BubuUI.Elements.Calendar field=SelectedDateChangedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
-    param  MaximumDate global::System.DateTime required=False delegate=False
-    param  MinimumDate global::System.DateTime required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
+    param  MaximumDate global::System.DateTime delegate=False
+    param  MinimumDate global::System.DateTime delegate=False
 
 [Canvas] global::BubuUI.Elements.Canvas content=Children:Children
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -176,8 +176,8 @@
     event  OnPreviewPointerPressed PreviewPointerPressed declared=global::BubuUI.Element field=PreviewPointerPressedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
 
 [CheckBox] global::BubuUI.Elements.CheckBox content=Text:Label
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -220,8 +220,8 @@
     event  OnPreviewPointerPressed PreviewPointerPressed declared=global::BubuUI.Element field=PreviewPointerPressedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
 
 [ComboBox] global::BubuUI.Elements.ComboBox content=Children:Children
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -264,11 +264,11 @@
     event  OnSelectionChanged SelectionChanged declared=global::BubuUI.Elements.ComboBox field=SelectionChangedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
-    param  ItemTemplate global::System.Func<global::System.Object, global::BubuUI.Element> required=False delegate=False
-    param  ItemsSource global::System.Collections.IEnumerable required=False delegate=False
-    param  SelectedItem global::System.Object required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
+    param  ItemTemplate global::System.Func<global::System.Object, global::BubuUI.Element> delegate=False
+    param  ItemsSource global::System.Collections.IEnumerable delegate=False
+    param  SelectedItem global::System.Object delegate=False
 
 [ContentControl] global::BubuUI.Elements.ContentControl content=Children:Content
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -307,8 +307,8 @@
     event  OnPreviewPointerPressed PreviewPointerPressed declared=global::BubuUI.Element field=PreviewPointerPressedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
 
 [ContentPresenter] global::BubuUI.Elements.ContentPresenter content=None
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -352,8 +352,8 @@
     event  OnPreviewPointerPressed PreviewPointerPressed declared=global::BubuUI.Element field=PreviewPointerPressedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
 
 [ContextMenu] global::BubuUI.Elements.ContextMenu content=Children:Items
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -399,14 +399,14 @@
     event  OnPreviewPointerPressed PreviewPointerPressed declared=global::BubuUI.Element field=PreviewPointerPressedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  Content global::BubuUI.Element required=False delegate=False
-    param  HorizontalOffset global::System.Double required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
-    param  PlacementTarget global::BubuUI.Element required=False delegate=False
-    param  PointerPosition global::BubuUI.Point required=False delegate=False
-    param  Target global::BubuUI.Element required=False delegate=False
-    param  VerticalOffset global::System.Double required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  Content global::BubuUI.Element delegate=False
+    param  HorizontalOffset global::System.Double delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
+    param  PlacementTarget global::BubuUI.Element delegate=False
+    param  PointerPosition global::BubuUI.Point delegate=False
+    param  Target global::BubuUI.Element delegate=False
+    param  VerticalOffset global::System.Double delegate=False
 
 [DataGrid] global::BubuUI.Elements.DataGrid content=Children:Children
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -451,10 +451,10 @@
     event  OnSelectionChanged SelectionChanged declared=global::BubuUI.Elements.DataGrid field=SelectionChangedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  Columns global::System.Collections.ObjectModel.ObservableCollection<global::BubuUI.Elements.DataGridColumn> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
-    param  ItemsSource global::System.Collections.IEnumerable required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  Columns global::System.Collections.ObjectModel.ObservableCollection<global::BubuUI.Elements.DataGridColumn> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
+    param  ItemsSource global::System.Collections.IEnumerable delegate=False
 
 [DataGridColumnHeader] global::BubuUI.Elements.DataGridColumnHeader content=Text:Label
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -499,8 +499,8 @@
     event  OnPreviewPointerPressed PreviewPointerPressed declared=global::BubuUI.Element field=PreviewPointerPressedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
     slot   Content -> Content
 
 [DatePicker] global::BubuUI.Elements.DatePicker content=Children:Children
@@ -543,10 +543,10 @@
     event  OnSelectedDateChanged SelectedDateChanged declared=global::BubuUI.Elements.DatePicker field=SelectedDateChangedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
-    param  MaximumDate global::System.DateTime required=False delegate=False
-    param  MinimumDate global::System.DateTime required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
+    param  MaximumDate global::System.DateTime delegate=False
+    param  MinimumDate global::System.DateTime delegate=False
 
 [DockPanel] global::BubuUI.Elements.DockPanel content=Children:Children
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -586,8 +586,8 @@
     event  OnPreviewPointerPressed PreviewPointerPressed declared=global::BubuUI.Element field=PreviewPointerPressedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
 
 [DropDownButton] global::BubuUI.Elements.DropDownButton content=Text:Label
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -631,8 +631,8 @@
     event  OnPreviewPointerPressed PreviewPointerPressed declared=global::BubuUI.Element field=PreviewPointerPressedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
     slot   Content -> Content
 
 [Ellipse] global::BubuUI.Elements.Ellipse content=None
@@ -673,8 +673,8 @@
     event  OnPreviewPointerPressed PreviewPointerPressed declared=global::BubuUI.Element field=PreviewPointerPressedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
 
 [Grid] global::BubuUI.Elements.Grid content=Children:Children
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -716,8 +716,8 @@
     event  OnPreviewPointerPressed PreviewPointerPressed declared=global::BubuUI.Element field=PreviewPointerPressedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
 
 [Image] global::BubuUI.Elements.Image content=None
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -756,9 +756,9 @@
     event  OnPreviewPointerPressed PreviewPointerPressed declared=global::BubuUI.Element field=PreviewPointerPressedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
-    param  Source global::BubuUI.IRasterImage required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
+    param  Source global::BubuUI.IRasterImage delegate=False
 
 [ItemsControl] global::BubuUI.Elements.ItemsControl content=Children:Children
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -799,10 +799,10 @@
     event  OnPreviewPointerPressed PreviewPointerPressed declared=global::BubuUI.Element field=PreviewPointerPressedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
-    param  ItemTemplate global::System.Func<global::System.Object, global::BubuUI.Element> required=False delegate=False
-    param  ItemsSource global::System.Collections.IEnumerable required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
+    param  ItemTemplate global::System.Func<global::System.Object, global::BubuUI.Element> delegate=False
+    param  ItemsSource global::System.Collections.IEnumerable delegate=False
 
 [ItemsPresenter] global::BubuUI.Elements.ItemsPresenter content=None
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -839,10 +839,10 @@
     event  OnPreviewPointerPressed PreviewPointerPressed declared=global::BubuUI.Element field=PreviewPointerPressedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
-    param  Owner global::BubuUI.Elements.Panel required=False delegate=False
-    param  UseOwnerLayout global::System.Boolean required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
+    param  Owner global::BubuUI.Elements.Panel delegate=False
+    param  UseOwnerLayout global::System.Boolean delegate=False
 
 [Line] global::BubuUI.Elements.Line content=None
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -886,8 +886,8 @@
     event  OnPreviewPointerPressed PreviewPointerPressed declared=global::BubuUI.Element field=PreviewPointerPressedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
 
 [ListBox] global::BubuUI.Elements.ListBox content=Children:Children
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -932,12 +932,12 @@
     event  OnSelectionChanged SelectionChanged declared=global::BubuUI.Elements.ListBox field=SelectionChangedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
-    param  ItemTemplate global::System.Func<global::System.Object, global::BubuUI.Element> required=False delegate=False
-    param  ItemsSource global::System.Collections.IEnumerable required=False delegate=False
-    param  SelectedItem global::System.Object required=False delegate=False
-    param  SelectedItemChanged global::System.Action<global::System.Object> required=False delegate=True
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
+    param  ItemTemplate global::System.Func<global::System.Object, global::BubuUI.Element> delegate=False
+    param  ItemsSource global::System.Collections.IEnumerable delegate=False
+    param  SelectedItem global::System.Object delegate=False
+    param  SelectedItemChanged global::System.Action<global::System.Object> delegate=True
 
 [ListBoxItem] global::BubuUI.Elements.ListBoxItem content=Children:Children
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -979,8 +979,8 @@
     event  OnPreviewPointerPressed PreviewPointerPressed declared=global::BubuUI.Element field=PreviewPointerPressedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
 
 [Menu] global::BubuUI.Elements.Menu content=Children:Children
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -1021,8 +1021,8 @@
     event  OnPreviewPointerPressed PreviewPointerPressed declared=global::BubuUI.Element field=PreviewPointerPressedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
 
 [MenuItem] global::BubuUI.Elements.MenuItem content=Text:Label
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -1069,8 +1069,8 @@
     event  OnPreviewPointerPressed PreviewPointerPressed declared=global::BubuUI.Element field=PreviewPointerPressedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
     slot   Content -> Content
     slot   Submenu -> Submenu
 
@@ -1124,11 +1124,11 @@
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
     event  OnValueChanged ValueChanged declared=global::BubuUI.Elements.NumericUpDown field=ValueChangedEvent
-    param  CaretIndex global::System.Int32 required=False delegate=False
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
-    param  SelectionLength global::System.Int32 required=False delegate=False
-    param  SelectionStart global::System.Int32 required=False delegate=False
+    param  CaretIndex global::System.Int32 delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
+    param  SelectionLength global::System.Int32 delegate=False
+    param  SelectionStart global::System.Int32 delegate=False
 
 [PasswordBox] global::BubuUI.Elements.PasswordBox content=Text:Text
     prop   AcceptsReturn bool declared=global::BubuUI.Elements.TextBox field=AcceptsReturnProperty writable=True
@@ -1175,11 +1175,11 @@
     event  OnTextChanged TextChanged declared=global::BubuUI.Elements.TextBox field=TextChangedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  CaretIndex global::System.Int32 required=False delegate=False
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
-    param  SelectionLength global::System.Int32 required=False delegate=False
-    param  SelectionStart global::System.Int32 required=False delegate=False
+    param  CaretIndex global::System.Int32 delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
+    param  SelectionLength global::System.Int32 delegate=False
+    param  SelectionStart global::System.Int32 delegate=False
 
 [Path] global::BubuUI.Elements.Path content=None
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -1220,8 +1220,8 @@
     event  OnPreviewPointerPressed PreviewPointerPressed declared=global::BubuUI.Element field=PreviewPointerPressedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
 
 [Popup] global::BubuUI.Elements.Popup content=Children:Content
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -1267,12 +1267,12 @@
     event  OnPreviewPointerPressed PreviewPointerPressed declared=global::BubuUI.Element field=PreviewPointerPressedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  HorizontalOffset global::System.Double required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
-    param  PlacementTarget global::BubuUI.Element required=False delegate=False
-    param  PointerPosition global::BubuUI.Point required=False delegate=False
-    param  VerticalOffset global::System.Double required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  HorizontalOffset global::System.Double delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
+    param  PlacementTarget global::BubuUI.Element delegate=False
+    param  PointerPosition global::BubuUI.Point delegate=False
+    param  VerticalOffset global::System.Double delegate=False
 
 [ProgressBar] global::BubuUI.Elements.ProgressBar content=None
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -1314,8 +1314,8 @@
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
     event  OnValueChanged ValueChanged declared=global::BubuUI.Elements.RangeControl field=ValueChangedEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
 
 [RadioButton] global::BubuUI.Elements.RadioButton content=Text:Label
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -1359,8 +1359,8 @@
     event  OnPreviewPointerPressed PreviewPointerPressed declared=global::BubuUI.Element field=PreviewPointerPressedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
 
 [Rectangle] global::BubuUI.Elements.Rectangle content=None
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -1401,8 +1401,8 @@
     event  OnPreviewPointerPressed PreviewPointerPressed declared=global::BubuUI.Element field=PreviewPointerPressedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
 
 [ScrollViewer] global::BubuUI.Elements.ScrollViewer content=Children:Children
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -1451,8 +1451,8 @@
     event  OnPreviewPointerPressed PreviewPointerPressed declared=global::BubuUI.Element field=PreviewPointerPressedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
 
 [Slider] global::BubuUI.Elements.Slider content=None
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -1497,8 +1497,8 @@
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
     event  OnValueChanged ValueChanged declared=global::BubuUI.Elements.RangeControl field=ValueChangedEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
 
 [StackPanel] global::BubuUI.Elements.StackPanel content=Children:Children
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -1539,8 +1539,8 @@
     event  OnPreviewPointerPressed PreviewPointerPressed declared=global::BubuUI.Element field=PreviewPointerPressedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
 
 [TabControl] global::BubuUI.Elements.TabControl content=Children:Children
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -1583,8 +1583,8 @@
     event  OnSelectionChanged SelectionChanged declared=global::BubuUI.Elements.TabControl field=SelectionChangedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
 
 [TabItem] global::BubuUI.Elements.TabItem content=Children:Content
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -1624,8 +1624,8 @@
     event  OnPreviewPointerPressed PreviewPointerPressed declared=global::BubuUI.Element field=PreviewPointerPressedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
 
 [TemplatedControl] global::BubuUI.Elements.TemplatedControl content=Children:Children
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -1664,8 +1664,8 @@
     event  OnPreviewPointerPressed PreviewPointerPressed declared=global::BubuUI.Element field=PreviewPointerPressedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
 
 [TextBlock] global::BubuUI.Elements.TextBlock content=TextRuns
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -1706,8 +1706,8 @@
     event  OnPreviewPointerPressed PreviewPointerPressed declared=global::BubuUI.Element field=PreviewPointerPressedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
 
 [TextBox] global::BubuUI.Elements.TextBox content=Text:Text
     prop   AcceptsReturn bool declared=global::BubuUI.Elements.TextBox field=AcceptsReturnProperty writable=True
@@ -1753,11 +1753,11 @@
     event  OnTextChanged TextChanged declared=global::BubuUI.Elements.TextBox field=TextChangedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  CaretIndex global::System.Int32 required=False delegate=False
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
-    param  SelectionLength global::System.Int32 required=False delegate=False
-    param  SelectionStart global::System.Int32 required=False delegate=False
+    param  CaretIndex global::System.Int32 delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
+    param  SelectionLength global::System.Int32 delegate=False
+    param  SelectionStart global::System.Int32 delegate=False
 
 [TextPresenter] global::BubuUI.Elements.TextPresenter content=None
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -1799,9 +1799,9 @@
     event  OnPreviewPointerPressed PreviewPointerPressed declared=global::BubuUI.Element field=PreviewPointerPressedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  Editor global::BubuUI.Elements.TextBox required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  Editor global::BubuUI.Elements.TextBox delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
 
 [ToggleButton] global::BubuUI.Elements.ToggleButton content=Text:Label
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -1847,8 +1847,8 @@
     event  OnPreviewPointerPressed PreviewPointerPressed declared=global::BubuUI.Element field=PreviewPointerPressedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
     slot   Content -> Content
 
 [ToggleSwitch] global::BubuUI.Elements.ToggleSwitch content=Text:Label
@@ -1892,8 +1892,8 @@
     event  OnPreviewPointerPressed PreviewPointerPressed declared=global::BubuUI.Element field=PreviewPointerPressedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
 
 [ToolTip] global::BubuUI.Elements.ToolTip content=Children:Content
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -1939,13 +1939,13 @@
     event  OnPreviewPointerPressed PreviewPointerPressed declared=global::BubuUI.Element field=PreviewPointerPressedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  HorizontalOffset global::System.Double required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
-    param  PlacementTarget global::BubuUI.Element required=False delegate=False
-    param  PointerPosition global::BubuUI.Point required=False delegate=False
-    param  Target global::BubuUI.Element required=False delegate=False
-    param  VerticalOffset global::System.Double required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  HorizontalOffset global::System.Double delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
+    param  PlacementTarget global::BubuUI.Element delegate=False
+    param  PointerPosition global::BubuUI.Point delegate=False
+    param  Target global::BubuUI.Element delegate=False
+    param  VerticalOffset global::System.Double delegate=False
 
 [TreeView] global::BubuUI.Elements.TreeView content=Children:Children
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -1987,13 +1987,13 @@
     event  OnSelectionChanged SelectionChanged declared=global::BubuUI.Elements.TreeView field=SelectionChangedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  ChildrenSelector global::System.Func<global::System.Object, global::System.Collections.IEnumerable> required=False delegate=False
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  HeaderSelector global::System.Func<global::System.Object, global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
-    param  ItemsSource global::System.Collections.IEnumerable required=False delegate=False
-    param  SelectedItem global::BubuUI.Elements.TreeViewItem required=False delegate=False
-    param  SelectedItemChanged global::System.Action<global::BubuUI.Elements.TreeViewItem> required=False delegate=True
+    param  ChildrenSelector global::System.Func<global::System.Object, global::System.Collections.IEnumerable> delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  HeaderSelector global::System.Func<global::System.Object, global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
+    param  ItemsSource global::System.Collections.IEnumerable delegate=False
+    param  SelectedItem global::BubuUI.Elements.TreeViewItem delegate=False
+    param  SelectedItemChanged global::System.Action<global::BubuUI.Elements.TreeViewItem> delegate=True
 
 [TreeViewItem] global::BubuUI.Elements.TreeViewItem content=Children:Children
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -2041,9 +2041,9 @@
     event  OnPreviewPointerPressed PreviewPointerPressed declared=global::BubuUI.Element field=PreviewPointerPressedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
-    param  Item global::System.Object required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
+    param  Item global::System.Object delegate=False
 
 [VirtualizingStackPanel] global::BubuUI.Elements.VirtualizingStackPanel content=Children:Children
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -2085,23 +2085,23 @@
     event  OnPreviewPointerPressed PreviewPointerPressed declared=global::BubuUI.Element field=PreviewPointerPressedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
-    param  ItemFactory global::System.Func<global::System.Int32, global::BubuUI.Element> required=False delegate=False
-    param  ItemHeightProvider global::System.Func<global::System.Int32, global::System.Double> required=False delegate=False
-    param  ItemUpdater global::System.Action<global::BubuUI.Element, global::System.Int32> required=False delegate=True
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
+    param  ItemFactory global::System.Func<global::System.Int32, global::BubuUI.Element> delegate=False
+    param  ItemHeightProvider global::System.Func<global::System.Int32, global::System.Double> delegate=False
+    param  ItemUpdater global::System.Action<global::BubuUI.Element, global::System.Int32> delegate=True
 
 [Window] global::BubuUI.Window content=Children:Content
-    param  AlwaysRender global::System.Boolean required=False delegate=False
-    param  AlwaysShowFocusVisuals global::System.Boolean required=False delegate=False
-    param  CloseOnEscape global::System.Boolean required=False delegate=False
-    param  Height global::System.Double required=False delegate=False
-    param  IdleSleepMilliseconds global::System.Int32 required=False delegate=False
-    param  MaxFramesPerSecond global::System.Int32 required=False delegate=False
-    param  MaxTicks global::System.Int32? required=False delegate=False
-    param  Theme global::BubuUI.IHostTheme required=False delegate=False
-    param  Title global::System.String required=False delegate=False
-    param  Width global::System.Double required=False delegate=False
+    param  AlwaysRender global::System.Boolean delegate=False
+    param  AlwaysShowFocusVisuals global::System.Boolean delegate=False
+    param  CloseOnEscape global::System.Boolean delegate=False
+    param  Height global::System.Double delegate=False
+    param  IdleSleepMilliseconds global::System.Int32 delegate=False
+    param  MaxFramesPerSecond global::System.Int32 delegate=False
+    param  MaxTicks global::System.Int32? delegate=False
+    param  Theme global::BubuUI.IHostTheme delegate=False
+    param  Title global::System.String delegate=False
+    param  Width global::System.Double delegate=False
 
 [WrapPanel] global::BubuUI.Elements.WrapPanel content=Children:Children
     prop   Background BubuUI.UiColor declared=global::BubuUI.Element field=BackgroundProperty writable=True
@@ -2142,8 +2142,8 @@
     event  OnPreviewPointerPressed PreviewPointerPressed declared=global::BubuUI.Element field=PreviewPointerPressedEvent
     event  OnTextComposition TextComposition declared=global::BubuUI.Element field=TextCompositionEvent
     event  OnTextInput TextInput declared=global::BubuUI.Element field=TextInputEvent
-    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> required=False delegate=False
-    param  IsEnabled global::System.Boolean required=False delegate=False
+    param  Classes global::System.Collections.Generic.IReadOnlyList<global::System.String> delegate=False
+    param  IsEnabled global::System.Boolean delegate=False
 
 [attached] Canvas.Left double declared=global::BubuUI.Elements.Canvas setter=SetLeft
 [attached] Canvas.Top double declared=global::BubuUI.Elements.Canvas setter=SetTop

@@ -1,0 +1,26 @@
+{
+  "type": {
+    "light": "#267F99", "dark": "#4EC9B0",
+    "scopes": ["entity.name.type.class.bubuui", "entity.name.type.bubuui", "entity.name.type.alias.bubuui", "entity.name.namespace.bubuui", "support.class.attached-owner.bubuui", "entity.name.tag.bss", "entity.name.type.bss", "entity.name.namespace.bss"]
+  },
+  "attribute": {
+    "light": "#0451A5", "dark": "#9CDCFE",
+    "scopes": ["entity.other.attribute-name.bubuui", "support.type.property-name.bss", "entity.other.attribute-name.class.bss", "entity.other.attribute-name.pseudo-class.bss"]
+  },
+  "directive": {
+    "light": "#AF00DB", "dark": "#C586C0",
+    "scopes": ["punctuation.definition.directive.bubuui", "keyword.control.directive.bubuui", "keyword.control.namespace.bubuui", "keyword.control.import.bubuui", "keyword.control.binding.bubuui", "keyword.control.conditional.bubuui", "keyword.control.loop.bubuui", "keyword.control.switch.bubuui", "punctuation.definition.directive.bss", "keyword.control.directive.bss", "keyword.control.bss"]
+  },
+  "literal": {
+    "light": "#A31515", "dark": "#CE9178",
+    "scopes": ["string.quoted.double.bubuui", "punctuation.definition.string.begin.bubuui", "punctuation.definition.string.end.bubuui", "string.quoted.double.bss"]
+  },
+  "comment": {
+    "light": "#008000", "dark": "#6A9955",
+    "scopes": ["comment.block.bubuui", "comment.block.bss", "comment.line.double-slash.bss"]
+  },
+  "punctuation": {
+    "light": "#666666", "dark": "#B4B4B4",
+    "scopes": ["punctuation.definition.tag.begin.bubuui", "punctuation.definition.tag.end.bubuui", "punctuation.definition.tag.self-close.bubuui", "punctuation.separator.bubuui", "punctuation.separator.key-value.bubuui", "punctuation.section.expression.begin.bubuui", "punctuation.section.expression.end.bubuui", "punctuation.section.block.begin.bubuui", "punctuation.section.block.end.bubuui", "punctuation.section.parens.begin.bubuui", "punctuation.section.parens.end.bubuui", "punctuation.section.block.bss", "punctuation.section.parens.bss", "punctuation.terminator.bss", "punctuation.separator.key-value.bss", "punctuation.separator.selector.bss"]
+  }
+}

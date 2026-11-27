@@ -212,7 +212,6 @@ public static class HoverProvider
 
         if (!candidate.CanWrite) lines.Add("read-only — a literal/expression cannot be assigned here (EUI019)");
         if (candidate.Context is UiParameterDef { IsContent: true }) lines.Add("content parameter — build-once, cannot be bound");
-        if (candidate.Context is UiParameterDef { Required: true }) lines.Add("required — must be set at every use site (EUI027)");
 
         if (candidate.Shape is { Kind: UiTypeShapeKind.Enum } shape)
             lines.Add("values: " + string.Join(", ", shape.EnumMembers));

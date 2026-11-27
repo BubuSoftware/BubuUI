@@ -17,15 +17,21 @@ public sealed record ProjectDiagnostic(string Path, UiDiagnostic Diagnostic);
 /// </summary>
 public sealed class ProjectSnapshot
 {
+    internal Lazy<GeneratorResult>? Generation { get; init; }
+    internal object EditorSession { get; init; } = new();
+    private Compilation _input = null!;
+    private IReadOnlyList<SyntaxTree> _generatedTrees = [];
+    private IReadOnlyDictionary<string, GeneratedDocument> _generatedDocuments = new Dictionary<string, GeneratedDocument>();
     public required ProjectEvaluation Evaluation { get; init; }
-    public required Compilation Compilation { get; init; }
+    public required Compilation Compilation { get => Generation?.Value.Compilation ?? _input; init => _input = value; }
+    public Compilation InputCompilation => _input;
     public required UiCatalog Catalog { get; init; }
-    public required IReadOnlyList<SyntaxTree> GeneratedTrees { get; init; }
+    public required IReadOnlyList<SyntaxTree> GeneratedTrees { get => Generation?.Value.GeneratedTrees ?? _generatedTrees; init => _generatedTrees = value; }
     public required IReadOnlyList<ProjectDiagnostic> Diagnostics { get; init; }
     public required IReadOnlyList<string> Notes { get; init; }
 
     /// <summary>每个 .bui 的生成文档 + 双向映射（design/18 §5.2）；键 = .bui 完整路径。</summary>
-    public required IReadOnlyDictionary<string, GeneratedDocument> GeneratedDocuments { get; init; }
+    public required IReadOnlyDictionary<string, GeneratedDocument> GeneratedDocuments { get => Generation?.Value.GeneratedDocuments ?? _generatedDocuments; init => _generatedDocuments = value; }
 }
 
 /// <summary>
@@ -45,6 +51,17 @@ public sealed class ProjectWorkspace
     private readonly object _gate = new();
     private readonly Dictionary<string, string> _buffers = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Lazy<ProjectSnapshot>> _snapshots = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, BuildState> _buildStates = new(StringComparer.OrdinalIgnoreCase);
+    private sealed class BuildState
+    {
+        public Compilation? Input;
+        public readonly GeneratorHost.Session Generator = new();
+        public readonly object EditorSession = new();
+        public Compilation? CatalogInput;
+        public UiTemplateDeclaration[] Declarations = [];
+        public UiCatalog? Catalog;
+        public IReadOnlyList<string> Notes = [];
+    }
     // L6 跨项目源码符号查询用的**轻量**编译：只有 Compile 源码树，不跑生成器/不算目录。
     private readonly Dictionary<string, Lazy<Compilation>> _sourceLookups = new(StringComparer.OrdinalIgnoreCase);
     private Lazy<IReadOnlyList<ProjectEvaluation>> _evaluations;
@@ -84,6 +101,7 @@ public sealed class ProjectWorkspace
             _evaluations = new Lazy<IReadOnlyList<ProjectEvaluation>>(Discover,
                 LazyThreadSafetyMode.ExecutionAndPublication);
             _snapshots.Clear();
+            _buildStates.Clear();
             _sourceLookups.Clear();
             _generation++;
             return true;
@@ -140,6 +158,7 @@ public sealed class ProjectWorkspace
         if (path.Length == 0) return;
         lock (_gate)
         {
+            if (_buffers.TryGetValue(path, out var current) && string.Equals(current, text, StringComparison.Ordinal)) return;
             _buffers[path] = text;
             _generation++;
             _snapshots.Clear();
@@ -187,6 +206,7 @@ public sealed class ProjectWorkspace
         {
             _generation++;
             _snapshots.Clear();
+            _buildStates.Clear();
             _sourceLookups.Clear();
             if (structural)
                 _evaluations = new Lazy<IReadOnlyList<ProjectEvaluation>>(Discover, LazyThreadSafetyMode.ExecutionAndPublication);
@@ -285,7 +305,10 @@ public sealed class ProjectWorkspace
                     string.Equals(e.ProjectPath, projectPath, StringComparison.OrdinalIgnoreCase));
                 if (evaluation is null) return null;
                 var generation = _generation;
-                lazy = new Lazy<ProjectSnapshot>(() => Build(evaluation, generation),
+                if (!_buildStates.TryGetValue(projectPath, out var state))
+                    _buildStates[projectPath] = state = new BuildState();
+                var buffers = new Dictionary<string, string>(_buffers, StringComparer.OrdinalIgnoreCase);
+                lazy = new Lazy<ProjectSnapshot>(() => Build(evaluation, generation, state, buffers),
                     LazyThreadSafetyMode.ExecutionAndPublication);
                 _snapshots[projectPath] = lazy;
             }
@@ -374,23 +397,37 @@ public sealed class ProjectWorkspace
         return null;
     }
 
-    private ProjectSnapshot Build(ProjectEvaluation evaluation, int generation)
+    private ProjectSnapshot Build(ProjectEvaluation evaluation, int generation, BuildState state,
+        IReadOnlyDictionary<string, string> buffers)
     {
-        var notes = new List<string>(evaluation.Notes);
+        lock (state) return BuildCore(evaluation, generation, state, buffers);
+    }
+
+    private ProjectSnapshot BuildCore(ProjectEvaluation evaluation, int generation, BuildState state,
+        IReadOnlyDictionary<string, string> buffers)
+    {
+        var notes = new List<string>(state.Input is null ? evaluation.Notes : state.Notes);
         var parseOptions = new CSharpParseOptions(evaluation.ParseLanguageVersion(),
             DocumentationMode.Parse, SourceCodeKind.Regular, evaluation.DefineConstants);
 
+        bool Read(string path, out string text) => buffers.TryGetValue(path, out text!) || TryReadFile(path, out text);
+        var previousTrees = state.Input?.SyntaxTrees.ToDictionary(tree => tree.FilePath, StringComparer.OrdinalIgnoreCase);
+        SyntaxTree Parse(string path, string text)
+        {
+            if (previousTrees?.TryGetValue(path, out var previous) == true)
+                return previous.GetText().ToString() == text ? previous : previous.WithChangedText(SourceText.From(text));
+            return CSharpSyntaxTree.ParseText(SourceText.From(text), parseOptions, path);
+        }
         var trees = new List<SyntaxTree>();
         foreach (var path in evaluation.CompileFiles)
         {
-            if (!TryRead(path, out var text)) continue;
-            trees.Add(CSharpSyntaxTree.ParseText(SourceText.From(text), parseOptions, path));
+            if (!Read(path, out var text)) continue;
+            trees.Add(Parse(path, text));
         }
         if (evaluation.UsingNamespaces.Count > 0)
         {
             var globalUsings = string.Join("\n", evaluation.UsingNamespaces);
-            trees.Add(CSharpSyntaxTree.ParseText(SourceText.From(globalUsings), parseOptions,
-                Path.Combine(evaluation.Directory, "obj", "GlobalUsings.g.cs")));
+            trees.Add(Parse(Path.Combine(evaluation.Directory, "obj", "GlobalUsings.g.cs"), globalUsings));
         }
 
         var references = new List<MetadataReference>();
@@ -413,10 +450,14 @@ public sealed class ProjectWorkspace
             }
             catch (Exception ex) { notes.Add($"cannot reference '{path}': {ex.Message}"); }
         }
-        foreach (var path in evaluation.References) Add(path);
-        var tpa = AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") as string ?? "";
-        foreach (var path in tpa.Split(Path.PathSeparator))
-            if (path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)) Add(path);
+        if (state.Input is not null) references.AddRange(state.Input.References);
+        else
+        {
+            foreach (var path in evaluation.References) Add(path);
+            var tpa = AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") as string ?? "";
+            foreach (var path in tpa.Split(Path.PathSeparator))
+                if (path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)) Add(path);
+        }
 
         var nullable = evaluation.Nullable.Trim().ToLowerInvariant() switch
         {
@@ -426,32 +467,68 @@ public sealed class ProjectWorkspace
             _ => NullableContextOptions.Disable,
         };
         var options = new CSharpCompilationOptions(evaluation.CompilationOutputKind(), nullableContextOptions: nullable);
-        var compilation = CSharpCompilation.Create(evaluation.AssemblyName, trees, references, options);
+        var compilation = state.Input ?? CSharpCompilation.Create(evaluation.AssemblyName, trees, references, options);
+        if (state.Input is not null)
+        {
+            // Preserve Roslyn reference/symbol caches and unchanged syntax trees.
+            var desired = trees.ToHashSet();
+            compilation = compilation.RemoveSyntaxTrees(compilation.SyntaxTrees.Where(tree => !desired.Contains(tree)));
+            var existing = compilation.SyntaxTrees.ToHashSet();
+            compilation = compilation.AddSyntaxTrees(trees.Where(tree => !existing.Contains(tree)));
+        }
+        state.Input = compilation;
+        state.Notes = notes;
 
         var additional = new List<(string Path, string Text)>();
         foreach (var path in evaluation.AdditionalFiles)
-            if (TryRead(path, out var text)) additional.Add((path, text));
+            if (Read(path, out var text)) additional.Add((path, text));
 
-        var generated = GeneratorHost.Run(compilation, additional, parseOptions, evaluation.RootNamespace);
+        var generated = new Lazy<GeneratorResult>(() =>
+        {
+            // GeneratorHost serializes its sessions. Do not hold the input/catalog
+            // lock while background diagnostics generate an older snapshot.
+            var result = GeneratorHost.Run(compilation, additional, parseOptions, evaluation.RootNamespace, state.Generator);
+            _log?.Invoke($"project '{evaluation.AssemblyName}': generated {result.GeneratedTrees.Count} trees (gen {generation})");
+            return result;
+        });
         // spec/02 §2.7：目录与编译器同源——输入编译 + .bui 声明清单。
         // 此前这里建在生成后编译上（看得见 .g.cs 里的 `: global::BubuUI.Elements.StackPanel`），而真正跑构建的生成器
         // 看不见自己的产物，于是同一个标签「编辑器里绿、dotnet build 报 EUI001」。
         // 清单来自 AdditionalFiles，与生成器读的 AdditionalTexts 是同一批文件、同一份提取器。
-        var catalog = UiCatalogFactory.Build(compilation, UiTemplateScanner.FromFiles(additional));
-        var diagnostics = MapDiagnostics(evaluation, generated.Diagnostics, generated.Compilation);
+        var declarations = UiTemplateScanner.FromFiles(additional).ToArray();
+        if (state.Catalog is null || !ReferenceEquals(state.CatalogInput, compilation)
+            || !state.Declarations.SequenceEqual(declarations))
+        {
+            state.Catalog = UiCatalogFactory.Build(compilation, declarations);
+            state.CatalogInput = compilation;
+            state.Declarations = declarations;
+        }
+        var catalog = state.Catalog;
+        // Completion and Tier 1 need the generated symbols, not a full compilation
+        // diagnostic pass. Keep that pass behind the host's Tier 2 debounce, and map
+        // against this snapshot's text even if another edit arrives in the meantime.
+        var texts = additional.ToDictionary(file => file.Path, file => file.Text, StringComparer.OrdinalIgnoreCase);
+        var diagnostics = new DeferredDiagnostics(() =>
+        {
+            var result = MapDiagnostics(evaluation, generated.Value.Diagnostics, generated.Value.Compilation, texts);
+            _log?.Invoke($"project '{evaluation.AssemblyName}': {result.Count} tier-2 diagnostics (gen {generation})");
+            return result;
+        });
 
         _log?.Invoke($"project '{evaluation.AssemblyName}': {trees.Count} trees, " +
-                     $"{references.Count} refs, {generated.GeneratedTrees.Count} generated, " +
-                     $"{catalog.Elements.Count} tags, {diagnostics.Count} tier-2 diagnostics (gen {generation})");
+                     $"{references.Count} refs, " +
+                     $"{catalog.Elements.Count} tags (gen {generation}); tier-2 diagnostics deferred");
         return new ProjectSnapshot
         {
             Evaluation = evaluation,
-            Compilation = generated.Compilation,
+            Compilation = compilation,
+            Generation = generated,
+            EditorSession = state.EditorSession,
             Catalog = catalog,
-            GeneratedTrees = generated.GeneratedTrees,
+            GeneratedTrees = [],
             Diagnostics = diagnostics,
             Notes = notes,
-            GeneratedDocuments = generated.GeneratedDocuments,
+            GeneratedDocuments = new Dictionary<string, GeneratedDocument>(),
         };
     }
 
@@ -460,10 +537,11 @@ public sealed class ProjectWorkspace
     /// CS 错误（经 span 型 #line 映射回 .bui）统一按目标文件映射成 .bui 偏移。
     /// 与 build 同源——不写 CS→EUI 翻译器。映不回的（路径不在本项目 AdditionalFiles 内）丢弃。
     /// </summary>
-    private IReadOnlyList<ProjectDiagnostic> MapDiagnostics(
+    private static IReadOnlyList<ProjectDiagnostic> MapDiagnostics(
         ProjectEvaluation evaluation,
         System.Collections.Immutable.ImmutableArray<Diagnostic> generatorDiagnostics,
-        Compilation outputCompilation)
+        Compilation outputCompilation,
+        IReadOnlyDictionary<string, string> texts)
     {
         var owned = new HashSet<string>(evaluation.AdditionalFiles, StringComparer.OrdinalIgnoreCase);
         var result = new List<ProjectDiagnostic>();
@@ -485,7 +563,7 @@ public sealed class ProjectWorkspace
                 : lineSpan.Path;
             if (path.Length == 0 || !owned.Contains(Path.GetFullPath(path))) return;
             if (Path.GetExtension(path) is not (".bui" or ".bss")) return;
-            if (!TryRead(path, out var text)) return;
+            if (!texts.TryGetValue(path, out var text)) return;
 
             var positions = new PositionMap(text);
             var start = positions.ToOffset(lineSpan.StartLinePosition.Line, lineSpan.StartLinePosition.Character);
@@ -509,9 +587,24 @@ public sealed class ProjectWorkspace
         return result;
     }
 
+    private sealed class DeferredDiagnostics(Func<IReadOnlyList<ProjectDiagnostic>> factory)
+        : IReadOnlyList<ProjectDiagnostic>
+    {
+        private readonly Lazy<IReadOnlyList<ProjectDiagnostic>> _value = new(factory);
+        public int Count => _value.Value.Count;
+        public ProjectDiagnostic this[int index] => _value.Value[index];
+        public IEnumerator<ProjectDiagnostic> GetEnumerator() => _value.Value.GetEnumerator();
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
     private bool TryRead(string path, out string text)
     {
         if (TryBuffer(path, out text!)) return true;
+        return TryReadFile(path, out text);
+    }
+
+    private static bool TryReadFile(string path, out string text)
+    {
         try
         {
             if (!File.Exists(path)) { text = ""; return false; }

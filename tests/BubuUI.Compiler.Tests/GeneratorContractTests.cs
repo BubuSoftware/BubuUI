@@ -837,20 +837,18 @@ public class GeneratorContractTests
             }
             public class ProbeCard : global::BubuUI.Elements.StackPanel
             {
-                [UiParameter(Required = true)] public int Count { get; set; }
-                [UiParameter] public string? Title { get; set; }
-                [UiParameter] public Action? Closed { get; set; }
-                [UiParameter] public Action<int>? Picked { get; set; }
-                [UiParameter] public string? Color { get; set; }
-                [UiParameter] public Action<string?>? ColorChanged { get; set; }
-                [UiParameter]
+                public int Count { get; set; }
+                public string? Title { get; set; }
+                public Action? Closed { get; set; }
+                public Action<int>? Picked { get; set; }
+                public string? Color { get; set; }
+                public Action<string?>? ColorChanged { get; set; }
                 [UiContent]
                 public Element? Body { get; set; }
             }
             public class Group : global::BubuUI.Elements.StackPanel
             {
-                [UiParameter(Required = true)] public int Count { get; set; }
-                [UiParameter]
+                public int Count { get; set; }
                 [UiContent]
                 public IReadOnlyList<Element> Items { get; set; }
             }
@@ -942,8 +940,8 @@ public class GeneratorContractTests
             }
             public class ProbeCard : global::BubuUI.Elements.StackPanel
             {
-                [UiParameter(Required = true)] public int Count { get; set; }
-                [UiParameter] public string? Title { get; set; }
+                public int Count { get; set; }
+                public string? Title { get; set; }
             }
             public class Item { public int N; public string? Name; }
             """;
@@ -1007,14 +1005,13 @@ public class GeneratorContractTests
     }
 
     [Fact]
-    public void ComponentRequiredParameterMissing_EUI027_BlocksGeneration()
+    public void OmittedOrdinaryParameter_DoesNotBlockGeneration()
     {
         var result = RunWithReferences("/templates/Probe.bui",
             "@using BubuUI.Elements\n<StackPanel><ProbeCard Title=\"x\" /></StackPanel>", ComponentFixtures);
 
-        Assert.Empty(result.GeneratedSources);
-        var diag = Assert.Single(result.Diagnostics, d => d.Id == "EUI027");
-        Assert.Equal(Microsoft.CodeAnalysis.DiagnosticSeverity.Error, diag.Severity);
+        Assert.NotEmpty(result.GeneratedSources);
+        Assert.Empty(result.Diagnostics);
     }
 
     [Fact]
@@ -1095,7 +1092,7 @@ public class GeneratorContractTests
             public partial class Probe { public ProbeCard card = null!; }
             public class ProbeCard : global::BubuUI.Elements.StackPanel
             {
-                [UiParameter] public int Count { get; set; }
+                public int Count { get; set; }
             }
             """;
 
@@ -1326,8 +1323,8 @@ public class GeneratorContractTests
 
         public sealed class SlotChip : global::BubuUI.Elements.StackPanel
         {
-            [UiParameter] public string? Title { get; set; }
-            [UiParameter] [UiContent] public Element? Body { get; set; }
+            public string? Title { get; set; }
+            [UiContent] public Element? Body { get; set; }
             [UiSlot("Header")] public Element? Header { get; set; }
             [UiSlot("Rows")] public IReadOnlyList<Element> Rows { get; set; } = [];
         }

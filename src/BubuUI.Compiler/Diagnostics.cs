@@ -65,7 +65,7 @@ public static class UiDiagnostics
     public const string EventHandlerSignature = "EUI024";
     public const string DuplicateAttribute = "EUI025";
     public const string MetadataDeclarationInvalid = "EUI026";
-    public const string RequiredParameterMissing = "EUI027";
+    // EUI027 retired: template properties no longer have a required-parameter marker.
     public const string ParameterDeclarationInvalid = "EUI028";
     public const string RefTargetInvalid = "EUI029";
     public const string GenericTagNotSupported = "EUI030";

@@ -23,14 +23,14 @@ public class C6SlotTests
         return (doc, diags, catalog);
     }
 
-    private static UiParameterDef Param(string name, string type, bool required = false) => new(
+    private static UiParameterDef Param(string name, string type) => new(
         name, type, new UiTypeShape(UiTypeShapeKind.Other, type, []),
-        CanWrite: true, Required: required, IsDelegate: false, DelegateArity: 0,
+        CanWrite: true, IsDelegate: false, DelegateArity: 0,
         IsContent: false, ContentIsMultiple: false, ChangedCallbackName: null);
 
     private static UiParameterDef Content(string name, string type, bool multiple) => new(
         name, type, new UiTypeShape(UiTypeShapeKind.Other, type, []),
-        CanWrite: true, Required: false, IsDelegate: false, DelegateArity: 0,
+        CanWrite: true, IsDelegate: false, DelegateArity: 0,
         IsContent: true, ContentIsMultiple: multiple, ChangedCallbackName: null);
 
     private static UiSlotDef Slot(string name, string prop, string type, UiSlotCardinality cardinality) => new(
@@ -55,7 +55,7 @@ public class C6SlotTests
             {
                 ["Title"] = new UiParameterDef("Title", "global::System.String?",
                     new UiTypeShape(UiTypeShapeKind.Primitive, "string", []),
-                    CanWrite: true, Required: false, IsDelegate: false, DelegateArity: 0,
+                    CanWrite: true, IsDelegate: false, DelegateArity: 0,
                     IsContent: false, ContentIsMultiple: false, ChangedCallbackName: null),
                 ["Body"] = Content("Body", ElementOptT, multiple: false),
             },

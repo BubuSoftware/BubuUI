@@ -35,7 +35,7 @@ UiObject                 公共初始化、更新调度、作用域资源
 
 沿用符号派生元数据，补齐单内容成员：Panel.Children 为 Element 集合；Window.Content 为 Element 单项；文本沿用 Text/TextRuns。默认内容参数和具名插槽保留 build-once 规则，目标类型同样约束可嵌入性。
 
-公开可读写普通 CLR 属性可直接在模板中赋值，无需 UiParameter 标记；该标记保留 Required 等声明用途。void 委托沿用事件包装；Func 等有返回值委托作为普通值属性。绑定依据 StyledProperty 或匹配的 `{P}Changed` 能力判定，不能因为属性来自 ui 或 C# 而改变准入规则。
+公开可读写普通 CLR 属性可直接在模板中赋值，无需特性标记；UiParameter 和 Required 必填约束已移除，省略属性时保留默认值。void 委托沿用事件包装；Func 等有返回值委托作为普通值属性。绑定依据 StyledProperty 或匹配的 `{P}Changed` 能力判定，不能因为属性来自 ui 或 C# 而改变准入规则。
 
 EUI060 泛化为非 Element 对象无法赋给元素内容的错误；EUI064 表示根不可继承或根继承环。新路径不发出旧窗口专用 EUI061/062/063。单内容成员可为空或接收一个动态块，多个直接内容项报普通内容模型错误。
 
