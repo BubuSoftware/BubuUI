@@ -1,0 +1,84 @@
+name: Package IDE plugins
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: Skip tests (package integrity checks still run)
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ide-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: VS Code, Visual Studio and Rider
+    runs-on: windows-2022
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ide/vscode/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Check build prerequisites
+        run: ./publish.ps1 -CheckOnly
+
+      - name: Read plugin version
+        id: version
+        run: |
+          $version = (Get-Content ide/vscode/package.json -Raw | ConvertFrom-Json).version
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Invalid release version: $version" }
+          "value=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Test and package all three plugins
+        env:
+          SKIP_TESTS: ${{ inputs.skip_tests }}
+        run: ./publish.ps1 -SkipTests:($env:SKIP_TESTS -eq 'true')
+
+      - name: Upload installers and checksums
+        uses: actions/upload-artifact@v4
+        with:
+          name: EclipseUI-IDE-${{ steps.version.outputs.value }}
+          path: |
+            out/ide-release/${{ steps.version.outputs.value }}/EclipseUI-VSCode-*.vsix
+            out/ide-release/${{ steps.version.outputs.value }}/EclipseUI-VisualStudio-*.vsix
+            out/ide-release/${{ steps.version.outputs.value }}/EclipseUI-Rider-*.zip
+            out/ide-release/${{ steps.version.outputs.value }}/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+      - name: Upload test diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: EclipseUI-IDE-diagnostics-${{ github.run_attempt }}
+          path: |
+            tests/**/TestResults/**
+            ide/rider/build/test-results/**
+            ide/rider/build/reports/**
+          if-no-files-found: ignore
+          retention-days: 7

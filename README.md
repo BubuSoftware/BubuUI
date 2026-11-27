@@ -2,6 +2,10 @@
 
 开发时修改 `.ui` / C# 的使用方式与限制见 [热重载](./design/hot-reload.md)。
 
+生成 VS Code、Visual Studio、Rider 插件安装包：在 GitHub Actions 中运行 **Package IDE plugins**，
+完成后下载 Artifacts；也可本地执行 `pwsh -File ./publish.ps1`。
+详见 [IDE 插件打包说明](./ide/README.md#三个-ide-插件一键打包)。
+
 模板引擎优先的自绘 UI 框架。`.ui` 和纯 C# 是相同 UI 类型的两种编写方式：**根标签决定生成类基类，生成对象本身就是 UI 实例。**
 
 当前规范见 [spec](./spec/README.md)，统一实施与验证见 [design/21](./design/21-root-type-unification.md)。样式和 C# 属性过渡的用法见 [动画系统](./design/29-animation-system.md)。

@@ -17,7 +17,47 @@ ide/
 Rider 走 lsp4ij、Visual Studio 走内置 LSP 客户端接**同一个** server，所以补全/诊断共用实现，
 差别只在壳的接线方式。
 
-## 0.2.0 本地发布与样式覆盖
+## 三个 IDE 插件一键打包
+
+### GitHub Actions（推荐）
+
+提交工作流到 GitHub 默认分支后，打开 **Actions → Package IDE plugins → Run workflow**，
+选择要构建的分支并运行。默认执行测试；仅在已验证测试时勾选 `skip_tests`。
+工作流自动准备 .NET SDK、Node.js 和 JDK 21，并在 Windows 上构建三个插件。
+
+成功后，在该次运行页面的 **Artifacts** 下载 `EclipseUI-IDE-<版本>`，
+其中包含 VS Code / Visual Studio 的 VSIX、Rider ZIP 和 `SHA256SUMS.txt`，保存 30 天。
+无需配置发布令牌，不上传插件市场或创建 GitHub Release。
+工作流文件：[ide-release.yml](../.github/workflows/ide-release.yml)。
+
+### 本地运行
+
+在 Windows 上安装仓库 `global.json` 指定的 .NET 11 SDK、Node.js/npm、JDK 21–24
+（推荐 21，设置 `JAVA_HOME`），以及 Visual Studio 2022 17.14+ / 2026 的
+“.NET 桌面开发”工作负载。首次构建需要联网下载 npm、NuGet、Gradle 和 Rider SDK 依赖。
+
+在仓库根目录执行：
+
+```powershell
+pwsh -File ./publish.ps1 -CheckOnly # 仅检查环境和三个插件的版本
+pwsh -File ./publish.ps1            # 测试、构建并生成三个安装包
+pwsh -File ./publish.ps1 -SkipTests -SkipNpm # 已验证测试且依赖已安装时
+```
+
+也支持 Windows PowerShell 5.1：`powershell -ExecutionPolicy Bypass -File ./publish.ps1`。
+脚本按自身位置定位仓库，可以从其他工作目录调用；任一步失败都会终止并报错。
+`-SkipTests` 跳过测试和 stdio 冒烟，但仍检查安装包结构、版本及共享资源一致性。
+更新版本时需要同步 `vscode/package.json`（及 npm 锁文件）、
+`visualstudio/source.extension.vsixmanifest` 和 `rider/gradle.properties`。
+
+输出目录为 `out/ide-release/<版本>/`，包含：
+
+- `EclipseUI-VSCode-<版本>.vsix`
+- `EclipseUI-VisualStudio-<版本>.vsix`
+- `EclipseUI-Rider-<版本>.zip`
+- `SHA256SUMS.txt`
+
+底层打包入口仍可直接调用：
 
 ```powershell
 pwsh -File ide/package.ps1

@@ -2,7 +2,8 @@ param(
     # Release for extension use; Debug keeps pdbs so you can break into the server.
     [string]$Configuration = 'Release',
     # Skip npm install when dependencies are already present.
-    [switch]$SkipNpm
+    [switch]$SkipNpm,
+    [switch]$SkipTests
 )
 
 # NOTE: keep this file ASCII-only. Windows PowerShell 5.1 reads .ps1 without a BOM
@@ -42,30 +43,32 @@ if (-not $SkipNpm) {
     finally { Pop-Location }
 }
 
-Write-Host '[3/4] shell tests (grammar + extension glue)' -ForegroundColor Cyan
-Push-Location $extensionRoot
-try {
-    node test/tokenize.test.js
-    if ($LASTEXITCODE -ne 0) { throw "grammar assertions failed ($LASTEXITCODE)" }
-    node test/extension.test.js
-    if ($LASTEXITCODE -ne 0) { throw "extension assertions failed ($LASTEXITCODE)" }
-}
-finally { Pop-Location }
+if (-not $SkipTests) {
+    Write-Host '[3/4] shell tests (grammar + extension glue)' -ForegroundColor Cyan
+    Push-Location $extensionRoot
+    try {
+        node test/tokenize.test.js
+        if ($LASTEXITCODE -ne 0) { throw "grammar assertions failed ($LASTEXITCODE)" }
+        node test/extension.test.js
+        if ($LASTEXITCODE -ne 0) { throw "extension assertions failed ($LASTEXITCODE)" }
+    }
+    finally { Pop-Location }
 
-# The Rider module is a Java/Gradle IntelliJ plugin. A real compile needs JDK 21-24
-# plus a Rider SDK download (Gradle 9 comes from the repo wrapper), but every
-# wiring mistake is visible in text, so the static contract is checked here with
-# plain node (no JVM required).
-Write-Host '[4/4] Rider shell contract (static)' -ForegroundColor Cyan
-$riderRoot = Join-Path $here 'rider'
-Push-Location $riderRoot
-try {
-    node test/plugin.test.js
-    if ($LASTEXITCODE -ne 0) { throw "Rider shell assertions failed ($LASTEXITCODE)" }
-}
-finally { Pop-Location }
+    # The Rider module is a Java/Gradle IntelliJ plugin. A real compile needs JDK 21-24
+    # plus a Rider SDK download (Gradle 9 comes from the repo wrapper), but every
+    # wiring mistake is visible in text, so the static contract is checked here with
+    # plain node (no JVM required).
+    Write-Host '[4/4] Rider shell contract (static)' -ForegroundColor Cyan
+    $riderRoot = Join-Path $here 'rider'
+    Push-Location $riderRoot
+    try {
+        node test/plugin.test.js
+        if ($LASTEXITCODE -ne 0) { throw "Rider shell assertions failed ($LASTEXITCODE)" }
+    }
+    finally { Pop-Location }
 
-Write-Host ''
+    Write-Host ''
+}
 Write-Host 'Done. Two ways to use the VS Code shell:' -ForegroundColor Green
 Write-Host '  1) Open ide/vscode in VS Code and press F5 (Run Extension).'
 Write-Host '  2) code --extensionDevelopmentPath="<repo>\ide\vscode"'
