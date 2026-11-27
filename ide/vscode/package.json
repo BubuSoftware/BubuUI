@@ -2,7 +2,7 @@
   "name": "bubuui",
   "displayName": "BubuUI",
   "description": "BubuUI templates, styles and control themes: completion, diagnostics, navigation, rename and embedded C#.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publisher": "bubuui",
   "license": "MIT",
   "engines": {
