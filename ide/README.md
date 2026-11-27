@@ -27,8 +27,10 @@ Rider 走 lsp4ij、Visual Studio 走内置 LSP 客户端接**同一个** server�
 共享语言服务器使用 .NET 11；Visual Studio 的 `net472` 客户端单独使用 .NET 8 SDK，
 以兼容 Windows runner 的 Visual Studio 2022 MSBuild。
 
-成功后，在该次运行页面的 **Artifacts** 下载 `EclipseUI-IDE-<版本>`，
-其中包含 VS Code / Visual Studio 的 VSIX、Rider ZIP 和 `SHA256SUMS.txt`，保存 30 天。
+成功后，在该次运行页面的 **Artifacts** 分别下载 `EclipseUI-VSCode-<版本>`、
+`EclipseUI-VisualStudio-<版本>` 或 `EclipseUI-Rider-<版本>`；
+校验文件单独放在 `EclipseUI-SHA256SUMS-<版本>`，均保存 30 天。
+GitHub Artifacts 下载时会附加 ZIP 外包装，解压后取出对应的 VSIX 或 Rider 插件 ZIP 安装。
 无需配置发布令牌，不上传插件市场或创建 GitHub Release。
 工作流文件：[ide-release.yml](../.github/workflows/ide-release.yml)。
 

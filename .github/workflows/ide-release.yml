@@ -59,15 +59,38 @@ jobs:
           SKIP_TESTS: ${{ inputs.skip_tests }}
         run: ./publish.ps1 -SkipTests:($env:SKIP_TESTS -eq 'true')
 
-      - name: Upload installers and checksums
+      - name: Upload VS Code installer
         uses: actions/upload-artifact@v4
         with:
-          name: EclipseUI-IDE-${{ steps.version.outputs.value }}
-          path: |
-            out/ide-release/${{ steps.version.outputs.value }}/EclipseUI-VSCode-*.vsix
-            out/ide-release/${{ steps.version.outputs.value }}/EclipseUI-VisualStudio-*.vsix
-            out/ide-release/${{ steps.version.outputs.value }}/EclipseUI-Rider-*.zip
-            out/ide-release/${{ steps.version.outputs.value }}/SHA256SUMS.txt
+          name: EclipseUI-VSCode-${{ steps.version.outputs.value }}
+          path: out/ide-release/${{ steps.version.outputs.value }}/EclipseUI-VSCode-*.vsix
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+      - name: Upload Visual Studio installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: EclipseUI-VisualStudio-${{ steps.version.outputs.value }}
+          path: out/ide-release/${{ steps.version.outputs.value }}/EclipseUI-VisualStudio-*.vsix
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+      - name: Upload Rider installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: EclipseUI-Rider-${{ steps.version.outputs.value }}
+          path: out/ide-release/${{ steps.version.outputs.value }}/EclipseUI-Rider-*.zip
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+      - name: Upload checksums
+        uses: actions/upload-artifact@v4
+        with:
+          name: EclipseUI-SHA256SUMS-${{ steps.version.outputs.value }}
+          path: out/ide-release/${{ steps.version.outputs.value }}/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
