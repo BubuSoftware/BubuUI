@@ -20,6 +20,14 @@ try {
     if ($LASTEXITCODE -ne 0 -or $sdk -notmatch '^11\.') { throw 'Install the .NET 11 SDK selected by global.json.' }
 }
 finally { Pop-Location }
+Push-Location (Join-Path $PSScriptRoot 'visualstudio')
+try {
+    $vsSdk = & dotnet --version
+    if ($LASTEXITCODE -ne 0 -or $vsSdk -notmatch '^8\.0\.4\d\d$') {
+        throw 'Install .NET SDK 8.0.4xx for the Visual Studio net472 shell (ide/visualstudio/global.json).'
+    }
+}
+finally { Pop-Location }
 $java = if ($env:JAVA_HOME) { Join-Path $env:JAVA_HOME 'bin/java.exe' } else { 'java.exe' }
 if (-not (Get-Command $java -ErrorAction SilentlyContinue)) { throw 'Install JDK 21-24 and set JAVA_HOME to its directory.' }
 # Java writes its version to stderr; use stdout to support Windows PowerShell 5.1.

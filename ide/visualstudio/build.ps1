@@ -15,6 +15,10 @@ if (-not (Test-Path -LiteralPath $vswhere)) { throw 'Install Visual Studio 2022 
 $msbuild = & $vswhere -latest -products '*' -version '[17.14,)' -requires Microsoft.Component.MSBuild -find 'MSBuild\Current\Bin\MSBuild.exe' | Select-Object -First 1
 if (-not $msbuild) { throw 'Visual Studio MSBuild was not found. Install the .NET desktop development workload.' }
 
+# CLI SDK selection starts at the working directory. Server and tests need
+# the repository SDK, even when this script is invoked from visualstudio/.
+Push-Location $repo
+try {
 if (-not $SkipPublish) {
     Write-Host 'Publishing the shared EclipseUI language server...' -ForegroundColor Cyan
     dotnet publish (Join-Path $repo 'ide\EclipseUI.LanguageServer') -c $Configuration -o $serverOutput --nologo
@@ -35,12 +39,19 @@ if (-not $SkipTests) {
     if ($LASTEXITCODE -ne 0) { throw "Visual Studio shell tests failed ($LASTEXITCODE)." }
     & (Join-Path $here 'verify-server.ps1') -ServerPath (Join-Path $serverOutput 'EclipseUI.LanguageServer.dll')
 }
+}
+finally { Pop-Location }
 
 Write-Host 'Building the VSIX with Visual Studio MSBuild...' -ForegroundColor Cyan
 # Recreate the manifest too: older VSSDK targets can reuse a stale intermediate
 # manifest during an incremental SDK-style build, leaving the VSIX version unchanged.
-& $msbuild (Join-Path $here 'EclipseUI.VisualStudio.csproj') /restore /t:Rebuild "/p:Configuration=$Configuration" /p:DeployExtension=false /v:minimal /nologo
-if ($LASTEXITCODE -ne 0) { throw "VSIX build failed ($LASTEXITCODE)." }
+Push-Location $here
+try {
+    # Only the net472 VSIX shell uses the .NET 8 SDK from local global.json.
+    & $msbuild (Join-Path $here 'EclipseUI.VisualStudio.csproj') /restore /t:Rebuild "/p:Configuration=$Configuration" /p:DeployExtension=false /v:minimal /nologo
+    if ($LASTEXITCODE -ne 0) { throw "VSIX build failed ($LASTEXITCODE)." }
+}
+finally { Pop-Location }
 
 $vsix = Join-Path $here "bin\$Configuration\net472\EclipseUI.VisualStudio.vsix"
 if (-not (Test-Path -LiteralPath $vsix)) { throw "VSIX build produced no package at $vsix" }

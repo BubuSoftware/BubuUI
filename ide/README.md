@@ -23,7 +23,9 @@ Rider 走 lsp4ij、Visual Studio 走内置 LSP 客户端接**同一个** server�
 
 提交工作流到 GitHub 默认分支后，打开 **Actions → Package IDE plugins → Run workflow**，
 选择要构建的分支并运行。默认执行测试；仅在已验证测试时勾选 `skip_tests`。
-工作流自动准备 .NET SDK、Node.js 和 JDK 21，并在 Windows 上构建三个插件。
+工作流自动准备 .NET 11 / .NET 8 SDK、Node.js 和 JDK 21，并在 Windows 上构建三个插件。
+共享语言服务器使用 .NET 11；Visual Studio 的 `net472` 客户端单独使用 .NET 8 SDK，
+以兼容 Windows runner 的 Visual Studio 2022 MSBuild。
 
 成功后，在该次运行页面的 **Artifacts** 下载 `EclipseUI-IDE-<版本>`，
 其中包含 VS Code / Visual Studio 的 VSIX、Rider ZIP 和 `SHA256SUMS.txt`，保存 30 天。
@@ -32,7 +34,7 @@ Rider 走 lsp4ij、Visual Studio 走内置 LSP 客户端接**同一个** server�
 
 ### 本地运行
 
-在 Windows 上安装仓库 `global.json` 指定的 .NET 11 SDK、Node.js/npm、JDK 21–24
+在 Windows 上安装仓库 `global.json` 指定的 .NET 11 SDK、.NET 8.0.4xx SDK、Node.js/npm、JDK 21–24
 （推荐 21，设置 `JAVA_HOME`），以及 Visual Studio 2022 17.14+ / 2026 的
 “.NET 桌面开发”工作负载。首次构建需要联网下载 npm、NuGet、Gradle 和 Rider SDK 依赖。
 

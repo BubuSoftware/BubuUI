@@ -34,6 +34,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ide/visualstudio/build.ps1
 脚本发布共享服务器、构建元数据程序集、运行客户端测试、调用 Visual Studio
 MSBuild 生成 VSIX，最后打开 ZIP 检查必需文件、高亮语法一致性和宿主依赖隔离。
 需要安装 Visual Studio 的 .NET 桌面开发工作负载；VSSDK 构建工具由 NuGet 还原。
+另外需要 .NET 8.0.4xx SDK：本目录的 `global.json` 为 `net472` 客户端选择 .NET 8，
+以兼容 VS 2022 MSBuild。共享服务器发布和测试仍使用仓库根目录指定的 .NET 11 SDK。
 
 ```powershell
 # 只重建客户端（server/ 已由首次构建生成）
