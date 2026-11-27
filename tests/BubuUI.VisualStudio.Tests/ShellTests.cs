@@ -152,19 +152,22 @@ public sealed class ShellTests : IDisposable
     [InlineData("app/Directory.Build.props", true)]
     [InlineData("app/obj/project.assets.json", true)]
     [InlineData("app/project.assets.json", false)]
-    [InlineData("app/bin/Runtime.dll", false)]
+    [InlineData("app/bin/Runtime.dll", true)]
+    [InlineData("app/bin/Runtime.DLL", true)]
     [InlineData("app/readme.md", false)]
     public void Watcher_FiltersWorkspaceInputs(string relative, bool expected)
         => Assert.Equal(expected, WorkspaceFileWatcher.IsWatched(Path.Combine(_root, relative)));
 
-    [Fact]
-    public async Task Watcher_ReportsRealFileCreationAndBothSidesOfRename()
+    [Theory]
+    [InlineData(".cs")]
+    [InlineData(".dll")]
+    public async Task Watcher_ReportsRealFileCreationAndBothSidesOfRename(string extension)
     {
         var created = new TaskCompletionSource<JObject>(TaskCreationOptions.RunContinuationsAsynchronously);
         var renamed = new TaskCompletionSource<JObject>(TaskCreationOptions.RunContinuationsAsynchronously);
         var errors = new System.Collections.Concurrent.ConcurrentQueue<Exception>();
-        var original = Path.Combine(_root, "Original.cs");
-        var replacement = Path.Combine(_root, "Replacement.cs");
+        var original = Path.Combine(_root, "Original" + extension);
+        var replacement = Path.Combine(_root, "Replacement" + extension);
         using var watcher = new WorkspaceFileWatcher(_root, changes =>
         {
             var batch = changes["changes"]!.ToArray();

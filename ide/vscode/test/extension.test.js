@@ -102,7 +102,7 @@ assert.deepStrictEqual(
   '.bui and .bss documents are served');
 // L7：watcher 必须覆盖项目 Compilation 的全部输入（.bss 也在内）。
 const watchPatterns = client.clientOptions.synchronize.fileEvents.map((w) => w.pattern.pattern);
-for (const expected of ['**/*.cs', '**/*.bui', '**/*.bss', '**/*.csproj',
+for (const expected of ['**/*.cs', '**/*.bui', '**/*.bss', '**/*.csproj', '**/*.dll',
   '**/Directory.Build.props', '**/obj/project.assets.json']) {
   assert.ok(watchPatterns.includes(expected), `missing file watcher for ${expected}`);
 }

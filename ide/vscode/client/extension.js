@@ -31,13 +31,14 @@ function resolveServer(context) {
 }
 
 // L7（design/06 §6.9.3）：项目 Compilation 依赖 .cs / .bui / .bss / csproj / props /
-// assets.json，任何一项变化都要让 server 重建快照。vscode-languageclient 会把这些 watcher
+// assets.json / 引用 DLL，任何一项变化都要让 server 重建快照。vscode-languageclient 会把这些 watcher
 // 转成 workspace/didChangeWatchedFiles 通知（Rider 侧由 lsp4ij 配同一组 glob）。
 const WATCH_PATTERNS = [
   '**/*.cs',
   '**/*.bui',
   '**/*.bss',
   '**/*.csproj',
+  '**/*.dll',
   '**/Directory.Build.props',
   '**/obj/project.assets.json',
 ];

@@ -165,13 +165,16 @@ public sealed class ProjectWorkspace
         lock (_gate) return _buffers.TryGetValue(path, out text!);
     }
 
-    /// <summary>L7：watcher 变更。结构文件（csproj/props/assets）重求值；其余只丢快照。</summary>
+    /// <summary>L7：结构文件或引用 DLL 变更重求值；其余只丢快照。</summary>
     public void Invalidate(IEnumerable<string> paths)
     {
         var structural = false;
         foreach (var path in paths)
         {
             if (path.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase) ||
+                // Evaluation omits outputs that do not exist yet. A first build must
+                // refresh that reference list as well as the compilation snapshot.
+                path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ||
                 path.EndsWith("Directory.Build.props", StringComparison.OrdinalIgnoreCase) ||
                 path.EndsWith("project.assets.json", StringComparison.OrdinalIgnoreCase))
             {

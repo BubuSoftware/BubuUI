@@ -893,6 +893,7 @@ public class ProtocolTests
             "**/*.bui",
             "**/*.bss",
             "**/*.csproj",
+            "**/*.dll",
             "**/Directory.Build.props",
             "**/obj/project.assets.json",
         }, globs);

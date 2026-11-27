@@ -11,7 +11,7 @@ internal static class ServerLaunchSettings
 {
     internal static readonly string[] WatchPatterns =
     {
-        "**/*.cs", "**/*.bui", "**/*.bss", "**/*.csproj",
+        "**/*.cs", "**/*.bui", "**/*.bss", "**/*.csproj", "**/*.dll",
         "**/Directory.Build.props", "**/obj/project.assets.json",
     };
 

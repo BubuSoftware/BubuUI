@@ -200,7 +200,7 @@ check('watcher globs are identical in VS Code, Rider and the server', () => {
     assert(csBlock, 'cannot find WatcherGlobs in LanguageServerHost.cs');
     const csGlobs = [...csBlock[1].matchAll(/"([^"]+)"/g)].map(m => m[1]);
 
-    assert(vsGlobs.length === 6, 'expected 6 watcher globs, got ' + vsGlobs.length);
+    assert(vsGlobs.includes('**/*.dll'), 'missing watcher for rebuilt project references');
     assert(JSON.stringify(csGlobs) === JSON.stringify(vsGlobs),
         'server watcher globs drifted from the VS Code client: ' + JSON.stringify(csGlobs));
     has(hostCs, 'client/registerCapability');

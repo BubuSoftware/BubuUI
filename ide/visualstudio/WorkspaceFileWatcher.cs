@@ -58,6 +58,7 @@ internal sealed class WorkspaceFileWatcher : IDisposable
             || extension.Equals(".bui", StringComparison.OrdinalIgnoreCase)
             || extension.Equals(".bss", StringComparison.OrdinalIgnoreCase)
             || extension.Equals(".csproj", StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(".dll", StringComparison.OrdinalIgnoreCase)
             || Path.GetFileName(path).Equals("Directory.Build.props", StringComparison.OrdinalIgnoreCase)
             || (Path.GetFileName(path).Equals("project.assets.json", StringComparison.OrdinalIgnoreCase)
                 && string.Equals(Path.GetFileName(Path.GetDirectoryName(path)), "obj", StringComparison.OrdinalIgnoreCase));

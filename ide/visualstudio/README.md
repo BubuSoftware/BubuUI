@@ -4,6 +4,10 @@ Visual Studio 的 VSIX 客户端。`.bui` / `.bss` 复用仓库现有的
 `BubuUI.LanguageServer`、TextMate grammar 与 language configuration。
 模板分析和 C# 语义仍由共享服务器负责。
 
+0.2.1 修复先打开模板、后构建项目时引用缓存不更新的问题。依赖 DLL 创建、更新或删除后，
+插件会重新求值项目并刷新诊断，避免持续误报 `unknown tag`、组件插槽和 `Title` 等错误。
+已安装旧版时，安装新版 VSIX 并重启 VS；旧版可在构建完成后重启 VS 临时恢复。
+
 0.1.1 修复 VS 按属性名首字符查询时，扫描器将该位置误判为空白、导致 Ctrl+鼠标
 导航和悬停没有结果的问题。已安装 0.1.0 时，需要安装新版 VSIX 并重启 VS。
 同时修复组件参数声明在其他 `.bui` 的 `@code` 中时，定义坐标回映不到目标模板的问题。

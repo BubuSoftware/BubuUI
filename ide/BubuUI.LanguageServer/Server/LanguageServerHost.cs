@@ -229,6 +229,7 @@ public sealed class LanguageServerHost
         "**/*.bui",
         "**/*.bss",
         "**/*.csproj",
+        "**/*.dll",
         "**/Directory.Build.props",
         "**/obj/project.assets.json",
     };
