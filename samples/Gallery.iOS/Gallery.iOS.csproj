@@ -3,13 +3,13 @@
     <TargetFramework>net11.0-ios</TargetFramework>
     <SupportedOSPlatformVersion>15.0</SupportedOSPlatformVersion>
     <OutputType>Exe</OutputType>
-    <ApplicationId>org.eclipseui.gallery.ios</ApplicationId>
-    <ApplicationTitle>EclipseUI Gallery</ApplicationTitle>
+    <ApplicationId>org.bubuui.gallery.ios</ApplicationId>
+    <ApplicationTitle>BubuUI Gallery</ApplicationTitle>
     <ApplicationVersion>1</ApplicationVersion>
     <ApplicationDisplayVersion>0.1</ApplicationDisplayVersion>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Gallery/Gallery.csproj" />
-    <ProjectReference Include="../../src/EclipseUI.Platform.iOS/EclipseUI.Platform.iOS.csproj" />
+    <ProjectReference Include="../../src/BubuUI.Platform.iOS/BubuUI.Platform.iOS.csproj" />
   </ItemGroup>
 </Project>

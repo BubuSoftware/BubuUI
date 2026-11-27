@@ -33,7 +33,7 @@
                     <key>UISceneConfigurationName</key>
                     <string>Default Configuration</string>
                     <key>UISceneDelegateClassName</key>
-                    <string>EclipseSceneDelegate</string>
+                    <string>BubuSceneDelegate</string>
                 </dict>
             </array>
         </dict>

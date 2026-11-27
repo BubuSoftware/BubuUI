@@ -35,7 +35,7 @@ jobs:
           sudo cmake --install "$RUNNER_TEMP/sdl-build"
           sudo ldconfig
       - name: Native window, GPU presentation, UTF-8 input and fonts
-        run: xvfb-run -a dotnet test tests/EclipseUI.Platform.Linux.Tests --logger "trx;LogFileName=linux.trx"
+        run: xvfb-run -a dotnet test tests/BubuUI.Platform.Linux.Tests --logger "trx;LogFileName=linux.trx"
       - name: Gallery window and offscreen snapshot
         run: |
           dotnet publish samples/Gallery.Desktop -c Release -r linux-x64 --self-contained true -o out/linux-x64
@@ -46,5 +46,5 @@ jobs:
         with:
           name: linux-validation
           path: |
-            tests/EclipseUI.Platform.Linux.Tests/TestResults/*.trx
+            tests/BubuUI.Platform.Linux.Tests/TestResults/*.trx
             out/gallery-linux.png

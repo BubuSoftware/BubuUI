@@ -1,8 +1,0 @@
-@namespace EclipseUI.Themes.Fluent
-@using EclipseUI.Elements
-@template MenuItem
-
-<Grid>
-    <FluentMenuItemVisual Owner={Owner} />
-    <ItemsPresenter Owner={Owner} />
-</Grid>

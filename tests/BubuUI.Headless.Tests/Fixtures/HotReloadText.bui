@@ -1,0 +1,6 @@
+@namespace BubuUI.Headless.Tests
+@using BubuUI.Elements
+<TextBlock>{Message}</TextBlock>
+@code {
+    public string Message = "before";
+}

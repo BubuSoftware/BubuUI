@@ -1,9 +1,9 @@
 # 01 · 模板语法规范
 
-> **K35 修订（2026-11-13，已实现）：** `.ui` 生成类直接继承根标签类型，根描述当前实例。Window 独立于 Element；嵌入性由内容成员的 Element 类型检查决定。窗口保留标签及 Component 包装规则由 [design/21](../design/21-root-type-unification.md) 替代；以下历史章节按该修订解释，旧 API 兼容范围见该计划 §8。
+> **K35 修订（2026-11-13，已实现）：** `.bui` 生成类直接继承根标签类型，根描述当前实例。Window 独立于 Element；嵌入性由内容成员的 Element 类型检查决定。窗口保留标签及 Component 包装规则由 [design/21](../design/21-root-type-unification.md) 替代；以下历史章节按该修订解释，旧 API 兼容范围见该计划 §8。
 
 > 状态：v2 定稿（2026-10-29），对应 **v4 失效重算模型**。
-> 本文是 `.ui` 模板语言的**规范正本**，定义词法、句法、语义、字面量与诊断触发点。
+> 本文是 `.bui` 模板语言的**规范正本**，定义词法、句法、语义、字面量与诊断触发点。
 > 取代 [design/03](../design/03-template-engine.md) §3.1–§3.5 的规范地位；03 保留 v3 偏差台账（D1–D41）、
 > v4 台账（§3.5.4）与历史记录。
 >
@@ -20,7 +20,7 @@
 
 | 本文定义 | 本文不定义（去哪看） |
 |---|---|
-| `.ui` 词法、EBNF、元素/属性/文本/指令句法 | 控件如何声明标签、属性、事件、内容模型（design/14） |
+| `.bui` 词法、EBNF、元素/属性/文本/指令句法 | 控件如何声明标签、属性、事件、内容模型（design/14） |
 | 属性值形态、求值时机（Build/渲染/块刷新）、诊断触发点 | 组件失效、渲染队列、块刷新、双向绑定的运行时语义（spec/03） |
 | 表达式作用域、`@if`/`@foreach`/`Key` 的可见语义 | 布局、渲染、hit test（design/05） |
 | 字面量到 C# 的编译期转换 | 生成代码的精确文本与作用域（spec/02） |
@@ -63,12 +63,12 @@
 
 ### 1.1 一个文件 = 一个类 = 一个根元素
 
-- 一个 `.ui` 文件只包含一个文档：注释、空白、顶层 `@namespace`/`@using`/`@code` 指令节点与**恰好一个根元素**（§1.5）。
+- 一个 `.bui` 文件只包含一个文档：注释、空白、顶层 `@namespace`/`@using`/`@code` 指令节点与**恰好一个根元素**（§1.5）。
 - 文件名（去扩展名）必须是合法 C# 标识符，并作为生成类名；否则 `EUI013`。
-- code-behind **不是必需的**（spec/02 §2.7「第二组件来源」）：`.ui` 自己就是组件来源，
+- code-behind **不是必需的**（spec/02 §2.7「第二组件来源」）：`.bui` 自己就是组件来源，
   没有同名 `.cs`、也没有 `@code` 的纯展示组件合法。存在 code-behind 时必须是同名**顶层 `partial` 类**：
   嵌套 → `EUI015`；非 `partial` → `EUI011`。`EUI005`（缺少 code-behind）已随之**停用**。
-- 生成部分提供 `partial class {Name} : global::EclipseUI.Component`、
+- 生成部分提供 `partial class {Name} : global::BubuUI.Component`、
   `protected override Element Build()`，以及（模板含动态内容时的）`protected override void Render()`；
   code-behind 可以省略基类，或**原样重复** `: Component`
   （其余基类，包括 `Component` 的派生类，一律 `EUI045`，见 spec/02 §10.1）；
@@ -76,7 +76,7 @@
 - 根元素必须是元素标签（控件或组件标签）；根层出现文本或 `@if`/`@foreach` → `EUI006`；根元素数量不为 1 → `EUI012`。
 - **窗口模板（design/20，✅ P1 已实现（2026-11-13/D117））**：根元素标签为保留的 `Window`
   （保留模板根标签，无需 `@using` 可见）时，该文件是**窗口模板**：生成类派生
-  `global::EclipseUI.WindowComponent`（「根标签决定基类」，`[UiTemplateRoot]` 标记的组件型
+  `global::BubuUI.WindowComponent`（「根标签决定基类」，`[UiTemplateRoot]` 标记的组件型
   根类型；控件根不走派生语义，spec/03 §5.3）。标签属性 = `WindowComponent` 的 `[UiParameter]`
   面（`Title`/`Width`/`Height`/`Theme`/`MaxFramesPerSecond`/`AlwaysRender`/`CloseOnEscape`/
   `IdleSleepMilliseconds`；`Theme` 仅 `{表达式}` 形式）；内容必须是**恰好一个子元素**（0/多个/
@@ -105,7 +105,7 @@
 | 阶段 | 做什么 | 不做什么 |
 |---|---|---|
 | 编译期 | 词法/句法/语义分析、目录解析、字面量转换、生成 C# | 不执行用户程序集、不执行用户转换器、不反射运行时、不做依赖分析 |
-| 运行期 | 构造保留元素树、首次求值、失效队列、块刷新、重算动态表达式、属性引擎失效、布局与绘制 | 不解析 `.ui`、不做通用元素 diff、不按字符串查成员、不观察任何对象 |
+| 运行期 | 构造保留元素树、首次求值、失效队列、块刷新、重算动态表达式、属性引擎失效、布局与绘制 | 不解析 `.bui`、不做通用元素 diff、不按字符串查成员、不观察任何对象 |
 
 模板不是"字符串拼 UI"的外壳，而是编译单元：每个动态位置在编译期已知目标元素、目标属性与首次求值顺序；
 运行期按**组件渲染**重算，不按路径/信号订阅。
@@ -114,7 +114,7 @@
 
 以下决定已冻结，后续只能增量扩展，不得改义：
 
-1. **一个 `.ui` = 一个类 = 一个根元素**；文件名即类名；code-behind 是唯一状态载体。
+1. **一个 `.bui` = 一个类 = 一个根元素**；文件名即类名；code-behind 是唯一状态载体。
    **K23 ④ 修订（✅ S6 已实现（2026-11-08））**：状态载体扩为同名 `.cs` partial 与模板内 `@code` 成员，
    二者合并进同一个 partial 类；根元素仍恰好一个。见 §1.5 / D86。
 2. **模板作者只写普通类型**：字段/自动属性/普通类；不要求 `[UiState]`、`Signal<T>`、INPC/INCC；
@@ -151,9 +151,9 @@
 | 语法 | 口径 | 决策 | 偏差（已关闭） |
 |---|---|---|---|
 | `@namespace Dotted.Name` | **必填**，只能一次、只能在顶层；生成文件的命名空间**只由它决定**，不再跟随 code-behind 或 `RootNamespace` 隐式推导。缺失 → `EUI055`；与同名 code-behind 的命名空间不一致 → `EUI056`（都是 Error，短路产物）。**没有保留值**：`global` 只是普通名字，处于全局命名空间的 code-behind 无法匹配任何声明，按 `EUI056` 报告并提示把它搬进命名空间。分号 / 缺值 / 非法名 / 重复 / 非顶层 → `EUI100` | 2026-11-11 拍板 | — |
-| `@using Ns` | 指令，多条、位置不限；生成文件保留普通 `using Ns;`；标签只在导入命名空间内解析，**内置控件（`EclipseUI.Elements`）无豁免**；未导入 → `EUI001` + 缺失 `@using` 建议。**例外（K33，2026-11-11）**：`@namespace` 声明的命名空间及其外层链**隐式可见**，不需要 `@using`，且优先于 `@using`（内层命中即独占，不报 `EUI016`） | K22 + K33 | D85 ✅ / D111 ✅ |
+| `@using Ns` | 指令，多条、位置不限；生成文件保留普通 `using Ns;`；标签只在导入命名空间内解析，**内置控件（`BubuUI.Elements`）无豁免**；未导入 → `EUI001` + 缺失 `@using` 建议。**例外（K33，2026-11-11）**：`@namespace` 声明的命名空间及其外层链**隐式可见**，不需要 `@using`，且优先于 `@using`（内层命中即独占，不报 `EUI016`） | K22 + K33 | D85 ✅ / D111 ✅ |
 | `@using Alias = Ns.Type` | 别名（K31）：生成 `using Alias = global::Ns.Type;` 供 `@code`/表达式使用；**同时**让 `<Alias/>` 在本模板内解析为该类型，且优先于目录 tag。目标须是目录里的已知元素/组件，否则 `EUI048`。别名**不进**命名空间可见性集合 | K31 | — |
-| `@code { ... }` | 顶层类成员（字段/属性/方法），可多个块、位置不限、书写顺序不影响可见性；与同名 `.cs` partial **并存**，两者皆可省略（`EUI005` 已停用，spec/02 §2.7）。**K34（D112，2026-11-11）**：无同名 `.cs` 的纯 `.ui` 组件，其 `@code` 里的 `[UiParameter]`/`[UiSlot]`/`[UiContent]` 由目录**语法级提取**为对外表面（`.ui` 不依赖 `.cs` 也能声明参数/插槽/内容）；有同名 `.cs` 时这些特性仍只在本模板内可见 → `EUI057`（Warning） | K21 + K23 ④ + K34 | D86 ✅ / D112 ✅ |
+| `@code { ... }` | 顶层类成员（字段/属性/方法），可多个块、位置不限、书写顺序不影响可见性；与同名 `.cs` partial **并存**，两者皆可省略（`EUI005` 已停用，spec/02 §2.7）。**K34（D112，2026-11-11）**：无同名 `.cs` 的纯 `.bui` 组件，其 `@code` 里的 `[UiParameter]`/`[UiSlot]`/`[UiContent]` 由目录**语法级提取**为对外表面（`.bui` 不依赖 `.cs` 也能声明参数/插槽/内容）；有同名 `.cs` 时这些特性仍只在本模板内可见 → `EUI057`（Warning） | K21 + K23 ④ + K34 | D86 ✅ / D112 ✅ |
 | `else` / `else if` | **不带 `@`**，紧接前一分支 `}`；生成侧为多分支 `ConditionalBlock` | K23 ③ | D87 ✅ |
 | `@switch (...) { case ...: break; default: ... break; }` | 每个 `case`/`default` 独立分支（无贯穿）；`break;` 必须单独成行；空 section 必须显式写 `break;`（K30）；生成侧 `SwitchBlock<T>` | K23 ③ + K29/K30 | D87 ✅ |
 | `@* ... *@` | 编译器丢弃的注释；未闭合报 `EUI100`；`<!-- -->` **永久保留为等价合法注释**（K26，双注释并存、不设弃用期），两种注释未闭合统一 `EUI100` | K23 / K26 | D88 ✅ |
@@ -183,7 +183,7 @@ K29 `@switch` 分支体为完整内容模板、case 标签须编译期常量（`
 
 ### 2.1 源文件
 
-- 扩展名 `.ui`，以 `AdditionalFiles` 进入编译；编码按 Roslyn 文本读取（UTF-8）。
+- 扩展名 `.bui`，以 `AdditionalFiles` 进入编译；编码按 Roslyn 文本读取（UTF-8）。
 - 文件名（去扩展名）必须是合法 C# 标识符；否则 `EUI013`。
 - 换行支持 LF/CRLF；`#line` 使用 1 基行/列坐标（span 形态见 spec/02 §2.4）。
 - 一个文件只包含一个文档；文件级只有注释、空白、根层 `@namespace`/`@using`/`@code` 指令和一个根元素（§3.1/§3.2）。
@@ -269,7 +269,7 @@ bind-attr  ::= "@bind-" attr-base
 - 表达式必须是 **C# 表达式**，不是语句/声明。需要复杂逻辑时调用 code-behind 方法或在 code-behind 里准备好值。
 - **不提供插值格式说明符**（语言规则，不是扫描限制）：文本里的 `{price:F2}` 就是表达式 `price:F2`，
   不是合法 C#。要格式化就写 `{price.ToString("F2")}`。
-- 空表达式 `{}`、不完整表达式不在词法层报错，交给生成代码的 C# 编译错误（经 `#line` 指回 `.ui`）。
+- 空表达式 `{}`、不完整表达式不在词法层报错，交给生成代码的 C# 编译错误（经 `#line` 指回 `.bui`）。
 - 文本/指令里的表达式不做 trim；C# 自行忽略外围空白。
 - 表达式**原样输出**：生成器不做 `Signal<T>` 裸名重写、不做语义模型改写；
   需要 `.Value` 时由作者显式写（spec/03 §4.6）。
@@ -452,11 +452,11 @@ string        ::= '"' raw-char* '"'
 | Origin | 普通属性 | `@bind-P` |
 |---|---|---|
 | 控件（`Element` 派生） | 保留属性（`Key`/`Ref`/`Class`/`Style`）→ 事件（`On{Event}`）→ 属性表 → 附加属性（G4）→ 未知 | 目标必须是属性表内的 public 可写属性 + `{Name}Property`；事件/保留/附加属性/只读/无 `{P}Property`/`[UiIgnore]` → `EUI040`（名字存在时带原因） |
-| 组件（`Component` 派生，或由同名 `.ui` 声明） | 保留属性 → 参数表（委托参数就是事件，不做 `On*` 推断）→ 未知 | 目标必须是 `[UiParameter]` 且 public setter 的参数，并且组件声明了 `{P}Changed`（`Action<T>`）参数；否则 `EUI040`（非参数的公开成员同样带原因） |
+| 组件（`Component` 派生，或由同名 `.bui` 声明） | 保留属性 → 参数表（委托参数就是事件，不做 `On*` 推断）→ 未知 | 目标必须是 `[UiParameter]` 且 public setter 的参数，并且组件声明了 `{P}Changed`（`Action<T>`）参数；否则 `EUI040`（非参数的公开成员同样带原因） |
 
 - **组件的两种来源**（spec/02 §2.7）：code-behind 基类链命中 `Component`，或者存在**同名且同命名空间**
-  的 `.ui` 声明。后者允许 `.ui` 单独成组件、无需 code-behind；显式派生了其他类的类型仍按继承链判定。
-  **K34（D112）**：纯 `.ui` 组件的参数表来自 `@code` 模板特性的语法级提取（`[UiParameter]`/
+  的 `.bui` 声明。后者允许 `.bui` 单独成组件、无需 code-behind；显式派生了其他类的类型仍按继承链判定。
+  **K34（D112）**：纯 `.bui` 组件的参数表来自 `@code` 模板特性的语法级提取（`[UiParameter]`/
   `[UiSlot]`/`[UiContent]`），与 `.cs` 来源的组件同表面、同诊断（`EUI040`/`EUI002` 口径一致）；
   有同名 `.cs` 时仍以 `.cs` 符号为准，`@code` 特性只对本模板可见（`EUI057` 警告）。
 - 标签必须解析到目录中的已知控件/组件；未知 → `EUI001`；冲突 → `EUI016`；
@@ -725,7 +725,7 @@ string        ::= '"' raw-char* '"'
   `public static readonly RoutedEvent` 字段（design/14 §14.4.3）。
   - 只接受 `{expression}`；字面量或 `:bind`/`@bind-` → `EUI004`/`EUI040`。
   - 处理器必须能转换为 `Action` 或 `Action<RoutedEventArgs>`；签名不匹配在**可静态判定**时由
-    分析器报 `EUI024`（Error，✅ 2026-11-08/D82，落 `.ui` 属性值并短路生成输出），无法静态判定时
+    分析器报 `EUI024`（Error，✅ 2026-11-08/D82，落 `.bui` 属性值并短路生成输出），无法静态判定时
     静默、交回生成代码经 `#line` 由 C# 报错（spec/02 §2.4 规则 8 不重复报告）；判定口径见
     spec/02 §4.6.1 规则 7。两个委托类型的选择仍按表达式**语法形态**判定——tokenizer 切片
     （2026-11-05）用 Roslyn 解析替代正则。
@@ -750,7 +750,7 @@ string        ::= '"' raw-char* '"'
 
 ### 4.14 组件
 
-组件是 `.ui` + code-behind 生成的 `Component` 子类；标签规则与控件相同（design/14 §14.4.1），
+组件是 `.bui` + code-behind 生成的 `Component` 子类；标签规则与控件相同（design/14 §14.4.1），
 但属性来自参数而非 StyledProperty。
 
 - 参数必须标 `[UiParameter]`，`public`、有 `public` setter（`init` 不允许）；
@@ -864,7 +864,7 @@ new cmp0
 | 模板标签别名 | 本文件的标签解析 | `<Btn/>` 解析为该类型，**优先于目录 tag**。本框架的扩展：Blazor 的别名不改变标签名 |
 
 ```xml
-@using EclipseUI.Elements
+@using BubuUI.Elements
 @using Btn = ThirdParty.Controls.Button
 
 <StackPanel>
@@ -941,7 +941,7 @@ new cmp0
 ### 6.1 责任与 span
 
 - 每个诊断带稳定代码、精确 span、英文消息；文档/编辑器可本地化消息，代码不变。
-- 标签诊断指向标签名；属性诊断指向属性名/值；表达式错误由 C# 编译通过 `#line` 指回 `.ui` 行。
+- 标签诊断指向标签名；属性诊断指向属性名/值；表达式错误由 C# 编译通过 `#line` 指回 `.bui` 行。
 - 未知名给最近建议（Levenshtein ≤ 3，最多 3 个）；建议不改变解析结果。
 - 模板侧错误（用错）由分析器报；元数据侧错误（控件声明错）在源项目声明处报 `EUI026`，
   引用程序集只能在用点上暴露（`EUI019`/`EUI020`/`EUI021`）。
@@ -999,8 +999,8 @@ new cmp0
 | `EUI046` | 旧绑定语法 `P:bind` / `P:value` 已移除（K27），提示改写为 `@bind-P` / `P=` | 属性名 | Error | ✅ S6（2026-11-08） |
 | `EUI047` | `@switch` 的 case 标签不是编译期常量（K29 ②）：语法层拒绝非常量形态，常量性由探针判定 | case 标签 | Error | ✅ S6（2026-11-08） |
 | `EUI048` | `@using` 别名不合法（K31）：目标不是目录里的已知元素/组件、同一模板重复声明、与已导入命名空间同名 | 指令 / 目标类型名 | Error | ✅ K31（2026-11-09） |
-| `EUI057` | `@code` 里声明 `[UiParameter]`/`[UiSlot]`/`[UiContent]` **且存在同名 `.cs`**：目录符号扫描只看 `.cs` 半边，这些特性到不了其他模板（spec/02 §2.7）；要对外暴露就把声明挪进 `.cs`。**无 `.cs` 的纯 `.ui` 组件不报**——`@code` 特性由目录语法级提取为对外表面（K34/D112） | `@code` 特性名 | Warning | ✅ 2026-11-11（K34 收窄） |
-| `EUI060` | 模板根类型被误用为组件（design/20）：窗口模板（根 = `<Window>` 的 `.ui`）或任何 `[UiTemplateRoot]` 标记类型的子类，被其他模板当标签使用（`<MainWindow/>`，目录 HiddenTag 通道给定向原因）；以及 `<Window>` 出现在非根位置（保留模板根标签只能作模板的单根元素） | 标签名 | Error | ✅ P1（2026-11-13，D117） |
+| `EUI057` | `@code` 里声明 `[UiParameter]`/`[UiSlot]`/`[UiContent]` **且存在同名 `.cs`**：目录符号扫描只看 `.cs` 半边，这些特性到不了其他模板（spec/02 §2.7）；要对外暴露就把声明挪进 `.cs`。**无 `.cs` 的纯 `.bui` 组件不报**——`@code` 特性由目录语法级提取为对外表面（K34/D112） | `@code` 特性名 | Warning | ✅ 2026-11-11（K34 收窄） |
+| `EUI060` | 模板根类型被误用为组件（design/20）：窗口模板（根 = `<Window>` 的 `.bui`）或任何 `[UiTemplateRoot]` 标记类型的子类，被其他模板当标签使用（`<MainWindow/>`，目录 HiddenTag 通道给定向原因）；以及 `<Window>` 出现在非根位置（保留模板根标签只能作模板的单根元素） | 标签名 | Error | ✅ P1（2026-11-13，D117） |
 | `EUI061` | 窗口模板的内容不是恰好一个子元素（design/20）：0 个/多个子元素、文本、`@if`/`@foreach`/`@switch` 块、`<Slot>`/`<ContentSlot>`、块内指令——窗口内容没有「多子元素自动包裹」语义（与模板恰一根元素同一哲学） | `<Window>` 标签 / 内容位置 | Error | ✅ P1（2026-11-13，D117） |
 | `EUI062` | `<Window>` 根上的非法属性形态（design/20）：`Class`/`Style`/`Key`/`Ref`/附加属性（`Owner.Prop`）/`@bind-`——窗口没有自己的根元素可承接组件根的元素级属性语义；窗口属性 = `WindowComponent` 的 `[UiParameter]` 面，未知属性仍走 `EUI002`（带建议）、无转换器的字面量走 `EUI023` | 属性名 | Error | ✅ P1（2026-11-13，D117） |
 | `EUI063` | code-behind 基类与窗口模板不一致（design/20，双向）：窗口文件的 code-behind 声明了非 `WindowComponent` 基类（生成侧发 `: WindowComponent`，省略基类合法）；或普通模板的 code-behind 派生 `WindowComponent`（生成侧发 `: Component`，partial 合并会撞 CS0263） | code-behind 基类声明 | Error | ✅ P1（2026-11-13，D117） |
@@ -1081,7 +1081,7 @@ v3 代码差距见 design/03 §3.5.3（D1–D41，历史）；v4 差距见 desig
 
 ## 附录 A：完整示例
 
-### A.1 `TodoList.ui`
+### A.1 `TodoList.bui`
 
 ```xml
 <StackPanel Gap="8">
@@ -1120,7 +1120,7 @@ public sealed class TodoItem
 
 ```csharp
 using System.Collections.Generic;
-using EclipseUI;
+using BubuUI;
 
 namespace Examples;
 

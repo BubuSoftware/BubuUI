@@ -1,0 +1,9 @@
+@namespace BubuUI.Headless.Tests.Fixtures
+@using BubuUI.Elements
+@template Button
+
+<Border Class="chrome" Background={Owner.Background} BorderThickness="0">
+    <ContentPresenter Part="PART_ContentPresenter" Content={Owner.Content}
+                      Label={Owner.Label} Foreground={Owner.Foreground}
+                      HorizontalPadding="12" VerticalPadding="5" />
+</Border>

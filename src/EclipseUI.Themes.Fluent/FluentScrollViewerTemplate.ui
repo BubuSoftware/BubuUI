@@ -1,8 +1,0 @@
-@namespace EclipseUI.Themes.Fluent
-@using EclipseUI.Elements
-@template ScrollViewer
-
-<FluentOverlayPanel>
-    <ItemsPresenter Owner={Owner} />
-    <FluentScrollBarVisual Owner={Owner} />
-</FluentOverlayPanel>

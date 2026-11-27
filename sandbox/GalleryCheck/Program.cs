@@ -1,15 +1,15 @@
 using Path = System.IO.Path;
 using System.Collections.Generic;
-using EclipseUI;
-using EclipseUI.Elements;
-using EclipseUI.Platform.Windows;
-using EclipseUI.Rendering;
-using EclipseUI.Rendering.Vello;
-using EclipseUI.Text.Shaping;
-using EclipseUI.Themes.Fluent;
+using BubuUI;
+using BubuUI.Elements;
+using BubuUI.Platform.Windows;
+using BubuUI.Rendering;
+using BubuUI.Rendering.Vello;
+using BubuUI.Text.Shaping;
+using BubuUI.Themes.Fluent;
 using Gallery;
 
-// EclipseUI 画廊验证壳（原 GalleryApp 的验证职责，2026-11-09 从 samples 移到 sandbox）：
+// BubuUI 画廊验证壳（原 GalleryApp 的验证职责，2026-11-09 从 samples 移到 sandbox）：
 //   --selfcheck       Fluent 控件真实消息自动化（消息 → InputRouter → 信号 → 重建 全链路）
 //   --frames N        限帧运行并打印帧平均/p95
 //   damage 统计        full/partial 帧数与覆盖率（avg/max），无需开关
@@ -91,7 +91,7 @@ using (galleryRoot)
     if (useCpu || !OperatingSystem.IsWindows())
         return RunCpu();
 
-    using var window = new Win32Window("EclipseUI · Gallery Check", width, height);
+    using var window = new Win32Window("BubuUI · Gallery Check", width, height);
     using var presenter = VelloSurfaceBackend.Create(
         window.Handle,
         Math.Max(window.ClientWidth, 1),

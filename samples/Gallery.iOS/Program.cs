@@ -1,6 +1,6 @@
-using EclipseUI;
-using EclipseUI.Platform.iOS;
-using EclipseUI.Themes.Fluent;
+using BubuUI;
+using BubuUI.Platform.iOS;
+using BubuUI.Themes.Fluent;
 using Foundation;
 using UIKit;
 
@@ -12,7 +12,7 @@ internal static class Program
 }
 
 [Register("AppDelegate")]
-public sealed class AppDelegate : EclipseAppDelegate
+public sealed class AppDelegate : BubuAppDelegate
 {
     protected override AppBuilder CreateAppBuilder()
         => AppBuilder.Configure<GalleryApp>().UseiOS().UseFluentTheme();

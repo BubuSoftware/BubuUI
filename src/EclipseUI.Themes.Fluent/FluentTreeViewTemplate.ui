@@ -1,5 +1,0 @@
-@namespace EclipseUI.Themes.Fluent
-@using EclipseUI.Elements
-@template TreeView
-
-<Grid><ItemsPresenter Owner={Owner} /></Grid>

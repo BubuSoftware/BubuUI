@@ -3,7 +3,7 @@
 > 状态：**已执行，结论 Go（有条件）** · 时间盒：2–3 周 · 关联计划：[09 开发计划](./09-development-plan.md#97-下一任务详细计划g1-渲染-gate)\n> 结果报告：[render-gate-2026-11.md](./reports/render-gate-2026-11.md)
 >
 > 本文是 G1 的可执行工作单；每完成一项就更新状态与产出链接。G1 的唯一目的是回答：
-> **Vello 能不能作为 EclipseUI 的唯一渲染后端？**
+> **Vello 能不能作为 BubuUI 的唯一渲染后端？**
 
 ## 10.1 目标与非目标
 
@@ -31,13 +31,13 @@
 |---|---|---:|---|---|
 | G1-01 | 提交当前基线，创建 `spike/vello-render` 分支 | 0.5d | DONE | `f801f4f` / `spike/vello-render` |
 | G1-02 | 建 `samples/RenderSpike`，确认 VelloSharp/FFI 原生库加载 | 1d | DONE | `out/basic.png`（256×256，中心 `#DC1E1E`） |
-| G1-03 | 定义 `DisplayList` / `DrawCommand` / `IRenderBackend` | 0.5d | DONE | `src/EclipseUI.Rendering/`（含 `Brush` / `PathGeometry` / `RenderTarget` / `PngEncoder`） |
-| G1-04 | 后端：clear、fill rect、clip、transform | 1d | DONE | `src/EclipseUI.Rendering.Vello/`，CPU + GPU 离屏 |
+| G1-03 | 定义 `DisplayList` / `DrawCommand` / `IRenderBackend` | 0.5d | DONE | `src/BubuUI.Rendering/`（含 `Brush` / `PathGeometry` / `RenderTarget` / `PngEncoder`） |
+| G1-04 | 后端：clear、fill rect、clip、transform | 1d | DONE | `src/BubuUI.Rendering.Vello/`，CPU + GPU 离屏 |
 | G1-05 | 圆角矩形、描边、虚线、路径 | 1d | DONE | `PrimitiveTests` / `ScopeTests` |
 | G1-06 | 接入 `HarfBuzzTextShaper`，渲染 glyph run | 1.5d | DONE | `TextTests`，`DrawGlyphs` 复用 `ShapedBuffer` |
 | G1-07 | 功能矩阵：阴影/渐变/blend/图像/emoji/fallback | 1.5d | DONE | `FeatureMatrixTests` + `out/features.png`，8/9 通过 |
 | G1-08 | 性能 harness：100/1k/10k 命令、200 元素场景 | 0.5d | DONE | `bench` 模式，报告 §5 |
-| G1-09 | 像素探针 + 确定性测试 | 1d | DONE | `tests/EclipseUI.Rendering.Tests/`（34 个测试） |
+| G1-09 | 像素探针 + 确定性测试 | 1d | DONE | `tests/BubuUI.Rendering.Tests/`（34 个测试） |
 | G1-10 | GPU 后端或 CPU readback 呈现 | 1.5d | DONE（离屏） | `useCpu: false` 渲染到 CPU 缓冲；surface 上屏移交 G2 |
 | G1-11 | 3D texture → Vello image 混排（stretch） | 1d | DONE（替身） | `DrawImage` + 旋转/缩放，等价于 readback 纹理合成 |
 | G1-12 | 报告、go/no-go、后续 backlog | 1d | DONE | `design/reports/render-gate-2026-11.md` |
@@ -48,7 +48,7 @@
 ## 10.3 契约 v0（已冻结项不再改）
 
 ```csharp
-namespace EclipseUI.Rendering;
+namespace BubuUI.Rendering;
 
 public readonly record struct Color(byte R, byte G, byte B, byte A = 255);
 
@@ -105,7 +105,7 @@ public interface IRenderBackend : IDisposable
 
 约束：
 
-- 契约层只依赖 `EclipseUI.Runtime` 的几何/文本类型，不依赖 VelloSharp。
+- 契约层只依赖 `BubuUI.Runtime` 的几何/文本类型，不依赖 VelloSharp。
 - 先支持 `RenderTarget.CpuBuffer`（RGBA）；GPU surface 作为第二种 target 后加。
 - glyph run 直接复用 `ShapedBuffer`，不在 spike 阶段另造文本结构。
 
@@ -192,7 +192,7 @@ CPU 路径固定开销约 60 ms，仅用于 CI/离线导出，不作为逐帧路
 
 ### 2026-10-28
 
-- 完成：契约层（`EclipseUI.Rendering`）、Vello 后端（`EclipseUI.Rendering.Vello`，CPU + GPU 离屏）、
+- 完成：契约层（`BubuUI.Rendering`）、Vello 后端（`BubuUI.Rendering.Vello`，CPU + GPU 离屏）、
   `samples/RenderSpike`（basic/demo/features + bench）、34 个渲染测试、功能矩阵与性能基线。
 - 阻塞：无。
 - 数据/截图：`out/basic.png`、`out/demo.png`、`out/features.png`；报告 §5 性能表。

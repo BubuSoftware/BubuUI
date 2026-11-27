@@ -1,0 +1,8 @@
+@namespace BubuUI.Headless.Tests
+@using BubuUI.Elements
+
+<Button OnClick={() => Clicks++}>reload</Button>
+
+@code {
+    public int Clicks;
+}

@@ -14,12 +14,12 @@ TextBlock 修复之后进一步复现了按钮、复选框、单选框、开关�
 
 ## 验证
 
-`dotnet build EclipseUI.slnx --no-restore --nologo -v quiet`：0 警告、0 错误。
+`dotnet build BubuUI.slnx --no-restore --nologo -v quiet`：0 警告、0 错误。
 
 ```powershell
-dotnet test tests/EclipseUI.Rendering.Tests --no-build --no-restore -- xUnit.ParallelizeTestCollections=false xUnit.MaxParallelThreads=1
-dotnet test tests/EclipseUI.Headless.Tests --no-build --no-restore -- xUnit.ParallelizeTestCollections=false xUnit.MaxParallelThreads=1
-dotnet test tests/EclipseUI.Platform.Linux.Tests --no-build --no-restore -- xUnit.ParallelizeTestCollections=false xUnit.MaxParallelThreads=1
+dotnet test tests/BubuUI.Rendering.Tests --no-build --no-restore -- xUnit.ParallelizeTestCollections=false xUnit.MaxParallelThreads=1
+dotnet test tests/BubuUI.Headless.Tests --no-build --no-restore -- xUnit.ParallelizeTestCollections=false xUnit.MaxParallelThreads=1
+dotnet test tests/BubuUI.Platform.Linux.Tests --no-build --no-restore -- xUnit.ParallelizeTestCollections=false xUnit.MaxParallelThreads=1
 dotnet run --project sandbox/ControlNativeCheck --no-build --no-restore
 dotnet run --project sandbox/FluentCheck --no-build --no-restore -- out/control-overflow
 ```

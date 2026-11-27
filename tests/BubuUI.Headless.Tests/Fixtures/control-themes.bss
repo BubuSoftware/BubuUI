@@ -1,0 +1,19 @@
+@using BubuUI.Elements
+@using BubuUI.Headless.Tests.Fixtures
+
+@theme TestButton for Button {
+    Template: template(LooklessButton);
+    Background: #112233;
+    Foreground: #eeeeee;
+    &:hover { Background: #445566; }
+    &:pressed { Background: #778899; }
+    &:disabled { Background: #999999; }
+}
+
+@theme Alternative for Button {
+    Template: template(AlternativeButton);
+    Background: #abcdef;
+}
+
+Button.template-test { Theme: resource(TestButton); }
+Button.template-test:hover /template/ Border.chrome { Background: #ff0000; }

@@ -1,0 +1,78 @@
+{
+  "BubuUI component template": {
+    "prefix": "uisurface",
+    "body": [
+      "@namespace ${1:Gallery}",
+      "@using BubuUI.Elements",
+      "",
+      "<${2:StackPanel} Gap=\"8\">",
+      "    ${0}",
+      "</${2:StackPanel}>",
+      "",
+      "@code {",
+      "    ",
+      "}"
+    ],
+    "description": ".bui 骨架：@namespace（必填）+ @using + 单根元素 + @code 成员块"
+  },
+  "Component template (code-behind)": {
+    "prefix": "uicomponent",
+    "body": [
+      "@namespace ${1:Gallery}",
+      "@using BubuUI.Elements",
+      "",
+      "<${2:StackPanel}>",
+      "    ${0}",
+      "</${2:StackPanel}>",
+      "",
+      "@code {",
+      "    [UiParameter] public string ${3:Title} { get; set; } = \"\";",
+      "}"
+    ],
+    "description": "带 [UiParameter] 的组件模板（可被其它模板当标签使用）"
+  },
+  "@namespace": {
+    "prefix": "uns",
+    "body": ["@namespace ${1:Gallery}"],
+    "description": "命名空间声明（必填；必须与同名 code-behind 一致）"
+  },
+  "@if": {
+    "prefix": "uif",
+    "body": ["@if (${1:condition}) {", "    ${0}", "}"],
+    "description": "条件块"
+  },
+  "@if / else": {
+    "prefix": "uifelse",
+    "body": ["@if (${1:condition}) {", "    ${2}", "}", "else {", "    ${0}", "}"],
+    "description": "条件块 + else（else 不带 @）"
+  },
+  "@foreach": {
+    "prefix": "uforeach",
+    "body": ["@foreach (var ${1:item} in ${2:Items}) {", "    <${3:TextBlock}>${0}</${3:TextBlock}>", "}"],
+    "description": "集合块（Key={expr} 写在条目根元素上）"
+  },
+  "@switch": {
+    "prefix": "uswitch",
+    "body": [
+      "@switch (${1:value}) {",
+      "    case ${2:1}:",
+      "        ${3}",
+      "        break;",
+      "    default:",
+      "        ${0}",
+      "        break;",
+      "}"
+    ],
+    "description": "多分支块（每段以 break; 结束）"
+  },
+  "two-way binding": {
+    "prefix": "ubind",
+    "body": ["@bind-${1:Checked}={${2:field}}"],
+    "description": "双向绑定（源必须是可写左值）"
+  },
+  "event handler": {
+    "prefix": "uon",
+    "body": ["On${1:Click}={() => ${2:count++}}"],
+    "description": "控件事件处理器（处理器末尾自动 Invalidate）"
+  }
+}

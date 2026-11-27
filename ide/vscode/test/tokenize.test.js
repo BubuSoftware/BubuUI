@@ -21,15 +21,15 @@ const onigLib = oniguruma.loadWASM(wasm).then(() => ({
 }));
 
 function grammarPath(scope) {
-  return scope === 'source.eclipseui'
-    ? path.join(root, 'syntaxes', 'eclipseui.tmLanguage.json')
-    : path.join(root, 'syntaxes', 'eustyle.tmLanguage.json');
+  return scope === 'source.bubuui'
+    ? path.join(root, 'syntaxes', 'bubuui.tmLanguage.json')
+    : path.join(root, 'syntaxes', 'bss.tmLanguage.json');
 }
 
 const registry = new vsctm.Registry({
   onigLib,
   loadGrammar: async (scopeName) => {
-    if (scopeName !== 'source.eclipseui' && scopeName !== 'source.eustyle') return null;
+    if (scopeName !== 'source.bubuui' && scopeName !== 'source.bss') return null;
     const file = grammarPath(scopeName);
     return vsctm.parseRawGrammar(fs.readFileSync(file, 'utf8'), file);
   },
@@ -90,7 +90,7 @@ function expectNotAt(doc, line, needle, delta, unexpected, hint) {
   }
 }
 
-const template = `@using EclipseUI.Elements
+const template = `@using BubuUI.Elements
 <!-- html comment -->
 @* razor comment *@
 <StackPanel Gap="8" Class="card">
@@ -126,7 +126,7 @@ $accent: theme(#ffffff, #000000);
 `;
 
 (async () => {
-  const doc = await tokenize('source.eclipseui', template);
+  const doc = await tokenize('source.bubuui', template);
 
   if (dump) {
     doc.lines.forEach((tokens, index) => {
@@ -139,44 +139,44 @@ $accent: theme(#ffffff, #000000);
 
   // spec/02 §2.2：@namespace 必填声明——指令名与点分命名空间都要有 scope，
   // 否则新语法在编辑器里是纯文本（grammar 写漏不会报错，只能靠断言发现）。
-  const namespaceLine = await tokenize('source.eclipseui', '@namespace Gallery.Samples');
-  expectAt(namespaceLine, 0, '@namespace', 1, 'keyword.control.namespace.eclipseui', '@namespace');
-  expectAt(namespaceLine, 0, 'Gallery.Samples', 2, 'entity.name.namespace.eclipseui', 'namespace value');
+  const namespaceLine = await tokenize('source.bubuui', '@namespace Gallery.Samples');
+  expectAt(namespaceLine, 0, '@namespace', 1, 'keyword.control.namespace.bubuui', '@namespace');
+  expectAt(namespaceLine, 0, 'Gallery.Samples', 2, 'entity.name.namespace.bubuui', 'namespace value');
 
   // 指令与注释
-  expectAt(doc, 0, '@using', 1, 'keyword.control.import.eclipseui', '@using');
-  expectAt(doc, 0, 'EclipseUI.Elements', 2, 'entity.name.namespace.eclipseui', 'namespace');
-  expectAt(doc, 1, 'html comment', 0, 'comment.block.eclipseui', '<!-- -->');
-  expectAt(doc, 2, 'razor comment', 0, 'comment.block.eclipseui', '@* *@');
+  expectAt(doc, 0, '@using', 1, 'keyword.control.import.bubuui', '@using');
+  expectAt(doc, 0, 'BubuUI.Elements', 2, 'entity.name.namespace.bubuui', 'namespace');
+  expectAt(doc, 1, 'html comment', 0, 'comment.block.bubuui', '<!-- -->');
+  expectAt(doc, 2, 'razor comment', 0, 'comment.block.bubuui', '@* *@');
 
   // 标签 / 属性 / 属性字面量
-  expectAt(doc, 3, 'StackPanel', 0, 'entity.name.tag.eclipseui', 'tag name');
-  expectAt(doc, 3, 'Gap', 0, 'entity.other.attribute-name.eclipseui', 'attribute name');
-  expectAt(doc, 3, '"8"', 1, 'string.quoted.double.eclipseui', 'attribute literal');
+  expectAt(doc, 3, 'StackPanel', 0, 'entity.name.tag.bubuui', 'tag name');
+  expectAt(doc, 3, 'Gap', 0, 'entity.other.attribute-name.bubuui', 'attribute name');
+  expectAt(doc, 3, '"8"', 1, 'string.quoted.double.bubuui', 'attribute literal');
 
   // 文本插值与表达式边界
-  expectAt(doc, 4, '{count}', 0, 'punctuation.section.expression.begin.eclipseui', '{');
-  expectAt(doc, 4, '{count}', 2, 'meta.embedded.expression.eclipseui', 'count');
-  expectNotAt(doc, 4, '<TextBlock', 0, 'meta.embedded.expression.eclipseui', '</TextBlock> 不在表达式里');
+  expectAt(doc, 4, '{count}', 0, 'punctuation.section.expression.begin.bubuui', '{');
+  expectAt(doc, 4, '{count}', 2, 'meta.embedded.expression.bubuui', 'count');
+  expectNotAt(doc, 4, '<TextBlock', 0, 'meta.embedded.expression.bubuui', '</TextBlock> 不在表达式里');
 
   // 双向绑定（@bind- 前缀与属性名分开上色）
-  expectAt(doc, 5, '@bind-Checked', 1, 'keyword.control.binding.eclipseui', '@bind-');
-  expectAt(doc, 5, '@bind-Checked', 9, 'entity.other.attribute-name.eclipseui', 'bind target');
-  expectAt(doc, 5, 'Checked="true"', 10, 'string.quoted.double.eclipseui', 'bool literal');
+  expectAt(doc, 5, '@bind-Checked', 1, 'keyword.control.binding.bubuui', '@bind-');
+  expectAt(doc, 5, '@bind-Checked', 9, 'entity.other.attribute-name.bubuui', 'bind target');
+  expectAt(doc, 5, 'Checked="true"', 10, 'string.quoted.double.bubuui', 'bool literal');
 
   // 附加属性
-  expectAt(doc, 6, 'Grid.Row', 0, 'support.class.attached-owner.eclipseui', 'owner');
-  expectAt(doc, 6, 'Grid.Row', 5, 'entity.other.attribute-name.eclipseui', 'attached name');
+  expectAt(doc, 6, 'Grid.Row', 0, 'support.class.attached-owner.bubuui', 'owner');
+  expectAt(doc, 6, 'Grid.Row', 5, 'entity.other.attribute-name.bubuui', 'attached name');
 
   // 条件块：@if 关键词、条件里的 C# 词法、else 续接
-  expectAt(doc, 8, '@if', 1, 'keyword.control.conditional.eclipseui', '@if');
+  expectAt(doc, 8, '@if', 1, 'keyword.control.conditional.bubuui', '@if');
   expectAt(doc, 8, 'count > 0', 8, 'constant.numeric.csharp', 'condition');
-  expectAt(doc, 9, 'visible', 0, 'source.eclipseui', 'block body is plain markup');
-  expectAt(doc, 10, 'else', 1, 'keyword.control.conditional.eclipseui', 'else');
+  expectAt(doc, 9, 'visible', 0, 'source.bubuui', 'block body is plain markup');
+  expectAt(doc, 10, 'else', 1, 'keyword.control.conditional.bubuui', 'else');
 
   // 集合块
-  expectAt(doc, 14, '@foreach', 1, 'keyword.control.loop.eclipseui', '@foreach');
-  expectAt(doc, 15, 'Key', 0, 'entity.other.attribute-name.eclipseui', 'Key');
+  expectAt(doc, 14, '@foreach', 1, 'keyword.control.loop.bubuui', '@foreach');
+  expectAt(doc, 15, 'Key', 0, 'entity.other.attribute-name.bubuui', 'Key');
 
   // @code 内部按 C# 上色
   expectAt(doc, 20, 'public', 1, 'keyword.control.csharp', 'access modifier');
@@ -187,14 +187,14 @@ $accent: theme(#ffffff, #000000);
   // 回归：@bind- 与 {expr} 内的标识符必须真的拿到 scope，不能只剩默认前景。
   // 曾经的 bug：@bind- 用 keyword.operator（多数主题与正文同色），表达式里的普通标识符
   // 没有任何 C# scope，整行看上去「没有代码高亮」。
-  const bindForms = `@using EclipseUI.Elements
+  const bindForms = `@using BubuUI.Elements
 <TextBox @bind-p={model.Name} />
 <CheckBox @bind-Checked={showButton} />
 @code {
     public int count;
 }
 `;
-  const bindDoc = await tokenize('source.eclipseui', bindForms);
+  const bindDoc = await tokenize('source.bubuui', bindForms);
   if (dump) {
     bindDoc.lines.forEach((tokens, index) => {
       console.log(`--- bindForms line ${index + 1}`);
@@ -202,47 +202,47 @@ $accent: theme(#ffffff, #000000);
     });
   }
 
-  expectAt(bindDoc, 1, '@bind-p', 1, 'keyword.control.binding.eclipseui', '@bind- prefix');
-  expectAt(bindDoc, 1, '@bind-p', 6, 'entity.other.attribute-name.eclipseui', 'lowercase bind target');
+  expectAt(bindDoc, 1, '@bind-p', 1, 'keyword.control.binding.bubuui', '@bind- prefix');
+  expectAt(bindDoc, 1, '@bind-p', 6, 'entity.other.attribute-name.bubuui', 'lowercase bind target');
   expectAt(bindDoc, 1, 'model.Name', 0, 'variable.other.object.csharp', 'member access object');
   expectAt(bindDoc, 1, 'model.Name', 5, 'punctuation.accessor.csharp', 'member access dot');
   expectAt(bindDoc, 1, 'model.Name', 6, 'variable.other.object.property.csharp', 'member access property');
   expectAt(bindDoc, 2, '{showButton}', 2, 'variable.other.readwrite.csharp', 'identifier in bind expression');
   expectAt(bindDoc, 4, 'count', 1, 'variable.other.readwrite.csharp', 'identifier in @code block');
 
-  const styleDoc = await tokenize('source.eustyle', style);
+  const styleDoc = await tokenize('source.bss', style);
   if (dump) {
     styleDoc.lines.forEach((tokens, index) => {
-      console.log(`--- eustyle line ${index + 1}`);
+      console.log(`--- bss line ${index + 1}`);
       for (const token of tokens) {
         console.log(`  ${JSON.stringify(token.text)}  ${token.scopes.slice(1).join(' ')}`);
       }
     });
   }
 
-  expectAt(styleDoc, 0, '.primary', 1, 'entity.other.attribute-name.class.eustyle', 'class selector');
-  expectAt(styleDoc, 1, 'Background', 1, 'support.type.property-name.eustyle', 'property');
-  expectAt(styleDoc, 1, 'theme(', 1, 'support.function.eustyle', 'theme()');
-  expectAt(styleDoc, 1, '#22a064', 1, 'constant.other.color.eustyle', 'hex color');
-  expectAt(styleDoc, 4, ':hover', 2, 'entity.other.attribute-name.pseudo-class.eustyle', 'pseudo');
-  expectAt(styleDoc, 6, '@states', 2, 'keyword.control.directive.eustyle', '@states');
-  expectAt(styleDoc, 7, '$accent', 1, 'variable.other.eustyle', '$variable');
+  expectAt(styleDoc, 0, '.primary', 1, 'entity.other.attribute-name.class.bss', 'class selector');
+  expectAt(styleDoc, 1, 'Background', 1, 'support.type.property-name.bss', 'property');
+  expectAt(styleDoc, 1, 'theme(', 1, 'support.function.bss', 'theme()');
+  expectAt(styleDoc, 1, '#22a064', 1, 'constant.other.color.bss', 'hex color');
+  expectAt(styleDoc, 4, ':hover', 2, 'entity.other.attribute-name.pseudo-class.bss', 'pseudo');
+  expectAt(styleDoc, 6, '@states', 2, 'keyword.control.directive.bss', '@states');
+  expectAt(styleDoc, 7, '$accent', 1, 'variable.other.bss', '$variable');
 
-  const templateDoc = await tokenize('source.eclipseui', '@template Button\n<Border Part="PART_Chrome" />');
-  expectAt(templateDoc, 0, '@template', 2, 'keyword.control.directive.eclipseui', 'template directive');
-  expectAt(templateDoc, 0, 'Button', 1, 'entity.name.type.eclipseui', 'template target');
-  const themeDoc = await tokenize('source.eustyle', '@using Demo;\n@theme Rounded for Button {\nTemplate: template(ButtonSkin);\n}\nButton /template/ Border.chrome { Theme: resource(Rounded); }\nButton { Label: "resource(fake)"; }');
-  expectAt(themeDoc, 0, '@using', 2, 'keyword.control.directive.eustyle', 'theme import');
-  expectAt(themeDoc, 1, 'Rounded', 2, 'entity.name.type.eustyle', 'theme declaration');
-  expectAt(themeDoc, 2, 'template(', 2, 'support.function.eustyle', 'template factory');
-  expectAt(themeDoc, 4, '/template/', 3, 'keyword.operator.template.eustyle', 'template boundary');
-  expectAt(themeDoc, 4, 'resource(', 3, 'support.function.eustyle', 'theme reference');
-  expectAt(themeDoc, 5, 'resource(fake)', 3, 'string.quoted.double.eustyle', 'string remains literal');
+  const templateDoc = await tokenize('source.bubuui', '@template Button\n<Border Part="PART_Chrome" />');
+  expectAt(templateDoc, 0, '@template', 2, 'keyword.control.directive.bubuui', 'template directive');
+  expectAt(templateDoc, 0, 'Button', 1, 'entity.name.type.bubuui', 'template target');
+  const themeDoc = await tokenize('source.bss', '@using Demo;\n@theme Rounded for Button {\nTemplate: template(ButtonSkin);\n}\nButton /template/ Border.chrome { Theme: resource(Rounded); }\nButton { Label: "resource(fake)"; }');
+  expectAt(themeDoc, 0, '@using', 2, 'keyword.control.directive.bss', 'theme import');
+  expectAt(themeDoc, 1, 'Rounded', 2, 'entity.name.type.bss', 'theme declaration');
+  expectAt(themeDoc, 2, 'template(', 2, 'support.function.bss', 'template factory');
+  expectAt(themeDoc, 4, '/template/', 3, 'keyword.operator.template.bss', 'template boundary');
+  expectAt(themeDoc, 4, 'resource(', 3, 'support.function.bss', 'theme reference');
+  expectAt(themeDoc, 5, 'resource(fake)', 3, 'string.quoted.double.bss', 'string remains literal');
 
-  // 回归：块定界符独占一行（Showcase.ui 的真实写法）。
+  // 回归：块定界符独占一行（Showcase.bui 的真实写法）。
   // 曾经的 bug：directive 的 end 要求 `) {` 同行，换行写 `{` 时规则永不结束，
   // 之后整个文件被吞进 meta.directive 里（没有任何补色）。
-  const multiline = `@using EclipseUI.Elements
+  const multiline = `@using BubuUI.Elements
 
 <StackPanel>
     @foreach (var row in rows)
@@ -255,7 +255,7 @@ $accent: theme(#ffffff, #000000);
     }
 </StackPanel>
 `;
-  const multiDoc = await tokenize('source.eclipseui', multiline);
+  const multiDoc = await tokenize('source.bubuui', multiline);
   if (dump) {
     multiDoc.lines.forEach((tokens, index) => {
       console.log(`--- multiline line ${index + 1}`);
@@ -263,21 +263,21 @@ $accent: theme(#ffffff, #000000);
     });
   }
 
-  expectAt(multiDoc, 4, '{', 0, 'punctuation.section.block.begin.eclipseui', 'lone block brace');
-  expectAt(multiDoc, 5, 'TextBlock', 0, 'entity.name.tag.eclipseui', 'tag after multi-line block');
-  expectAt(multiDoc, 5, '{row.Id}', 1, 'meta.embedded.expression.eclipseui', 'expression in block');
-  expectAt(multiDoc, 6, '}', 0, 'punctuation.section.block.end.eclipseui', 'lone block end');
-  expectAt(multiDoc, 7, '@if', 1, 'keyword.control.conditional.eclipseui', '@if');
-  expectAt(multiDoc, 9, 'Button', 0, 'entity.name.tag.eclipseui', 'tag after multi-line if');
+  expectAt(multiDoc, 4, '{', 0, 'punctuation.section.block.begin.bubuui', 'lone block brace');
+  expectAt(multiDoc, 5, 'TextBlock', 0, 'entity.name.tag.bubuui', 'tag after multi-line block');
+  expectAt(multiDoc, 5, '{row.Id}', 1, 'meta.embedded.expression.bubuui', 'expression in block');
+  expectAt(multiDoc, 6, '}', 0, 'punctuation.section.block.end.bubuui', 'lone block end');
+  expectAt(multiDoc, 7, '@if', 1, 'keyword.control.conditional.bubuui', '@if');
+  expectAt(multiDoc, 9, 'Button', 0, 'entity.name.tag.bubuui', 'tag after multi-line if');
 
   const leaked = multiDoc.lines.some((tokens) =>
-    tokens.some((token) => token.text.includes('<TextBlock') && token.scopes.includes('meta.directive.foreach.eclipseui')));
+    tokens.some((token) => token.text.includes('<TextBlock') && token.scopes.includes('meta.directive.foreach.bubuui')));
   if (leaked) failures.push('multi-line @foreach leaked its scope onto the following tag');
 
   // 回归：@switch 体的 case/default/break 是模板级关键字（生成器无逐字映射，语义着色丢弃），
   // 必须由 TextMate 上色。曾经的 bug：switch-directive 只管头部，体内这几个词落回文本模式
   // 没有任何 scope。同时钉住正文里的同名词不被误伤（靠冒号/分号界定）。
-  const switchTemplate = `@using EclipseUI.Elements
+  const switchTemplate = `@using BubuUI.Elements
 <StackPanel>
     @switch (mode) {
         case 0:
@@ -289,7 +289,7 @@ $accent: theme(#ffffff, #000000);
     }
 </StackPanel>
 `;
-  const switchDoc = await tokenize('source.eclipseui', switchTemplate);
+  const switchDoc = await tokenize('source.bubuui', switchTemplate);
   if (dump) {
     switchDoc.lines.forEach((tokens, index) => {
       console.log(`--- switch line ${index + 1}`);
@@ -297,20 +297,20 @@ $accent: theme(#ffffff, #000000);
     });
   }
 
-  expectAt(switchDoc, 2, '@switch', 1, 'keyword.control.switch.eclipseui', '@switch');
-  expectAt(switchDoc, 3, 'case', 0, 'keyword.control.switch.eclipseui', 'case label');
-  expectAt(switchDoc, 5, 'break', 0, 'keyword.control.switch.eclipseui', 'break statement');
-  expectAt(switchDoc, 6, 'default', 0, 'keyword.control.switch.eclipseui', 'default label');
-  expectNotAt(switchDoc, 7, 'case', 0, 'keyword.control.switch.eclipseui', 'plain-text case');
-  expectNotAt(switchDoc, 7, 'break', 0, 'keyword.control.switch.eclipseui', 'plain-text break');
-  expectNotAt(switchDoc, 7, 'default', 0, 'keyword.control.switch.eclipseui', 'plain-text default');
+  expectAt(switchDoc, 2, '@switch', 1, 'keyword.control.switch.bubuui', '@switch');
+  expectAt(switchDoc, 3, 'case', 0, 'keyword.control.switch.bubuui', 'case label');
+  expectAt(switchDoc, 5, 'break', 0, 'keyword.control.switch.bubuui', 'break statement');
+  expectAt(switchDoc, 6, 'default', 0, 'keyword.control.switch.bubuui', 'default label');
+  expectNotAt(switchDoc, 7, 'case', 0, 'keyword.control.switch.bubuui', 'plain-text case');
+  expectNotAt(switchDoc, 7, 'break', 0, 'keyword.control.switch.bubuui', 'plain-text break');
+  expectNotAt(switchDoc, 7, 'default', 0, 'keyword.control.switch.bubuui', 'plain-text default');
 
-  const embeddedStyle = await tokenize('source.eclipseui', '@style {\n.a { &:hover { Background: #fff; } }\n.b { Background: theme(#111, #eee); }\n}\n<Border Style="Background: theme(#111, #fff); CornerRadius: 4;" />');
-  expectAt(embeddedStyle, 2, 'Background', 1, 'support.type.property-name.eustyle', 'second rule stays inside @style');
-  expectAt(embeddedStyle, 2, 'theme(', 1, 'support.function.eustyle', 'nested style function');
-  expectAt(embeddedStyle, 4, 'Border', 1, 'entity.name.tag.eclipseui', 'leaving @style restores UI grammar');
-  expectAt(embeddedStyle, 4, 'Background', 1, 'support.type.property-name.eustyle', 'inline Style property');
-  expectAt(embeddedStyle, 4, '#fff', 1, 'constant.other.color.eustyle', 'inline Style color');
+  const embeddedStyle = await tokenize('source.bubuui', '@style {\n.a { &:hover { Background: #fff; } }\n.b { Background: theme(#111, #eee); }\n}\n<Border Style="Background: theme(#111, #fff); CornerRadius: 4;" />');
+  expectAt(embeddedStyle, 2, 'Background', 1, 'support.type.property-name.bss', 'second rule stays inside @style');
+  expectAt(embeddedStyle, 2, 'theme(', 1, 'support.function.bss', 'nested style function');
+  expectAt(embeddedStyle, 4, 'Border', 1, 'entity.name.tag.bubuui', 'leaving @style restores UI grammar');
+  expectAt(embeddedStyle, 4, 'Background', 1, 'support.type.property-name.bss', 'inline Style property');
+  expectAt(embeddedStyle, 4, '#fff', 1, 'constant.other.color.bss', 'inline Style color');
 
   if (failures.length > 0) {
     console.error(`\n${failures.length} grammar assertion(s) failed:`);

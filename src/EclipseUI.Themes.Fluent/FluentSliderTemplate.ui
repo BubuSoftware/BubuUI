@@ -1,8 +1,0 @@
-@namespace EclipseUI.Themes.Fluent
-@using EclipseUI.Elements
-@using EclipseUI.Themes.Fluent
-@template Slider
-
-<Grid>
-    <FluentSliderVisual Owner={Owner} />
-</Grid>

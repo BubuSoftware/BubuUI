@@ -1,13 +1,13 @@
 # 27 · Fluent 主题包
 
-2026-11-17。当前契约以 [spec/05](../spec/05-control-themes.md) 为准。`EclipseUI.Themes.Fluent` 提供 EclipseUI 的 Fluent 风格控件模板、属性和状态规则、共享资源及亮暗配色。早期的默认皮肤和仅 Button 模板化方案已由本文描述的实现替代。
+2026-11-17。当前契约以 [spec/05](../spec/05-control-themes.md) 为准。`BubuUI.Themes.Fluent` 提供 BubuUI 的 Fluent 风格控件模板、属性和状态规则、共享资源及亮暗配色。早期的默认皮肤和仅 Button 模板化方案已由本文描述的实现替代。
 
 ## 显式接入
 
 Runtime、通用渲染器及 Windows/Linux/macOS 平台包均不引用 Fluent。应用引用主题包后显式配置：
 
 ```csharp
-using EclipseUI.Themes.Fluent;
+using BubuUI.Themes.Fluent;
 
 builder.UseFluentTheme(); // System；也可传 ThemeVariant.Light / Dark
 
@@ -19,7 +19,7 @@ SetTheme(FluentTheme.Dark);
 
 窗口初始主题按 `Window.Theme > Application.DefaultTheme > ElementTheme.Light` 选择。平台的默认来源保持中性，不自动安装控件皮肤。未安装主题时，交互控件保留行为、状态和显式属性，不回退到框架内置的 Fluent 外观。基础视觉元素如 Border、Shape 和文本元素仍能通用绘制。
 
-`UseFluentTheme()` 设置应用默认主题来源；它不负责注册应用自己的选择器规则。应用的 `.eustyle` 仍通过 `UseStyles(registry, MyApp.StyleBootstrap.Apply)` 安装。
+`UseFluentTheme()` 设置应用默认主题来源；它不负责注册应用自己的选择器规则。应用的 `.bss` 仍通过 `UseStyles(registry, MyApp.StyleBootstrap.Apply)` 安装。
 
 ## 配色与默认主题映射
 
@@ -27,9 +27,9 @@ SetTheme(FluentTheme.Dark);
 
 `ThemeBinding` 在 UI 线程把解析结果同时交给绘制器和元素树默认值来源。明暗改变时刷新布局、模板表达式和绘制缓存；模板定义未改变时保留现有视觉树。未改变的具体配色实例不会反复清除 retained 缓存。
 
-`FluentTheme.GetDefault()` 为元素的 `Theme` 属性提供对应 `ControlTheme`，沿 CLR 类型链选择最具体的已注册类型。普通控件、纯 C# 子类和 `.ui` 生成子类使用同一机制；ToggleButton、PasswordBox、NumericUpDown、MenuItem、下拉按钮和表格列标题等具有独立外观契约的类型单独注册。
+`FluentTheme.GetDefault()` 为元素的 `Theme` 属性提供对应 `ControlTheme`，沿 CLR 类型链选择最具体的已注册类型。普通控件、纯 C# 子类和 `.bui` 生成子类使用同一机制；ToggleButton、PasswordBox、NumericUpDown、MenuItem、下拉按钮和表格列标题等具有独立外观契约的类型单独注册。
 
-控件尺寸、颜色和交互状态主要定义在主题包的 `.eustyle` 中；字号、通用前景和焦点参数由应用主题默认值提供。常见 Fluent 尺寸包括字号 14、按钮及输入控件最小高度 32、按钮内边距 12/5、复选标记 20、滑块 22、进度条高度 3。显式属性和应用样式可覆盖这些值。
+控件尺寸、颜色和交互状态主要定义在主题包的 `.bss` 中；字号、通用前景和焦点参数由应用主题默认值提供。常见 Fluent 尺寸包括字号 14、按钮及输入控件最小高度 32、按钮内边距 12/5、复选标记 20、滑块 22、进度条高度 3。显式属性和应用样式可覆盖这些值。
 
 ## 控件模板覆盖
 
@@ -46,15 +46,15 @@ SetTheme(FluentTheme.Dark);
 
 Popup 阴影通过通用 `IElementDrawingContext.DrawShadow` 绘制高斯模糊圆角矩形，模糊半径采用 CSS 的两倍标准差语义。默认阴影向下偏移 4 个逻辑单位，标准差为 4，绘制范围覆盖偏移后 3 倍标准差的羽化区域；桌面透明窗口和窗口内浮层使用同一阴影。GPU 直接绘制模糊形状，软件渲染复用模糊掩码，均不再叠加实色矩形模拟阴影。
 
-交互控件的 Runtime 实现不绘制主题外观。复杂的形状或文字定位可以写在主题包的 C# 视觉元素中，由 `.ui` 模板创建。`ElementPainter` 只遍历视觉树、执行通用绘图、文本、裁剪、焦点及浮层调度，不按 Button、CheckBox 等控件类型分派皮肤。
+交互控件的 Runtime 实现不绘制主题外观。复杂的形状或文字定位可以写在主题包的 C# 视觉元素中，由 `.bui` 模板创建。`ElementPainter` 只遍历视觉树、执行通用绘图、文本、裁剪、焦点及浮层调度，不按 Button、CheckBox 等控件类型分派皮肤。
 
 ## 共享类型化资源
 
-主题包可公开静态 `ThemeResource<T>` 字段，在 `.eustyle` 通过直接字段引用复用：
+主题包可公开静态 `ThemeResource<T>` 字段，在 `.bss` 通过直接字段引用复用：
 
 ```scss
-@using EclipseUI.Elements;
-@using EclipseUI.Themes.Fluent;
+@using BubuUI.Elements;
+@using BubuUI.Themes.Fluent;
 
 Button.primary {
     Background: resource(FluentResources.ControlBackground);
@@ -92,8 +92,8 @@ var frame = painter.BuildFrame(root, size);
 相关回归覆盖模板替换、借入内容保留、部件事件、选择和编辑、输入与焦点、亮暗切换、浮层、动画和 retained 绘制。结构回归检查核心与平台不引用 Fluent、交互控件不包含主题绘制、绘制器不包含控件皮肤分发。
 
 ```powershell
-dotnet build EclipseUI.slnx
-dotnet test EclipseUI.slnx --no-build --no-restore -m:1
+dotnet build BubuUI.slnx
+dotnet test BubuUI.slnx --no-build --no-restore -m:1
 dotnet run --project samples/Gallery -f net11.0 -p:EnableAndroid=false -- --cpu --theme light --shot out/fluent-gallery-light.png
 dotnet run --project samples/Gallery -f net11.0 -p:EnableAndroid=false -- --cpu --theme dark --shot out/fluent-gallery-dark.png
 ```

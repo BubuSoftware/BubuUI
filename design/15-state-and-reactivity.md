@@ -20,7 +20,7 @@
 
 | 本文定义 | 本文不定义（去哪看） |
 |---|---|
-| `[UiState]` / `[UiObservable]` / `[UiComputed]` 的声明规则与生成形态 | `.ui` 的词法/EBNF/标签与属性语法（[03](./03-template-engine.md)） |
+| `[UiState]` / `[UiObservable]` / `[UiComputed]` 的声明规则与生成形态 | `.bui` 的词法/EBNF/标签与属性语法（[03](./03-template-engine.md)） |
 | `IUiObservable` / `UiWatch` / `UiBinding` 的运行时契约 | 控件如何暴露 StyledProperty/事件/内容模型（[14](./14-control-template-contract.md)） |
 | `P={expr}`、`@bind-P`、文本、`@if`、`@foreach` 的反应式语义 | measure/arrange/绘制/hit test（[05](./05-layout-rendering-input.md)） |
 | 依赖分析、路径可观察性、订阅作用域与代码生成形态 | LSP 补全/悬停的 UI 呈现（[06](./06-ide-support.md)） |
@@ -81,7 +81,7 @@
 - **G4 细粒度更新**：一次写入只重跑订阅了该路径的 updater；不重建模板、不 diff 元素树。
 - **G5 可预测的作用域**：每个订阅有唯一所有者；组件/条目/分支卸载即释放。
 - **G6 双向可控**：`@bind-P` 通过公开 CLR setter 回写；不绕过 `StyledProperty`（R3）。
-- **G7 可诊断**：非可观察依赖、非法声明、非法绑定在 `.ui` 或声明处得到稳定诊断，不静默陈旧。
+- **G7 可诊断**：非可观察依赖、非法声明、非法绑定在 `.bui` 或声明处得到稳定诊断，不静默陈旧。
 - **G8 可迁移**：现有 `Signal<T>` 模板继续工作；旧语法有弃用期与机械迁移路径。
 
 ### 15.1.2 非目标
@@ -100,7 +100,7 @@
 |---|---|---|---|---|---|---|
 | 显式 `Signal<T>`（现状） | `count.Value` / 裸名重写 | 编译器扫描信号名 | 低 | 好 | 只能查信号名 | 保留为底层原语 |
 | 手写 `INotifyPropertyChanged` | `Count` | 运行期事件 + 字符串 | 事件参数/字符串 | 好 | 弱（拼写/漏发） | 仅第三方适配 |
-| Fody/IL weaving | `Count` | 只能织 setter | 低 | 风险 | 对 `.ui` 生成器不可见 | 拒绝（§15.1.4） |
+| Fody/IL weaving | `Count` | 只能织 setter | 低 | 风险 | 对 `.bui` 生成器不可见 | 拒绝（§15.1.4） |
 | Vue 式 Proxy | `Count` | 运行期读取追踪 | 代理/依赖集合 | 差 | 无 | 拒绝 |
 | **partial 属性 + 源生成 Signal** | **`Count`** | **编译期语义模型** | **低（直接委托）** | **好** | **强（EUI034–EUI044）** | **采用** |
 
@@ -108,9 +108,9 @@
 
 Fody 的 setter 织入只能解决"写入通知"，解决不了本设计的三件核心事：
 
-1. **读依赖发现**：模板表达式 `A + B` 的依赖必须在编译期得到；Fody 在 IL 层看不到 `.ui` 生成器的分析，也无法把依赖告诉它。
+1. **读依赖发现**：模板表达式 `A + B` 的依赖必须在编译期得到；Fody 在 IL 层看不到 `.bui` 生成器的分析，也无法把依赖告诉它。
 2. **跨程序集/第三方对象**：Fody 只处理被织入的程序集；模板读外部程序集的 POCO 时仍然没有通知。
-3. **可诊断性**：IL weaving 发生在 C# 编译之后，`.ui` 的源生成器无法判断某属性是否会被织入，无法给出"不可观察"警告。
+3. **可诊断性**：IL weaving 发生在 C# 编译之后，`.bui` 的源生成器无法判断某属性是否会被织入，无法给出"不可观察"警告。
 4. **工具链确定性**：AOT/裁剪/增量编译/调试映射都多一层不可见变换；R1/R6 的边界被破坏。
 
 结论：即使采用 Fody，仍然需要 `IUiObservable`/`UiWatch`/依赖分析；它只省掉生成器的一小段，却引入不可静态分析的边界。拒绝。
@@ -127,7 +127,7 @@ Fody 的 setter 织入只能解决"写入通知"，解决不了本设计的三�
 ### 15.2.1 `[UiState]`：整类可观察
 
 ```csharp
-using EclipseUI;
+using BubuUI;
 
 [UiState]
 public partial class CounterState
@@ -216,12 +216,12 @@ public partial class Cart
 
 ```csharp
 // CounterState.EuiState.g.cs（生成器输出；#nullable enable）
-partial class CounterState : global::EclipseUI.IUiObservable
+partial class CounterState : global::BubuUI.IUiObservable
 {
     private sealed class __EuiState
     {
-        public readonly global::EclipseUI.Signal<int> Count = new(default!);
-        public readonly global::EclipseUI.Signal<string> Name = new(default!);
+        public readonly global::BubuUI.Signal<int> Count = new(default!);
+        public readonly global::BubuUI.Signal<string> Name = new(default!);
     }
 
     private readonly __EuiState __eui = new __EuiState();
@@ -238,7 +238,7 @@ partial class CounterState : global::EclipseUI.IUiObservable
         set => __eui.Name.Value = value;
     }
 
-    global::System.IDisposable global::EclipseUI.IUiObservable.Subscribe(
+    global::System.IDisposable global::BubuUI.IUiObservable.Subscribe(
         string property, global::System.Action handler)
     {
         if (property is null) throw new global::System.ArgumentNullException(nameof(property));
@@ -258,8 +258,8 @@ partial class CounterState : global::EclipseUI.IUiObservable
 
 生成规则：
 
-- 类声明只写 `partial class X` + `: global::EclipseUI.IUiObservable`；**不写基类**，避免与模板生成的
-  `: global::EclipseUI.Component` 冲突（实测：partial 类可在不同部分分别声明基类与接口）。
+- 类声明只写 `partial class X` + `: global::BubuUI.IUiObservable`；**不写基类**，避免与模板生成的
+  `: global::BubuUI.Component` 冲突（实测：partial 类可在不同部分分别声明基类与接口）。
 - 可访问性（`public`/`internal`）与用户声明一致；不重复 `sealed`/`static` 等修饰符。
 - 属性实现的可访问性与定义一致；`partial` 关键字必须保留。
 - 成员顺序：按属性名 `Ordinal` 排序，保证文件/部分顺序变化不影响输出（R6）。
@@ -268,7 +268,7 @@ partial class CounterState : global::EclipseUI.IUiObservable
 
 ```csharp
 case nameof(Total):
-    return global::EclipseUI.UiSubscription.Combine(
+    return global::BubuUI.UiSubscription.Combine(
         __eui.Price.Subscribe(handler),
         __eui.Quantity.Subscribe(handler));
 ```
@@ -342,7 +342,7 @@ case nameof(Total):
 ### 15.3.1 `IUiObservable`
 
 ```csharp
-namespace EclipseUI;
+namespace BubuUI;
 
 public interface IUiObservable
 {
@@ -361,7 +361,7 @@ public interface IUiObservable
 ### 15.3.2 `UiWatch` 与 `UiWatchSegment`
 
 ```csharp
-namespace EclipseUI;
+namespace BubuUI;
 
 public readonly struct UiWatchSegment
 {
@@ -452,7 +452,7 @@ Attach(root):
 ### 15.3.4 `UiBinding`：双向绑定
 
 ```csharp
-namespace EclipseUI;
+namespace BubuUI;
 
 public static class UiBinding
 {
@@ -497,7 +497,7 @@ public static class UiBinding
 
 ### 15.3.5 `Signal<T>` 写路径（COW）
 
-现状（[Signals.cs:57](../src/EclipseUI.Runtime/Signals.cs#L57)）每次写都 `subs.ToArray()`，产生一次数组分配。
+现状（[Signals.cs:57](../src/BubuUI.Runtime/Signals.cs#L57)）每次写都 `subs.ToArray()`，产生一次数组分配。
 S1 改为 copy-on-write：
 
 ```csharp
@@ -611,7 +611,7 @@ public static class UiSubscription
 }
 ```
 
-- 特性定义在 `EclipseUI.Runtime`，命名空间 `EclipseUI`；生成器按全 metadata 名识别（14.4.6）。
+- 特性定义在 `BubuUI.Runtime`，命名空间 `BubuUI`；生成器按全 metadata 名识别（14.4.6）。
 - `UiSubscription.Combine` 幂等；释放全部后重新抛出首个异常（其余仍被释放）。
 - 所有 API 都是 AOT 安全、无反射、无用户代码执行。
 
@@ -718,30 +718,30 @@ attr-name-base ::= ident ( "." ident )?          (* 附加属性 G4 预留 *)
 - 生成（控件）：
 
 ```csharp
-Track(global::EclipseUI.UiBinding.TwoWay(
+Track(global::BubuUI.UiBinding.TwoWay(
     el0,
-    global::EclipseUI.Elements.CheckBox.CheckedProperty,
+    global::BubuUI.Elements.CheckBox.CheckedProperty,
     readTarget: () => el0.Checked,
     writeTarget: v => el0.Checked = v,
     readSource: () => Vm.ShowCount,
     writeSource: v => Vm.ShowCount = v,
-    subscribeSource: h => global::EclipseUI.UiWatch.Subscribe(this, new global::EclipseUI.UiWatchSegment[]
+    subscribeSource: h => global::BubuUI.UiWatch.Subscribe(this, new global::BubuUI.UiWatchSegment[]
     {
-        new global::EclipseUI.UiWatchSegment(nameof(MyComponent.Vm), o => ((MyComponent)o).Vm),
-        new global::EclipseUI.UiWatchSegment(nameof(VmState.ShowCount), o => ((VmState)o).ShowCount),
+        new global::BubuUI.UiWatchSegment(nameof(MyComponent.Vm), o => ((MyComponent)o).Vm),
+        new global::BubuUI.UiWatchSegment(nameof(VmState.ShowCount), o => ((VmState)o).ShowCount),
     }, h)));
 ```
 
 - 生成（组件目标）：
 
 ```csharp
-Track(global::EclipseUI.UiBinding.TwoWayComponent(
+Track(global::BubuUI.UiBinding.TwoWayComponent(
     cmp0, nameof(UserCard.Title),
     readTarget: () => cmp0.Title,
     writeTarget: v => cmp0.Title = v,
     readSource: () => Vm.Name,
     writeSource: v => Vm.Name = v,
-    subscribeSource: h => global::EclipseUI.UiWatch.Subscribe(this, path, h)));
+    subscribeSource: h => global::BubuUI.UiWatch.Subscribe(this, path, h)));
 ```
 
 - 信号源：`readSource: () => show.Value`、`writeSource: v => show.Value = v`、`subscribeSource: h => show.Subscribe(h)`。
@@ -938,7 +938,7 @@ partial class MyComponent
 - 对根表达式：参数列表为空，`this` 是 code-behind 实例；对 item 表达式：参数名与 item 变量一致，类型由集合推断。
 - 合成方法名以 `__EuiEval_` 开头；若与用户成员冲突 → EUI034（保留前缀）。
 - 合成 tree 加入 `Compilation.AddSyntaxTrees` 得到 `SemanticModel`；分析完不保留。
-- 表达式语法错误/未解析符号：跳过依赖分析，不生成订阅；表达式仍按原文本进入生成代码，由 C# 报错（不在 `.ui` 上叠加假警告）。
+- 表达式语法错误/未解析符号：跳过依赖分析，不生成订阅；表达式仍按原文本进入生成代码，由 C# 报错（不在 `.bui` 上叠加假警告）。
 - 合成方法只用于分析，绝不进入最终生成文件；不改变用户程序集。
 - 每个表达式的分析结果缓存于当前生成轮（不跨轮静态缓存，R6/D14）。
 
@@ -1001,7 +1001,7 @@ Classify(expr, scope):
 - 生成 watcher 的顺序 = 首次出现顺序；变量/函数编号按模板遍历顺序固定。
 - 状态生成器属性顺序按名称 `Ordinal`；诊断顺序按 span 排序。
 - 不遍历哈希表产生输出；不依赖文件系统顺序（R6）。
-- 同一输入（code-behind + `.ui` + 目录）生成相同文本；golden 测试断言。
+- 同一输入（code-behind + `.bui` + 目录）生成相同文本；golden 测试断言。
 
 ### 15.5.5 错误容忍
 
@@ -1198,7 +1198,7 @@ public partial class UserCard : Component
 ### 15.8.2 责任与 span
 
 - 声明类（EUI034/035）：code-behind 声明处；若来自引用程序集无法定位源码，按使用点报（类似 14.5.4）。
-- 模板类（EUI036/037/038/039/040/041/042/044）：`.ui` 表达式/属性名/集合表达式的精确 span。
+- 模板类（EUI036/037/038/039/040/041/042/044）：`.bui` 表达式/属性名/集合表达式的精确 span。
 - 生成器不因分析失败报假阳性；未解析表达式交给 C#。
 - 建议（suggestion）不改变解析结果；例如 EUI036 提示"把成员改成 partial 状态属性或接受一次性"。
 
@@ -1211,7 +1211,7 @@ public partial class UserCard : Component
 
 ### 15.8.4 抑制（开放）
 
-- v1 不提供 `.ui` 内抑制；EUI036/038/041 的 warning 可在项目级 `.editorconfig`/MSBuild 属性关闭（S5 设计）。
+- v1 不提供 `.bui` 内抑制；EUI036/038/041 的 warning 可在项目级 `.editorconfig`/MSBuild 属性关闭（S5 设计）。
 - 不要用"永远不报"来掩盖分析失败；分析失败时不报。
 
 ## 15.9 性能与基准
@@ -1235,9 +1235,9 @@ public partial class UserCard : Component
 | 路径 watcher | `Vm.Address.City` 2/3 段，中间替换 | ns/op、B/op |
 | 列表刷新 | 1000 项，重排/替换 1 项/全替换 | ms、分配 |
 | 订阅/释放 | 1000 次 Subscribe/Dispose | ns/op、B/op |
-| 生成时间 | 样例项目 10/50/100 个 `.ui` | ms、生成文件数 |
+| 生成时间 | 样例项目 10/50/100 个 `.bui` | ms、生成文件数 |
 
-- 基准项目：`tests/EclipseUI.Benchmarks`（net10.0，BenchmarkDotNet 或手写 Stopwatch + `GC.GetAllocatedBytesForCurrentThread`）。
+- 基准项目：`tests/BubuUI.Benchmarks`（net10.0，BenchmarkDotNet 或手写 Stopwatch + `GC.GetAllocatedBytesForCurrentThread`）。
 - 基线机：本机 6C/12T、16GB、UHD 630、.NET 10.0.401；结果写入
   `design/reports/state-reactivity-<date>.md`，注明配置。
 - 不在本文写未测得的 ns 数字；只写门槛与场景。
@@ -1322,7 +1322,7 @@ public partial class UserCard : Component
 3. **item 重建 vs item holder**：当前选"引用变化重建"，保证闭包安全；超大数据列表每次刷新都替换对象时可能重建过多；
    S5 用基准决定是否引入 holder + 逐项通知。
 4. **批处理**：一次事件多次写导致多次 updater；S5 评估帧级合并（不改变语义）。
-5. **EUI036/038/041 抑制**：v1 无 `.ui` 内抑制；S5 设计项目级配置。
+5. **EUI036/038/041 抑制**：v1 无 `.bui` 内抑制；S5 设计项目级配置。
 6. **`[UiComputed]` getter body 分析**：当前信任 `dependsOn`；S5 评估 Roslyn 数据流校验。
 7. **接口集合类型**：`IList<T>`/`IReadOnlyList<T>` 可能运行时是 `ObservableCollection<T>`；当前不警告，靠运行时 INCC；
    S4 用测试确认策略。
@@ -1356,12 +1356,12 @@ public partial class UserCard : Component
 | Roslyn 4.9.2 编译的生成器在 .NET 10 宿主分析 partial 属性 | 成功：`ForAttributeWithMetadataName` + 语法级 `partial` 检测 + `IPropertySymbol` 类型/名字 + 生成实现，消费者编译运行 | 生产生成器可不升级；但见下行 |
 | Roslyn 4.9.2 解析器直接解析 partial 属性 | `CS0267`，无 `PartialDefinitionPart` | 生成器单元测试不能直接构造；测试项目需 ≥4.11 或走真实宿主 |
 | `nameof(global::Counter.Count)` | 编译通过 | 生成代码可全限定 |
-| 现有 `Signal<T>` 写入 | `subs.ToArray()`（[Signals.cs:57](../src/EclipseUI.Runtime/Signals.cs#L57)） | S1 COW 修复 |
-| 现有 `Bind.TwoWay` | `SetValue/GetValue`（[Component.cs:97-111](../src/EclipseUI.Runtime/Component.cs#L97)） | 违反 R3；S3 新 helper |
-| 现有块 API | `SetCondition(..., params ISignal[])`、`SetItems(..., params ISignal[])`（[Blocks.cs:39](../src/EclipseUI.Runtime/Blocks.cs#L39)、[:127](../src/EclipseUI.Runtime/Blocks.cs#L127)） | S2 加订阅工厂 |
-| 现有 `ForEachBlock` 复用 | 只按 key，不比较 item（[Blocks.cs:163-173](../src/EclipseUI.Runtime/Blocks.cs#L163)） | 新语义需改 |
-| 现有 `ForEachBlock.Dispose` | 只释放依赖（[Blocks.cs:190](../src/EclipseUI.Runtime/Blocks.cs#L190)） | D18；S2 修复 |
-| 生成器 Roslyn | 4.9.2（[csproj](../src/EclipseUI.Compiler.Generator/EclipseUI.Compiler.Generator.csproj)） | 见开放问题 1 |
+| 现有 `Signal<T>` 写入 | `subs.ToArray()`（[Signals.cs:57](../src/BubuUI.Runtime/Signals.cs#L57)） | S1 COW 修复 |
+| 现有 `Bind.TwoWay` | `SetValue/GetValue`（[Component.cs:97-111](../src/BubuUI.Runtime/Component.cs#L97)） | 违反 R3；S3 新 helper |
+| 现有块 API | `SetCondition(..., params ISignal[])`、`SetItems(..., params ISignal[])`（[Blocks.cs:39](../src/BubuUI.Runtime/Blocks.cs#L39)、[:127](../src/BubuUI.Runtime/Blocks.cs#L127)） | S2 加订阅工厂 |
+| 现有 `ForEachBlock` 复用 | 只按 key，不比较 item（[Blocks.cs:163-173](../src/BubuUI.Runtime/Blocks.cs#L163)） | 新语义需改 |
+| 现有 `ForEachBlock.Dispose` | 只释放依赖（[Blocks.cs:190](../src/BubuUI.Runtime/Blocks.cs#L190)） | D18；S2 修复 |
+| 生成器 Roslyn | 4.9.2（[csproj](../src/BubuUI.Compiler.Generator/BubuUI.Compiler.Generator.csproj)） | 见开放问题 1 |
 
 ### 15.13.3 与现有文档的冲突与修正
 
@@ -1374,7 +1374,7 @@ public partial class UserCard : Component
 | “读取收集依赖” | 02 单向管线 | 改为"写入通知、编译期分析依赖"（§15.13.5） |
 | 父子通信靠 signals | 04 组件实例模型 | 增加 `[UiState]`/`IUiObservable`；signals 仍可用 |
 | G3 `:value` | 09 G3 范围/并行修复 | 改为 S1–S3 状态与反应式；`P={expr}` 单向 |
-| 14 R3 与 `Bind.TwoWay` 冲突 | 14 §14.3 R3 / [Component.cs:97](../src/EclipseUI.Runtime/Component.cs#L97) | 生成代码改用 `UiBinding` 公开 setter；旧 `Bind.TwoWay` 保留但 Obsolete |
+| 14 R3 与 `Bind.TwoWay` 冲突 | 14 §14.3 R3 / [Component.cs:97](../src/BubuUI.Runtime/Component.cs#L97) | 生成代码改用 `UiBinding` 公开 setter；旧 `Bind.TwoWay` 保留但 Obsolete |
 | 14 D6 "无参数 diff，信号参数" | 14 §14.14 | D6 保留"无 diff"，推荐改为可观察 partial 参数 |
 | 03 D10 正则重写 | 03 §3.3.3.4 | 15 改用 Roslyn 语义分析；D10 在 S2 修复 |
 | 03 D18 块 Dispose | 03 §3.3.4 | S2 修复；15 复用条目重建 |
@@ -1390,15 +1390,15 @@ public partial class UserCard : Component
 
 | # | 规范 | 当前实现 | 影响 | 收敛 |
 |---|---|---|---|---|
-| D23 | `P={expr}` 单向反应式 | 一次性赋值（03 v2；[Emitter.cs](../src/EclipseUI.Compiler.Generator/Emitter.cs)） | 普通状态不更新 | S2 |
+| D23 | `P={expr}` 单向反应式 | 一次性赋值（03 v2；[Emitter.cs](../src/BubuUI.Compiler.Generator/Emitter.cs)） | 普通状态不更新 | S2 |
 | D24 | `@bind-P` 双向 | 只有 `:bind`（`Signal<T>` 对象） | 无法绑定普通属性/组件参数 | S3 |
-| D25 | `Signal<T>` 写入零分配 | 每次 `subs.ToArray()`（[Signals.cs:57](../src/EclipseUI.Runtime/Signals.cs#L57)） | GC 压力 | S1 |
-| D26 | 同 Key 不同 item 重建 | 只按 key 复用，`Updaters` 重跑（[Blocks.cs:163-173](../src/EclipseUI.Runtime/Blocks.cs#L163)） | 闭包/事件指向旧 item | S2 |
-| D27 | 块 Dispose 释放 item scope | `Dispose` 只释放依赖（[Blocks.cs:190](../src/EclipseUI.Runtime/Blocks.cs#L190)，原 D18） | 泄漏 | S2 |
+| D25 | `Signal<T>` 写入零分配 | 每次 `subs.ToArray()`（[Signals.cs:57](../src/BubuUI.Runtime/Signals.cs#L57)） | GC 压力 | S1 |
+| D26 | 同 Key 不同 item 重建 | 只按 key 复用，`Updaters` 重跑（[Blocks.cs:163-173](../src/BubuUI.Runtime/Blocks.cs#L163)） | 闭包/事件指向旧 item | S2 |
+| D27 | 块 Dispose 释放 item scope | `Dispose` 只释放依赖（[Blocks.cs:190](../src/BubuUI.Runtime/Blocks.cs#L190)，原 D18） | 泄漏 | S2 |
 | D28 | 块接受订阅工厂 | `SetCondition/SetItems` 只有 `params ISignal[]` | 无法订阅状态属性/路径 | S2 |
-| D29 | 双向走公开 setter（R3） | `Bind.TwoWay` 用 `SetValue/GetValue`（[Component.cs:97-111](../src/EclipseUI.Runtime/Component.cs#L97)） | 绕过属性引擎 | S3 |
+| D29 | 双向走公开 setter（R3） | `Bind.TwoWay` 用 `SetValue/GetValue`（[Component.cs:97-111](../src/BubuUI.Runtime/Component.cs#L97)） | 绕过属性引擎 | S3 |
 | D30 | 生成器测试可解析 partial 属性 | 生成器/测试 Roslyn 4.9.2；parser 报 CS0267（实测） | 无法用 `CSharpGeneratorDriver` 覆盖 | S1 决策：升测试 Roslyn 或宿主集成测试 |
-| D31 | 语义级依赖分析 | 正则重写（[Emitter.cs:125](../src/EclipseUI.Compiler.Generator/Emitter.cs#L125)，原 D10） | 字符串/同名变量误改 | S2 |
+| D31 | 语义级依赖分析 | 正则重写（[Emitter.cs:125](../src/BubuUI.Compiler.Generator/Emitter.cs#L125)，原 D10） | 字符串/同名变量误改 | S2 |
 | D32 | `IUiObservable`/`UiWatch`/`UiBinding` | 运行时不存在 | 无法实现 | S1/S3 |
 | D33 | `[UiState]`/`[UiObservable]`/`[UiComputed]` 生成器 | 不存在 | 普通类型不可观察 | S1/S4 |
 | D34 | item 可观察属性/item `@bind` | item 内禁止信号/`:bind`（原 EUI014） | 列表编辑不可写 | S2/S3 |
@@ -1419,7 +1419,7 @@ public partial class UserCard : Component
 
 ## 附录 A：完整示例（`[UiState]` + 双向 + 列表）
 
-### A.1 `TodoList.ui`
+### A.1 `TodoList.bui`
 
 ```xml
 <StackPanel Gap="8">
@@ -1444,7 +1444,7 @@ public partial class UserCard : Component
 ### A.2 `TodoItem.cs`
 
 ```csharp
-using EclipseUI;
+using BubuUI;
 
 namespace Examples;
 
@@ -1464,7 +1464,7 @@ public partial class TodoItem
 
 ```csharp
 using System.Collections.ObjectModel;
-using EclipseUI;
+using BubuUI;
 
 namespace Examples;
 
@@ -1499,12 +1499,12 @@ public partial class TodoList : Component
 ### A.4 生成状态节选
 
 ```csharp
-partial class TodoList : global::EclipseUI.IUiObservable
+partial class TodoList : global::BubuUI.IUiObservable
 {
     private sealed class __EuiState
     {
-        public readonly global::EclipseUI.Signal<global::System.Collections.ObjectModel.ObservableCollection<global::Examples.TodoItem>> Tasks = new(default!);
-        public readonly global::EclipseUI.Signal<bool> ShowCount = new(default!);
+        public readonly global::BubuUI.Signal<global::System.Collections.ObjectModel.ObservableCollection<global::Examples.TodoItem>> Tasks = new(default!);
+        public readonly global::BubuUI.Signal<bool> ShowCount = new(default!);
     }
 
     private readonly __EuiState __eui = new __EuiState();
@@ -1521,7 +1521,7 @@ partial class TodoList : global::EclipseUI.IUiObservable
         set => __eui.ShowCount.Value = value;
     }
 
-    global::System.IDisposable global::EclipseUI.IUiObservable.Subscribe(
+    global::System.IDisposable global::BubuUI.IUiObservable.Subscribe(
         string property, global::System.Action handler)
     {
         switch (property)
@@ -1636,7 +1636,7 @@ Blazor/WPF 形态，按本仓库无 diff 契约适配。四件事：
 4. **异常收回 UI 线程**：每回调 try/catch 收集，drain 结束 fail-fast（AggregateException）。
    async void 现状是线程池直接崩进程；改后栈确定、可诊断。应用级 unhandled 钩子 v0 不做。
 
-API 形态（平台无关，放 EclipseUI.Runtime，HeadlessRoot 共用）：
+API 形态（平台无关，放 BubuUI.Runtime，HeadlessRoot 共用）：
 
 ```csharp
 public sealed class UiSynchronizationContext : SynchronizationContext
@@ -1698,13 +1698,13 @@ public async void Load()
 
 | 文件 | 变更 | 状态 |
 |---|---|---|
-| `src/EclipseUI.Runtime/UiSynchronizationContext.cs` | 新增：队列 + Post/Send/Drain + UiThreadId | ✅ |
-| `src/EclipseUI.Runtime/Component.cs` | 新增 `InvalidateSubtree`（所有权树遍历入队） | ✅ |
-| `src/EclipseUI.Runtime/Component.cs`（HeadlessRoot） | 安装/drain 显式入口 | ✅ |
-| `src/EclipseUI.Platform.Windows/WindowHost.cs` | Run 安装/还原；ProcessInvalidations 前插 drain | ✅ |
-| `src/EclipseUI.Runtime/Element.cs` | S5 Debug 线程断言（SetValue） | ✅ |
-| `tests/EclipseUI.Headless.Tests` | 15.14.7 回归（15 例，含真生成模板夹具） | ✅ |
-| `tests/EclipseUI.Rendering.Tests` | 段级记录型绘制器回归（1 例） | ✅ |
+| `src/BubuUI.Runtime/UiSynchronizationContext.cs` | 新增：队列 + Post/Send/Drain + UiThreadId | ✅ |
+| `src/BubuUI.Runtime/Component.cs` | 新增 `InvalidateSubtree`（所有权树遍历入队） | ✅ |
+| `src/BubuUI.Runtime/Component.cs`（HeadlessRoot） | 安装/drain 显式入口 | ✅ |
+| `src/BubuUI.Platform.Windows/WindowHost.cs` | Run 安装/还原；ProcessInvalidations 前插 drain | ✅ |
+| `src/BubuUI.Runtime/Element.cs` | S5 Debug 线程断言（SetValue） | ✅ |
+| `tests/BubuUI.Headless.Tests` | 15.14.7 回归（15 例，含真生成模板夹具） | ✅ |
+| `tests/BubuUI.Rendering.Tests` | 段级记录型绘制器回归（1 例） | ✅ |
 
 ### 15.14.7 测试计划
 
@@ -1718,7 +1718,7 @@ public async void Load()
 - 失效成本：带续体 tick 的 Render 次数 = 挂载组件数（S5 预算门槛）。
 
 以上七条均已有对应用例，见 `UiSynchronizationContextTests`（15 例）与
-`UiSynchronizationContextPaintTests`（1 例）；另加 `Fixtures/AsyncProbe.ui` 验证生成器
+`UiSynchronizationContextPaintTests`（1 例）；另加 `Fixtures/AsyncProbe.bui` 验证生成器
 发射的 `h(); Invalidate();` 包装在上下文下的真实行为。
 
 ### 15.14.8 代价与取舍
@@ -1731,12 +1731,12 @@ Render 体廉价且 ShouldRender 可短路。Blazor 靠 diff 省这笔，我们�
 
 | 文件 | 实际落地 |
 |---|---|
-| `src/EclipseUI.Runtime/UiSynchronizationContext.cs` | 新增：`UiSynchronizationContext`（单队列 + `Post`/`Send`/`Drain`/`UiThreadId`/`Install` scope、`CreateCopy` 返回自身）、`UiThreadGuard`、`UiThreadViolationException` |
-| `src/EclipseUI.Runtime/Component.cs` | 新增 `InvalidateSubtree()`（所有权树遍历）、`Adopt` 维护 `_children` 子表、`Dispose` 摘除；`HeadlessRoot` 增 `InstallSynchronizationContext()` / `DrainPostedWork()` / `UiScope`；`Render` 前 Debug 线程断言 |
-| `src/EclipseUI.Runtime/Element.cs` | 宿主根绑定上下文 + 沿父链查找；`SetValue` 的 Debug 线程断言 |
-| `src/EclipseUI.Platform.Windows/WindowHost.cs` | `Run` 安装/还原上下文；tick 顺序改为 PumpMessages → Drain → 自动失效 → ProcessInvalidations → 布局 → present |
-| `tests/EclipseUI.Headless.Tests/UiSynchronizationContextTests.cs` | 新增 15 例（§15.14.7 全部条目；含 `Fixtures/AsyncProbe.ui` 真生成模板端到端） |
-| `tests/EclipseUI.Rendering.Tests/UiSynchronizationContextPaintTests.cs` | 新增 1 例：记录型文本绘制器断言 retained 段确实以新文字重建（D113 盲区） |
+| `src/BubuUI.Runtime/UiSynchronizationContext.cs` | 新增：`UiSynchronizationContext`（单队列 + `Post`/`Send`/`Drain`/`UiThreadId`/`Install` scope、`CreateCopy` 返回自身）、`UiThreadGuard`、`UiThreadViolationException` |
+| `src/BubuUI.Runtime/Component.cs` | 新增 `InvalidateSubtree()`（所有权树遍历）、`Adopt` 维护 `_children` 子表、`Dispose` 摘除；`HeadlessRoot` 增 `InstallSynchronizationContext()` / `DrainPostedWork()` / `UiScope`；`Render` 前 Debug 线程断言 |
+| `src/BubuUI.Runtime/Element.cs` | 宿主根绑定上下文 + 沿父链查找；`SetValue` 的 Debug 线程断言 |
+| `src/BubuUI.Platform.Windows/WindowHost.cs` | `Run` 安装/还原上下文；tick 顺序改为 PumpMessages → Drain → 自动失效 → ProcessInvalidations → 布局 → present |
+| `tests/BubuUI.Headless.Tests/UiSynchronizationContextTests.cs` | 新增 15 例（§15.14.7 全部条目；含 `Fixtures/AsyncProbe.bui` 真生成模板端到端） |
+| `tests/BubuUI.Rendering.Tests/UiSynchronizationContextPaintTests.cs` | 新增 1 例：记录型文本绘制器断言 retained 段确实以新文字重建（D113 盲区） |
 
 **与 §15.14.2 设计文本的三点实测偏差（有意，不回退）**：
 
@@ -1756,7 +1756,7 @@ Render 体廉价且 ShouldRender 可短路。Blazor 靠 diff 省这笔，我们�
 在 UI 线程 fail-fast、`Send` 跨线程 Post + 阻塞、`CreateCopy` 共享单队列、生成器事件包装
 `h(); Invalidate();` 未改、同步处理器路径零变化。
 
-**验收**：`dotnet build EclipseUI.slnx` 0 警告；`dotnet test EclipseUI.slnx` **1066 例中 1064 绿**，
-2 条红来自工作区里**本片之前就存在**的手工验证改动（`samples/Gallery/Counter.ui` 把
+**验收**：`dotnet build BubuUI.slnx` 0 警告；`dotnet test BubuUI.slnx` **1066 例中 1064 绿**，
+2 条红来自工作区里**本片之前就存在**的手工验证改动（`samples/Gallery/Counter.bui` 把
 `OnClick` 换成 `Test()` 且 `count+=5`，`CounterEndToEndTests` 仍断言 +1 / +2，实测 5 / 10），
 与本片无关；**新增 16 例全绿**（Headless 15 / Rendering 1）。

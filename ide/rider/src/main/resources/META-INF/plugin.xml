@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <idea-plugin>
-    <id>com.eclipseui</id>
-    <name>EclipseUI</name>
-    <vendor>EclipseUI</vendor>
+    <id>com.bubuui</id>
+    <name>BubuUI</name>
+    <vendor>BubuUI</vendor>
     <version>0.2.0</version>
 
     <description><![CDATA[
-    EclipseUI <code>.ui</code> templates and <code>.eustyle</code> stylesheets in Rider:
+    BubuUI <code>.bui</code> templates and <code>.bss</code> stylesheets in Rider:
     syntax highlighting, diagnostics, completion, hover, go-to-definition, rename and
-    more. All language intelligence comes from the shared <b>EclipseUI.LanguageServer</b>
+    more. All language intelligence comes from the shared <b>BubuUI.LanguageServer</b>
     over stdio via LSP4IJ -- the same server the VS Code extension uses.
     ]]></description>
 
@@ -22,76 +22,76 @@
     <extensions defaultExtensionNs="com.intellij">
         <!-- Language + FileType pairs let LSP4IJ map documents to the server
              and let the TextMate highlighter bind to concrete file types. -->
-        <fileType name="EclipseUI"
-                  language="EclipseUI"
-                  extensions="ui"
-                  implementationClass="com.eclipseui.rider.EclipseUiFileType"/>
-        <fileType name="Eustyle"
-                  language="Eustyle"
-                  extensions="eustyle"
-                  implementationClass="com.eclipseui.rider.EustyleFileType"/>
+        <fileType name="BubuUI"
+                  language="BubuUI"
+                  extensions="bui"
+                  implementationClass="com.bubuui.rider.BubuUiFileType"/>
+        <fileType name="Bss"
+                  language="Bss"
+                  extensions="bss"
+                  implementationClass="com.bubuui.rider.BssFileType"/>
 
         <!-- JetBrains TextMate bundles are read from disk, not from the classpath.
              The provider extracts /textmate (assembled by Gradle from ide/vscode)
              into the plugin directory and hands the path to the platform. -->
         <textmate.bundleProvider
-                implementation="com.eclipseui.rider.EclipseUiTextMateBundleProvider"/>
+                implementation="com.bubuui.rider.BubuUiTextMateBundleProvider"/>
 
         <!-- A custom FileType would otherwise suppress TextMate colouring. This
              explicit binding is the workaround LSP4IJ itself uses (see its
              plugin-textmate.xml); without it the grammars register but nothing
              is coloured. -->
         <editorHighlighterProvider
-                filetype="EclipseUI"
+                filetype="BubuUI"
                 implementationClass="org.jetbrains.plugins.textmate.language.syntax.highlighting.TextMateEditorHighlighterProvider"/>
         <lang.syntaxHighlighterFactory
-                language="EclipseUI"
+                language="BubuUI"
                 implementationClass="org.jetbrains.plugins.textmate.language.syntax.highlighting.TextMateSyntaxHighlighterFactory"/>
         <editorHighlighterProvider
-                filetype="Eustyle"
+                filetype="Bss"
                 implementationClass="org.jetbrains.plugins.textmate.language.syntax.highlighting.TextMateEditorHighlighterProvider"/>
         <lang.syntaxHighlighterFactory
-                language="Eustyle"
+                language="Bss"
                 implementationClass="org.jetbrains.plugins.textmate.language.syntax.highlighting.TextMateSyntaxHighlighterFactory"/>
 
         <!-- TextMate supplies colours; these parsers only split the PSI into
              words and punctuation so navigation highlights one name at a time. -->
         <lang.parserDefinition
-                language="EclipseUI"
-                implementationClass="com.eclipseui.rider.EclipseUiParserDefinition"/>
+                language="BubuUI"
+                implementationClass="com.bubuui.rider.BubuUiParserDefinition"/>
         <lang.parserDefinition
-                language="Eustyle"
-                implementationClass="com.eclipseui.rider.EustyleParserDefinition"/>
+                language="Bss"
+                implementationClass="com.bubuui.rider.BssParserDefinition"/>
 
-        <applicationService serviceImplementation="com.eclipseui.rider.EclipseUiSettings"/>
+        <applicationService serviceImplementation="com.bubuui.rider.BubuUiSettings"/>
         <applicationConfigurable
                 parentId="language"
-                instance="com.eclipseui.rider.EclipseUiSettingsConfigurable"
-                id="eclipseui.settings"
-                displayName="EclipseUI"/>
-        <notificationGroup id="EclipseUI" displayType="BALLOON"/>
+                instance="com.bubuui.rider.BubuUiSettingsConfigurable"
+                id="bubuui.settings"
+                displayName="BubuUI"/>
+        <notificationGroup id="BubuUI" displayType="BALLOON"/>
     </extensions>
 
     <extensions defaultExtensionNs="com.redhat.devtools.lsp4ij">
-        <server id="eclipseui"
-                name="EclipseUI Language Server"
-                factoryClass="com.eclipseui.rider.EclipseUiLanguageServerFactory">
+        <server id="bubuui"
+                name="BubuUI Language Server"
+                factoryClass="com.bubuui.rider.BubuUiLanguageServerFactory">
             <description><![CDATA[
-            The shared EclipseUI stdio language server (dotnet EclipseUI.LanguageServer.dll).
+            The shared BubuUI stdio language server (dotnet BubuUI.LanguageServer.dll).
             Diagnostics, completion, hover, navigation, rename, semantic tokens,
-            code actions and formatting for .ui and .eustyle.
+            code actions and formatting for .bui and .bss.
             ]]></description>
         </server>
 
         <!-- languageId mirrors the VS Code documentSelector. The server keys off
              the file extension, but keeping the LSP field correct costs nothing. -->
-        <languageMapping language="EclipseUI" serverId="eclipseui" languageId="eclipseui"/>
-        <languageMapping language="Eustyle" serverId="eclipseui" languageId="eustyle"/>
+        <languageMapping language="BubuUI" serverId="bubuui" languageId="bubuui"/>
+        <languageMapping language="Bss" serverId="bubuui" languageId="bss"/>
 
         <!-- Fallback for installations where the custom FileType is overridden
-             (e.g. a user has assigned *.ui to "Files supported via TextMate
+             (e.g. a user has assigned *.bui to "Files supported via TextMate
              bundles"). LSP4IJ recommends pattern mappings to keep TextMate
              colouring; do NOT enable both mappings at once for normal setups. -->
-        <!-- <fileNamePatternMapping patterns="*.ui;*.eustyle" serverId="eclipseui"/> -->
+        <!-- <fileNamePatternMapping patterns="*.bui;*.bss" serverId="bubuui"/> -->
     </extensions>
 </idea-plugin>

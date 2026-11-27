@@ -4,7 +4,7 @@
 
 ## 实现
 
-- 新增 `EclipseUI.Platform.MacOS`：`UseMacOS()`、Cocoa/Metal NSView 窗口、Retina、输入/组合文字、系统剪贴板与桌面生命周期。
+- 新增 `BubuUI.Platform.MacOS`：`UseMacOS()`、Cocoa/Metal NSView 窗口、Retina、输入/组合文字、系统剪贴板与桌面生命周期。
 - `NativeWindowHandle.AppKit` 与 Vello Metal 表面；Gallery 自动选择 macOS。生命周期和原生操作检查真正的进程主线程。
 - Runtime 增加独立 Meta 修饰键、Command 编辑/选择/导航、Option 词导航；原 Control 快捷键保留。
 - 默认字体补齐 STHeiti/Songti。现有 macOS 的 PingFang 候选在本机不存在；原生测试已确认中文和 emoji glyph 非零且能够绘制。
@@ -48,7 +48,7 @@
 
 本次没有修改 CPU 光栅算法、golden 基线、hash 或比较容差。该失败保留在最终回归结果中，不将完整渲染测试记为全绿。
 
-已将改动前 `HEAD fd9aa285e79424a435cfde60bc54deff369a7c36` 只读导出到独立临时目录，重新构建并单独运行该用例；两个场景的失败 hash 与上表完全相同，确认差异在本次实现之前已存在。未设置更新 golden 的环境变量，临时副本基线与 HEAD 一致。复现日志为 `/private/tmp/eclipseui-macos-baseline-5GP2tt/baseline-test.log`，对应 TRX 为其测试项目的 `TestResults/macos-head-baseline.trx`。
+已将改动前 `HEAD fd9aa285e79424a435cfde60bc54deff369a7c36` 只读导出到独立临时目录，重新构建并单独运行该用例；两个场景的失败 hash 与上表完全相同，确认差异在本次实现之前已存在。未设置更新 golden 的环境变量，临时副本基线与 HEAD 一致。复现日志为 `/private/tmp/bubuui-macos-baseline-5GP2tt/baseline-test.log`，对应 TRX 为其测试项目的 `TestResults/macos-head-baseline.trx`。
 
 ## 产物与运行
 
@@ -56,7 +56,7 @@
 dotnet run --project samples/Gallery.Desktop
 out/osx-arm64/Gallery.Desktop --frames 8 --always-render --max-fps 60
 out/osx-arm64/Gallery.Desktop --cpu --shot out/gallery-macos-release.png
-dotnet test tests/EclipseUI.Platform.MacOS.Tests
+dotnet test tests/BubuUI.Platform.MacOS.Tests
 ```
 
 发布目录：`out/osx-arm64`、`out/osx-x64`；截图：`out/gallery-macos.png`、`out/gallery-macos-release.png`。构建/测试日志位于 `out/macos-final-build.log`、`out/macos-final-tests.log`，最终各测试项目 TRX 为 `TestResults/macos-final.trx`。独立验证报告另有 `macos-homebrew.trx`、`macos-paths.trx`、`macos-ide.trx`、`macos-rendering.trx`。

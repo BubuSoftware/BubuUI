@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.9.2" />
+  </ItemGroup>
+
+  <!-- C2-3 后生成器程序集源码内嵌了 BubuUI.Compiler 与 BubuUI.Compiler.Metadata，
+       这里再引用 Metadata 会让 UiCatalogFactory/UiCatalog 出现两份类型身份（D65 同类问题）。 -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\BubuUI.Compiler.Generator\BubuUI.Compiler.Generator.csproj" />
+    <ProjectReference Include="..\..\src\BubuUI.Runtime\BubuUI.Runtime.csproj" />
+    <!-- design/17 §4.3：样式属性目录由 StyleBuilder / StyledProperty 符号派生，
+         生成器测试与一致性测试需要渲染程序集随测试输出一起可用。 -->
+    <ProjectReference Include="..\..\src\BubuUI.Rendering\BubuUI.Rendering.csproj" />
+  </ItemGroup>
+
+  <!-- 测试目录来自扫描真实运行时（design/14 §14.11.1），与无头前端测试共用一份实现 -->
+  <ItemGroup>
+    <Compile Include="..\Shared\UiTestCatalogs.cs" Link="UiTestCatalogs.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="TestData\BuiltInSurface.golden.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

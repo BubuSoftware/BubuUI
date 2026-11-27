@@ -1,8 +1,8 @@
 using System.Diagnostics;
-using EclipseUI;
-using EclipseUI.Platform.Windows;
-using EclipseUI.Rendering;
-using EclipseUI.Rendering.Vello;
+using BubuUI;
+using BubuUI.Platform.Windows;
+using BubuUI.Rendering;
+using BubuUI.Rendering.Vello;
 using WindowSpike;
 
 // G2-00/01 spike：真实窗口 + Vello GPU surface 呈现。
@@ -77,7 +77,7 @@ if (useCpu || !OperatingSystem.IsWindows())
     return RunOffscreen(scene, width, height, frames ?? 1, shotPath, parts, useGpuOffscreen);
 }
 
-using var window = new Win32Window("EclipseUI · G2 surface slice", width, height);
+using var window = new Win32Window("BubuUI · G2 surface slice", width, height);
 
 var pointer = Point.Zero;
 var pointerInside = false;

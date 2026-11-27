@@ -1,12 +1,14 @@
-# EclipseUI
+# BubuUI
 
-开发时修改 `.ui` / C# 的使用方式与限制见 [热重载](./design/hot-reload.md)。
+文件后缀统一为 `.bui`（界面、组件和控件模板）与 `.bss`（样式、主题和资源声明）。同名 C# 代码文件继续使用 `.cs`。
+
+开发时修改 `.bui` / C# 的使用方式与限制见 [热重载](./design/hot-reload.md)。
 
 生成 VS Code、Visual Studio、Rider 插件安装包：在 GitHub Actions 中运行 **Package IDE plugins**，
 完成后下载 Artifacts；也可本地执行 `pwsh -File ./publish.ps1`。
 详见 [IDE 插件打包说明](./ide/README.md#三个-ide-插件一键打包)。
 
-模板引擎优先的自绘 UI 框架。`.ui` 和纯 C# 是相同 UI 类型的两种编写方式：**根标签决定生成类基类，生成对象本身就是 UI 实例。**
+模板引擎优先的自绘 UI 框架。`.bui` 和纯 C# 是相同 UI 类型的两种编写方式：**根标签决定生成类基类，生成对象本身就是 UI 实例。**
 
 当前规范见 [spec](./spec/README.md)，统一实施与验证见 [design/21](./design/21-root-type-unification.md)。样式和 C# 属性过渡的用法见 [动画系统](./design/29-animation-system.md)。
 
@@ -20,11 +22,11 @@ UiObject                   初始化、更新调度、资源清理
 └─ Window                  窗口；Content 为 Element
 ```
 
-`Counter.ui`：
+`Counter.bui`：
 
 ```xml
 @namespace Demo
-@using EclipseUI.Elements
+@using BubuUI.Elements
 
 <StackPanel Gap="8">
     <TextBlock>Count: {count}</TextBlock>
@@ -40,13 +42,13 @@ UiObject                   初始化、更新调度、资源清理
 panel.Children.Add(new Counter());
 ```
 
-纯 C# 控件也可作为 `.ui` 标签或根基类；反过来 C# 可以继承 `.ui` 生成类型。属性、事件、插槽及内容类型规则一致。
+纯 C# 控件也可作为 `.bui` 标签或根基类；反过来 C# 可以继承 `.bui` 生成类型。属性、事件、插槽及内容类型规则一致。
 
-`MainWindow.ui`：
+`MainWindow.bui`：
 
 ```xml
 @namespace Demo
-@using EclipseUI.Elements
+@using BubuUI.Elements
 
 <Window Title="Demo" Width="1000" Height="760">
     <Counter/>
@@ -84,13 +86,13 @@ Windows、Linux 和 macOS 共用应用窗口规则：关闭主窗口不会关闭
 
 仓库统一使用 .NET 11 SDK（`global.json`），运行时、平台、样例、测试和语言服务器目标均为 .NET 11。Roslyn 源生成器及其共享编译器组件保留 `netstandard2.0`，VS 进程内扩展保留 `net472`，以满足各自加载宿主的兼容要求；它们同样由 .NET 11 SDK 构建。
 
-画廊采用共享 UI 加平台入口结构：`samples/Gallery` 是共享库，包含 `.ui`、交互逻辑和 `GalleryApp`；`samples/Gallery.Desktop` 提供 Windows / Linux / macOS 桌面入口（`net11.0`），`samples/Gallery.Android` 和 `samples/Gallery.iOS` 分别提供 Android、iOS 入口。调试时将对应平台的入口项目设为启动项目。
+画廊采用共享 UI 加平台入口结构：`samples/Gallery` 是共享库，包含 `.bui`、交互逻辑和 `GalleryApp`；`samples/Gallery.Desktop` 提供 Windows / Linux / macOS 桌面入口（`net11.0`），`samples/Gallery.Android` 和 `samples/Gallery.iOS` 分别提供 Android、iOS 入口。调试时将对应平台的入口项目设为启动项目。
 
 桌面入口和共享 UI 只需 .NET 11 SDK。解决方案的默认平台 `Any CPU` 构建桌面和 Android 项目，需准备 Android 工具链。选择解决方案平台 `iOS`（命令行追加 `-p:Platform=iOS`）会构建桌面和 iOS 项目。单独开发某个平台时，可直接构建或运行对应的入口项目。
 
 ```powershell
-dotnet build EclipseUI.slnx
-dotnet test EclipseUI.slnx --no-build -m:1
+dotnet build BubuUI.slnx
+dotnet test BubuUI.slnx --no-build -m:1
 
 # 桌面画廊
 dotnet run --project samples/Gallery.Desktop
@@ -135,9 +137,9 @@ dotnet publish samples/Gallery.Desktop -c Release -r osx-arm64 --self-contained 
 
 ## Android 实验宿主
 
-Android arm64 样例使用与桌面相同的 Gallery 页面和 Fluent 控件模板。Activity 承载 EclipseView，按屏幕密度换算布局和触摸坐标，按 Android 分配给视图的实际像素尺寸进行 CPU 光栅化。支持单指点击、拖动、纵向列表滚动和主题切换。Activity 暂停时停止刷新，返回时恢复现有页面。
+Android arm64 样例使用与桌面相同的 Gallery 页面和 Fluent 控件模板。Activity 承载 BubuView，按屏幕密度换算布局和触摸坐标，按 Android 分配给视图的实际像素尺寸进行 CPU 光栅化。支持单指点击、拖动、纵向列表滚动和主题切换。Activity 暂停时停止刷新，返回时恢复现有页面。
 
-Android 与桌面共用 `AppBuilder`。带 `[Application]` 的 `MainApplication` 继承 `EclipseAndroidApplication<GalleryApp>`，基类在进程启动时执行 `AppBuilder.Configure<GalleryApp>().UseAndroid()`，经 `CustomizeAppBuilder` 配置后调用 `Build()`：
+Android 与桌面共用 `AppBuilder`。带 `[Application]` 的 `MainApplication` 继承 `BubuAndroidApplication<GalleryApp>`，基类在进程启动时执行 `AppBuilder.Configure<GalleryApp>().UseAndroid()`，经 `CustomizeAppBuilder` 配置后调用 `Build()`：
 
 ```csharp
 protected override AppBuilder CustomizeAppBuilder(AppBuilder builder)
@@ -150,7 +152,7 @@ protected override AppBuilder CustomizeAppBuilder(AppBuilder builder)
         .UseFluentTheme();
 ```
 
-可继续链式调用 `ConfigureServices` / `UseStyles`。共享 `GalleryApp` 在初始化回调中取得 `IActivityApplicationLifetime`，设置 `MainViewFactory`；桌面仍创建 `MainWindow`。`MainActivity` 只需继承 `EclipseActivity`，基类负责创建视图、暂停/恢复和释放。Activity 重建会创建新页面，应用与服务容器保留，当前应用主题继续生效。页面内容状态尚未自动保存。Android 的生命周期由系统驱动，不调用桌面的阻塞式 `Start()`；当前视图仍使用 Vello CPU 渲染，不需要桌面的 `UseVello()` 表面工厂。
+可继续链式调用 `ConfigureServices` / `UseStyles`。共享 `GalleryApp` 在初始化回调中取得 `IActivityApplicationLifetime`，设置 `MainViewFactory`；桌面仍创建 `MainWindow`。`MainActivity` 只需继承 `BubuActivity`，基类负责创建视图、暂停/恢复和释放。Activity 重建会创建新页面，应用与服务容器保留，当前应用主题继续生效。页面内容状态尚未自动保存。Android 的生命周期由系统驱动，不调用桌面的阻塞式 `Start()`；当前视图仍使用 Vello CPU 渲染，不需要桌面的 `UseVello()` 表面工厂。
 
 安装 .NET 11 Android 工作负载、Android SDK 和 JDK，将 ANDROID_NDK_HOME 指向解压后的 Android NDK（已验证 r28c），然后从 Android 入口项目发布样例：
 
@@ -175,13 +177,13 @@ dotnet run -r iossimulator-arm64 --device YOUR_SIMULATOR_UDID
 
 以上命令适用于 Apple 芯片的 Mac。将 `YOUR_SIMULATOR_UDID` 替换为列表中目标模拟器的标识符。在同一目录下使用 `dotnet publish -c Release -r ios-arm64` 发布真机版本，需配置与应用标识匹配的 Apple 签名证书及描述文件。
 
-自建应用可参照 [Gallery 的启动入口](./samples/Gallery.iOS/Program.cs) 和 [场景配置](./samples/Gallery.iOS/Info.plist)。在 `EclipseAppDelegate.CreateAppBuilder()` 中调用 `AppBuilder.Configure<MyApp>().UseiOS()`，在应用初始化回调中设置 `MainViewFactory`。切回前台会继续使用已连接场景的页面，场景断开时会释放页面。
+自建应用可参照 [Gallery 的启动入口](./samples/Gallery.iOS/Program.cs) 和 [场景配置](./samples/Gallery.iOS/Info.plist)。在 `BubuAppDelegate.CreateAppBuilder()` 中调用 `AppBuilder.Configure<MyApp>().UseiOS()`，在应用初始化回调中设置 `MainViewFactory`。切回前台会继续使用已连接场景的页面，场景断开时会释放页面。
 
 已在 iOS 27 的 iPhone 模拟器验证按钮、滚动、下拉框、明暗主题、前后台恢复和系统键盘输入，并在 iPad 模拟器验证中文、Emoji、渐变与阴影绘制。真机 arm64 Release 已通过未签名构建，真机安装和运行仍待验证。
 
 ## FreeOTP 桌面应用
 
-[FreeOTP](https://github.com/CeSun/FreeOTP) 已独立为单独仓库，通过 Git submodule 引用 EclipseUI。支持导入 FreeOTP Android 加密备份、TOTP/HOTP、验证码复制和本地加密保存。
+[FreeOTP](https://github.com/CeSun/FreeOTP) 已独立为单独仓库，通过 Git submodule 引用 BubuUI。支持导入 FreeOTP Android 加密备份、TOTP/HOTP、验证码复制和本地加密保存。
 
 ## 当前能力
 
@@ -195,11 +197,11 @@ dotnet run -r iossimulator-arm64 --device YOUR_SIMULATOR_UDID
 
 ## 控件库
 
-交互控件与主题外观分离。Windows/Linux/macOS 平台默认使用中性主题；应用引用 `EclipseUI.Themes.Fluent` 后显式启用 Fluent 皮肤及系统明暗跟随：
+交互控件与主题外观分离。Windows/Linux/macOS 平台默认使用中性主题；应用引用 `BubuUI.Themes.Fluent` 后显式启用 Fluent 皮肤及系统明暗跟随：
 
 ```csharp
-using EclipseUI;
-using EclipseUI.Themes.Fluent;
+using BubuUI;
+using BubuUI.Themes.Fluent;
 
 AppBuilder.Configure<MyApp>()
     .UseFluentTheme(ThemeVariant.System) // Light / Dark 固定明暗
@@ -207,7 +209,7 @@ AppBuilder.Configure<MyApp>()
     .Start(args);
 ```
 
-运行期调用 `SetTheme(FluentTheme.Dark)`，或传入 `FluentTheme.Light` / `FluentTheme.System` 切换模式。Gallery 支持 `--theme system|light|dark`，主题按钮循环切换三种模式。配色、默认值层和验证见 [Fluent 主题包](./design/27-fluent-theme.md)。所有 Element 均支持 `Theme` 和 `Template`；Fluent 为内置交互控件提供可替换 `.ui` 模板和 `.eustyle` 状态规则，Runtime 与通用渲染器不包含控件皮肤绘制。内容通过 `ContentPresenter` / `ItemsPresenter` 投影，切换模板保留调用方内容与行为状态。主题包可通过公开静态 `ThemeResource<T>` 复用类型化资源。详细契约见 [spec/05](./spec/05-control-themes.md)。
+运行期调用 `SetTheme(FluentTheme.Dark)`，或传入 `FluentTheme.Light` / `FluentTheme.System` 切换模式。Gallery 支持 `--theme system|light|dark`，主题按钮循环切换三种模式。配色、默认值层和验证见 [Fluent 主题包](./design/27-fluent-theme.md)。所有 Element 均支持 `Theme` 和 `Template`；Fluent 为内置交互控件提供可替换 `.bui` 模板和 `.bss` 状态规则，Runtime 与通用渲染器不包含控件皮肤绘制。内容通过 `ContentPresenter` / `ItemsPresenter` 投影，切换模板保留调用方内容与行为状态。主题包可通过公开静态 `ThemeResource<T>` 复用类型化资源。详细契约见 [spec/05](./spec/05-control-themes.md)。
 
 当前目录包含 Window、基础视觉元素、通用呈现器和交互控件。除文本、按钮和布局控件外，已提供 TextBox/PasswordBox、ListBox/ComboBox、开关与数值输入、浮层和菜单、TabControl、TreeView、DataGrid、DatePicker/Calendar、图像与形状，以及 Canvas/DockPanel。Grid 支持跨行跨列，滚动条可拖动，虚拟列表支持变高和可选容器复用。
 
@@ -216,7 +218,7 @@ AppBuilder.Configure<MyApp>()
 Windows 原生标题栏随窗口最终解析出的主题同步明暗，覆盖初次显示、运行期切换与跟随系统；保留系统标题栏、边框和窗口按钮。此行为由 Windows 宿主统一处理，不要求应用调用 DWM API；不支持该属性的旧版 Windows 保留默认标题栏。
 桌面端 Popup（包括下拉框、日期面板和菜单）默认使用独立的原生窗口，可越过主窗口边界，位置与大小受屏幕可用区域约束。内容仍在原有控件树中，共享焦点、主题、路由与资源生命周期；支持嵌套 Popup、外部点击/Escape 关闭和弹窗内文本输入。`HostMode="Overlay"` 可固定使用主窗口内浮层；`Auto`（默认）和 `Window` 在无原生弹窗工厂或无头环境中回退为浮层。自建桌面宿主的接线方式与验证范围见[Popup 契约](./design/24-control-library.md#独立-popup-窗口2026-11-21)。
 
-完整行为、使用示例及能力边界见 [控件库契约](./design/24-control-library.md)。Gallery 仅保留 Fluent 交互演示，页面和控件示例均以 `.ui` 描述，支持主题切换、重置、滑块与进度条联动，窄窗口自动收紧布局。旧页面已移入测试夹具，继续覆盖编译器与 IDE 回归。也可独立验证并导出深浅主题控件状态：
+完整行为、使用示例及能力边界见 [控件库契约](./design/24-control-library.md)。Gallery 仅保留 Fluent 交互演示，页面和控件示例均以 `.bui` 描述，支持主题切换、重置、滑块与进度条联动，窄窗口自动收紧布局。旧页面已移入测试夹具，继续覆盖编译器与 IDE 回归。也可独立验证并导出深浅主题控件状态：
 
 ```powershell
 dotnet run --project sandbox/ControlCheck -- out/controls.png

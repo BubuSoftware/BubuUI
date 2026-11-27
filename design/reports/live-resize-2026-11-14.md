@@ -15,9 +15,9 @@ Win32Window 的 IsInSizeMove、LiveResizeFrameRequested 表达内部循环状态
 ## 构建与自动化回归
 
 ```powershell
-dotnet build EclipseUI.slnx --no-restore --nologo -v quiet
-dotnet test tests/EclipseUI.Platform.Windows.Tests --no-restore
-dotnet test tests/EclipseUI.Headless.Tests --no-build --no-restore -- xUnit.ParallelizeTestCollections=false xUnit.MaxParallelThreads=1
+dotnet build BubuUI.slnx --no-restore --nologo -v quiet
+dotnet test tests/BubuUI.Platform.Windows.Tests --no-restore
+dotnet test tests/BubuUI.Headless.Tests --no-build --no-restore -- xUnit.ParallelizeTestCollections=false xUnit.MaxParallelThreads=1
 dotnet run --project sandbox/ControlNativeCheck --no-build --no-restore
 dotnet run --project sandbox/ResizeNativeCheck --no-build --no-restore
 ```

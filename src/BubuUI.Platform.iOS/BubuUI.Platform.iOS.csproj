@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net11.0-ios</TargetFramework>
+    <SupportedOSPlatformVersion>15.0</SupportedOSPlatformVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../BubuUI.Rendering/BubuUI.Rendering.csproj" />
+    <Compile Include="../BubuUI.Platform.Shared/MobileTextEdit.cs" Link="MobileTextEdit.cs" />
+  </ItemGroup>
+</Project>

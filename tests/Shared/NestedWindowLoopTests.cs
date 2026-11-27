@@ -1,21 +1,21 @@
-using EclipseUI.Elements;
-using EclipseUI.Rendering;
+using BubuUI.Elements;
+using BubuUI.Rendering;
 using Xunit;
 #if SCHEDULER_WINDOWS
-using WindowHost = EclipseUI.Platform.Windows.WindowHost;
-using WindowHostOptions = EclipseUI.Platform.Windows.WindowHostOptions;
-using TestWindow = EclipseUI.Platform.Windows.Win32Window;
+using WindowHost = BubuUI.Platform.Windows.WindowHost;
+using WindowHostOptions = BubuUI.Platform.Windows.WindowHostOptions;
+using TestWindow = BubuUI.Platform.Windows.Win32Window;
 #elif SCHEDULER_MACOS
-using WindowHost = EclipseUI.Platform.MacOS.WindowHost;
-using WindowHostOptions = EclipseUI.Platform.MacOS.WindowHostOptions;
-using TestWindow = EclipseUI.Platform.MacOS.Tests.TestWindow;
+using WindowHost = BubuUI.Platform.MacOS.WindowHost;
+using WindowHostOptions = BubuUI.Platform.MacOS.WindowHostOptions;
+using TestWindow = BubuUI.Platform.MacOS.Tests.TestWindow;
 #else
-using WindowHost = EclipseUI.Platform.Linux.WindowHost;
-using WindowHostOptions = EclipseUI.Platform.Linux.WindowHostOptions;
-using TestWindow = EclipseUI.Platform.Linux.Tests.TestWindow;
+using WindowHost = BubuUI.Platform.Linux.WindowHost;
+using WindowHostOptions = BubuUI.Platform.Linux.WindowHostOptions;
+using TestWindow = BubuUI.Platform.Linux.Tests.TestWindow;
 #endif
 
-namespace EclipseUI.Platform.Tests;
+namespace BubuUI.Platform.Tests;
 
 public sealed class NestedLoopFactAttribute : FactAttribute
 {
@@ -37,7 +37,7 @@ public sealed class NestedWindowLoopTests : IDisposable
     private static TestWindow CreateWindow()
     {
 #if SCHEDULER_WINDOWS
-        return new("EclipseUI nested frame test", 280, 160, quitOnDestroy: false);
+        return new("BubuUI nested frame test", 280, 160, quitOnDestroy: false);
 #else
         return new();
 #endif
@@ -265,7 +265,7 @@ public sealed class NestedWindowLoopTests : IDisposable
     private static void ClearNativeQuit()
     {
 #if SCHEDULER_WINDOWS
-        while (EclipseUI.Platform.Windows.Tests.Native.PeekMessageW(out _, 0, 0x0012, 0x0012, 1)) { }
+        while (BubuUI.Platform.Windows.Tests.Native.PeekMessageW(out _, 0, 0x0012, 0x0012, 1)) { }
 #endif
     }
 

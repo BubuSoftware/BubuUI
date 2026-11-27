@@ -1,9 +1,9 @@
 using Android.App;
 using Android.Runtime;
-using EclipseUI;
-using EclipseUI.Platform.Android;
-using EclipseUI.Text.Shaping;
-using EclipseUI.Themes.Fluent;
+using BubuUI;
+using BubuUI.Platform.Android;
+using BubuUI.Text.Shaping;
+using BubuUI.Themes.Fluent;
 using Gallery.Services;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -11,7 +11,7 @@ namespace Gallery.Android;
 
 [Application]
 public sealed class MainApplication(nint handle, JniHandleOwnership ownership)
-    : EclipseAndroidApplication<GalleryApp>(handle, ownership)
+    : BubuAndroidApplication<GalleryApp>(handle, ownership)
 {
     protected override AppBuilder CustomizeAppBuilder(AppBuilder builder)
         => builder
@@ -21,6 +21,6 @@ public sealed class MainApplication(nint handle, JniHandleOwnership ownership)
                 options.FallbackFontPaths = ["/system/fonts/NotoSansCJK-Regular.ttc", "/system/fonts/NotoColorEmoji.ttf"];
             })
             .UseFluentTheme()
-            // K37 @inject 示例：DependencyInjectionExample.ui 经 @inject 解析的单例状态服务。
+            // K37 @inject 示例：DependencyInjectionExample.bui 经 @inject 解析的单例状态服务。
             .ConfigureServices(s => s.AddSingleton<IGalleryDemoState, GalleryDemoState>());
 }

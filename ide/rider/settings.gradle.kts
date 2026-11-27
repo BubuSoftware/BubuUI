@@ -5,4 +5,4 @@ pluginManagement {
     }
 }
 
-rootProject.name = "eclipseui-rider"
+rootProject.name = "bubuui-rider"

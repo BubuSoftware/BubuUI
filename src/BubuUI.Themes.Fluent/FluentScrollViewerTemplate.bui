@@ -1,0 +1,8 @@
+@namespace BubuUI.Themes.Fluent
+@using BubuUI.Elements
+@template ScrollViewer
+
+<FluentOverlayPanel>
+    <ItemsPresenter Owner={Owner} />
+    <FluentScrollBarVisual Owner={Owner} />
+</FluentOverlayPanel>

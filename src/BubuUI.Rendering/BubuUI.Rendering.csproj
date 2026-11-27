@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <RootNamespace>BubuUI.Rendering</RootNamespace>
+    <Description>BubuUI rendering contracts: display list, draw commands, render targets. No backend dependency.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\BubuUI.Runtime\BubuUI.Runtime.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -17,10 +17,10 @@
 
 - 设计文档 01–15（痛点、架构、模板引擎、运行时、布局/渲染/输入、IDE、工具链、里程碑、
   各 G 阶段切片记录、控件契约、状态与反应式）。
-- `.ui` 前端：Lexer / Parser / AST / 字面量转换与建议 / 诊断。已实现的出口：EUI001–EUI013/EUI015、
+- `.bui` 前端：Lexer / Parser / AST / 字面量转换与建议 / 诊断。已实现的出口：EUI001–EUI013/EUI015、
   EUI016/017/018/019/020/021/022/023/025/026/027/028/029/030/031、EUI033/037/040/043/045、EUI100。
-  `EclipseUI.Compiler.Metadata` 的目录构建另产出 EUI017/018/019/021/026/028/030 的**元数据问题**
-  （`UiMetadataProblem`，不是 `.ui` 上的诊断）；✅ 2026-11-08（D74 ②/D81）：源项目问题在 C# 声明处报出、
+  `BubuUI.Compiler.Metadata` 的目录构建另产出 EUI017/018/019/021/026/028/030 的**元数据问题**
+  （`UiMetadataProblem`，不是 `.bui` 上的诊断）；✅ 2026-11-08（D74 ②/D81）：源项目问题在 C# 声明处报出、
   标签使用点分流 EUI016/017/018/030，引用程序集仍只在使用点暴露。
   EUI024（委托签名匹配）已落地（✅ 2026-11-08/D82，`EventHandlerSignatureTests` 16 例），G3 七个小切片至此全部收敛；口径见台账 D82。
 - Roslyn 增量源生成器：code-behind 发现、模板解析与动态点生成、`@foreach` item 类型推断、代码发射、`#line` 映射。
@@ -36,7 +36,7 @@
   （控件侧与组件侧）；旧语法 `:bind`/`:value` 已按 K27 移除并报 `EUI046`（`EUI043` 停用）。
 - 测试：**643 个用例（Headless 327 / Compiler 241 / Rendering 75），全绿**——既有像素 golden 红
   （VelloSharp AA 舍入差 1 导致的整图 hash 漂移）已随 D91 基线重生成清零；
-  编译器测试用快照钉住当前模板表面（9 标签 / 38 属性项 / 74 事件项 / 附加属性 2），样例 `.ui` 已用 `@bind-P` 新语法。
+  编译器测试用快照钉住当前模板表面（9 标签 / 38 属性项 / 74 事件项 / 附加属性 2），样例 `.bui` 已用 `@bind-P` 新语法。
 
 **尚不具备**
 
@@ -80,7 +80,7 @@
 | 文本 | 🟡 HarfBuzz shaping、TextBlock Wrap、逐字素字体回退与彩色 emoji 已接入（2026-11-14） | 完整 bidi、Unicode 断行与字体发现；缓存共享字体分段/进距/行盒，验证见 [中文/emoji 报告](./reports/unicode-input-2026-11-14.md) |
 | 输入/焦点 | 🟡 元素路由已通 | 字符输入/IME、滚轮/触摸、Shift+Tab、无障碍 |
 | 渲染/合成器 | 🟡 scene graph + 上屏 + damage v0 + retained 构建层（✅ D93） | 脏区光栅化（上游 scissor API）、合成器、帧预算门槛 |
-| 样式/主题 | 🟡 令牌 + Class 样式 + 主题资源 + 伪类变体 + `:disabled` + **样式表编译器（E1：.eustyle/@style → 生成 Define 调用）**已落（2026-11-09，D98–D104），E2/E4/E5 补齐（D105–D107，2026-11-09/10），**样式属性自定义化（E6：`[UiStyleProperty]` 并集目录 + enum/string 值 + EUI058/059）**已落（2026-11-12，D115） | 资源字典完整形态（S-C 后续）、后代/子代选择器组合、控件模板（S-D）、P2 复用 `[UiLiteralParser]` 的复杂类型样式值、P3 多值语法与 Owner 适用性诊断（design/19） |
+| 样式/主题 | 🟡 令牌 + Class 样式 + 主题资源 + 伪类变体 + `:disabled` + **样式表编译器（E1：.bss/@style → 生成 Define 调用）**已落（2026-11-09，D98–D104），E2/E4/E5 补齐（D105–D107，2026-11-09/10），**样式属性自定义化（E6：`[UiStyleProperty]` 并集目录 + enum/string 值 + EUI058/059）**已落（2026-11-12，D115） | 资源字典完整形态（S-C 后续）、后代/子代选择器组合、控件模板（S-D）、P2 复用 `[UiLiteralParser]` 的复杂类型样式值、P3 多值语法与 Owner 适用性诊断（design/19） |
 | 控件库 | 🟢 基础控件已补齐（2026-11-14） | 当前 42 标签，含输入、选择、浮层、菜单、页签、树、表格、日期、图形和布局；行为与高级能力边界见 [design/24](./24-control-library.md) |
 | IDE | 🔴 未开始 | TextMate、LSP server、VS Code/Rider 壳 |
 | 工具链 | 🔴 基本未开始 | 热重载、断点映射、DevTools、无头测试 SDK |
@@ -95,7 +95,7 @@
 必须包含：
 
 - Windows 桌面窗口，能显示真实像素；
-- `.ui` 模板 + code-behind + signals 的完整 2D 链路；
+- `.bui` 模板 + code-behind + signals 的完整 2D 链路；
 - `@if` / `@foreach`（含 Key 复用）语义正确；
 - StackPanel/TextBlock/Button/CheckBox/ListBox/TextBox 等最小控件集；
 - 基础样式：颜色、字号、间距、圆角、简单主题切换；
@@ -121,7 +121,7 @@
 |---|---|---|---|
 | **G1 渲染 gate** | 2026-11（2–3 周） | Vello 最小像素闭环 + 功能/性能数据 | ✅ Go（有条件） |
 | **0.1 alpha** | 2027 Q2–Q3 | 2D 渲染、Win32 宿主、样式、基础控件、虚拟化起步 | `CounterApp`/`TaskList` 真窗口可交互；像素测试稳定 |
-| **0.2 alpha** | 2027 Q4 | IDE 诊断 + 补全（VS Code 先行）、热重载原型 | VS Code 中 `.ui` 可补全/报错；改 UI 不丢状态 |
+| **0.2 alpha** | 2027 Q4 | IDE 诊断 + 补全（VS Code 先行）、热重载原型 | VS Code 中 `.bui` 可补全/报错；改 UI 不丢状态 |
 | **0.5 beta** | 2028 Q1–Q2 | WebGPU 控件、macOS/Linux、DevTools、无障碍起步 | 两个平台跑通；WebGPU 内容与 2D 同帧 |
 | **1.0** | 2028 Q3–Q4 | API 冻结、IME、性能/稳定性、文档与发布 | 外部项目可无痛升级；性能预算达标 |
 
@@ -147,10 +147,10 @@
 
 **交付物**
 
-- `src/EclipseUI.Rendering` 契约层。
-- `src/EclipseUI.Rendering.Vello` CPU 后端（GPU 视时间）。
+- `src/BubuUI.Rendering` 契约层。
+- `src/BubuUI.Rendering.Vello` CPU 后端（GPU 视时间）。
 - `samples/RenderSpike` 一帧输出 PNG。
-- `tests/EclipseUI.Rendering.Tests` 像素探针 + 确定性测试。
+- `tests/BubuUI.Rendering.Tests` 像素探针 + 确定性测试。
 - `design/reports/render-gate-2026-11.md`：功能矩阵、性能数据、go/no-go。
 
 **出口标准**
@@ -163,7 +163,7 @@
 
 ### G2：2D 渲染垂直切片（8–10 周）
 
-**目标**：`.ui` → 元素树 → 布局 → scene graph → display list → 窗口像素。
+**目标**：`.bui` → 元素树 → 布局 → scene graph → display list → 窗口像素。
 
 **进度**（2026-10-28）：前三切片已完成——Win32 宿主 + wgpu surface 上屏 + resize 冒烟
 （[11 G2 第一切片](./11-g2-surface-slice.md)）；元素树→display list、输入路由、文本 shaping 接入、
@@ -263,7 +263,7 @@ CPU 侧部分收敛（2026-11-08/D84）：CPU 像素 golden（`PixelGoldenTests`
   绑定同名仍 EUI033）、`EUI031`（Class/Style/附加属性/`<Slot>`/`<ContentSlot>`）落地，
   台账 D2/D3/D6/D14/D19 关闭；落地记录见 [14 §14.12.3](./14-control-template-contract.md)。
   **C4 完成（2026-11-05）**：组件标签落地——`[UiParameter]`/`[UiContent]`/委托参数进符号派生目录
-  （EUI021/027/028 元数据校验、`{P}Changed` 约定链接），`.ui` 生成按 spec/02 §4.12 冻结顺序
+  （EUI021/027/028 元数据校验、`{P}Changed` 约定链接），`.bui` 生成按 spec/02 §4.12 冻结顺序
   （new → 作用域登记 → 参数推送 U/R → 默认内容 → `Mount()` → 挂父级），委托事件/组件 `@bind`/默认内容
   全形态可用；台账 D17/D52/D54/D56 关闭，新增 D73（残余风险）；
   落地记录见 [14 §14.12.4](./14-control-template-contract.md)。
@@ -303,10 +303,10 @@ CPU 侧部分收敛（2026-11-08/D84）：CPU 像素 golden（`PixelGoldenTests`
   **该切片 456 例全绿（207/188/61）**；口径正本 spec/02 §10，台账 D57 关闭 / 新增 D80。
   —— ✅ **按文件增量切片（2026-11-08，G3 小片）**：管道根拆为 `AdditionalTexts → UiFileInput` 与
   `Compilation → UiCatalog` 两条，逐文件 `Combine` + `Select` 出值相等 `UiFileFacts`（code-behind 表面 + 探针事实）
-  后逐文件 `RegisterSourceOutput`；目录/facts 每轮重建但下游按值命中缓存，单个 `.ui` 变化只重跑该文件。
+  后逐文件 `RegisterSourceOutput`；目录/facts 每轮重建但下游按值命中缓存，单个 `.bui` 变化只重跑该文件。
   验收直接断言 `IncrementalStepRunReason`（更正旧注释「公开 API 没有 step reason」的误读：
   `TrackedSteps[...].Outputs` 是 `(object Value, IncrementalStepRunReason Reason)` 元组）：
-  无关源码改动两文件均 `Cached`/`Unchanged`、单改 A.ui 则 A `Modified` B 缓存。
+  无关源码改动两文件均 `Cached`/`Unchanged`、单改 A.bui 则 A `Modified` B 缓存。
   口径与落地记录见 [14 §14.10.3](./14-control-template-contract.md)。
   —— ✅ **`#line` 列映射切片（2026-11-08，G3 小片，D79）**：`Emitter.Mapped` 由行型
   `#line N "path"` 换成增强型 span 指令 `#line (sl, sc) - (el, ec) "path"`，35 个调用点
@@ -327,7 +327,7 @@ CPU 侧部分收敛（2026-11-08/D84）：CPU 像素 golden（`PixelGoldenTests`
   ① EUI024 事件处理器签名匹配（D82）：常量 `UiDiagnostics.EventHandlerSignature` 早已分配；
   `TemplateGenerator.ValidateEventHandlerSignature` + `TemplateProbe.IsHandlerCompatible`
   （复用 `ProbeTree` 合成 partial 方法体）借 Roslyn 把处理器表达式放进 code-behind 符号上下文，
-  仅「表达式自身语义干净 + 对目标委托的转换确定失败」时报 Error 于 `.ui` 属性值并短路生成输出
+  仅「表达式自身语义干净 + 对目标委托的转换确定失败」时报 Error 于 `.bui` 属性值并短路生成输出
   （与 EUI004 一致）；符号未解析/重载失败/`dynamic`/表达式内部错误静默，交回生成代码经 `#line`
   由 C# 报错（spec/02 §2.4 规则 8 不重复报告）。控件事件复用 `Emitter.EventHandlerType`
   （`internal static`）、组件委托参数用 `UiParameterDef.ClrTypeDisplayName`，保证诊断与生成代码
@@ -340,7 +340,7 @@ CPU 侧部分收敛（2026-11-08/D84）：CPU 像素 golden（`PixelGoldenTests`
   CI 配置、S5 基准门槛。
   ③ G2 CPU 侧部分收敛（D84）：`PixelGoldenTests` 4 例 + `TestData/PixelGolden.baseline.txt`
   （纯图元、无字体依赖的 CPU 像素 golden：`ContentHash` 全图门禁 + 探针 ±2 容差 +
-  `ECLIPSEUI_UPDATE_GOLDEN=1` 生成开关 + 失败输出实际 PNG 到 TestResults）；
+  `BUBUUI_UPDATE_GOLDEN=1` 生成开关 + 失败输出实际 PNG 到 TestResults）；
   `SceneGraph/RetainedFrameCompositor.cs`（CPU retained 合成原型，持有上一帧 `RenderTarget`、
   按 `FrameDamage` 只 blit 脏区，断言脏区外逐字节不变、与整帧重绘等价）；
   `tools/bench-60fps.ps1` + `design/reports/target-machine-60fps-template.md`。
@@ -352,7 +352,7 @@ CPU 侧部分收敛（2026-11-08/D84）：CPU 像素 golden（`PixelGoldenTests`
   `DominantColor`（覆盖率 + 失败时 top3 直方图诊断）/`Contains`/`NotContains`（首命中坐标）/
   `CountIn`/`Count`、帧间 `SameAs`/`SameAsOutside`（`RenderTarget` 与 byte[] 快照重载，逐字节精确）；
   失败聚合一次性报告，`Failures` 可外查（golden 聚合诊断用）。`PixelGoldenTests` 升级**双层门禁**：
-  语义探针（期望值自描述于场景定义）先于基线比对，生成模式（`ECLIPSEUI_UPDATE_GOLDEN=1`）
+  语义探针（期望值自描述于场景定义）先于基线比对，生成模式（`BUBUUI_UPDATE_GOLDEN=1`）
   写基线前先过语义探针；三个纯图元场景各配区域/计数/禁色断言（描边半覆盖像素
   `At(4,32) α≈127` 的语义随之显式化）；Damage/Retained 手写像素双循环收敛为
   `SameAsOutside`/`SameAs`。既有红根因定位：`4,32` 半覆盖像素 `#FFFFFF80`→`#FFFFFF7F`
@@ -410,14 +410,14 @@ CPU 侧部分收敛（2026-11-08/D84）：CPU 像素 golden（`PixelGoldenTests`
 
 - 列表间距/条件布局有回归测试。—— ✅ 2026-11-05：`BlockLayoutTests`（10 例）+
   `TaskListEndToEndTests.ItemSpacing_EqualsRootGap`/`EmptyList_ConsumesNoGapSlot`（真实样例，根 `Gap="4"`）。
-- `#line` 能把 C# 类型错误落回 `.ui` 的行与列，且不产生非法 span 指令。—— ✅ 2026-11-08（D79）：
+- `#line` 能把 C# 类型错误落回 `.bui` 的行与列，且不产生非法 span 指令。—— ✅ 2026-11-08（D79）：
   `LineSpanMappingTests` 5 例（Roslyn 语义 3 例 + 生成指令合法性/零 CS8939 + 靠右表达式列精确）。
 - 组件注册表能发现样例项目与一个测试用第三方程序集。—— ✅ C1/C2：扫描器能发现**合成**第三方程序集
   （`SameTagInTwoReferencedAssemblies_IsAmbiguousWithCandidates` 真的 `Emit` 两个程序集再同时引用）；
-  C2 起生成器目录即派生目录，样例组件（Counter/Prefs/TaskList 经 `.ui`）与第三方程序集同链路覆盖。
+  C2 起生成器目录即派生目录，样例组件（Counter/Prefs/TaskList 经 `.bui`）与第三方程序集同链路覆盖。
 - 内置控件目录由符号派生（手写目录删除），目录与 `StyledPropertyRegistry` 的一致性测试通过。—— ✅ C2（2026-11-02）：
   手写目录已删除（D64），符号派生与 `StyledPropertyRegistry`/事件字段一致性测试通过。
-- 控件/组件标签契约（[14](./14-control-template-contract.md)）C1–C6 落地：自定义控件与组件可写入 `.ui`，
+- 控件/组件标签契约（[14](./14-control-template-contract.md)）C1–C6 落地：自定义控件与组件可写入 `.bui`，
   元数据错误在声明处或使用点报 EUI016–EUI031、EUI033/EUI037/EUI040/EUI043/EUI045（停用码零出现）。
   —— ✅ **已达成**：C1–C6 切片收敛，`EUI045` 已实现（✅ D57/D80，`CodeBehindConflictTests` 23 例），
   D74 ② 把 EUI016/017/018/026/028/030 接上编译期出口（✅ D81，`MetadataOutletTests` 14 例）；
@@ -450,7 +450,7 @@ CPU 侧部分收敛（2026-11-08/D84）：CPU 像素 golden（`PixelGoldenTests`
 - spec/02 §12 的 **D85–D88 全部关闭**，design/03 §3.5.4 双向同步；顺带关闭 **D11**（表达式捕获改按 C# 词法扫描）
   与 **D12**（未闭合注释）。
 - 样例与约 94 例 golden 完成 `@using` 一次性迁移；至少一个样例为底部 `@code` 的单文件形态。
-- `dotnet test EclipseUI.slnx` 零停用诊断、样本项目编译与运行；用例基线 497 → **548**（K31 后 **567**）
+- `dotnet test BubuUI.slnx` 零停用诊断、样本项目编译与运行；用例基线 497 → **548**（K31 后 **567**）
   （新增 `S6SyntaxTests` 26、`ExpressionCaptureTests` 13、`SwitchBlock` 运行时 6、生成器契约 6）。
   既有例外：`PixelGoldens_MatchBaseline` 的 `solid-primitives`/`transform-clip` 两幅整图 hash 仍不符
   （探针 ±2 全过，与 S6 无关，另立 G2 项）。
@@ -520,7 +520,7 @@ CPU 侧部分收敛（2026-11-08/D84）：CPU 像素 golden（`PixelGoldenTests`
 
 - TextMate grammar + snippets。
 - LSP server：诊断双通道（生成器 + 实时）、补全、悬停、跳转。
-- 表达式投影：`{}` → 合成 C# → Roslyn → span 映射回 `.ui`。
+- 表达式投影：`{}` → 合成 C# → Roslyn → span 映射回 `.bui`。
 - VS Code 扩展先行；Rider 通过 lsp4ij 接入。
 - 重命名跨文件联动（P2 起步）。
 
@@ -541,7 +541,7 @@ CPU 侧部分收敛（2026-11-08/D84）：CPU 像素 golden（`PixelGoldenTests`
 
 **出口标准**
 
-- 改 `.ui` 不丢 code-behind 状态。
+- 改 `.bui` 不丢 code-behind 状态。
 - 断点可直接下在 `{}` 表达式上。
 - CI 可跑无头 + 像素测试。
 
@@ -645,10 +645,10 @@ S6 语法对齐：G3 之后 / G4 之前；偏差 D85–D88；不改变 K1–K18 
 
 | ID | 交付物 | 位置 |
 |---|---|---|
-| D1 | 渲染契约 | `src/EclipseUI.Rendering/` |
-| D2 | Vello CPU 后端 | `src/EclipseUI.Rendering.Vello/` |
+| D1 | 渲染契约 | `src/BubuUI.Rendering/` |
+| D2 | Vello CPU 后端 | `src/BubuUI.Rendering.Vello/` |
 | D3 | 一帧 PNG CLI | `samples/RenderSpike/` |
-| D4 | 像素/确定性/性能测试 | `tests/EclipseUI.Rendering.Tests/` |
+| D4 | 像素/确定性/性能测试 | `tests/BubuUI.Rendering.Tests/` |
 | D5 | 功能矩阵 + 性能数据 + 结论 | `design/reports/render-gate-2026-11.md` |
 | D6 | 基线提交 + spike 分支 | git |
 
@@ -675,7 +675,7 @@ S6 语法对齐：G3 之后 / G4 之前；偏差 D85–D88；不改变 K1–K18 
 ### 9.7.4 契约草案
 
 ```csharp
-namespace EclipseUI.Rendering;
+namespace BubuUI.Rendering;
 
 public readonly record struct Color(byte R, byte G, byte B, byte A);
 
@@ -705,7 +705,7 @@ public interface IRenderBackend : IDisposable
 
 约束：
 
-- 契约层只依赖 `EclipseUI.Runtime` 的几何/文本类型，不依赖 VelloSharp。
+- 契约层只依赖 `BubuUI.Runtime` 的几何/文本类型，不依赖 VelloSharp。
 - 先支持 `RenderTarget.CpuBuffer`（RGBA），GPU surface 作为第二种 target 后加。
 - glyph run 直接复用 `ShapedBuffer`，避免 spike 阶段再造文本数据结构。
 
@@ -791,7 +791,7 @@ public interface IRenderBackend : IDisposable
 |---|---:|---|---|
 | 控制流块布局透明化 | 2–3d | `TaskList` item 间距 = 根 `Gap`；`@if` 多根元素按父容器布局 | ✅ 2026-11-05（D16 关闭/D77，`BlockLayoutTests` 10 例 + `TaskListEndToEndTests` 2 例 + GalleryApp 双路径目视） |
 | `Adopt` 迁移已入队失效（spec/03 §2.7 未定义） | 0.5d | 接管前 `Invalidate()` 的组件在新根队列中仍被渲染；回归测试 | ✅ 2026-11-07（D78，`ComponentOwnershipTests` 5 例；spec/03 §2.4/§2.7 契约补写） |
-| `#line` 列映射（G3） | 0.5d | span 型指令合法（无 CS8939）；类型错误落回 `.ui` 行/列；旧/新语法等价口径同步 | ✅ 2026-11-08（D79，`LineSpanMappingTests` 5 例；spec/02 §2.4/§11 契约补写） |
+| `#line` 列映射（G3） | 0.5d | span 型指令合法（无 CS8939）；类型错误落回 `.bui` 行/列；旧/新语法等价口径同步 | ✅ 2026-11-08（D79，`LineSpanMappingTests` 5 例；spec/02 §2.4/§11 契约补写） |
 | `ForEachBlock.Dispose` 释放 item 作用域 | 0.5d | 组件 Dispose 后条目作用域资源全部释放（无泄漏） | ✅ S2（D51） |
 | S1–S2 失效重算：`Invalidate`/`Render`/`U{N}` + 块 v4 | 2–3d | 失效后属性/文本重算；块 `Refresh()` 正确重建；`@bind-P`（S3）行为不变 | ✅ S1/S2（2026-10-30） |
 | 语法级表达式重写 | 3–5d | 字符串字面量/同名局部变量不被误改；回归测试 | ✅ 收敛为 tokenizer 切片（2026-11-05，v4 无重写需求，D20） |

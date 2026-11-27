@@ -1,8 +1,8 @@
 # 29 · 动画系统
 
-> 状态：属性过渡、`.eustyle` 描述、Fluent 开关动画及三平台帧接入已实施。关键帧、物理动画、通用变换和独立合成线程仍是后续工作。本文记录现有能力及其边界。
+> 状态：属性过渡、`.bss` 描述、Fluent 开关动画及三平台帧接入已实施。关键帧、物理动画、通用变换和独立合成线程仍是后续工作。本文记录现有能力及其边界。
 
-## 使用 `.eustyle`
+## 使用 `.bss`
 
 在样式基础规则中声明过渡，状态规则只负责设置目标值：
 
@@ -52,8 +52,8 @@ class 样式背景两端均为静态颜色时可过渡；两端均为 `theme(dar
 以下代码假设 `card` 是已挂接到宿主的 `Border`。配置不自动播放；下次属性基础值改变时启动：
 
 ```csharp
-using EclipseUI;
-using EclipseUI.Elements;
+using BubuUI;
+using BubuUI.Elements;
 
 Transitions.Set(card, Border.BackgroundProperty,
     new TransitionSpec(TimeSpan.FromMilliseconds(150), Easings.CubicOut));
@@ -64,7 +64,7 @@ card.Background = new UiColor(70, 130, 220);
 Transitions.Remove(card, Border.BackgroundProperty);
 ```
 
-框架直接提供 `double` 和 `UiColor` 插值，并可通过 `TransitionInterpolators.Register<T>` 注册其他类型的插值器。运行时要求属性的 `PropertyOptions` 包含 `Animatable = true`、失效级别为 `Render` 且不继承。供 `.eustyle` 编译器识别的属性字段还需标注 `[UiAnimatable]`；自定义类型也必须提供可用的插值器。不可插值的端点（如非有限 `double` 或为空的颜色槽）直接切换到目标。
+框架直接提供 `double` 和 `UiColor` 插值，并可通过 `TransitionInterpolators.Register<T>` 注册其他类型的插值器。运行时要求属性的 `PropertyOptions` 包含 `Animatable = true`、失效级别为 `Render` 且不继承。供 `.bss` 编译器识别的属性字段还需标注 `[UiAnimatable]`；自定义类型也必须提供可用的插值器。不可插值的端点（如非有限 `double` 或为空的颜色槽）直接切换到目标。
 
 Fluent `ToggleSwitch` 的 `Checked` 立即变化；视觉部件的数值进度控制圆点位置，配置的过渡从当前进度重定向，快速反向不会跳回原起点。该进度是部件视觉状态，不改变业务属性的含义。
 
@@ -98,6 +98,6 @@ host.AdvanceAnimations(TimeSpan.FromMilliseconds(100));
 
 ## 范围与验证
 
-首期不提供关键帧、Spring、延迟、循环、公开完成事件、布局属性动画、`.ui` 内动画标签或合成线程动画；也没有通用元素透明度/变换动画。`.eustyle` 的过渡块与简写已实现，其他动画语言仍需单独设计。
+首期不提供关键帧、Spring、延迟、循环、公开完成事件、布局属性动画、`.bui` 内动画标签或合成线程动画；也没有通用元素透明度/变换动画。`.bss` 的过渡块与简写已实现，其他动画语言仍需单独设计。
 
-回归覆盖插值、中途反向、双向绑定、样式事务、首帧和主题切换、隐藏/解绑、多宿主隔离、重入和旧逐帧接口兼容。具体用例见 `tests/EclipseUI.Headless.Tests/TransitionTests.cs`、`AnimationHostClockTests.cs`、`AnimationAuditTests.cs` 和编译器的 `LooklessTemplateTests.cs`；平台宿主测试覆盖各自的帧流程。原生系统动态偏好、跨资源槽过渡和合成线程性能仍未实现或验证。
+回归覆盖插值、中途反向、双向绑定、样式事务、首帧和主题切换、隐藏/解绑、多宿主隔离、重入和旧逐帧接口兼容。具体用例见 `tests/BubuUI.Headless.Tests/TransitionTests.cs`、`AnimationHostClockTests.cs`、`AnimationAuditTests.cs` 和编译器的 `LooklessTemplateTests.cs`；平台宿主测试覆盖各自的帧流程。原生系统动态偏好、跨资源槽过渡和合成线程性能仍未实现或验证。

@@ -1,4 +1,4 @@
-using EclipseUI.Text.Shaping;
+using BubuUI.Text.Shaping;
 
 namespace Gallery;
 

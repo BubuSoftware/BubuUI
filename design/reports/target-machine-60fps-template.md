@@ -36,8 +36,8 @@ powershell -File tools/bench-60fps.ps1 -RunWindowMeasure -IncludeWindowSpike `
 等价手工命令（逐条，便于定位失败步骤）：
 
 ```powershell
-dotnet build EclipseUI.slnx -c Release
-dotnet test tests/EclipseUI.Rendering.Tests -c Release
+dotnet build BubuUI.slnx -c Release
+dotnet test tests/BubuUI.Rendering.Tests -c Release
 $env:RENDERSPIKE_ITERATIONS = 20
 dotnet run --project samples/RenderSpike -c Release -- bench
 dotnet run --project samples/GalleryApp -c Release -- --always-render --no-vsync --max-fps 60 --frames 1200
@@ -56,7 +56,7 @@ dotnet run --project samples/WindowSpike -c Release -- --frames 1200 --no-vsync 
   任一超预算需定位对应阶段，不能只看总帧时；分段由 `WindowSpike` 的 `stages:` 行采集。
 - `RenderSpike bench` 的 GPU 分支在无适配器时输出 `NaN` / stderr `useCpu=False failed`，脚本优雅跳过，仅 CPU 数据有效。
 - CPU 后端每次 Render 约 60ms 固定开销，只用于 CI 像素测试与离线导出，**不作为逐帧路径**；逐帧必须走 GPU。
-- CPU 像素 golden 测试（本片 B1）必须全绿：`dotnet test tests/EclipseUI.Rendering.Tests --filter FullyQualifiedName~PixelGoldenTests -c Release`。
+- CPU 像素 golden 测试（本片 B1）必须全绿：`dotnet test tests/BubuUI.Rendering.Tests --filter FullyQualifiedName~PixelGoldenTests -c Release`。
 
 ## 4. 结果（需回填）
 
@@ -99,5 +99,5 @@ dotnet run --project samples/WindowSpike -c Release -- --frames 1200 --no-vsync 
 
 - backlog #7「像素测试基础设施：探针 DSL + 失败时输出 diff 图」：本片已落地文本基线 + 探针 + 失败时 `TestResults/` 实际 PNG；
   「探针 DSL」仍为后续项（当前探针是 C# 元组常量，非独立 DSL）。
-- CPU 侧 retained / 局部重绘原型（`src/EclipseUI.Rendering/SceneGraph/RetainedFrameCompositor.cs`）为原型：
+- CPU 侧 retained / 局部重绘原型（`src/BubuUI.Rendering/SceneGraph/RetainedFrameCompositor.cs`）为原型：
   后端无 scissor，scratch 仍整帧渲染，仅合成层采纳脏区；要真正减少光栅化工作量需后端提供脏区裁剪能力。

@@ -1,0 +1,5 @@
+@namespace BubuUI.Themes.Fluent
+@using BubuUI.Elements
+@template DataGridColumnHeader
+
+<Grid><FluentDataGridColumnHeaderVisual Owner={Owner} /></Grid>

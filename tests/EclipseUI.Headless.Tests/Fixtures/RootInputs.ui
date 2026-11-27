@@ -1,6 +1,0 @@
-@namespace EclipseUI.Headless.Tests
-@using EclipseUI.Elements
-
-<RootInputCard Title="from ui">
-    <TextBlock>body from ui</TextBlock>
-</RootInputCard>

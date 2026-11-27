@@ -31,15 +31,15 @@
 
 | ID | 任务 | 工期 | 状态 | 产出 |
 |---|---|---:|---|---|
-| G2-00 | 抽取 `VelloSceneBuilder`，CPU/GPU 共用同一翻译层 | 0.5d | DONE | `src/EclipseUI.Rendering.Vello/VelloSceneBuilder.cs` |
-| G2-01 | 契约层新增 `ISurfacePresenter` | 0.5d | DONE | `src/EclipseUI.Rendering/ISurfacePresenter.cs` |
-| G2-02 | `VelloSurfaceBackend`：instance/adapter/device/surface/renderer | 1.5d | DONE | `src/EclipseUI.Rendering.Vello/VelloSurfaceBackend.cs` |
-| G2-03 | Win32 窗口宿主：注册类、消息循环、Show/Close | 1d | DONE | `src/EclipseUI.Platform.Windows/Win32Window.cs` |
+| G2-00 | 抽取 `VelloSceneBuilder`，CPU/GPU 共用同一翻译层 | 0.5d | DONE | `src/BubuUI.Rendering.Vello/VelloSceneBuilder.cs` |
+| G2-01 | 契约层新增 `ISurfacePresenter` | 0.5d | DONE | `src/BubuUI.Rendering/ISurfacePresenter.cs` |
+| G2-02 | `VelloSurfaceBackend`：instance/adapter/device/surface/renderer | 1.5d | DONE | `src/BubuUI.Rendering.Vello/VelloSurfaceBackend.cs` |
+| G2-03 | Win32 窗口宿主：注册类、消息循环、Show/Close | 1d | DONE | `src/BubuUI.Platform.Windows/Win32Window.cs` |
 | G2-04 | 输入桥接：鼠标/滚轮/离开、键盘、字符、焦点 | 1d | DONE | `Win32PointerEventArgs` / `Win32KeyEventArgs` / `MapKey` |
 | G2-05 | resize + DPI：`WM_SIZE` / `WM_DPICHANGED` / 客户区换算 | 1d | DONE | `SetClientSize`、`LogicalClientSize`、selfcheck |
 | G2-06 | 窗口 spike：动画场景 + 帧时间分段统计 | 1d | DONE | `samples/WindowSpike`（`--frames` / `--parts` / `--no-vsync`） |
 | G2-07 | 上屏正确性：屏幕截图 + 与 CPU 光栅化比对 | 0.5d | DONE | `tools/capture-window.ps1`、`out/window-screen.png` |
-| G2-08 | 回归测试：CPU 确定性 + CPU/GPU 交叉一致 | 0.5d | DONE | `tests/EclipseUI.Rendering.Tests/SceneBuilderTests.cs` |
+| G2-08 | 回归测试：CPU 确定性 + CPU/GPU 交叉一致 | 0.5d | DONE | `tests/BubuUI.Rendering.Tests/SceneBuilderTests.cs` |
 | G2-09 | resize 冒烟：程序化改尺寸 ×4 | 0.5d | DONE | `--selfcheck` → `selfcheck: PASS` |
 
 **关键路径**：G2-00 → G2-02 → G2-03 → G2-06 → G2-07。
@@ -48,7 +48,7 @@
 ## 11.3 结构
 
 ```
-.ui → 元素树 → 布局 → (G2 后续) scene graph → DisplayList ─┬→ VelloCpuBackend → RenderTarget → PNG/探针
+.bui → 元素树 → 布局 → (G2 后续) scene graph → DisplayList ─┬→ VelloCpuBackend → RenderTarget → PNG/探针
                                                           └→ VelloSurfaceBackend → wgpu surface → 窗口像素
                                                                   ↑
                                                         Win32Window（消息循环 / resize / 输入）
@@ -58,15 +58,15 @@
 
 | 层 | 程序集 | 依赖 | 说明 |
 |---|---|---|---|
-| 契约 | `EclipseUI.Rendering` | `EclipseUI.Runtime` | 不感知 Vello；`ISurfacePresenter` 与 `IRenderBackend` 并列 |
-| 后端 | `EclipseUI.Rendering.Vello` | 契约 + VelloSharp | `VelloSceneBuilder` 唯一翻译层，CPU / GPU 共用 |
-| 平台 | `EclipseUI.Platform.Windows` | `EclipseUI.Runtime` | 纯 P/Invoke，无 WinForms/WPF |
+| 契约 | `BubuUI.Rendering` | `BubuUI.Runtime` | 不感知 Vello；`ISurfacePresenter` 与 `IRenderBackend` 并列 |
+| 后端 | `BubuUI.Rendering.Vello` | 契约 + VelloSharp | `VelloSceneBuilder` 唯一翻译层，CPU / GPU 共用 |
+| 平台 | `BubuUI.Platform.Windows` | `BubuUI.Runtime` | 纯 P/Invoke，无 WinForms/WPF |
 | 样例 | `samples/WindowSpike` | 平台 + 后端 + 文本 | 帧循环、输入回显、性能统计、selfcheck |
 
 ### 契约新增
 
 ```csharp
-namespace EclipseUI.Rendering;
+namespace BubuUI.Rendering;
 
 public interface ISurfacePresenter : IDisposable
 {
@@ -217,7 +217,7 @@ GPU 离屏（`VelloCpuBackend { UseCpu = false }`，同场景同尺寸）：5.69
 ### 2026-10-28
 
 - 完成：`ISurfacePresenter`、`VelloSceneBuilder` 抽取、`VelloSurfaceBackend`（Dx12）、
-  `EclipseUI.Platform.Windows`（窗口/消息/输入/DPI/resize）、`samples/WindowSpike`、
+  `BubuUI.Platform.Windows`（窗口/消息/输入/DPI/resize）、`samples/WindowSpike`、
   `tools/capture-window.ps1`、2 个交叉一致测试、`--selfcheck`。
 - 阻塞：无。
 - 数据/截图：`out/window-screen.png`（真实窗口）、`out/window-frame.png`（CPU 对照）、§11.5 表。

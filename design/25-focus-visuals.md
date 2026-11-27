@@ -211,7 +211,7 @@ Segment 分别保存自身命令 Commands 与 FocusCommands，仍属于同一元
 
 首版增量接入现有样式系统：
 
-- EustyleVariant、Parser 平台伪类表、Generator 映射及 ClassStyleVariants 同时新增 FocusVisible/FocusWithin。
+- BssVariant、Parser 平台伪类表、Generator 映射及 ClassStyleVariants 同时新增 FocusVisible/FocusWithin。
 - `.Focus(...)` 保持当前行为；新增 `.FocusVisible(...)`、`.FocusWithin(...)`，无需应用自行 @states 注册。
 - FocusVisualMode 枚举属性通过已有 UiStyleProperty 枚举通道发布；当前 StyleBuilder 的内建扫描只支持颜色/数字，不直接新增一个未适配扫描器的枚举 setter。
 - FocusRingWidth 保留；补充 FocusRingColor（含 theme 资源）、FocusRingOffset，并通过同一符号目录进入 Class/inline/IDE。
@@ -246,7 +246,7 @@ design/23 的未来状态目录与统一装饰阶段采用本方案语义；本�
 | 切片 | 主要修改 | 出口 |
 |---|---|---|
 | F1 状态与来源 | Element、FocusManager、PseudoStates、Registry、InputRouter；WindowHost 输入前置通知 | Pointer/Keyboard/Programmatic/Restore 规则正确，同一元素切换方式生效，根隔离、树清理与重入可验证 |
-| F2 样式与元数据 | EustyleAst/Parser/Generator、StyleRegistry、Visual、元数据/IDE 目录与 golden | 三种伪类可编译、补全，focus 原义保持，模式和外圈参数可覆盖 |
+| F2 样式与元数据 | BssAst/Parser/Generator、StyleRegistry、Visual、元数据/IDE 目录与 golden | 三种伪类可编译、补全，focus 原义保持，模式和外圈参数可覆盖 |
 | F3 视觉与控件 | FocusVisualDescriptor、ElementPainter/FrameDamage、TextBox、复合控件、Popup 恢复、集合/页签目标几何 | 默认控件不重复描边，提示在正确位置，内容/裁剪/缓存/脏区一致 |
 | F4 迁移与演示 | 迁移 focused 参数调用；Gallery、Headless/Rendering/Compiler/IDE 回归及原生验证壳；同步 spec/设计入口 | 深浅主题、原生与无头行为一致，旧圈无残影、静止帧无新增成本 |
 
@@ -267,6 +267,6 @@ F1–F4 已完成。验收场景：
 
 - [WPF FocusVisualStyle](https://learn.microsoft.com/en-us/dotnet/desktop/wpf/advanced/styling-for-focus-in-controls-and-focusvisualstyle)：区分键盘焦点装饰与控件自己的焦点状态外观。
 - [Avalonia Focus](https://docs.avaloniaui.net/docs/input-interaction/focus)：focus、focus-within、focus-visible 与 FocusAdorner 分离，避免自绘提示与默认装饰重复。
-- [CSS Selectors：focus-visible](https://www.w3.org/TR/selectors-4/#the-focus-visible-pseudo)：输入方式与文本编辑能力共同决定提示，程序转移继承上下文；其启发式是参考，不声称 EclipseUI 实现浏览器全部行为。
+- [CSS Selectors：focus-visible](https://www.w3.org/TR/selectors-4/#the-focus-visible-pseudo)：输入方式与文本编辑能力共同决定提示，程序转移继承上下文；其启发式是参考，不声称 BubuUI 实现浏览器全部行为。
 
 本方案不扩展 TabIndex/FocusScope、无障碍树、手柄设备、完整控件模板系统。保留相应接口演进空间，避免把解决焦点描边变成新的样式引擎重构。

@@ -1,0 +1,25 @@
+@namespace BubuUI.Themes.Fluent
+@using BubuUI.Elements
+@using BubuUI.Rendering
+@template ToggleButton
+
+<Border Class="chrome" Background={ResolveBackground()} BorderColor={ResolveBorderColor()}
+        BorderThickness="1" CornerRadius={Visual.GetCornerRadius(Owner) ?? Owner.CornerRadius}>
+    <ContentPresenter Part="PART_ContentPresenter" Content={Owner.Content} Label={Owner.Label}
+                      HorizontalPadding={Math.Max(0, Owner.HorizontalPadding - 1)}
+                      VerticalPadding={Math.Max(0, Owner.VerticalPadding - 1)}
+                      TextAlignment={Owner.LabelAlignment} Foreground={ResolveForeground()} />
+</Border>
+
+@code {
+    private FluentTheme Palette => Owner.ThemeDefaults as FluentTheme ?? FluentTheme.Light;
+    private UiColor ResolveBackground() => Visual.GetBackgroundResource(Owner) is { } resource
+        ? FluentValueColors.Of(resource.Resolve(Palette)) : Visual.GetBackground(Owner) is { } color
+        ? FluentValueColors.Of(color) : Owner.Checked ? FluentValueColors.Accent(Owner, Palette) : Owner.Background;
+    private UiColor ResolveForeground() => Visual.GetForegroundResource(Owner) is { } resource
+        ? FluentValueColors.Of(resource.Resolve(Palette)) : Visual.GetForeground(Owner) is { } color
+        ? FluentValueColors.Of(color) : Owner.Checked
+        ? FluentValueColors.Of(Owner.IsEffectiveEnabled ? Palette.OnAccent : Palette.OnAccentDisabled) : Owner.Foreground;
+    private UiColor ResolveBorderColor() => Owner.Checked
+        ? FluentValueColors.Of(Palette.AccentBorder) : Owner.BorderBrush;
+}

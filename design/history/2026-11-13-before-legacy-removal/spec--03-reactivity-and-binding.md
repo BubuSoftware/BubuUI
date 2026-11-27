@@ -20,7 +20,7 @@
 
 | 本文定义 | 本文不定义（去哪看） |
 |---|---|
-| 组件 `Mount`/`Invalidate`/`Render`/`Dispose` 生命周期与线程模型 | `.ui` 词法/句法/诊断触发点（[spec/01](./01-template-syntax.md)） |
+| 组件 `Mount`/`Invalidate`/`Render`/`Dispose` 生命周期与线程模型 | `.bui` 词法/句法/诊断触发点（[spec/01](./01-template-syntax.md)） |
 | 失效队列、合并、宿主刷新时机、重入与死循环防护 | 生成文本的精确形态、`#line`、命名（[spec/02](./02-generated-code-contract.md)） |
 | 保留元素树、动态表达式求值时机、块刷新 | 控件如何声明属性/事件/内容模型（design/14） |
 | `@if`/`@foreach` 的分支重建与 Keyed 复用 | 布局、绘制、hit test（design/05） |
@@ -104,7 +104,7 @@ v4 把**反应式单位**从"表达式/路径"提升到"组件渲染"：
 
 ### 1.2 与 Blazor 的关系
 
-| 方面 | EclipseUI v4 | Blazor |
+| 方面 | BubuUI v4 | Blazor |
 |---|---|---|
 | 触发 | `Invalidate()` / UI 事件自动 / 参数推送 | `StateHasChanged()` / UI 事件自动 / 参数变化 |
 | 反应式单位 | 组件 `Render()` | 组件 `BuildRenderTree` |
@@ -685,10 +685,10 @@ private void Cycle()
 
 ```csharp
 var h0 = (global::System.Action)(() => AddTask());
-el.AddHandler(global::EclipseUI.Elements.Button.ClickEvent,
+el.AddHandler(global::BubuUI.Elements.Button.ClickEvent,
     () => { h0(); Invalidate(); });
 
-var h1 = (global::System.Action<global::EclipseUI.RoutedEventArgs>)(
+var h1 = (global::System.Action<global::BubuUI.RoutedEventArgs>)(
     e => OnSomeEvent(e));
 el.AddHandler(SomeEvent, e => { h1(e); Invalidate(); });
 ```
@@ -946,7 +946,7 @@ O(根级动态绑定数 + 根级块数 + Σ 块刷新成本)
 | T11 | 重入/循环 | `Render` 内 `Invalidate`、A↔B | 同轮处理；超上限抛异常；不挂起 |
 | T12 | 直接修改 | 改 `List.Add`/item 属性但未 `Invalidate` | UI 不变（写契约） |
 | T13 | 确定性 | 重复生成/打乱文件顺序 | 生成文本逐字节相同 |
-| T14 | `#line` | 故意类型错误 | 诊断落在 `.ui` 行；每个表达式只报一次 |
+| T14 | `#line` | 故意类型错误 | 诊断落在 `.bui` 行；每个表达式只报一次 |
 | T15 | 样例 | CounterApp/TaskList/GalleryApp | 编译 0 error；运行冒烟（增删/勾选/条件） |
 | T16 | 诊断 | 每个 EUI 触发用例 | 代码/span/级别稳定；停用码零出现 |
 | T17 | UI 同步上下文（D114） | `async void` + `Task.Yield`/`Task.Run`/`Task.Delay`、自投递续体、`ConfigureAwait(false)`、异常回调 | 续体线程 id == `UiThreadId`；tick N 旧值 / tick N+1 新值且段重建；按批 drain 不饿死；一次 drain 的 Render 次数 = 挂载组件数；跨线程写与异常收回 UI 线程 |
@@ -955,18 +955,18 @@ O(根级动态绑定数 + 根级块数 + Σ 块刷新成本)
 
 阶段门：S1 → T1–T4/T13/T14；S2 → T5–T7/T11/T15；S3 → T8/T9；S4 → T10/T12/T15；S5 → T17/T18。
 
-**S1 门禁（2026-10-30 通过）**：T1/T3 见 `tests/EclipseUI.Headless.Tests/S1AcceptanceTests.cs`，T2/T4 见
-`InvalidationTests.cs`，T13/T14 见 `tests/EclipseUI.Compiler.Tests/GeneratorContractTests.cs`；解决方案
+**S1 门禁（2026-10-30 通过）**：T1/T3 见 `tests/BubuUI.Headless.Tests/S1AcceptanceTests.cs`，T2/T4 见
+`InvalidationTests.cs`，T13/T14 见 `tests/BubuUI.Compiler.Tests/GeneratorContractTests.cs`；解决方案
 142 个测试全绿（Headless 77 / Compiler 4 / Rendering 61）。
 
-**S2 门禁（2026-10-30 通过）**：T5/T6/T7 见 `tests/EclipseUI.Headless.Tests/BlockTests.cs`
+**S2 门禁（2026-10-30 通过）**：T5/T6/T7 见 `tests/BubuUI.Headless.Tests/BlockTests.cs`
 （条件翻转/不翻转/空分支、数组/字典/LINQ/null、Keyed 复用/重建/重复 Key、条目释放）与
-`tests/EclipseUI.Compiler.Tests/GeneratorContractTests.cs`（`@if`/`@foreach` 生成形态、任意集合与
+`tests/BubuUI.Compiler.Tests/GeneratorContractTests.cs`（`@if`/`@foreach` 生成形态、任意集合与
 嵌套 item 类型推断、`EUI007`）；T11 见 `InvalidationTests.cs`（重入同轮、超上限抛异常）；
 T15 见 `samples/CounterApp`、`samples/GalleryApp` 与 `EndToEndTests.cs`（编译 0 error；增删/勾选/条件冒烟）。
 164 个测试全绿（Headless 89 / Compiler 14 / Rendering 61）。
 
-**S3 门禁（控件侧，2026-11-02 通过）**：T8 见 `tests/EclipseUI.Headless.Tests/EndToEndTests.cs`
+**S3 门禁（控件侧，2026-11-02 通过）**：T8 见 `tests/BubuUI.Headless.Tests/EndToEndTests.cs`
 （`TaskList` 条目内 `@bind-Checked={t.Done}`：回写 item、组件失效、同 Key 换实例后重建从源恢复、
 条目移除后绑定释放）与 `GeneratorContractTests.cs`（`UiBinding.TwoWay` 形态、`@bind-P` 与 `P:bind`
 生成文本逐字节相同、item 源与 `this.`/struct 字段中间段正例）；T16 的诊断用例覆盖 `EUI037`
@@ -994,7 +994,7 @@ D54/D56 关闭。S3 至此整体 ✅；该切片收敛时 **409 个测试全绿�
 与反应式的交点是 **D62**：`EUI040` 的「目标可绑」判定此前只来自手写目录的 `UiPropDef.Bindable` 标注，
 现在派生目录对每个模板可见属性给出符号级 `CanWrite`（public 可写 + `{Name}Property`），
 `DerivedCanWrite_CoversTheHandBindableFlags` 证明派生 ⊇ 手写标注——分析器已改读它（✅ C2）。
-测试 `tests/EclipseUI.Compiler.Tests/CatalogScannerTests.cs` 42 例，当前 **257 个测试全绿
+测试 `tests/BubuUI.Compiler.Tests/CatalogScannerTests.cs` 42 例，当前 **257 个测试全绿
 （Headless 103 / Compiler 93 / Rendering 61）**；表面与差集记录见 design/14 §14.12.1（C1）与
 §14.12.2（C2：手写目录删除、事件表面 1 → 9 个事件名、golden 快照落成文件），新登记偏差 D63–D72（spec/02 §12）。
 

@@ -4,7 +4,7 @@
 
 ```xml
 @namespace Gallery
-@using EclipseUI.Elements
+@using BubuUI.Elements
 <Window Title="Gallery" Width="1000" Height="760">
     <StackPanel><Button>OK</Button></StackPanel>
 </Window>

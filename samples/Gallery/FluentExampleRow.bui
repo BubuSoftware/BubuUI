@@ -1,0 +1,15 @@
+@namespace Gallery
+@using BubuUI
+@using BubuUI.Elements
+
+<Grid ColumnDefinitions="*,180" Height="48">
+    <TextBlock FontSize="14" VerticalAlignment="Center">{Title}</TextBlock>
+    <Canvas Grid.Column="1" Width="180" Height="48">
+        <ContentSlot Name="Control" />
+    </Canvas>
+</Grid>
+
+@code {
+    [UiParameter] public string Title { get; set; } = "";
+    [UiSlot("Control")] public Element? Control { get; set; }
+}

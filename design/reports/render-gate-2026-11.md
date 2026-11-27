@@ -19,10 +19,10 @@
 
 | ID | 交付物 | 位置 | 状态 |
 |---|---|---|---|
-| D1 | 渲染契约 | `src/EclipseUI.Rendering/` | ✅ |
-| D2 | Vello 后端（CPU + GPU 离屏） | `src/EclipseUI.Rendering.Vello/` | ✅ |
+| D1 | 渲染契约 | `src/BubuUI.Rendering/` | ✅ |
+| D2 | Vello 后端（CPU + GPU 离屏） | `src/BubuUI.Rendering.Vello/` | ✅ |
 | D3 | 一帧 PNG CLI | `samples/RenderSpike/` | ✅ |
-| D4 | 像素 / 确定性 / 功能矩阵测试 | `tests/EclipseUI.Rendering.Tests/` | ✅ 34 个测试 |
+| D4 | 像素 / 确定性 / 功能矩阵测试 | `tests/BubuUI.Rendering.Tests/` | ✅ 34 个测试 |
 | D5 | 本报告 | `design/reports/render-gate-2026-11.md` | ✅ |
 | D6 | 基线提交 + spike 分支 | `f801f4f` / `spike/vello-render` | ✅ |
 
@@ -56,7 +56,7 @@
 
 | 文本 | 字号 | shaping 宽度 | 墨迹宽度 | 差值 |
 |---|---:|---:|---:|---:|
-| `EclipseUI render gate` | 28 | 269.08 px | 266 px | 3.08 px（1.1%） |
+| `BubuUI render gate` | 28 | 269.08 px | 266 px | 3.08 px（1.1%） |
 | `Hamburgefonstiv` | 100 | 755.83 px | 747 px | 8.83 px（1.2%） |
 | `AVATAR Wave` | 48 | 312.00 px | 312 px | 0 px |
 
@@ -86,7 +86,7 @@
 
 ## 6. 确定性与测试
 
-- 34 个渲染测试全绿（`dotnet test tests/EclipseUI.Rendering.Tests`）。
+- 34 个渲染测试全绿（`dotnet test tests/BubuUI.Rendering.Tests`）。
 - 同一 display list 渲染两次 → 像素数组完全相同；同一输入跨实例哈希一致。
 - CPU/GPU 交叉一致性作为独立测试（无 GPU 适配器时自动跳过）。
 - 像素断言采用「中心点精确 + 区域范围 + 包围盒」，不提交全图 golden。
@@ -127,8 +127,8 @@
 
 ```powershell
 # 契约 + 后端 + 测试
-dotnet build EclipseUI.slnx -c Release
-dotnet test tests/EclipseUI.Rendering.Tests/EclipseUI.Rendering.Tests.csproj -c Release
+dotnet build BubuUI.slnx -c Release
+dotnet test tests/BubuUI.Rendering.Tests/BubuUI.Rendering.Tests.csproj -c Release
 
 # 三张 PNG（out/basic.png、out/demo.png、out/features.png）
 dotnet run --project samples/RenderSpike -c Release

@@ -1,5 +1,0 @@
-@namespace EclipseUI.Themes.Fluent
-@using EclipseUI.Elements
-@template DropDownButton
-
-<Grid><FluentDropDownButtonVisual Owner={Owner} /></Grid>

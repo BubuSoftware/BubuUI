@@ -1,9 +1,9 @@
-# 18 · Razor/Blazor 的 C# 智能提示：技术方案、VS Code 链路与 EclipseUI 借鉴
+# 18 · Razor/Blazor 的 C# 智能提示：技术方案、VS Code 链路与 BubuUI 借鉴
 
-> 状态：调研 + 方案建议（2026-11-11）；**阶段 0–4 已实施**（阶段 0：SourceMapping + 统一映射服务 + `eclipseui/generatedDocument`；阶段 1：`@code` 悬停 + 重命名；阶段 2：`EditorDocumentWorkspace` + `@code` 补全；阶段 3：`{expr}` 补全迁移 + `Renamer` 重命名；阶段 4：语义着色 Roslyn 化，代码修复 / 签名帮助按 4.9.2 可用性保留。落地细节与偏差见 §12）。
+> 状态：调研 + 方案建议（2026-11-11）；**阶段 0–4 已实施**（阶段 0：SourceMapping + 统一映射服务 + `bubuui/generatedDocument`；阶段 1：`@code` 悬停 + 重命名；阶段 2：`EditorDocumentWorkspace` + `@code` 补全；阶段 3：`{expr}` 补全迁移 + `Renamer` 重命名；阶段 4：语义着色 Roslyn 化，代码修复 / 签名帮助按 4.9.2 可用性保留。落地细节与偏差见 §12）。
 > 关联：[design/06 §6.9.3 / §6.9.6 / §6.9.10](./06-ide-support.md)、[ide/README.md](../ide/README.md)、[spec/02](../spec/02-generated-code-contract.md)。
 > 结论：Razor 的 C# 能力来自「真实生成文档 + Roslyn 语言服务 + 双向位置映射 + 语言路由」；
-> EclipseUI 已经具备同源生成器、项目 Compilation 与目录，缺的是 **Document 层**与**统一映射服务**，
+> BubuUI 已经具备同源生成器、项目 Compilation 与目录，缺的是 **Document 层**与**统一映射服务**，
 > 不是 Roslyn 本身。
 
 ---
@@ -14,10 +14,10 @@
 |---|---|
 | Razor 为什么能给出 C# 补全、悬停、跳转、重命名？ | 因为 `.razor` 被编译成真实 C#，Roslyn 把它当成 `SourceGeneratedDocument`；这些能力全部由 Roslyn 的语言服务提供，Razor 只做路由和映射。 |
 | VS Code 插件具体做了什么？ | 客户端维护 `razor-html` 虚拟文档、把 HTML 请求转发给 VS Code 内置语言服务；C# 请求在 Roslyn 进程内直接调用 C# API，不再走一轮 LSP。 |
-| EclipseUI 最大的差距是什么？ | 生成代码只进了 `Compilation`，没有进 Roslyn `Workspace`/`Document`；因此只能手写 `SemanticModel` 查询，调不到 `CompletionService`/`Renamer`。 |
+| BubuUI 最大的差距是什么？ | 生成代码只进了 `Compilation`，没有进 Roslyn `Workspace`/`Document`；因此只能手写 `SemanticModel` 查询，调不到 `CompletionService`/`Renamer`。 |
 | `@code` 缺补全/悬停/重命名为啥不能只加一个 `switch` 分支？ | 加分支只能拿到符号；补全需要“当前位置可见什么”的上下文，重命名需要 `Solution` 级引用查找。根因是没有文档层。 |
 | 最该先做什么？ | 先做 `SourceMapping` + 统一 `DocumentMappingService`，再做 `@code` 悬停/重命名，最后做 `EditorDocumentWorkspace` + `CompletionService`。 |
-| 要不要照搬 Razor 的 HTML 虚拟文档？ | 不要。`.ui` 的标签/属性/`@bind-`/内容模型是自定义语义，交给 HTML/CSS 服务会制造“IDE 比编译器宽松”的假阴性。 |
+| 要不要照搬 Razor 的 HTML 虚拟文档？ | 不要。`.bui` 的标签/属性/`@bind-`/内容模型是自定义语义，交给 HTML/CSS 服务会制造“IDE 比编译器宽松”的假阴性。 |
 
 **一句话**：Razor 没有为 `.razor` 重写 C# 语言服务；它把 `.razor` 变成 Roslyn 认得的 C# 文档，然后让 Roslyn 干活。
 
@@ -30,14 +30,14 @@
 - Razor/Blazor 的编译产物、源生成器、`SourceGeneratedDocument` 与 Roslyn 服务的关系；
 - Razor 的 `#line` / `SourceMapping` 映射机制；
 - VS Code 侧 Razor/C# 扩展的具体链路，特别是虚拟 HTML 文档与请求转发；
-- EclipseUI 现有 IDE 实现（L1–L4、`EmbeddedCSharpService`、`CompletionProvider`、`RenameProvider`）的对照；
+- BubuUI 现有 IDE 实现（L1–L4、`EmbeddedCSharpService`、`CompletionProvider`、`RenameProvider`）的对照；
 - 可落地的借鉴项、优先级、验收与风险。
 
 ### 1.2 本文不覆盖
 
-- 不改变 [spec/01](../spec/01-template-syntax.md) 的 `.ui` 语法；
+- 不改变 [spec/01](../spec/01-template-syntax.md) 的 `.bui` 语法；
 - 不改变 [spec/02](../spec/02-generated-code-contract.md) 的生成代码契约与 `#line` 规范；
-- 不提议用 Razor 编译器/HTML 语法层替换 EclipseUI 的前端；
+- 不提议用 Razor 编译器/HTML 语法层替换 BubuUI 的前端；
 - 不提议让 Roslyn 接管 `.cs` 文件（那仍由 C# Dev Kit / ReSharper 负责）；
 - 不展开调试器的 `#line` 断点接线（design/06 P3 的独立项）。
 
@@ -187,7 +187,7 @@ Razor 同时保留两类映射信息。
 
 这是 C# 10 的带列范围增强 `#line`。Roslyn 的 `Location.GetMappedLineSpan()` 会据此把生成代码里的诊断位置映射回 `.razor`；调试器也依赖它把断点放回源文件。
 
-EclipseUI 的生成器已经发了这种 span 型 `#line`（`Emitter.Mapped` / `EmitCodeBlock`），Tier 2 诊断也已经用 `GetMappedLineSpan()` 回映。这一点和 Razor 是同一条路。
+BubuUI 的生成器已经发了这种 span 型 `#line`（`Emitter.Mapped` / `EmitCodeBlock`），Tier 2 诊断也已经用 `GetMappedLineSpan()` 回映。这一点和 Razor 是同一条路。
 
 #### 2.5.2 `SourceMapping`：给编辑类功能用
 
@@ -214,7 +214,7 @@ public sealed class SourceMapping
 - 映射失败时必须能明确返回“不可映射”，而不是猜一个位置。
 
 Razor 的规则是：**能完整映射才映射；映射不了就丢弃这个补全项/编辑，绝不近似。**  
-EclipseUI 的代码操作已经遵循“映不回的编辑丢弃而不是猜”，这个原则应该扩展到所有 provider。
+BubuUI 的代码操作已经遵循“映不回的编辑丢弃而不是猜”，这个原则应该扩展到所有 provider。
 
 ### 2.6 多语言路由与结果合并
 
@@ -346,42 +346,42 @@ LSP CompletionList → VS Code 渲染
 
 ---
 
-## 4. EclipseUI 对照
+## 4. BubuUI 对照
 
 ### 4.1 已经对齐的部分
 
-EclipseUI 并不是“没有 Roslyn”：
+BubuUI 并不是“没有 Roslyn”：
 
 - L1–L4 已经用 MSBuild 求值 + 真实项目 Compilation + 真 `TemplateGenerator`；
 - 生成器已经发出 span 型 `#line`；
 - Tier 2 诊断已经用 `GetMappedLineSpan()` 回映；
 - `EmbeddedCSharpService` 已经用 `SemanticModel` 做签名帮助、语义着色、表达式类型推断；
-- `CodeBlockDefinition` 已经能把 `@code` 里的声明跳回 `.ui`；
+- `CodeBlockDefinition` 已经能把 `@code` 里的声明跳回 `.bui`；
 - 客户端也是薄 LSP 客户端，还有反编译虚拟文档。
 
 这些和 Razor 的方向是一致的。尤其是 **“编译时按什么，IDE 就按什么”**，这就是 Razor 的核心原则。
 
 ### 4.2 差异表
 
-| 维度 | Razor | EclipseUI 现状 | 影响 |
+| 维度 | Razor | BubuUI 现状 | 影响 |
 |---|---|---|---|
 | 生成代码在 IDE 中的身份 | Roslyn `SourceGeneratedDocument`，属于 `Project`/`Solution` | L2/L3 `Compilation` 里的 `SyntaxTree`，不是 `Document` | **根本差距**：无法调用 `CompletionService`/`Renamer` |
 | C# 能力来源 | Roslyn 语言服务 | `SemanticModel` + 手写 `Members()` | 能力上限不同 |
 | `@code` | 真实类成员，完整 C# 服务 | `MemberTree` 只用于跳转/签名/着色；补全/悬停/重命名落 `default` | 已知缺口 |
-| `{expr}` | 真实生成文档 + 映射 | `ForExpression` 合成 `__EclipseUiL8()` | 丢失真实语句上下文 |
+| `{expr}` | 真实生成文档 + 映射 | `ForExpression` 合成 `__BubuUiL8()` | 丢失真实语句上下文 |
 | 补全项模型 | Roslyn item + Razor/HTML 合并 | catalog + 手写成员枚举；所有 item 共享一个替换区间 | 无法表达 per-item `textEdit`、tags、commit chars |
 | 映射 | `SourceMapping` + `#line` + mapping service | `#line` 用于诊断；`BodyStart`/`IndexOf` 散落各处 | 脆弱，易错位 |
 | 重命名 | `Renamer` over `Solution` | 手写 `SymbolFinder`，仅 `{expr}` / code-behind 成员 | 覆盖窄，冲突处理弱 |
 | 诊断 | 生成文档诊断 + 映射 | Tier 2 `#line`，已对上 | 保留 |
-| 多语言 | HTML 虚拟文档 + VS Code HTML 服务 | 自定义 `.ui` / `.eustyle` 目录 | **不应照搬 HTML** |
-| 项目系统 | Razor project system / Roslyn workspace | L1–L4 MSBuild 求值 + 目录 | EclipseUI 的强项，保留 |
+| 多语言 | HTML 虚拟文档 + VS Code HTML 服务 | 自定义 `.bui` / `.bss` 目录 | **不应照搬 HTML** |
+| 项目系统 | Razor project system / Roslyn workspace | L1–L4 MSBuild 求值 + 目录 | BubuUI 的强项，保留 |
 | 客户端 | 薄壳 + 虚拟文档适配 | 薄 LSP 客户端 + 反编译文档 | 基本够用 |
 
 ### 4.3 差距的本质
 
-不是“Razor 用了 Roslyn，EclipseUI 没用”，而是：
+不是“Razor 用了 Roslyn，BubuUI 没用”，而是：
 
-> **Razor 让 Roslyn 的语言服务跑在一份真实的 `Document` 上；EclipseUI 只让 Roslyn 的 `SemanticModel` 跑在一份 `Compilation` 上。**
+> **Razor 让 Roslyn 的语言服务跑在一份真实的 `Document` 上；BubuUI 只让 Roslyn 的 `SemanticModel` 跑在一份 `Compilation` 上。**
 
 这带来三个具体后果：
 
@@ -394,13 +394,13 @@ EclipseUI 并不是“没有 Roslyn”：
 ### 4.4 目录不是问题，反而应该保留
 
 Razor 也没有让 Roslyn 去验证 HTML 标签、标签助手、`@bind-`。这些是 Razor 编译器/标签助手层的职责。  
-EclipseUI 的 `UiCatalogFactory` 就是 Razor 标签助手描述符的对应物：它把 CLR 类型收窄成“模板真正暴露的表面”，防止 Roslyn 接受 `AvailableSize`、`ItemFactory` 这类普通 CLR 属性而编译器报 EUI002。
+BubuUI 的 `UiCatalogFactory` 就是 Razor 标签助手描述符的对应物：它把 CLR 类型收窄成“模板真正暴露的表面”，防止 Roslyn 接受 `AvailableSize`、`ItemFactory` 这类普通 CLR 属性而编译器报 EUI002。
 
 所以 [design/06 §6.9.6](./06-ide-support.md) 的结论是对的：
 
 > **模板表面归目录，C# 表达式/语句归 Roslyn。**
 
-借鉴 Razor 不是“把 `.ui` 整体投影成 C# 让 Roslyn 校验标签”，而是“把 C# 岛生成成真实文档，让 Roslyn 服务 C# 岛”。目录一行都不用删。
+借鉴 Razor 不是“把 `.bui` 整体投影成 C# 让 Roslyn 校验标签”，而是“把 C# 岛生成成真实文档，让 Roslyn 服务 C# 岛”。目录一行都不用删。
 
 ---
 
@@ -408,7 +408,7 @@ EclipseUI 的 `UiCatalogFactory` 就是 Razor 标签助手描述符的对应物�
 
 ### 5.1 P0-1：生成文档成为一等公民
 
-**目标**：让每个 `.ui` 生成代码在 Roslyn `Workspace` 里有一个 `Document`，而不是只往 `Compilation` 里塞 `SyntaxTree`。
+**目标**：让每个 `.bui` 生成代码在 Roslyn `Workspace` 里有一个 `Document`，而不是只往 `Compilation` 里塞 `SyntaxTree`。
 
 有两种实现路线。
 
@@ -418,7 +418,7 @@ EclipseUI 的 `UiCatalogFactory` 就是 Razor 标签助手描述符的对应物�
 
 - 每个项目快照一份 `AdhocWorkspace`，懒创建、按版本缓存；
 - 加入项目的 `.cs` 源文档（用编辑器缓冲区文本，不用磁盘文本）；
-- 加入 `.ui` 的生成文档（来自 `ProjectSnapshot.GeneratedTrees`），虚拟路径如 `Foo.ui.g.cs`；
+- 加入 `.bui` 的生成文档（来自 `ProjectSnapshot.GeneratedTrees`），虚拟路径如 `Foo.bui.g.cs`；
 - 使用和 L2 完全相同的 `CSharpParseOptions`、`CompilationOptions`、`MetadataReference`；
 - 不要把生成树同时作为源文档和生成文档加入，避免 partial 成员重复；
 - 缓冲区变化时用 `Solution.WithDocumentText` 更新，而不是重建整个 workspace。
@@ -430,7 +430,7 @@ EclipseUI 的 `UiCatalogFactory` 就是 Razor 标签助手描述符的对应物�
 让 Roslyn `Workspace` 自己跑同一个 `TemplateGenerator`：
 
 - 把 `TemplateGenerator` 作为 `AnalyzerReference` 加入 `Project`；
-- 把 `.ui` 作为 `AdditionalDocument` 加入（生成器从 `AdditionalTextsProvider` 读）；
+- 把 `.bui` 作为 `AdditionalDocument` 加入（生成器从 `AdditionalTextsProvider` 读）；
 - 用 `AnalyzerConfigDocument` 提供 `build_property.rootnamespace`；
 - 调用 `Project.GetSourceGeneratedDocumentsAsync()` 得到 `SourceGeneratedDocument`。
 
@@ -438,7 +438,7 @@ EclipseUI 的 `UiCatalogFactory` 就是 Razor 标签助手描述符的对应物�
 
 **验收**：
 
-- 对同一个 `.ui`，workspace 里的生成文档与 L3 生成树文本一致；
+- 对同一个 `.bui`，workspace 里的生成文档与 L3 生成树文本一致；
 - `GetSemanticModelAsync()` 能解析 `@code` 成员和 code-behind 成员；
 - `CompletionService` 能在 `@code` 内返回候选。
 
@@ -452,7 +452,7 @@ EclipseUI 的 `UiCatalogFactory` 就是 Razor 标签助手描述符的对应物�
 
 - `Emitter.Mapped(TextSpan span, string text, int userOffset)` 和 `EmitCodeBlock` 在写生成代码时，同时记录 `SourceMapping(originalSpan, generatedSpan)`；
 - `TemplateGenerator` 返回 `GeneratedDocument { SourceText Text, ImmutableArray<SourceMapping> Mappings, string HintName }`；
-- `ProjectSnapshot` 保存每个 `.ui` 的 `GeneratedDocument`。
+- `ProjectSnapshot` 保存每个 `.bui` 的 `GeneratedDocument`。
 
 `DocumentMappingService` 提供：
 
@@ -472,7 +472,7 @@ bool TryMapRangeToOriginal(TextSpan generated, out TextSpan original);
 
 **验收**：
 
-- 对仓库所有 `.ui` fixture，每个 `{expr}` 和 `@code` 区间都能 round-trip；
+- 对仓库所有 `.bui` fixture，每个 `{expr}` 和 `@code` 区间都能 round-trip；
 - 多行 `@code`、CRLF、边界位置、生成独有代码都有测试；
 - 现有诊断/跳转/代码操作改走该服务后行为不变。
 
@@ -512,7 +512,7 @@ public sealed record UiCompletionList(TextSpan Replacement, IReadOnlyList<UiComp
   - 目录成员文档可以继续复用。
 - `RenameProvider` 先加 `CodeBlock` 分支：
   - 用 `SymbolFinder.FindReferencesAsync` 或 `Renamer`；
-  - 用映射服务把生成文档里的引用位置回映到 `.ui`；
+  - 用映射服务把生成文档里的引用位置回映到 `.bui`；
   - 任何一处映射不回去，整个重命名拒绝（保持现有“改不全就拒绝”的原则）。
 
 **验收**（对应 [design/06 §6.9.10](./06-ide-support.md)）：
@@ -544,10 +544,10 @@ var completions = await service.GetCompletionsAsync(new CompletionContext(
 
 - `document` 是生成 C# 文档；
 - `AdhocWorkspace` 必须能组合到 C# 的 completion provider：用 `MefHostServices.Create(MefHostServices.DefaultAssemblies)`，并确保 `Microsoft.CodeAnalysis.CSharp.Features` 已加载；否则 `GetService` 会返回 `null`；
-- `mappedOffset` 是 `.ui` 光标经映射服务得到的生成偏移；
+- `mappedOffset` 是 `.bui` 光标经映射服务得到的生成偏移；
 - `trigger` 从 LSP `CompletionContext` 转换（`Invoke` / `TriggerCharacter`）；
 - 对每个 `CompletionItem`：
-  - 有 `TextEdit` 就用它的 `Span` 映射回 `.ui`；
+  - 有 `TextEdit` 就用它的 `Span` 映射回 `.bui`；
   - 没有 `TextEdit` 就用 `item.Span` 映射；
   - 映射失败就丢弃；
   - 转换 `Tags`、`SortText`、`FilterText`、`CommitCharacters`、`InsertTextFormat`。
@@ -583,7 +583,7 @@ var newSolution = await Renamer.RenameSymbolAsync(
 
 - 对 `newSolution` 做 diff；
 - `.cs` 文档的修改直接应用；
-- 生成 `.g.cs` 文档的修改经映射服务回映到 `.ui`；
+- 生成 `.g.cs` 文档的修改经映射服务回映到 `.bui`；
 - 任何一处生成文档修改映射失败，整个重命名拒绝。
 
 这样能自然覆盖：
@@ -621,8 +621,8 @@ provider 只问 router “这段归谁”，不再各自判断。这样 `@code` 
 
 ### 5.8 P2-2：语义着色、代码修复、签名帮助逐步交给 Roslyn
 
-- **语义着色**：用 Roslyn `Classifier` 对生成文档分类，映射回 `.ui`，与 TextMate 的模板表面着色合并。现在的 `Classify` 是迷你分类器，能用，但覆盖不如 Roslyn。
-- **代码修复**：对 `@code` 接 `CodeFixService`，把 `WorkspaceEdit` 映射回 `.ui`；模板级修复（EUI001/EUI002）继续走目录。
+- **语义着色**：用 Roslyn `Classifier` 对生成文档分类，映射回 `.bui`，与 TextMate 的模板表面着色合并。现在的 `Classify` 是迷你分类器，能用，但覆盖不如 Roslyn。
+- **代码修复**：对 `@code` 接 `CodeFixService`，把 `WorkspaceEdit` 映射回 `.bui`；模板级修复（EUI001/EUI002）继续走目录。
 - **签名帮助**：当前 `EmbeddedCSharpService.SignatureHelp` 已经能用；如果 Roslyn 的 `SignatureHelpService` 在目标版本可用且稳定，再考虑替换；否则保留。
 - **诊断一致性**：确保 Tier 2 诊断和补全使用**同一份生成文档/同一版本**。如果 Tier 2 重新跑生成器、补全用另一份 `MemberTree`，两者可能看到不同代的代码。Razor 的 checksum/version 思路值得借用。
 
@@ -630,10 +630,10 @@ provider 只问 router “这段归谁”，不再各自判断。这样 `@code` 
 
 ### 5.9 P2-3：生成代码可观测性
 
-加一个 `eclipseui/generatedDocument` 请求 + VS Code 命令：
+加一个 `bubuui/generatedDocument` 请求 + VS Code 命令：
 
-- 返回当前 `.ui` 的生成 C# 文本；
-- 可选返回映射表（`eclipseui/documentMap`）；
+- 返回当前 `.bui` 的生成 C# 文本；
+- 可选返回映射表（`bubuui/documentMap`）；
 - VS Code 用只读虚拟文档或 webview 展示。
 
 Razor 的 `razor/generatedDocumentContents` 和 `extension.showRazorCSharpWindow` 已经证明了这个功能的价值：映射错位、补全候选不对时，第一时间能看见生成代码。
@@ -642,27 +642,27 @@ Razor 的 `razor/generatedDocumentContents` 和 `extension.showRazorCSharpWindow
 
 ### 5.10 P3：虚拟文档/嵌入式语言，选择性借鉴
 
-Razor 的 `razor-html` 虚拟文档很优雅，但**不要直接套到 `.ui` 上**：
+Razor 的 `razor-html` 虚拟文档很优雅，但**不要直接套到 `.bui` 上**：
 
-- `.ui` 的标签、属性、`@bind-`、内容模型、`Grid.Row` 都是自定义语义；
+- `.bui` 的标签、属性、`@bind-`、内容模型、`Grid.Row` 都是自定义语义；
 - HTML/CSS 语言服务会给出编译器不接受的候选，制造“IDE 比编译器宽松”的假阴性——这是 [design/06 §6.9.6](./06-ide-support.md) 明确要避免的；
 - `Style="CornerRadius: 8"` 是自定义样式语言，CSS 服务会建议不存在的属性。
 
-只有未来 `.ui` 真的嵌入标准 HTML/JS/CSS 时，才值得借：
+只有未来 `.bui` 真的嵌入标准 HTML/JS/CSS 时，才值得借：
 
 - 客户端 `TextDocumentContentProvider`；
 - 服务端 `update` 请求 + checksum；
 - 客户端 `vscode.execute*Provider` 转发；
 - URI/位置回映。
 
-今天 EclipseUI 唯一需要的“虚拟文档”是**服务端的生成 C# 文档**，它不需要 VS Code 客户端参与。
+今天 BubuUI 唯一需要的“虚拟文档”是**服务端的生成 C# 文档**，它不需要 VS Code 客户端参与。
 
 ---
 
 ### 5.11 P3：不要照搬 cohost 协议和设计时/运行时双份生成
 
-- EclipseUI 已经是单进程 LSP server，不需要 Razor 的 cohost 通信协议；要学的是“共享同一个 workspace/document”，不是“再造一套 IPC”。
-- Razor 为了 IDE 性能会生成设计时代码，和运行时不完全相同。EclipseUI 的“IDE 与 build 同码”是更强的约束，建议保留；先让生成代码对映射友好，而不是分叉。
+- BubuUI 已经是单进程 LSP server，不需要 Razor 的 cohost 通信协议；要学的是“共享同一个 workspace/document”，不是“再造一套 IPC”。
+- Razor 为了 IDE 性能会生成设计时代码，和运行时不完全相同。BubuUI 的“IDE 与 build 同码”是更强的约束，建议保留；先让生成代码对映射友好，而不是分叉。
 - 映射友好包括：
   - 每个用户 span 都发 `SourceMapping`；
   - 用户表达式逐字保留；
@@ -675,7 +675,7 @@ Razor 的 `razor-html` 虚拟文档很优雅，但**不要直接套到 `.ui` 上
 
 | 阶段 | 内容 | 验收 |
 |---|---|---|
-| 0 | 生成器产出 `SourceMapping`；新增 `DocumentMappingService`；现有诊断/跳转/代码操作改走统一映射；加 `eclipseui/generatedDocument` | 所有 fixture round-trip；现有行为不变 |
+| 0 | 生成器产出 `SourceMapping`；新增 `DocumentMappingService`；现有诊断/跳转/代码操作改走统一映射；加 `bubuui/generatedDocument` | 所有 fixture round-trip；现有行为不变 |
 | 1 | `@code` 悬停 + 重命名（复用 `EmbeddedCSharpService.At`） | §6.9.10 第 4、5 条 |
 | 2 | `EditorDocumentWorkspace` + 补全模型升级 + `@code` `CompletionService` | `task.` / `var t = ta▍` / `if (▍)` / `await` 与 `.cs` 一致 |
 | 3 | `{expr}` 补全迁到真实生成文档；删除 `Members()`；重命名改 `Renamer` | 表达式补全 parity；重命名覆盖 `@code` + code-behind |
@@ -694,7 +694,7 @@ Razor 的 `razor-html` 虚拟文档很优雅，但**不要直接套到 `.ui` 上
 
 ### 7.1 映射
 
-- [ ] 所有 `.ui` fixture 的 `{expr}` span 能 `TryMapToGenerated` 再 `TryMapToOriginal` 回到原 span；
+- [ ] 所有 `.bui` fixture 的 `{expr}` span 能 `TryMapToGenerated` 再 `TryMapToOriginal` 回到原 span；
 - [ ] 所有 `@code` 块体 span 能 round-trip；
 - [ ] 多行 `@code`、CRLF、空行、块首/块尾边界有测试；
 - [ ] 生成独有代码（无原始 span）返回 `false`；
@@ -714,11 +714,11 @@ Razor 的 `razor-html` 虚拟文档很优雅，但**不要直接套到 `.ui` 上
 ### 7.3 一致性与回归
 
 - [ ] Workspace 编译与 L2 编译的符号/诊断一致（同一 fixture）；
-- [ ] 未保存的 code-behind / `.ui` 缓冲区在补全中可见；
+- [ ] 未保存的 code-behind / `.bui` 缓冲区在补全中可见；
 - [ ] Tier 1 / Tier 2 诊断无回归；
 - [ ] 现有跳转、代码操作、格式化、语义着色无回归；
 - [ ] 补全延迟有实测记录（warm/cold 分开）；
-- [ ] `eclipseui/generatedDocument` 能显示当前 `.ui` 的生成 C#。
+- [ ] `bubuui/generatedDocument` 能显示当前 `.bui` 的生成 C#。
 
 ---
 
@@ -752,11 +752,11 @@ Razor 的 `razor-html` 虚拟文档很优雅，但**不要直接套到 `.ui` 上
 1. **不替换 `UiCatalogFactory`**  
    目录仍是模板表面的唯一事实源；Razor 的标签助手层也是独立于 Roslyn 的，这一点不矛盾。
 
-2. **不把 `.ui` 投影成 HTML/CSS 交给外部语言服务**  
-   `.ui` 的标签/属性/绑定/内容模型是自定义语义；HTML/CSS 服务会制造假阴性。
+2. **不把 `.bui` 投影成 HTML/CSS 交给外部语言服务**
+   `.bui` 的标签/属性/绑定/内容模型是自定义语义；HTML/CSS 服务会制造假阴性。
 
 3. **不复制 Razor 的 cohost IPC**  
-   EclipseUI 已经是单进程；需要的是共享 `Workspace`/`Document`，不是再造一套跨进程协议。
+   BubuUI 已经是单进程；需要的是共享 `Workspace`/`Document`，不是再造一套跨进程协议。
 
 4. **不先做设计时/运行时双份生成**  
    保持“IDE 与 build 同码”；先让生成代码对映射友好，性能问题实测后再谈分叉。
@@ -819,26 +819,26 @@ Razor 的 `razor-html` 虚拟文档很优雅，但**不要直接套到 `.ui` 上
 - 生成文档查看命令：  
   <https://github.com/dotnet/vscode-csharp/blob/main/src/lsptoolshost/razor/showGeneratedDocumentCommand.ts>
 
-### EclipseUI
+### BubuUI
 
 - [design/06 · IDE 支持](./06-ide-support.md)，重点 §6.9.3 / §6.9.6 / §6.9.10
 - [ide/README.md](../ide/README.md)
 - [spec/02 · 生成代码契约](../spec/02-generated-code-contract.md)
-- `ide/EclipseUI.LanguageServer/Analysis/EmbeddedCSharpService.cs`
-- `ide/EclipseUI.LanguageServer/Analysis/CompletionProvider.cs`
-- `ide/EclipseUI.LanguageServer/Analysis/DocumentAnalysis.cs`
-- `ide/EclipseUI.LanguageServer/Analysis/RenameProvider.cs`
-- `ide/EclipseUI.LanguageServer/Server/LanguageServerHost.cs`
-- `ide/EclipseUI.LanguageServer/Workspace/ProjectWorkspace.cs`
-- `src/EclipseUI.Compiler.Generator/Emitter.cs`
-- `src/EclipseUI.Compiler.Generator/TemplateGenerator.cs`
+- `ide/BubuUI.LanguageServer/Analysis/EmbeddedCSharpService.cs`
+- `ide/BubuUI.LanguageServer/Analysis/CompletionProvider.cs`
+- `ide/BubuUI.LanguageServer/Analysis/DocumentAnalysis.cs`
+- `ide/BubuUI.LanguageServer/Analysis/RenameProvider.cs`
+- `ide/BubuUI.LanguageServer/Server/LanguageServerHost.cs`
+- `ide/BubuUI.LanguageServer/Workspace/ProjectWorkspace.cs`
+- `src/BubuUI.Compiler.Generator/Emitter.cs`
+- `src/BubuUI.Compiler.Generator/TemplateGenerator.cs`
 
 ---
 
 ## 12. 实现说明（阶段 0 已落地，2026-11-11）
 
 本节记录阶段 0 的实际落地形态、与上文方案的关键偏差，以及后续阶段必须沿用的 API 真相。
-**硬边界全部守住**：生成 C# 文本与 `#line` 逐字不变（`EclipseUI.Compiler.Tests` 375/375 golden 绿）、
+**硬边界全部守住**：生成 C# 文本与 `#line` 逐字不变（`BubuUI.Compiler.Tests` 375/375 golden 绿）、
 目录仍是模板表面唯一事实源、映射失败一律丢弃不猜、`.cs` 不接管。
 
 ### 12.1 已建成的链路
@@ -847,15 +847,15 @@ Razor 的 `razor-html` 虚拟文档很优雅，但**不要直接套到 `.ui` 上
 
 | 层 | 文件 | 职责 |
 |---|---|---|
-| 旁路元数据 | `src/EclipseUI.Compiler.Generator/IdeSourceMappings.cs` | `IdeSourceMapping`（Original/Generated/Verbatim）+ `IdeSourceMappingSideband` 静态收集器 |
-| 发射记录 | `src/EclipseUI.Compiler.Generator/Emitter.cs` | `Mapped`/`MappedToken`/`EmitCodeBlock` 写代码的同时 `RecordPending`；多缓冲合并经 `AppendMapped` 重基；`PublishMappings` 交旁路 |
-| hintName | `src/EclipseUI.Compiler.Generator/TemplateGenerator.cs` | `SetHintName(input.Path, hintName)`，与 `AddSource` 同名 |
+| 旁路元数据 | `src/BubuUI.Compiler.Generator/IdeSourceMappings.cs` | `IdeSourceMapping`（Original/Generated/Verbatim）+ `IdeSourceMappingSideband` 静态收集器 |
+| 发射记录 | `src/BubuUI.Compiler.Generator/Emitter.cs` | `Mapped`/`MappedToken`/`EmitCodeBlock` 写代码的同时 `RecordPending`；多缓冲合并经 `AppendMapped` 重基；`PublishMappings` 交旁路 |
+| hintName | `src/BubuUI.Compiler.Generator/TemplateGenerator.cs` | `SetHintName(input.Path, hintName)`，与 `AddSource` 同名 |
 | 收集 | `ide/.../Workspace/GeneratorHost.cs` | `Enable()` 窗口内跑 driver，`Take(path)` 取映射，按 hintName 配对生成树，产出 `GeneratedDocument` |
-| 快照 | `ide/.../Workspace/ProjectWorkspace.cs` | `ProjectSnapshot.GeneratedDocuments`（按 `.ui` 绝对路径，OrdinalIgnoreCase） |
+| 快照 | `ide/.../Workspace/ProjectWorkspace.cs` | `ProjectSnapshot.GeneratedDocuments`（按 `.bui` 绝对路径，OrdinalIgnoreCase） |
 | 映射服务 | `ide/.../Analysis/DocumentMappingService.cs` | 双向二分查找，完整包含才映射 |
 | 分析入口 | `ide/.../Analysis/DocumentAnalysis.cs` | `GeneratedDocument`/`Mappings`；`TryMapMemberSpanToUi` 优先走映射 |
 | provider 迁移 | `EmbeddedCSharpService.ForCodeBlock`、`DefinitionProvider.CodeBlockDefinition` | 生成树命中时用映射定位，失败回退 legacy `IndexOf` |
-| 可观测性 | `ide/.../Server/LanguageServerHost.cs` | `eclipseui/generatedDocument` 返回 hintName + 生成文本 + 映射表 |
+| 可观测性 | `ide/.../Server/LanguageServerHost.cs` | `bubuui/generatedDocument` 返回 hintName + 生成文本 + 映射表 |
 
 ### 12.2 偏差一：4.9.2 没有公开 `RegisterHostOutput`（§2.3 / §5.1 路线 B 不可用）
 
@@ -869,7 +869,7 @@ Razor 的 `razor-html` 虚拟文档很优雅，但**不要直接套到 `.ui` 上
 - 旁路 API 只用 BCL（生成器程序集被 `extern alias euiGen` + `PrivateAssets=all` 引用，
   不能反向依赖 IDE/Compiler 类型）。`Take(path)` 取走即删，lock + `Dictionary`（OrdinalIgnoreCase）。
 
-> 连带约束：`PrivateAssets=all` 阻断传递引用，`EclipseUI.Ide.Tests` **不能直接引用生成器类型**；
+> 连带约束：`PrivateAssets=all` 阻断传递引用，`BubuUI.Ide.Tests` **不能直接引用生成器类型**；
 > 测试一律经 `GeneratorHost.Run` 这条真实路径验证，不手写旁路。
 
 ### 12.3 偏差二：4.9.2 生成树 `FilePath` 带生成器前缀
@@ -892,7 +892,7 @@ Task<CompletionList> GetCompletionsAsync(
     OptionSet? options = null,
     CancellationToken cancellationToken = default);
 
-// 取 per-item 编辑（映射回 .ui 用）：
+// 取 per-item 编辑（映射回 .bui 用）：
 Task<CompletionChange> GetChangeAsync(
     Document document, CompletionItem item,
     char? commitCharacter = null, CancellationToken cancellationToken = default);
@@ -935,11 +935,11 @@ Task<Solution> Renamer.RenameSymbolAsync(
 
 ### 12.7 验证
 
-- `EclipseUI.Compiler.Tests` **375/375**：生成文本 / `#line` golden 契约不变。
-- `EclipseUI.Ide.Tests` **148/148**（现有 134 + 新增 `SourceMappingTests` 14）：
+- `BubuUI.Compiler.Tests` **375/375**：生成文本 / `#line` golden 契约不变。
+- `BubuUI.Ide.Tests` **148/148**（现有 134 + 新增 `SourceMappingTests` 14）：
   合成映射服务 7 例 + 真生成器 round-trip（表达式 / `@code` 子区间 / CRLF / 生成独有 /
-  bind 双出现 / 错误短路）+ 全部 Gallery `.ui` 夹具逐表达式与 `@code` round-trip。
-- `EclipseUI.Headless.Tests` **372/372**、`EclipseUI.Rendering.Tests` **106/106**：无回归。
+  bind 双出现 / 错误短路）+ 全部 Gallery `.bui` 夹具逐表达式与 `@code` round-trip。
+- `BubuUI.Headless.Tests` **372/372**、`BubuUI.Rendering.Tests` **106/106**：无回归。
 - 全解决方案构建 0 警告 0 错误。
 
 ### 12.8 本轮范围
@@ -951,7 +951,7 @@ Task<Solution> Renamer.RenameSymbolAsync(
 ### 12.9 阶段 1 落地：`@code` 悬停 + 重命名（2026-11-11）
 
 **共享入口**：`EmbeddedCSharpService.CodeBlockSymbolAt(analysis, offset)` 返回光标处符号 +
-其标识符在 .ui 的区间。投影/绑定复用既有 `At`（真实成员树 + 项目 Compilation），回映走
+其标识符在 .bui 的区间。投影/绑定复用既有 `At`（真实成员树 + 项目 Compilation），回映走
 `DocumentAnalysis.TryMapMemberSpanToUi`（项目模式 = 统一映射服务，legacy = IndexOf 回退）。
 悬停与重命名都从这里取符号，不再各写一套。
 
@@ -959,7 +959,7 @@ Task<Solution> Renamer.RenameSymbolAsync(
   分别给类型或签名（复用既有 `DisplayFormat`，去可空噪音）。
 - **重命名**：`RenameProvider.ResolveTarget` 增 `CodeBlock` 分支：
   - 局部变量/参数 → 新目标 `CodeScopedTarget`：引用全在成员树，逐处经映射服务回映，**任一处映不回整体拒绝**；
-  - code-behind 类自身成员（声明在兄弟 .cs）→ 复用既有 `MemberTarget` 全套路径（.ui + 兄弟 .cs + 工作区 .cs）。
+  - code-behind 类自身成员（声明在兄弟 .cs）→ 复用既有 `MemberTarget` 全套路径（.bui + 兄弟 .cs + 工作区 .cs）。
 
 **偏差一：阶段 1 重命名不走 `SymbolFinder`/`Renamer`**。§5.4 写的 `SymbolFinder.FindReferencesAsync`/
 `Renamer` 都需要 `Solution`，而 `Workspace` 是阶段 2 才引入的。阶段 1 沿用既有的
@@ -976,8 +976,8 @@ Task<Solution> Renamer.RenameSymbolAsync(
 不在本 server 能保证改全的文件集合）；阶段 3 的 `Renamer` 会自然覆盖。外部类型成员同样拒绝。
 
 **验证**：新增 `CodeBlockIntellisenseTests` 10 例，三层覆盖——内存态（legacy 回映）/
-磁盘 code-behind（成员路径）/ 项目模式（统一映射服务回映，借用 Gallery 真实 .ui 路径注入缓冲区，
-`ProjectWorkspace.TryRead` 优先取缓冲区故生成文档与注入文本对齐）。`EclipseUI.Ide.Tests`
+磁盘 code-behind（成员路径）/ 项目模式（统一映射服务回映，借用 Gallery 真实 .bui 路径注入缓冲区，
+`ProjectWorkspace.TryRead` 优先取缓冲区故生成文档与注入文本对齐）。`BubuUI.Ide.Tests`
 **158/158** 绿；design/06 §6.9.10 第 4、5 条（悬停/重命名）闭合。
 
 ### 12.10 阶段 2 落地：`EditorDocumentWorkspace` + `@code` `CompletionService`（2026-11-11）
@@ -987,12 +987,12 @@ Task<Solution> Renamer.RenameSymbolAsync(
 | 层 | 文件 | 职责 |
 |---|---|---|
 | 编辑器 workspace | `ide/.../Analysis/EditorDocumentWorkspace.cs` | 每快照一个 `AdhocWorkspace`：trees/options/references 全部取自 `snapshot.Compilation`，生成树只 `AddDocument` 一次（不重复 partial）；`ConditionalWeakTable<ProjectSnapshot, …>` 缓存——快照不可变，缓冲区一变自然换新 workspace，创建后只读无锁 |
-| 补全 provider | `ide/.../Analysis/EmbeddedCSharpCompletionProvider.cs`（阶段 2 名 `CodeBlockCompletionProvider.cs`，阶段 3 改名） | 光标经映射服务进生成文档 → `ShouldTriggerCompletion`/`GetCompletionsAsync` → 复杂编辑逐项 `GetChangeAsync` → 编辑区间回映 .ui，**映不回丢项** |
+| 补全 provider | `ide/.../Analysis/EmbeddedCSharpCompletionProvider.cs`（阶段 2 名 `CodeBlockCompletionProvider.cs`，阶段 3 改名） | 光标经映射服务进生成文档 → `ShouldTriggerCompletion`/`GetCompletionsAsync` → 复杂编辑逐项 `GetChangeAsync` → 编辑区间回映 .bui，**映不回丢项** |
 | 模型 | `ide/.../Analysis/LanguageModels.cs` | `UiCompletionItem` 增 `Replacement`/`FilterText`/`CommitCharacters`/`Tags`/`Preselect`；`UiCompletionKind` 补齐 LSP 类别；`UiCompletionList` 增 `IsIncomplete` |
 | 词法 | `ide/.../Analysis/CursorScanner.cs` | `CodeBlock` 上下文补标识符前缀（`TokenStart`/`Prefix`） |
 | 服务入口 | `ide/.../Analysis/LanguageService.cs` | 新增 `CompleteAsync`：`CodeBlock` → Roslyn；其余仍走目录（同步 `Complete` 保留给目录位与既有测试） |
 | 协议 | `ide/.../Server/LanguageServerHost.cs` | completion 改 async 分派，透传 triggerCharacter/filterText/preselect/commitCharacters/tags（`1`=Deprecated）/逐项 textEdit/isIncomplete；triggerCharacters 增 `.` `:` `(` |
-| 依赖 | `ide/.../EclipseUI.LanguageServer.csproj` | 增 `Microsoft.CodeAnalysis.CSharp.Features` **4.9.2**（与 CSharp/Workspaces 锁同版） |
+| 依赖 | `ide/.../BubuUI.LanguageServer.csproj` | 增 `Microsoft.CodeAnalysis.CSharp.Features` **4.9.2**（与 CSharp/Workspaces 锁同版） |
 
 **踩坑一：`AdhocWorkspace` 链式 Solution 变更不自动落回**。`AddProject`→`WithCompilationOptions`
 →…→`AddDocument` 得到的是新 Solution 分支；不显式 `workspace.TryApplyChanges(project.Solution)`
@@ -1024,12 +1024,12 @@ MatchPriority.Preselect`；`IsIncomplete` = `SuggestionModeItem is not null`（�
 「Roslyn 拥有语义」的前提。
 
 **踩坑三：旁路收集器并发串扰（`GeneratorHost.Run` 串行化）**。`IdeSourceMappingSideband` 是
-进程级静态、按 .ui 路径键控；两个并发 `Run`（并行测试类各建 Gallery 快照、注入不同
-Counter.ui 缓冲区）会互相覆盖条目、`Take` 走对方映射甚至拿 null——全量 Ide 套件并行跑时
+进程级静态、按 .bui 路径键控；两个并发 `Run`（并行测试类各建 Gallery 快照、注入不同
+Counter.bui 缓冲区）会互相覆盖条目、`Take` 走对方映射甚至拿 null——全量 Ide 套件并行跑时
 实测复现（`GeneratedDocumentFor` 偶发 null）。修法：`GeneratorHost.Run` 整体加静态 `RunGate`，
 「开窗口 → 跑驱动 → Take」串行；生成器程序集零改动，build 路径不受影响。
 
-**延迟实测（§7.3）**：Gallery Counter.ui 注入夹具，`task.` 位置 7 项候选。cold（workspace
+**延迟实测（§7.3）**：Gallery Counter.bui 注入夹具，`task.` 位置 7 项候选。cold（workspace
 创建 + MEF 组合 + provider 首载 + 语义绑定）两次实测 **282ms / 1445ms**（随机器负载波动）；
 warm（同位再请求，全缓存命中）**71ms**。测试留 5000ms 宽松上限防回归，数值记录于此。
 
@@ -1040,9 +1040,9 @@ warm（同位再请求，全缓存命中）**71ms**。测试留 5000ms 宽松上
 **验证**：新增 `CodeBlockCompletionTests` 12 例——§7.2 四项对照（`task.` 候选集与同
 workspace `.cs` 文档逐集合相等 / `var` 类型名 / `if` 布尔上下文 / await 描述对照）、扩展方法、
 snippet 真实展开、触发字符、替换区间回映、未保存 code-behind 缓冲区可见、legacy 空、
-workspace 与 L3 同文 + 语义模型、延迟。`EclipseUI.Ide.Tests` **170/170**（158+12，全量并行
-两遍绿）；`EclipseUI.Compiler.Tests` **375/375**、`EclipseUI.Headless.Tests` **372/372**、
-`EclipseUI.Rendering.Tests` **106/106**；全解决方案构建 0 警告 0 错误。
+workspace 与 L3 同文 + 语义模型、延迟。`BubuUI.Ide.Tests` **170/170**（158+12，全量并行
+两遍绿）；`BubuUI.Compiler.Tests` **375/375**、`BubuUI.Headless.Tests` **372/372**、
+`BubuUI.Rendering.Tests` **106/106**；全解决方案构建 0 警告 0 错误。
 design/06 §6.9.10 第 1–3 条（补全验收）闭合。
 
 ### 12.11 阶段 3 落地：`{expr}` 补全迁移 + `Renamer` 重命名（2026-11-11）
@@ -1051,11 +1051,11 @@ design/06 §6.9.10 第 1–3 条（补全验收）闭合。
 
 | 层 | 文件 | 职责 |
 |---|---|---|
-| 重命名 provider | `ide/.../Analysis/WorkspaceRenameProvider.cs`（新增） | 光标 → 生成文档符号（`SymbolFinder.FindSymbolAtPositionAsync`，touch 语义）→ `Renamer.RenameSymbolAsync` → `newSolution.GetChanges(oldSolution)` diff：源 `.cs` 编辑直接交付，生成文档编辑经映射服务回映 `.ui`，**任一处映不回整体拒绝** |
+| 重命名 provider | `ide/.../Analysis/WorkspaceRenameProvider.cs`（新增） | 光标 → 生成文档符号（`SymbolFinder.FindSymbolAtPositionAsync`，touch 语义）→ `Renamer.RenameSymbolAsync` → `newSolution.GetChanges(oldSolution)` diff：源 `.cs` 编辑直接交付，生成文档编辑经映射服务回映 `.bui`，**任一处映不回整体拒绝** |
 | 补全 provider | `ide/.../Analysis/EmbeddedCSharpCompletionProvider.cs`（由 `CodeBlockCompletionProvider` 改名） | 逻辑不变；服务范围从 `@code` 扩到 `{expr}`（C# 岛统一入口） |
 | 服务入口 | `ide/.../Analysis/LanguageService.cs` | `CompleteAsync`：`Expression` 且有生成文档 → Roslyn（否则目录）。新增 `PrepareRenameAsync`/`RenameAsync`：项目模式且非 foreach 变量 → `WorkspaceRenameProvider`，否则 legacy 同步路径 |
-| 协议 | `ide/.../Server/LanguageServerHost.cs` | `prepareRename`/`rename` 改 async 分派；`WorkspaceEdit.changes` 支持多文件（当前 `.ui` 用请求 uri，兄弟 `.ui`/`.cs` 用磁盘 file uri） |
-| 编辑器 workspace | `ide/.../Analysis/EditorDocumentWorkspace.cs` | 增 `UiPathFor(DocumentId)`/`SourcePathFor(DocumentId)` 反查（diff 时把变更文档归到 `.ui` 或 `.cs`） |
+| 协议 | `ide/.../Server/LanguageServerHost.cs` | `prepareRename`/`rename` 改 async 分派；`WorkspaceEdit.changes` 支持多文件（当前 `.bui` 用请求 uri，兄弟 `.bui`/`.cs` 用磁盘 file uri） |
+| 编辑器 workspace | `ide/.../Analysis/EditorDocumentWorkspace.cs` | 增 `UiPathFor(DocumentId)`/`SourcePathFor(DocumentId)` 反查（diff 时把变更文档归到 `.bui` 或 `.cs`） |
 | legacy 路由 | `ide/.../Analysis/RenameProvider.cs` | `IsForeachVariable`/`IsIdentifier` 改 internal 供预路由；legacy 探针扫描路径保留（legacy 模式 + foreach 变量仍用） |
 
 **`{expr}` 补全**：项目模式下 `{task.|}`/`{Cou|}`/`@foreach` 内 `{t.|}` 都走真实生成文档的
@@ -1071,7 +1071,7 @@ design/06 §6.9.10 第 1–3 条（补全验收）闭合。
 API 自带的回落。`TextChange.Span` 是**旧文本**坐标（生成坐标），正好喂映射服务。
 
 **踩坑二：最小 diff 只换标识符的一部分**。`Name→Title` 共享后缀 `e`，Roslyn 实际编辑是
-`Nam→Titl`（保留 `e`），不是整词替换。回映后 `.ui` 编辑区间也只盖 `Nam`——**这是正确的**
+`Nam→Titl`（保留 `e`），不是整词替换。回映后 `.bui` 编辑区间也只盖 `Nam`——**这是正确的**
 （应用后 `Name`→`Title`），但测试不能逐条断言「编辑覆盖完整标识符」。跨文档测试改为
 「应用全部编辑后的整文 == 原文整词 `Name→Title`」，对 diff 粒度鲁棒。
 
@@ -1092,29 +1092,29 @@ API 自带的回落。`TextChange.Span` 是**旧文本**坐标（生成坐标）
   `Locations.Any(IsInSource)`）；元数据符号（如 `string.Length`）改不了 → 拒绝；类型/命名
   空间不改（类名 = 文件名契约，spec/02 §2.2）。
 - **`@foreach` 迭代变量预路由回 legacy**：生成代码里它是 `SetTemplate` lambda 的参数
-  （`Emitter.EmitForeach`），**无 `.ui` 映射**——Renamer 改它会整体拒绝。故
+  （`Emitter.EmitForeach`），**无 `.bui` 映射**——Renamer 改它会整体拒绝。故
   `RenameProvider.IsForeachVariable` 在进 Roslyn 前识别，走 legacy 文档内路径（头声明 +
   本文档 `{t.X}` 引用）。
 - **`@bind` 双出现去重**：readSource/writeSource 两处生成编辑映到**同一原文区间**，
   按 `(Start, Length, NewText)` 去重，只交付一条。
-- **跨 `.ui` 重命名**：外部模型成员（如 `TaskItem.Name`）从 `{expr}` 光标触发，Renamer 改
-  全项目——其他 `.ui` 的生成文档编辑回映到各自原文（文本口径：缓冲区优先，其次磁盘），
-  源 `.cs` 直接交付。实测 `Name→Title` 覆盖 Counter.ui + TaskItem.cs + TaskList.ui +
+- **跨 `.bui` 重命名**：外部模型成员（如 `TaskItem.Name`）从 `{expr}` 光标触发，Renamer 改
+  全项目——其他 `.bui` 的生成文档编辑回映到各自原文（文本口径：缓冲区优先，其次磁盘），
+  源 `.cs` 直接交付。实测 `Name→Title` 覆盖 Counter.bui + TaskItem.cs + TaskList.bui +
   GalleryScene.cs 四文件。
 
 **踩坑三：测试共享工作区的 sibling 缓冲区串扰**。`WorkspaceRenameTests` 共享一个
-`ProjectWorkspace`；bind/foreach 测试把 TaskList.ui 注入为**当前**缓冲区（那些夹具没有
-`{t.Name}`），跨文档测试要 TaskList.ui 作**磁盘 sibling** 参与引用——若跑到 bind 之后，
+`ProjectWorkspace`；bind/foreach 测试把 TaskList.bui 注入为**当前**缓冲区（那些夹具没有
+`{t.Name}`），跨文档测试要 TaskList.bui 作**磁盘 sibling** 参与引用——若跑到 bind 之后，
 快照用的是残留缓冲区（无 `t.Name`），Renamer 找不到引用 → TaskList 缺编辑。修法：跨文档
-测试开头 `ForgetBuffer(TaskList.ui)` 回磁盘。这是测试隔离问题，非产品 bug（产品里 sibling
+测试开头 `ForgetBuffer(TaskList.bui)` 回磁盘。这是测试隔离问题，非产品 bug（产品里 sibling
 缓冲区本就代表用户未保存编辑，语义正确）。
 
 **验证**：新增 `ExpressionCompletionTests` 4 例（`{task.}` 成员来自 Roslyn / 替换区间回映 /
 裸标识符出类成员 / foreach 变量成员）+ `WorkspaceRenameTests` 10 例（@code 字段/方法/局部
 变量、prepare、跨文档外部成员、bind 去重、冲突拒绝、元数据拒绝、非法名拒绝、foreach 走
-legacy）。`EclipseUI.Ide.Tests` **184/184**（170+14，全量并行两遍绿）；
-`EclipseUI.Compiler.Tests` **375/375**、`EclipseUI.Headless.Tests` **372/372**、
-`EclipseUI.Rendering.Tests` **106/106**；全解决方案构建 0 警告 0 错误。
+legacy）。`BubuUI.Ide.Tests` **184/184**（170+14，全量并行两遍绿）；
+`BubuUI.Compiler.Tests` **375/375**、`BubuUI.Headless.Tests` **372/372**、
+`BubuUI.Rendering.Tests` **106/106**；全解决方案构建 0 警告 0 错误。
 design/18 §5.6（`{expr}` 补全迁移 + `Renamer` 重命名）闭合；design/06 §6.9.10 第 5 条
 （重命名）自此覆盖 `@code` 声明成员与跨文档引用。
 
@@ -1142,7 +1142,7 @@ design/18 §5.6（`{expr}` 补全迁移 + `Renamer` 重命名）闭合；design/
 > （只收公开成员，两者均无条目）双重核对为准。
 
 **决策一：语义着色 → Roslyn `Classifier`（已实施）**。项目模式对**生成文档**整篇分类，
-每个 `ClassifiedSpan` 经统一映射服务 `TryMapToOriginal` 回映 `.ui`——`{expr}` 与 `@code`
+每个 `ClassifiedSpan` 经统一映射服务 `TryMapToOriginal` 回映 `.bui`——`{expr}` 与 `@code`
 块体都是逐字映射（§12.5 / `SourceMappingTests` round-trip 已证），子区间映得回；生成独有
 代码（类声明 / `Build` / `Track` 等）无映射天然丢弃，**模板表面仍归 TextMate**。映不回或
 归并不到 legend 的类型丢弃而不是猜（R6）。无生成文档 / 分类异常回落既有探针投影路径
@@ -1176,15 +1176,15 @@ Tier 2 诊断来自**同一快照**的生成器运行。单快照 → 单 Compil
 | 协议 | `ide/.../Server/LanguageServerHost.cs` | `semanticTokens/full` 改 async 分派；delta 编码仍在宿主 |
 | 测试 | `tests/.../SemanticColoringTests.cs`（新增） | 4 例：token 只落 C# 岛内 / 关键符号语义类型（field/property/method/variable）/ 关键字与数字 / legacy 回落与同步逐字一致 |
 
-**验证**：`EclipseUI.Ide.Tests` **188/188**（184 + 新增 `SemanticColoringTests` 4）；
-`EclipseUI.Compiler.Tests` **375/375**（生成文本 / `#line` golden 契约不变）、
-`EclipseUI.Headless.Tests` **372/372**、`EclipseUI.Rendering.Tests` **106/106**；
+**验证**：`BubuUI.Ide.Tests` **188/188**（184 + 新增 `SemanticColoringTests` 4）；
+`BubuUI.Compiler.Tests` **375/375**（生成文本 / `#line` golden 契约不变）、
+`BubuUI.Headless.Tests` **372/372**、`BubuUI.Rendering.Tests` **106/106**；
 全解决方案构建 0 警告 0 错误。design/18 §5.8 闭合（语义着色 Roslyn 化；代码修复 / 签名帮助
 按 4.9.2 可用性保留并记录）；D 编号由维护者分配，本文不代填。
 
 ### 12.13 C# 岛转定义接通统一落点链（2026-11-11）
 
-**用户实测**：`@code` 里点类型（`TaskList.ui` 的 `List<TaskItem>` 的 `TaskItem`）F12 返回
+**用户实测**：`@code` 里点类型（`TaskList.bui` 的 `List<TaskItem>` 的 `TaskItem`）F12 返回
 `definition: no result`，尽管 `TaskItem.cs` 就在同一项目里声明了它。标签 / 属性能跳，C# 岛里的
 类型 / 成员不能。
 
@@ -1224,7 +1224,7 @@ Tier 2 诊断来自**同一快照**的生成器运行。单快照 → 单 Compil
   （`eui-decompiled:` 虚拟文档，span 罩住 `Count`）——与框架属性跳转同一口径。旧断言「一律 null」
   是接通前的限制，不是「此处禁止跳转」的规则。
 
-**验证**：`EclipseUI.Ide.Tests` **190/190**（189 + Fixture11）。改动只在 IDE 定义落点，不触
+**验证**：`BubuUI.Ide.Tests` **190/190**（189 + Fixture11）。改动只在 IDE 定义落点，不触
 生成文本 / `#line`（spec/02 契约不变）。D 编号由维护者分配，本文不代填。
 
 ### 12.14 BCL 类型关键字 / 泛型名转定义 + 反编译缓存键归一（2026-11-11）
@@ -1271,11 +1271,11 @@ F12 **没反应**（找不到实现）。
   `Int32`/`Boolean`/`String`/`List`，span 罩住类型名，且 `Content(原始 uri)` 与
   `Content(客户端回传形态)`（按实测变换：三斜杠→一斜杠 + query 解码）都回传非空同源文本。
 - 新增 `ProjectSystemTests.Fixture12_BclGenericNameDecompilesWithContent`：项目模式
-  （`GeneratedDocument` 映射路径）下 `TaskList.ui` 的 `List<TaskItem>` 的 `List` 反编译
+  （`GeneratedDocument` 映射路径）下 `TaskList.bui` 的 `List<TaskItem>` 的 `List` 反编译
   `List`1`，原始 / 客户端回传两种形态都命中缓存。
 - 移除诊断期临时探针 `TempProbe_BclTypes`。
 
-**验证**：`EclipseUI.Ide.Tests` **196/196**（190 + Theory 5 + Fixture12）。改动只在 IDE 定义
+**验证**：`BubuUI.Ide.Tests` **196/196**（190 + Theory 5 + Fixture12）。改动只在 IDE 定义
 落点与反编译缓存键，不触生成文本 / `#line`（spec/02 契约不变）。D 编号由维护者分配，本文不代填。
 
 ### 12.15 补全完整编辑与指令命名空间（2026-11-13）
@@ -1317,8 +1317,8 @@ C# 补全。`EditingCSharpDocument` 在没有生产生成文档时复用 `UiCata
 最终运行结果由本次实施报告或提交说明记录，不沿用历史测试计数。
 
 **范围仍需区分**：服务端能接收未保存 `.cs` 缓冲区，不代表客户端已经转发该语言；当前薄壳
-只订阅 `.ui/.eustyle`。通用 C# CodeFix/重构、完整 QuickInfo、格式化配置和调试器仍是独立工作，
-本次不能因三项补全通过就宣布 `.ui` 已具备完整 C# IDE 功能。
+只订阅 `.bui/.bss`。通用 C# CodeFix/重构、完整 QuickInfo、格式化配置和调试器仍是独立工作，
+本次不能因三项补全通过就宣布 `.bui` 已具备完整 C# IDE 功能。
 
 **实际提交链路**：Roslyn 的未导入类型候选可能只返回类型名，其原生编辑器会另行补 using。
 LSP 服务不能把这种候选原样交付；本实现将它转换为明确的类型替换和模板导入，避免同时出现一条

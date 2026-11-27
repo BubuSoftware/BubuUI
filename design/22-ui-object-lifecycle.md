@@ -68,6 +68,6 @@ OnUpdated 表示动态值刷新结束，不表示布局或像素已经呈现。�
 
 ## 验证
 
-测试位于 LifecycleTests、HostLifecycleTests、BlockLifecycleTests、UnmountTests 和 VirtualizingLifecycleTests，并使用 LifecycleControl.ui / LifecycleWindow.ui 验证真实生成类型。覆盖初始化与宿主状态、通知顺序、移除重挂、更新中移动、异常清理、回调内增删/释放、双宿主拒绝、内容替换、同步上下文、块复用与虚拟化资源。
+测试位于 LifecycleTests、HostLifecycleTests、BlockLifecycleTests、UnmountTests 和 VirtualizingLifecycleTests，并使用 LifecycleControl.bui / LifecycleWindow.bui 验证真实生成类型。覆盖初始化与宿主状态、通知顺序、移除重挂、更新中移动、异常清理、回调内增删/释放、双宿主拒绝、内容替换、同步上下文、块复用与虚拟化资源。
 
 验证记录见 [生命周期验证报告](./reports/ui-object-lifecycle-2026-11-13.md)。

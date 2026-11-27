@@ -1,9 +1,0 @@
-@namespace EclipseUI.Headless.Tests
-@using EclipseUI.Elements
-
-<StackPanel>
-    @if (true) {
-        <ConstructionFirstChild />
-        <ConstructionThrowingChild Fail="true" />
-    }
-</StackPanel>

@@ -62,8 +62,8 @@ jobs:
       - name: Upload VS Code installer
         uses: actions/upload-artifact@v4
         with:
-          name: EclipseUI-VSCode-${{ steps.version.outputs.value }}
-          path: out/ide-release/${{ steps.version.outputs.value }}/EclipseUI-VSCode-*.vsix
+          name: BubuUI-VSCode-${{ steps.version.outputs.value }}
+          path: out/ide-release/${{ steps.version.outputs.value }}/BubuUI-VSCode-*.vsix
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
@@ -71,8 +71,8 @@ jobs:
       - name: Upload Visual Studio installer
         uses: actions/upload-artifact@v4
         with:
-          name: EclipseUI-VisualStudio-${{ steps.version.outputs.value }}
-          path: out/ide-release/${{ steps.version.outputs.value }}/EclipseUI-VisualStudio-*.vsix
+          name: BubuUI-VisualStudio-${{ steps.version.outputs.value }}
+          path: out/ide-release/${{ steps.version.outputs.value }}/BubuUI-VisualStudio-*.vsix
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
@@ -80,8 +80,8 @@ jobs:
       - name: Upload Rider installer
         uses: actions/upload-artifact@v4
         with:
-          name: EclipseUI-Rider-${{ steps.version.outputs.value }}
-          path: out/ide-release/${{ steps.version.outputs.value }}/EclipseUI-Rider-*.zip
+          name: BubuUI-Rider-${{ steps.version.outputs.value }}
+          path: out/ide-release/${{ steps.version.outputs.value }}/BubuUI-Rider-*.zip
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
@@ -89,7 +89,7 @@ jobs:
       - name: Upload checksums
         uses: actions/upload-artifact@v4
         with:
-          name: EclipseUI-SHA256SUMS-${{ steps.version.outputs.value }}
+          name: BubuUI-SHA256SUMS-${{ steps.version.outputs.value }}
           path: out/ide-release/${{ steps.version.outputs.value }}/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30
@@ -99,7 +99,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: EclipseUI-IDE-diagnostics-${{ github.run_attempt }}
+          name: BubuUI-IDE-diagnostics-${{ github.run_attempt }}
           path: |
             tests/**/TestResults/**
             ide/rider/build/test-results/**

@@ -4,6 +4,6 @@
     <Description>Offscreen rendering helpers for the desktop Gallery and its verification tools.</Description>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../../src/EclipseUI.Rendering.Vello/EclipseUI.Rendering.Vello.csproj" />
+    <ProjectReference Include="../../src/BubuUI.Rendering.Vello/BubuUI.Rendering.Vello.csproj" />
   </ItemGroup>
 </Project>

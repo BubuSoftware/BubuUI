@@ -8,7 +8,7 @@
 > §3.5.3 的 D1–D41 是 v3 代码差距台账，v4 新增差距见 [§3.5.4](#354-v4-实现偏差台账d42d88)。与 spec 冲突时以 spec 为准。
 >
 > 状态：v3 定稿（2026-10-29；v4 换轨后转为历史记录）。
-> 本文定义 `.ui` 语言的**词法、句法、语义、字面量与编译管线**，是模板作者、分析器与生成器共同遵守的语法规范。
+> 本文定义 `.bui` 语言的**词法、句法、语义、字面量与编译管线**，是模板作者、分析器与生成器共同遵守的语法规范。
 > 控件与组件如何向模板暴露标签/属性/事件/内容模型，见 [14 控件与模板契约](./14-control-template-contract.md)；
 > 反应式语义与运行时契约见 [spec/03](../spec/03-reactivity-and-binding.md)（[15](./15-state-and-reactivity.md) 已停止，仅存历史）；
 > 布局与输入见 [05](./05-layout-rendering-input.md)；调试映射与热重载见 [07](./07-toolchain.md)。
@@ -31,7 +31,7 @@
 
 | 本文定义 | 本文不定义（去哪看） |
 |---|---|
-| `.ui` 的词法、EBNF、元素/属性/文本/指令的句法 | 控件作者如何声明标签、属性、事件、内容模型（[14](./14-control-template-contract.md)） |
+| `.bui` 的词法、EBNF、元素/属性/文本/指令的句法 | 控件作者如何声明标签、属性、事件、内容模型（[14](./14-control-template-contract.md)） |
 | 属性值的语法形态、求值时机与诊断触发点 | 状态模型、失效队列、`Render`/`UiBinding` 运行时（[spec/03](../spec/03-reactivity-and-binding.md)；[15](./15-state-and-reactivity.md) 已停止） |
 | 表达式作用域、`@if`/`@foreach`/`Key` 的语法语义 | 布局/渲染/hit test（[05](./05-layout-rendering-input.md)） |
 | 字面量到 C# 的编译期转换 | 调试映射、热重载、DevTools（[07](./07-toolchain.md)） |
@@ -59,7 +59,7 @@ R1–R10 见 [spec/02 §1](../spec/02-generated-code-contract.md#1-生成器不�
 
 以下决定已经冻结，后续只能增量扩展，不得改义：
 
-1. **一个 `.ui` = 一个类 = 一个根元素**。文件名即类名；code-behind 是唯一状态载体；模板不是独立的函数/模块。
+1. **一个 `.bui` = 一个类 = 一个根元素**。文件名即类名；code-behind 是唯一状态载体；模板不是独立的函数/模块。
 2. **模板作者只写普通 CLR 成员**：页面/组件状态就是 code-behind 的字段/自动属性/普通类；
    不要求 `[UiState]`、`Signal<T>`、INPC/INCC；模板里写 `Count`，不写 `.Value`（[spec/01 §1.4](../spec/01-template-syntax.md#14-冻结线)）。
 3. **反应式单位是组件渲染**：`Invalidate()` → `Render()` 重算该组件的动态表达式；不存在按路径/按信号的定向订阅
@@ -81,9 +81,9 @@ R1–R10 见 [spec/02 §1](../spec/02-generated-code-contract.md#1-生成器不�
 
 | 术语 | 含义 |
 |---|---|
-| 模板 | 一个 `.ui` 文件及其生成的 `Build()` 实现 |
-| code-behind | 与 `.ui` 同名的顶层 `partial` 类，承载字段、普通属性/状态、方法、辅助属性 |
-| 信号 | `EclipseUI.Signal<T>` 运行时类型；v4 中不是模板反应式机制，读取/写入必须显式 `.Value`，写后需 `Invalidate()`（spec/01 §4.7） |
+| 模板 | 一个 `.bui` 文件及其生成的 `Build()` 实现 |
+| code-behind | 与 `.bui` 同名的顶层 `partial` 类，承载字段、普通属性/状态、方法、辅助属性 |
+| 信号 | `BubuUI.Signal<T>` 运行时类型；v4 中不是模板反应式机制，读取/写入必须显式 `.Value`，写后需 `Invalidate()`（spec/01 §4.7） |
 | 状态属性（v3 术语） | `[UiState]`/`[UiObservable]` 生成的 public partial 属性；v4 已取消，状态就是普通 CLR 成员 |
 | 可观察（v3 术语） | 写入时能同步通知订阅者，且分析器可静态识别其写入路径（15 §15.0.2）；v4 无此概念 |
 | 可观察路径（v3 术语） | 从 `this`/item 根出发、逐段可观察的成员访问链；v4 无此约束 |
@@ -99,7 +99,7 @@ R1–R10 见 [spec/02 §1](../spec/02-generated-code-contract.md#1-生成器不�
 
 ### 3.1.1 源文件
 
-- 扩展名 `.ui`，以 `AdditionalFiles` 进入编译；文件内容的编码按 Roslyn 的文本读取（UTF-8）。
+- 扩展名 `.bui`，以 `AdditionalFiles` 进入编译；文件内容的编码按 Roslyn 的文本读取（UTF-8）。
 - 文件名（去扩展名）必须是合法 C# 标识符，并作为生成类名；否则 `EUI013`。
 - 换行支持 LF/CRLF；`#line` 使用 1 基行号。
 - 一个文件只包含一个文档；文件级只有注释、空白和一个根元素（§3.2.2）。
@@ -173,7 +173,7 @@ bind-attr  ::= "@bind-" attr-base
   - 不支持 verbatim 字符串 `@"..."` 与 raw string `"""..."""`（其中的引号/大括号按普通字符处理，可能提前结束）；
   - 不支持 C# 注释里出现不平衡的 `{`/`}`；
   - 不支持插值格式说明符：`{price:F2}` 会被当作表达式 `price:F2`，不是合法 C#；请写 `{price.ToString("F2")}`。
-- 空表达式 `{}`、不完整表达式不在词法层报错，交给生成代码的 C# 编译错误（经 `#line` 指回 `.ui`）。
+- 空表达式 `{}`、不完整表达式不在词法层报错，交给生成代码的 C# 编译错误（经 `#line` 指回 `.bui`）。
 - 文本/指令里的表达式不做 trim；C# 自行忽略外围空白。
 
 ### 3.1.7 指令
@@ -217,7 +217,7 @@ bind-attr  ::= "@bind-" attr-base
   2. 最后一个文本节点的末个静态段 `TrimEnd`；
   3. 纯空白文本节点整体丢弃。
 - 中间空白（包括内部换行与缩进）保留；多行动态文本的缩进会进入字符串，需要精确排版时用表达式或 code-behind 方法。
-- 规范化的结果是：模板的缩进不会渲染成前导/尾随空格；这与 XAML/JSX 直觉一致（[Parser.cs:299](../src/EclipseUI.Compiler/Parser.cs#L299)）。
+- 规范化的结果是：模板的缩进不会渲染成前导/尾随空格；这与 XAML/JSX 直觉一致（[Parser.cs:299](../src/BubuUI.Compiler/Parser.cs#L299)）。
 - 注释移除发生在规范化之前；`a<!--c-->b` 的两个文本段按中间内容处理，不会被首尾 trim 影响。
 
 ## 3.2 句法
@@ -290,9 +290,9 @@ string        ::= '"' raw-char* '"'
 
 ### 3.3.1 模板类、code-behind 与作用域
 
-- 文件名 → 类名；生成代码是 `{accessibility} partial class {Name} : global::EclipseUI.Component`，
-  重写 `protected override Element Build()`（[Emitter.cs:75](../src/EclipseUI.Compiler.Generator/Emitter.cs#L75)）。
-- code-behind 不是必需的（spec/02 §2.7：`.ui` 自己就是组件来源）；存在时必须是同名**顶层** `partial` 类：
+- 文件名 → 类名；生成代码是 `{accessibility} partial class {Name} : global::BubuUI.Component`，
+  重写 `protected override Element Build()`（[Emitter.cs:75](../src/BubuUI.Compiler.Generator/Emitter.cs#L75)）。
+- code-behind 不是必需的（spec/02 §2.7：`.bui` 自己就是组件来源）；存在时必须是同名**顶层** `partial` 类：
   - 嵌套 → `EUI015`；非 partial → `EUI011`；文件名非法 → `EUI013`。`EUI005`（缺失 code-behind）已停用。
 - 生成部分提供 `Component` 基类；code-behind 不要声明不同的基类，也不要再写 `Build()`。
 - code-behind 可标 `[UiState]`（组件自身可观察）或对少量属性标 `[UiObservable]`；状态生成器另生成一个
@@ -352,7 +352,7 @@ string        ::= '"' raw-char* '"'
 | `Key={expr}` | 条目创建 | 身份 | 无 | 第一个元素根；不得可观察（`EUI039`） | ✅（S2 加严） |
 | `Ref={ident}` | Build 时赋给字段 | 否 | 无 | 简单标识符、字段可写 | G3 / 保留 `EUI029` |
 | `Class="a b"` / `Class={expr}` | Build（表达式 + U/R 推送） | 是（表达式） | 无（类变化经 `Classes` setter 重应用样式） | 类名编译期查样式目录；`@style` 本文件优先；E4 塌缩注入的派生类排后（表达式形态跳过） | ✅ E2 + E4（2026-11-09） |
-| `Style="prop: value; ..."` | Build 直赋 local 层 | 否（只允许静态值） | 无 | 声明序列经 Eustyle 解析，`theme()` 升级 Resource 属性 | ✅ E2（2026-11-09） |
+| `Style="prop: value; ..."` | Build 直赋 local 层 | 否（只允许静态值） | 无 | 声明序列经 Bss 解析，`theme()` 升级 Resource 属性 | ✅ E2（2026-11-09） |
 
 #### 3.3.3.1 单向反应式 `P={expr}`
 
@@ -461,7 +461,7 @@ string        ::= '"' raw-char* '"'
 - `ForEachBlock.Dispose` 必须释放仍存在条目的 `BlockScope.Disposables`（修复 D18/D27）；整块卸载不得泄漏 item 订阅。
 - 条目/分支里的组件实例也加入同一作用域，移除时 `Dispose`。
 - `ConditionalBlock`/`ForEachBlock` 自身也是 `IDisposable`，由所在作用域 `Track` 或加入父块的作用域
-  （[Blocks.cs:29](../src/EclipseUI.Runtime/Blocks.cs#L29)、[:102](../src/EclipseUI.Runtime/Blocks.cs#L102)）。
+  （[Blocks.cs:29](../src/BubuUI.Runtime/Blocks.cs#L29)、[:102](../src/BubuUI.Runtime/Blocks.cs#L102)）。
 - 生成代码不得把订阅存静态字段/单例/`ConditionalWeakTable`（R6/R8）；每个订阅可追踪到唯一所有者。
 
 ### 3.3.5 文本与内容模型
@@ -582,7 +582,7 @@ string        ::= '"' raw-char* '"'
 - 控件事件：属性名 `On{EventName}`，对应 `{Name}Event` 的 `public static readonly RoutedEvent` 字段（14.4.3）。
   - 只接受 `{expression}`；字面量或 `:bind`/`@bind-` → `EUI004`/`EUI040`。
   - 处理器必须能转换为 `Action` 或 `Action<RoutedEventArgs>`；签名不匹配在**可静态判定**时由分析器
-    报 `EUI024`（Error，✅ 2026-11-08/D82，落 `.ui` 属性值并短路生成输出），无法静态判定时静默、
+    报 `EUI024`（Error，✅ 2026-11-08/D82，落 `.bui` 属性值并短路生成输出），无法静态判定时静默、
     交回生成代码经 `#line` 由 C# 报错（spec/02 §2.4 规则 8 不重复报告）。判定口径见 spec/02 §4.6.1 规则 7
     与 §12 D82。
   - 生成：`el.AddHandler(global::...Event, handlerExpr);`；事件按源码顺序在 Build 时订阅，元素挂载前完成。
@@ -596,7 +596,7 @@ string        ::= '"' raw-char* '"'
 
 ### 3.3.8 组件（C4 目标）
 
-组件是 `.ui` + code-behind 生成的 `Component` 子类；标签规则与控件相同（14.4.1），但属性来自参数而非 StyledProperty。
+组件是 `.bui` + code-behind 生成的 `Component` 子类；标签规则与控件相同（14.4.1），但属性来自参数而非 StyledProperty。
 
 - 参数必须标 `[UiParameter]`，`public`、有 `public` setter（`init` 不允许）；必填写 `[UiParameter(Required = true)]`。
   缺失必填 → `EUI027`；`required`/`init`/无 setter → `EUI028`。
@@ -617,7 +617,7 @@ parent0.Children.Add(c0.Root);   // 最后挂到父级
 ```
 
 - `Track(c0)` 在 `Mount()` 之前：先把实例登记进调用方作用域；`Build()` 内 `Track(...)` 的订阅落在组件自身的
-  `_tracked` 上，由 `Component.Dispose` 释放（[Component.cs:29](../src/EclipseUI.Runtime/Component.cs#L29)）。
+  `_tracked` 上，由 `Component.Dispose` 释放（[Component.cs:29](../src/BubuUI.Runtime/Component.cs#L29)）。
   顺序颠倒则 Mount 之后、登记之前一旦出错，实例无人释放。
 - `Mount()` 幂等；`Dispose()` 幂等；组件实例由调用方作用域释放，组件内订阅随实例释放（14.6.4）。
 - 参数没有 diff：Build 只跑一次；参数 setter 变化不重建组件模板。
@@ -637,8 +637,8 @@ parent0.Children.Add(c0.Root);   // 最后挂到父级
 |---|---|---|---|
 | `Key={expr}` | `@foreach` 条目身份 | ✅ | `EUI010`（位置/形式）/ `EUI039`（可观察） |
 | `Ref={ident}` | 元素/组件实例赋给 code-behind 字段 | G3 | 当前 `EUI002`（D4） |
-| `Class="..."` | 样式类（design/17 §4.8） | ✅ E2（2026-11-09） | 未知类名/表达式形态不符 `EUI031`（转正语义）；类名经目录解析（本文件 `@style` 先、全局 `.eustyle` 后），生成 `Classes` 赋值 |
-| `Style="..."` | 内联样式（design/17 §4.8②） | ✅ E2（2026-11-09） | 只允许静态声明序列：表达式 `EUI031`；声明经 Eustyle 解析（`EUI050`/`EUI051`/`EUI052`），生成 local 层直赋 |
+| `Class="..."` | 样式类（design/17 §4.8） | ✅ E2（2026-11-09） | 未知类名/表达式形态不符 `EUI031`（转正语义）；类名经目录解析（本文件 `@style` 先、全局 `.bss` 后），生成 `Classes` 赋值 |
+| `Style="..."` | 内联样式（design/17 §4.8②） | ✅ E2（2026-11-09） | 只允许静态声明序列：表达式 `EUI031`；声明经 Bss 解析（`EUI050`/`EUI051`/`EUI052`），生成 local 层直赋 |
 | `P:bind={expr}` | 旧双向绑定（≡ `@bind-P`） | ✅ → 弃用 | S3 起 `EUI043` Warning |
 | `P:value={expr}` | 旧单向别名（≡ `P={expr}`） | 未实现 → 弃用 | 当前 `EUI002`（D1）；S3 起 `EUI043` |
 | `<Slot Name="...">` | 具名插槽（消费侧） | G4 | 当前 `EUI001`（D3） |
@@ -710,7 +710,7 @@ parent0.Children.Add(c0.Root);   // 最后挂到父级
 ### 3.5.1 诊断责任与 span
 
 - 每个诊断带稳定代码、精确 span、英文消息；文档/编辑器可本地化消息，代码不变。
-- 标签诊断指向标签名；属性诊断指向属性名/值；表达式错误由 C# 编译通过 `#line` 指回 `.ui` 行。
+- 标签诊断指向标签名；属性诊断指向属性名/值；表达式错误由 C# 编译通过 `#line` 指回 `.bui` 行。
 - 未知名给最近建议（Levenshtein ≤ 3，最多 3 个）；建议不改变解析结果。
 - 诊断码定义与控件侧责任划分：EUI001–EUI033 见 [14.9.1](./14-control-template-contract.md)；EUI034–EUI045 的 v4 口径见
   [spec/03 §11](../spec/03-reactivity-and-binding.md#11-诊断) 与 [spec/01 §6.2](../spec/01-template-syntax.md#62-诊断表)；
@@ -789,59 +789,59 @@ parent0.Children.Add(c0.Root);   // 最后挂到父级
 
 | # | 规范 | 当前实现 | 影响 | 收敛 |
 |---|---|---|---|---|
-| D1 | `:value` 是弃用别名（≡ `P={expr}`），报 `EUI043` Warning | ✅ S6（K27）：旧语法 `P:bind`/`P:value` 直接移除，解析到 `:` 后缀属性名即报 `EUI046` Error；`EUI043` 停用且保持停用（[Parser.cs](../src/EclipseUI.Compiler/Parser.cs)） | 不再有静默降级或误导性拼写错误 | ✅ S6 |
-| D2 | ✅ C3：`Class`/`Style` 在使用点报 `EUI031`（G4 实现样式后语义不变） | 已修复（2026-11-03，[Analyzer.cs](../src/EclipseUI.Compiler/Analyzer.cs)） | ✅ C3 |
+| D1 | `:value` 是弃用别名（≡ `P={expr}`），报 `EUI043` Warning | ✅ S6（K27）：旧语法 `P:bind`/`P:value` 直接移除，解析到 `:` 后缀属性名即报 `EUI046` Error；`EUI043` 停用且保持停用（[Parser.cs](../src/BubuUI.Compiler/Parser.cs)） | 不再有静默降级或误导性拼写错误 | ✅ S6 |
+| D2 | ✅ C3：`Class`/`Style` 在使用点报 `EUI031`（G4 实现样式后语义不变） | 已修复（2026-11-03，[Analyzer.cs](../src/BubuUI.Compiler/Analyzer.cs)） | ✅ C3 |
 | D3 | ✅ C3：`<Slot>`/`<ContentSlot>` 在使用点报 `EUI031`（仅当目录无同名真实控件；G4 实现后有插槽错误从 `EUI022` 报） | 已修复（2026-11-03） | ✅ C3 |
 | D4 | `Ref` G3，当前应报保留/`EUI029` | 未知属性 → `EUI002` | 同上 | C5 |
 | D5 | 泛型标签**暂缓**（K19，不排期），精确诊断 `EUI030` 随之暂缓 | `<DataGrid<Order>>` 在标记模式遇到 `<` → `EUI100`（保持现状）；目录侧「泛型类型标签不可用 → EUI030」使用点分流不变 | 非当前阻塞；暂缓 ≠ 取消，D5 仍是开放项 | 暂缓（K19，2026-11-08 用户决策） |
 | D6 | ✅ C3：完全重复普值属性在属性级报 `EUI025`；同名且任一侧是绑定（`@bind-P`/`:bind`）仍走目标级 `EUI033`（与 S2 语义一致） | 已修复（2026-11-03，`Analyzer` 带 `attrSeen` 字典） | ✅ C3 |
-| D7 | 文本内容与显式目标属性互斥 `EUI033` | ✅ S2：Analyzer 检测文本 + 显式目标、同目标重复绑定并报 `EUI033`（[Analyzer.cs](../src/EclipseUI.Compiler/Analyzer.cs)） | 已消除静默双写 | ✅ S2 |
-| D8 | `Key` 只允许 `@foreach` item 根 | ✅ S2：`VisitBlock` 仅对 `@foreach` 的第一个元素根放行 `Key`，`@if` 报 `EUI010`（[Analyzer.cs](../src/EclipseUI.Compiler/Analyzer.cs)） | 误放行已修复 | ✅ S2 |
-| D9 | item 模板禁止组件级状态（`EUI014`）；item 自己的可观察属性与 item `@bind` 允许；`Key` 不得依赖可观察状态（`EUI039`） | 只检查根层元素属性/根层文本并豁免 `Key`（[TemplateGenerator.cs:196](../src/EclipseUI.Compiler.Generator/TemplateGenerator.cs#L196)）；嵌套元素、条件/嵌套块与 `Key` 未查 | 可能生成无订阅/陈旧更新 | S2/S3 |
-| D10 | 重写按符号与目标类型：状态属性直接读、`Signal<T>` 取 `.Value`、item 成员不重写 | 正则盲替换（[Emitter.cs:125](../src/EclipseUI.Compiler.Generator/Emitter.cs#L125)） | 字符串/同名 item/`Signal<T>` 参数误改 | S2（语义模型，同 D31） |
-| D11 | 表达式按 **C# 词法**捕获 | ✅ S6：`CaptureExpression`/`@code` 体/指令参数统一走 `CSharpSnippet.FindMatchingClose`（[CSharpSnippet.cs](../src/EclipseUI.Compiler/CSharpSnippet.cs)）——跳过 `//`/`/* */` 注释、字符字面量、普通/verbatim/插值/raw 字符串（含插值洞递归与 `{{`/`}}`、`""` 转义、`:F2` 格式符）。刻意不引 Roslyn（前端保持可独立测试），用最小状态机对齐 C# 词法 | 已消除：注释内大括号、`@"a""}""b"`、`"""a}b"""`、`$"{(flag ? "a" : "b")}"` 均正确配对（`ExpressionCaptureTests` 13 例） | ✅ S6 |
+| D7 | 文本内容与显式目标属性互斥 `EUI033` | ✅ S2：Analyzer 检测文本 + 显式目标、同目标重复绑定并报 `EUI033`（[Analyzer.cs](../src/BubuUI.Compiler/Analyzer.cs)） | 已消除静默双写 | ✅ S2 |
+| D8 | `Key` 只允许 `@foreach` item 根 | ✅ S2：`VisitBlock` 仅对 `@foreach` 的第一个元素根放行 `Key`，`@if` 报 `EUI010`（[Analyzer.cs](../src/BubuUI.Compiler/Analyzer.cs)） | 误放行已修复 | ✅ S2 |
+| D9 | item 模板禁止组件级状态（`EUI014`）；item 自己的可观察属性与 item `@bind` 允许；`Key` 不得依赖可观察状态（`EUI039`） | 只检查根层元素属性/根层文本并豁免 `Key`（[TemplateGenerator.cs:196](../src/BubuUI.Compiler.Generator/TemplateGenerator.cs#L196)）；嵌套元素、条件/嵌套块与 `Key` 未查 | 可能生成无订阅/陈旧更新 | S2/S3 |
+| D10 | 重写按符号与目标类型：状态属性直接读、`Signal<T>` 取 `.Value`、item 成员不重写 | 正则盲替换（[Emitter.cs:125](../src/BubuUI.Compiler.Generator/Emitter.cs#L125)） | 字符串/同名 item/`Signal<T>` 参数误改 | S2（语义模型，同 D31） |
+| D11 | 表达式按 **C# 词法**捕获 | ✅ S6：`CaptureExpression`/`@code` 体/指令参数统一走 `CSharpSnippet.FindMatchingClose`（[CSharpSnippet.cs](../src/BubuUI.Compiler/CSharpSnippet.cs)）——跳过 `//`/`/* */` 注释、字符字面量、普通/verbatim/插值/raw 字符串（含插值洞递归与 `{{`/`}}`、`""` 转义、`:F2` 格式符）。刻意不引 Roslyn（前端保持可独立测试），用最小状态机对齐 C# 词法 | 已消除：注释内大括号、`@"a""}""b"`、`"""a}b"""`、`$"{(flag ? "a" : "b")}"` 均正确配对（`ExpressionCaptureTests` 13 例） | ✅ S6 |
 | D12 | 未闭合注释报 `EUI100` | ✅ S6：`SkipComment`/`SkipHtmlComment` 未闭合报 `EUI100`（K26，2026-11-08），静默吞 EOF 行为废止 | 已修复 | ✅ S6 |
-| D13 | 依赖分析按符号解析，可见成员范围由 C# 语义决定（含基类成员；`[UiState]` 基类的 `IUiObservable` 覆盖基类属性） | `GetMembers()` 不扫描基类，基类信号既不被发现也不报错（[TemplateGenerator.cs:81](../src/EclipseUI.Compiler.Generator/TemplateGenerator.cs#L81)） | 基类信号按普通成员生成，值陈旧且无订阅 | S2 |
-| D14 | ✅ C3：无转换器报 `EUI023`（`HasConverter` 区分），格式/范围/成员错仍 `EUI003` | 已修复（2026-11-03，[Analyzer.cs](../src/EclipseUI.Compiler/Analyzer.cs)） | ✅ C3 |
-| D15 | 每个 `.ui` 独立增量、稳定输出名 | `Collect()` 全部文件 + `Compilation`（[TemplateGenerator.cs:29](../src/EclipseUI.Compiler.Generator/TemplateGenerator.cs#L29)） | 任一模板变化重跑全部；输出名随文件序号漂移 | S2（spec/02 §2.1/§8.2；§3.6.3 同） |
-| D16 | ✅ G3：块布局透明落地——新增 `Element.IsLayoutTransparent`，`StackPanelBase` 对透明节点取零内边距 + 最近布局祖先的 `Gap`，空块不占间距槽（实现口径 D77） | 已修复（2026-11-05，[Panels.cs](../src/EclipseUI.Runtime/Panels.cs)、[Blocks.cs](../src/EclipseUI.Runtime/Blocks.cs)）；`IsVisualTransparent` 仍只管绘制 | 实测：条目间距 19.6 → 27.6（根 `Gap=8`），空块两侧 35.6 → 27.6 | ✅ G3（D77） |
-| D17 | ✅ C4：组件标签/参数落地——`[UiParameter]`/`[UiContent]`/委托参数进目录（符号派生），`.ui` 组件标签按 spec/02 §4.12 生成（参数推送/委托事件/默认内容/生命周期）；具名插槽由 C6 收敛（D75/D76） | 组件不可写 | ✅ C4（2026-11-05，[design/14 §14.12.4](../design/14-control-template-contract.md)） |
-| D18 | 块 Dispose 释放条目作用域 | ✅ S2：`ForEachBlock.Dispose`/条目移除逆序释放条目 `BlockScope`（[Blocks.cs](../src/EclipseUI.Runtime/Blocks.cs)） | 已修复（同 D51） | ✅ S2 |
+| D13 | 依赖分析按符号解析，可见成员范围由 C# 语义决定（含基类成员；`[UiState]` 基类的 `IUiObservable` 覆盖基类属性） | `GetMembers()` 不扫描基类，基类信号既不被发现也不报错（[TemplateGenerator.cs:81](../src/BubuUI.Compiler.Generator/TemplateGenerator.cs#L81)） | 基类信号按普通成员生成，值陈旧且无订阅 | S2 |
+| D14 | ✅ C3：无转换器报 `EUI023`（`HasConverter` 区分），格式/范围/成员错仍 `EUI003` | 已修复（2026-11-03，[Analyzer.cs](../src/BubuUI.Compiler/Analyzer.cs)） | ✅ C3 |
+| D15 | 每个 `.bui` 独立增量、稳定输出名 | `Collect()` 全部文件 + `Compilation`（[TemplateGenerator.cs:29](../src/BubuUI.Compiler.Generator/TemplateGenerator.cs#L29)） | 任一模板变化重跑全部；输出名随文件序号漂移 | S2（spec/02 §2.1/§8.2；§3.6.3 同） |
+| D16 | ✅ G3：块布局透明落地——新增 `Element.IsLayoutTransparent`，`StackPanelBase` 对透明节点取零内边距 + 最近布局祖先的 `Gap`，空块不占间距槽（实现口径 D77） | 已修复（2026-11-05，[Panels.cs](../src/BubuUI.Runtime/Panels.cs)、[Blocks.cs](../src/BubuUI.Runtime/Blocks.cs)）；`IsVisualTransparent` 仍只管绘制 | 实测：条目间距 19.6 → 27.6（根 `Gap=8`），空块两侧 35.6 → 27.6 | ✅ G3（D77） |
+| D17 | ✅ C4：组件标签/参数落地——`[UiParameter]`/`[UiContent]`/委托参数进目录（符号派生），`.bui` 组件标签按 spec/02 §4.12 生成（参数推送/委托事件/默认内容/生命周期）；具名插槽由 C6 收敛（D75/D76） | 组件不可写 | ✅ C4（2026-11-05，[design/14 §14.12.4](../design/14-control-template-contract.md)） |
+| D18 | 块 Dispose 释放条目作用域 | ✅ S2：`ForEachBlock.Dispose`/条目移除逆序释放条目 `BlockScope`（[Blocks.cs](../src/BubuUI.Runtime/Blocks.cs)） | 已修复（同 D51） | ✅ S2 |
 | D19 | ✅ G4：附加属性首批落地（2026-11-09）——已注册的 `Owner.Prop` 正常解析（生成直调静态 setter），未注册的点号名按未知附加属性报 `EUI002`（D19 终极语义）；C3 阶段的 EUI031 保留位随之解禁 | 已修复（2026-11-09，`Analyzer`/`UiCatalogFactory`/`Emitter`） | ✅ G4 |
-| D20 | `TextRuns` 走 `ITextContentHost.AddRun(string)` | ✅ S2：Emitter 生成 `((ITextContentHost)el).AddRun("...")`；接口与 `TextBlock` 实现已落地（[Emitter.cs](../src/EclipseUI.Compiler.Generator/Emitter.cs)） | 已修复（同 D59） | ✅ S2 |
-| D21 | 属性/事件/内容目标元数据缺失报 `EUI019`/`EUI020`/`EUI021` | Analyzer 不校验这些符号；Emitter 直接生成 `{Name}Property`/`{Name}Event`/`AddRun`，由 C# 报 CS0117 等 | 错误不在 `.ui` span 上 | C3 |
+| D20 | `TextRuns` 走 `ITextContentHost.AddRun(string)` | ✅ S2：Emitter 生成 `((ITextContentHost)el).AddRun("...")`；接口与 `TextBlock` 实现已落地（[Emitter.cs](../src/BubuUI.Compiler.Generator/Emitter.cs)） | 已修复（同 D59） | ✅ S2 |
+| D21 | 属性/事件/内容目标元数据缺失报 `EUI019`/`EUI020`/`EUI021` | Analyzer 不校验这些符号；Emitter 直接生成 `{Name}Property`/`{Name}Event`/`AddRun`，由 C# 报 CS0117 等 | 错误不在 `.bui` span 上 | C3 |
 | D22 | ✅ C2：生成代码类型全用 `global::` 限定、不依赖 using（R4/14.8.2）；`@foreach` 生成的未限定 `List<...>` 已改为全限定，去掉 `ImplicitUsings` 依赖 | 已修复（2026-11-02） | ✅ C2 |
 
 状态/反应式落地新增的偏差（与 15 §15.13.4 同一张表；D23/D27/D29/D31 与 D1/D10/D18/D29 互为映射）：
 
 | # | 规范 | 当前实现 | 影响 | 收敛 |
 |---|---|---|---|---|
-| D23 | `P={expr}` 单向反应式（§3.3.3.1） | 一次性赋值（[Emitter.cs:125](../src/EclipseUI.Compiler.Generator/Emitter.cs#L125)） | 普通状态不更新 | S2 |
+| D23 | `P={expr}` 单向反应式（§3.3.3.1） | 一次性赋值（[Emitter.cs:125](../src/BubuUI.Compiler.Generator/Emitter.cs#L125)） | 普通状态不更新 | S2 |
 | D24 | `@bind-P` 双向（§3.3.3.2） | 只有 `:bind`（且右侧必须是 `Signal<T>` 对象） | 无法绑定普通属性/组件参数 | S3 |
-| D25 | `Signal<T>` 写入零分配（15 §15.3.5） | 每次 `subs.ToArray()`（[Signals.cs:57](../src/EclipseUI.Runtime/Signals.cs#L57)） | GC 压力 | S1 |
-| D26 | 同 Key 但 item 引用/值不同时重建条目（§3.3.6.3） | ✅ S2：`ForEachBlock` 同 Key 且 item 身份相同才复用，否则释放旧作用域重建（[Blocks.cs](../src/EclipseUI.Runtime/Blocks.cs)，同 D50） | 已修复 | ✅ S2 |
-| D27 | 块 Dispose 释放 item scope（§3.3.4） | ✅ S2：`Dispose`/条目移除均释放条目作用域（[Blocks.cs](../src/EclipseUI.Runtime/Blocks.cs)，同 D51） | 已修复 | ✅ S2 |
-| D28 | 块接受订阅工厂（`Subscribe` 回调），不限于 `params ISignal[]` | `SetCondition`/`SetItems` 只有 `params ISignal[]`（[Blocks.cs:39](../src/EclipseUI.Runtime/Blocks.cs#L39)、[:127](../src/EclipseUI.Runtime/Blocks.cs#L127)） | 无法订阅状态属性/可观察路径 | S2 |
-| D29 | 双向走公开 setter（R3/R7） | `Bind.TwoWay` 用 `SetValue/GetValue`（[Component.cs:97-111](../src/EclipseUI.Runtime/Component.cs#L97)） | 绕过属性引擎 | S3 |
+| D25 | `Signal<T>` 写入零分配（15 §15.3.5） | 每次 `subs.ToArray()`（[Signals.cs:57](../src/BubuUI.Runtime/Signals.cs#L57)） | GC 压力 | S1 |
+| D26 | 同 Key 但 item 引用/值不同时重建条目（§3.3.6.3） | ✅ S2：`ForEachBlock` 同 Key 且 item 身份相同才复用，否则释放旧作用域重建（[Blocks.cs](../src/BubuUI.Runtime/Blocks.cs)，同 D50） | 已修复 | ✅ S2 |
+| D27 | 块 Dispose 释放 item scope（§3.3.4） | ✅ S2：`Dispose`/条目移除均释放条目作用域（[Blocks.cs](../src/BubuUI.Runtime/Blocks.cs)，同 D51） | 已修复 | ✅ S2 |
+| D28 | 块接受订阅工厂（`Subscribe` 回调），不限于 `params ISignal[]` | `SetCondition`/`SetItems` 只有 `params ISignal[]`（[Blocks.cs:39](../src/BubuUI.Runtime/Blocks.cs#L39)、[:127](../src/BubuUI.Runtime/Blocks.cs#L127)） | 无法订阅状态属性/可观察路径 | S2 |
+| D29 | 双向走公开 setter（R3/R7） | `Bind.TwoWay` 用 `SetValue/GetValue`（[Component.cs:97-111](../src/BubuUI.Runtime/Component.cs#L97)） | 绕过属性引擎 | S3 |
 | D30 | 生成器测试可解析 partial 属性 | 生成器/测试 Roslyn 4.9.2，parser 报 CS0267（实测） | `CSharpGeneratorDriver` 无法覆盖状态生成器 | S1（升测试 Roslyn 或宿主集成测试） |
-| D31 | 语义级依赖分析（15 §15.5） | 正则重写（[Emitter.cs:125](../src/EclipseUI.Compiler.Generator/Emitter.cs#L125)，同 D10） | 字符串/同名变量误改 | S2 |
+| D31 | 语义级依赖分析（15 §15.5） | 正则重写（[Emitter.cs:125](../src/BubuUI.Compiler.Generator/Emitter.cs#L125)，同 D10） | 字符串/同名变量误改 | S2 |
 | D32 | `IUiObservable`/`UiWatch`/`UiBinding` 运行时契约（15 §15.3） | 运行时不存在 | 无法实现 | S1/S3 |
 | D33 | `[UiState]`/`[UiObservable]`/`[UiComputed]` 状态生成器（15 §15.2） | 不存在 | 普通类型不可观察 | S1/S4 |
 | D34 | item 可观察属性与 item `@bind`（§3.3.6.2） | item 内禁止信号/`:bind`（原 `EUI014`） | 列表编辑不可写 | S2/S3 |
 | D35 | 组件可观察参数（§3.3.3.5） | 只推荐 `Signal<T>` 参数 | 父更新不刷新子 UI | S3 |
 | D36 | `EUI034`–`EUI044` | 只有 `EUI001`–`EUI033`（部分未实现） | 无诊断/误导 | S1–S4 |
 | D37 | ✅ S2：v4 只映射赋值语句；`U{N}` 声明与 `U{N}();` 调用不映射（spec/02 §2.4 规则 5） | 与 spec 一致 | 已收敛 | ✅ S2 |
-| D38 | `Text` 模型整段文本一个 updater，初次只写一次（spec/02 §4.7.2、15 §15.4.5） | ✅ S2：整段一个 `$"..."` 赋值，`U{N}`/`R{N}` 只写一次（[Emitter.cs](../src/EclipseUI.Compiler.Generator/Emitter.cs)） | 已修复 | ✅ S2 |
-| D39 | item 根 `P={item.X}` 生成定向更新（spec/02 §4.11.1） | ✅ S2：item 模板内动态属性生成 `R{N}` + `scope.AddRenderAction`（[Emitter.cs](../src/EclipseUI.Compiler.Generator/Emitter.cs)） | 已修复 | ✅ S2 |
-| D40 | `TextRuns` 静态段不建局部变量（spec/02 §4.8.1） | ✅ S2：静态段直接 `AddRun("...")`，不分配变量（[Emitter.cs](../src/EclipseUI.Compiler.Generator/Emitter.cs)） | 已修复 | ✅ S2 |
-| D41 | 生成文本形态固定：空分支不生成 `SetContent`、Key `(T t) => (object?)(expr)`、作用域名 `scope{N}`、首次调用紧跟定义（spec/02 §4.8/§4.10/§4.9） | ✅ S2：与 spec/02 形态一致（[Emitter.cs](../src/EclipseUI.Compiler.Generator/Emitter.cs)） | 已收敛 | ✅ S2 |
+| D38 | `Text` 模型整段文本一个 updater，初次只写一次（spec/02 §4.7.2、15 §15.4.5） | ✅ S2：整段一个 `$"..."` 赋值，`U{N}`/`R{N}` 只写一次（[Emitter.cs](../src/BubuUI.Compiler.Generator/Emitter.cs)） | 已修复 | ✅ S2 |
+| D39 | item 根 `P={item.X}` 生成定向更新（spec/02 §4.11.1） | ✅ S2：item 模板内动态属性生成 `R{N}` + `scope.AddRenderAction`（[Emitter.cs](../src/BubuUI.Compiler.Generator/Emitter.cs)） | 已修复 | ✅ S2 |
+| D40 | `TextRuns` 静态段不建局部变量（spec/02 §4.8.1） | ✅ S2：静态段直接 `AddRun("...")`，不分配变量（[Emitter.cs](../src/BubuUI.Compiler.Generator/Emitter.cs)） | 已修复 | ✅ S2 |
+| D41 | 生成文本形态固定：空分支不生成 `SetContent`、Key `(T t) => (object?)(expr)`、作用域名 `scope{N}`、首次调用紧跟定义（spec/02 §4.8/§4.10/§4.9） | ✅ S2：与 spec/02 形态一致（[Emitter.cs](../src/BubuUI.Compiler.Generator/Emitter.cs)） | 已收敛 | ✅ S2 |
 
 D 表只记录"规范已定、代码未对齐"的差异，收敛阶段见末列；落地这些差异不改变本文的冻结语义。
 D37–D41 描述的生成文本偏差已随 v4 S2 收敛，形态以 spec/02 为准。
 
 ### 3.5.4 v4 实现偏差台账（D42–D88）
 
-v4 换轨后，**S1 已收敛（2026-10-30）、S2 已收敛（2026-10-30）、S3 已收敛（控件侧 2026-11-02、组件侧随 C4 2026-11-05）、C1 已收敛（2026-11-02，目录派生）、C3 已收敛（2026-11-03，字面量转换器/使用点诊断/保留语法）、C4 已收敛（2026-11-05，组件标签）、C5 已收敛（2026-11-05，Ref/使用点诊断）、C6 已收敛（2026-11-05，具名插槽）、G3 七个小切片全部收敛（块布局透明 2026-11-05/D77；§3.5.3 的 D16 随之关闭、失效迁移 2026-11-07/D78、按文件增量 2026-11-08、`#line` 列映射 2026-11-08/D79、EUI045 code-behind 冲突诊断 2026-11-08/D57/D80、诊断出口补全 2026-11-08/D74 ②/D81、EUI024 事件处理器签名匹配 2026-11-08/D82）、S4/S5 运行时硬化部分收敛（2026-11-08/D83）、G2 CPU 侧部分收敛（2026-11-08/D84）、**S6 语法对齐已收敛（2026-11-08/D85–D88 关闭：`@using`（K22/D85）、`@code` 单文件（K21/K23④/D86）、`else`/`else if`/`@switch`（K23③/K29/D87）、`@* *@` 与未闭合注释（K23/K26/D88，D12 随之关闭）、`EUI046`/`EUI047` 新诊断（K27/K29）、样例与约 94 例 golden 补 `@using` 一次性迁移，`dotnet test EclipseUI.slnx` 497 例全绿）**；
+v4 换轨后，**S1 已收敛（2026-10-30）、S2 已收敛（2026-10-30）、S3 已收敛（控件侧 2026-11-02、组件侧随 C4 2026-11-05）、C1 已收敛（2026-11-02，目录派生）、C3 已收敛（2026-11-03，字面量转换器/使用点诊断/保留语法）、C4 已收敛（2026-11-05，组件标签）、C5 已收敛（2026-11-05，Ref/使用点诊断）、C6 已收敛（2026-11-05，具名插槽）、G3 七个小切片全部收敛（块布局透明 2026-11-05/D77；§3.5.3 的 D16 随之关闭、失效迁移 2026-11-07/D78、按文件增量 2026-11-08、`#line` 列映射 2026-11-08/D79、EUI045 code-behind 冲突诊断 2026-11-08/D57/D80、诊断出口补全 2026-11-08/D74 ②/D81、EUI024 事件处理器签名匹配 2026-11-08/D82）、S4/S5 运行时硬化部分收敛（2026-11-08/D83）、G2 CPU 侧部分收敛（2026-11-08/D84）、**S6 语法对齐已收敛（2026-11-08/D85–D88 关闭：`@using`（K22/D85）、`@code` 单文件（K21/K23④/D86）、`else`/`else if`/`@switch`（K23③/K29/D87）、`@* *@` 与未闭合注释（K23/K26/D88，D12 随之关闭）、`EUI046`/`EUI047` 新诊断（K27/K29）、样例与约 94 例 golden 补 `@using` 一次性迁移，`dotnet test BubuUI.slnx` 497 例全绿）**；
 其余偏差按下列余项收敛：S4/S5（[spec/03 §13](../spec/03-reactivity-and-binding.md#13-阶段-s1s5) 的 S4；AOT/裁剪、最终审计、帧预算/分配预算门槛、CI——Element.Unmount 已随 D89/K33 收敛——旧语法清理已随 S6 提前完成（K27/D85–D88 ✅ 2026-11-08））、G2（GPU retained layer/真正局部重绘、目标机稳定 60fps 结论、像素探针 DSL、CPU/GPU 交叉一致性门禁）、G4（样式/主题；附加属性首批 ✅ 2026-11-09；泛型标签暂缓 K19、不排期）、IDE/DevTools。本表与 [spec/02 §12](../spec/02-generated-code-contract.md#12-实现偏差台账-d42d88) 是同一张台账，
 任一侧更新必须同步另一侧；台账之外的差异视为实现缺陷。
 
@@ -867,29 +867,29 @@ v4 换轨后，**S1 已收敛（2026-10-30）、S2 已收敛（2026-10-30）、S
 | D59 | ✅ S2：`ITextContentHost.AddRun(string)` 已实现；`TextBlock` 实现该接口，运行时不再需要手建 `TextRun` | spec/02 §4.8/§7 | ✅ S2 |
 | D60 | ✅ S2：`ForEachBlock.UpdateChildren` 仅在根序列实际变化时改 `Children` | spec/03 §7.3 | ✅ S2 |
 | D61 | ✅ S2：样例与 README 已迁移到普通 CLR 状态；`Signal<T>` 仅留作运行时遗留原语与历史章节说明，不参与模板生成 | spec/02/spec/03 | ✅ S2 |
-| D62 | ✅ C2：`EUI040` 的目标可绑性此前只来自手写目录 `UiPropDef.Bindable`；C1 的派生目录已对每个模板可见属性给出符号级 `CanWrite`（public 可写 + `{Name}Property`），并有覆盖测试证明派生 ⊇ 手写标注；C2 起分析器改读派生 `CanWrite`（[Analyzer.cs](../src/EclipseUI.Compiler/Analyzer.cs) `propDef.CanWrite`） | spec/01 §4.2 | ✅ C2 |
+| D62 | ✅ C2：`EUI040` 的目标可绑性此前只来自手写目录 `UiPropDef.Bindable`；C1 的派生目录已对每个模板可见属性给出符号级 `CanWrite`（public 可写 + `{Name}Property`），并有覆盖测试证明派生 ⊇ 手写标注；C2 起分析器改读派生 `CanWrite`（[Analyzer.cs](../src/BubuUI.Compiler/Analyzer.cs) `propDef.CanWrite`） | spec/01 §4.2 | ✅ C2 |
 | D63 | ✅ C1：运行时声明特性落地 `Runtime/UiAttributes.cs`（`UiContentKind`/`[UiContent]`/`[UiIgnore]`/`[UiParameter]`/`[UiSlot]`；`[UiTag]` 已于 K32 退役），内置控件加标注（`Panel`=Children、`Button`/`CheckBox`=Text→Label、`TextBlock`=TextRuns；`TextRun`/`ConditionalBlock`/`ForEachBlock`=`[UiIgnore]`） | design/14 §14.4.6/§14.4.4 | ✅ C1 |
 | D64 | ✅ C1+**C2**：`Compiler.Metadata` 目录模型 + Roslyn 符号扫描器（`UiCatalogFactory.Build`）落地，纯函数、不抛异常，元数据问题进 `Problems`/`HiddenTags`。C1 只建派生、分析器与生成器行为不变；**C2 删除手写目录，分析器/生成器全部读派生目录**（`TemplateGenerator` 管道值 = `UiCatalogFactory.Build(compilation)`） | design/14 §14.5/§14.10.2/§14.12.2 | ✅ C2 |
-| D65 | ✅ C2：`EclipseUI.Compiler.Metadata` 源码链接进生成器程序集（`Compile Include`，排除 Metadata 的 `Polyfills.cs`，诊断码常量经 Metadata→Compiler 单一定义）；测试项目只引用生成器避免重复类型身份 | design/14 §14.10.1/§14.12.2 | ✅ C2 |
+| D65 | ✅ C2：`BubuUI.Compiler.Metadata` 源码链接进生成器程序集（`Compile Include`，排除 Metadata 的 `Polyfills.cs`，诊断码常量经 Metadata→Compiler 单一定义）；测试项目只引用生成器避免重复类型身份 | design/14 §14.10.1/§14.12.2 | ✅ C2 |
 | D66 | ✅ C1：`UiContentKind` 与目录内部 `UiContentModel` 数值一一对应，断言测试 `ContentKind_And_MetadataContentModel_NumbersMatch` | design/14 §14.4.4 | ✅ C1 |
 | D67 | ✅ C1：失效级别守卫白名单收敛为唯一例外 `Element.IsHitTestVisible`；`Panel.ClipToBounds` 失效级别 `None`→`Render`（裁剪影响像素） | design/14 §14.11.1 | ✅ C1 |
 | D68 | ✅ C1：派生目录属性项 6→17，差集逐条钉进快照测试 `DerivedCatalog_DiffAgainstHandCatalog_IsExactlyTheEnumeratedSet`（新增 `Padding`/`ClipToBounds`/`IsHitTestVisible` 继承项）；模板实际变宽在 C2 生效 | design/14 §14.12 | ✅ C1 |
 | D69 | ✅ C2：8 个输入/焦点事件从静态宿主 `InputEvents` 迁入 `Element`（静态类删除，19 处调用改名），`CheckBox` 补 `CheckedChanged`；模板事件表面 1 → 9 个事件名（37 事件项），扫描快照可证 | design/14 §14.4.3/§14.12.2 | ✅ C2 |
 | D70 | ✅ C1：`UiElementDef`/`UiCatalog` 手写结构相等（record 对字典成员按引用比较，会破坏 §14.10.3 管道值比较）；`CatalogValueEq` 按 Ordinal 稳定排序 + unchecked 哈希（netstandard2.0 无 `System.HashCode`） | design/14 §14.10.3 | ✅ C1 |
 | D71 | `[UiIgnore]` 与 `[UiParameter]`/`[UiSlot]` 同时出现时，扫描器让 `[UiIgnore]` 生效并按 **EUI028** 记问题；design/14 §14.6.1 只写「不得」，没为这条分配诊断码，EUI028 原文只覆盖「参数声明非法」。C4 未处理（沿用 EUI028，不复用新码）；需要细化时另起新码并先记台账 | design/14 §14.6.1/§14.9.1 | 开放 |
-| D72 | ✅ C2（语义修订）：golden 快照落成仓库内文件 `TestData/BuiltInSurface.golden.txt`（`ECLIPSEUI_UPDATE_SURFACE_GOLDEN=1` 再生）。§14.11.1 原文的「固定目录从快照反序列化」不采纳：快照改为**扫描结果的渲染评审门**（显式再生成 + diff 强制评审），纯结构测试各自现扫 `Compilation`（实测全扫 45 ms，反序列化反而多一道漂移源） | design/14 §14.11.1/§14.12.2 | ✅ C2 |
-| D73 | ✅ C4（残余风险登记）：组件 `@bind-P` 只静态校验「存在 `{P}Changed` 委托参数」（EUI040），不校验其实参类型与 `P` 匹配——恰与 spec/01 §4.14 「缺失/类型不符 → EUI040」中的「类型不符」不可严格一致。类型不匹配由生成代码的 C# 编译错误兜底（经 `#line` 指回 `.ui`）；不要在运行时静默吞掉。若未来 Roslyn 类型推断下放到扫描期，可再收紧。**→ 2026-11-11 已收紧（spec/02 D110），本条关闭** | spec/02 §4.4.3 规则 1 / spec/01 §4.14 | ✅ C4 → ✅ D110 |
+| D72 | ✅ C2（语义修订）：golden 快照落成仓库内文件 `TestData/BuiltInSurface.golden.txt`（`BUBUUI_UPDATE_SURFACE_GOLDEN=1` 再生）。§14.11.1 原文的「固定目录从快照反序列化」不采纳：快照改为**扫描结果的渲染评审门**（显式再生成 + diff 强制评审），纯结构测试各自现扫 `Compilation`（实测全扫 45 ms，反序列化反而多一道漂移源） | design/14 §14.11.1/§14.12.2 | ✅ C2 |
+| D73 | ✅ C4（残余风险登记）：组件 `@bind-P` 只静态校验「存在 `{P}Changed` 委托参数」（EUI040），不校验其实参类型与 `P` 匹配——恰与 spec/01 §4.14 「缺失/类型不符 → EUI040」中的「类型不符」不可严格一致。类型不匹配由生成代码的 C# 编译错误兜底（经 `#line` 指回 `.bui`）；不要在运行时静默吞掉。若未来 Roslyn 类型推断下放到扫描期，可再收紧。**→ 2026-11-11 已收紧（spec/02 D110），本条关闭** | spec/02 §4.4.3 规则 1 / spec/01 §4.14 | ✅ C4 → ✅ D110 |
 | D74 | ✅ G3（2026-11-08，② 收敛）：① 使用点 EUI019/EUI020/EUI021 落地（C5）——`UiElementDef.IsFromReferencedAssembly` 区分来源，只有引用程序集控件的 `def.Problems` 在用点暴露（`PropertyNotBindable`→EUI019、`EventFieldMissing`→EUI020、`ContentTargetInvalid` 接管 EUI006→EUI021）；源项目控件仍落 EUI002/EUI006。`Ref`（EUI029）同切片落地。② 声明处出口落地：`UiMetadataProblem` 携带纯数据 `UiSourceLocation`，生成器注册目录级 `SourceOutput` 把源项目 problem 报在 C# 声明处（成员级取 `def.Problems`、类型级取 `catalog.Problems`），与逐文件管道解耦、每条只报一次；标签解析失败按类别分流 EUI016/EUI017/EUI018/EUI030/EUI031，只有真正未知落 EUI001。EUI024 已落地（2026-11-08，D82）。实现口径见 [spec/02 §12 D81](../spec/02-generated-code-contract.md#12-实现偏差台账-d42d88)，`MetadataOutletTests` 14 例 | design/14 §14.5.4/§14.9.1/§14.12.5、spec/02 §4.14/§12 | ✅ C5 ① / ✅ G3 ② |
-| D75 | ✅ C6（解析口径两级）：自身插槽的解析——分析器按「目录显示名与 `.ui` 文件名短名匹配」投影自身 def（静态前端无符号信息）；生成器用 code-behind **符号**沿基类链读 `[UiSlot]` 传给分析器/发射器作权威（code-behind 类在源码里不派生 `Component`，目录不会有它的 def）。两级在正常房间结构下指向同一组插槽；目录匹配失败而符号可用时生成侧仍有效 | design/14 §14.12.6、spec/02 §4.12.5 | ✅ C6 |
+| D75 | ✅ C6（解析口径两级）：自身插槽的解析——分析器按「目录显示名与 `.bui` 文件名短名匹配」投影自身 def（静态前端无符号信息）；生成器用 code-behind **符号**沿基类链读 `[UiSlot]` 传给分析器/发射器作权威（code-behind 类在源码里不派生 `Component`，目录不会有它的 def）。两级在正常房间结构下指向同一组插槽；目录匹配失败而符号可用时生成侧仍有效 | design/14 §14.12.6、spec/02 §4.12.5 | ✅ C6 |
 | D76 | ✅ C6（契约补写）：基链同名**成员**的胜出规则原文未定。Roslyn 的 `GetAttributes()` 不把特性带进 override，一律按名字去重会让 `public override Element? Header`（不写特性）静默丢掉基类的 `[UiSlot]`/`[UiParameter]`，不去重又把同一 override 误报成重复插槽（EUI028）。实现定为：派生侧显式写了模板特性或 `[UiIgnore]` 才算覆盖，否则基类声明继续生效；已回写 design/14 §14.10.2 与 spec/01 §4.15 | design/14 §14.10.2/§14.6.1 | ✅ C6 |
 | D77 | ✅ G3（契约补写 + 实现口径）：块布局透明落地为「保留块节点 + 采用祖先排布参数」，不是把条目摊平进父容器子序列——摊平会让块 `FinalRect` 与子元素坐标系脱钩，绘制偏移/`PointFromRoot`/命中/脏区四条路径都要改；保留节点则一行不动且排布等价。新增 `Element.IsLayoutTransparent`，`StackPanelBase` 对透明节点取零内边距 + 最近非透明布局祖先的 `Gap`，零尺寸透明块退出间距计数但仍 arrange 到零矩形。补写三条原文未定规则：块自身 `Gap`/`Padding` 不参与布局、空块（含嵌套空块）不占间距槽、空块 `FinalRect` 必须刷新。实测条目间距 19.6 → 27.6（根 `Gap=8`）、空块两侧 35.6 → 27.6；`BlockLayoutTests` 10 例 + `TaskListEndToEndTests` 2 例，421 例全绿。D16 关闭；G4 的 Grid/WrapPanel 另定透明口径 | spec/01 §4.10/§4.11、spec/02 §12 D77、本文 D16 | ✅ G3 |
 | D78 | ✅ G3（契约补写 + 实现）：`Adopt` 接管不迁移子组件原根队列里已入队的失效（所有权变更后该队列不再被排空，接管前 `Invalidate()` 静默丢弃；GalleryApp 空 Tasks 卡根因）；`Depth` 接管时缓存、链长变化后残留旧深度，可能把孙排在父前。实现：`Adopt` 按入队顺序 drain 子队列重入新根（按待渲染标记合并），`Depth` 改所有权链实时计算。契约补写 spec/03 §2.4/§2.7；`ComponentOwnershipTests` 5 例 | spec/03 §2.4/§2.7、spec/02 §12 D78 | ✅ G3 |
 | D79 | ✅ G3（契约补写 + 实现）：`#line` 由行型 `#line N "path"` 换成 span 型 `#line (sl, sc) - (el, ec) "path"`。实测 Roslyn 4.9.2：列平移 `sc−1` 只作用于紧接的一行、end 不参与单行诊断换算、start 必须严格早于 end（否则 `CS8939` 让整段映射失效）。`Emitter.Mapped` 按「生成缩进 + 用户 token 偏移」左移 `sc` 并钳制 ≥ 1（前缀过长时列退化为生成列、行号仍精确），空 span/钳制后给 end 补 1 列；`MappedToken` 自动定位表达式偏移，35 个调用点由行号改传 `TextSpan`。补写 spec/02 §2.4 规则 9/10 与 §11 等价口径（旧/新语法别名改为剥离 `#line` 后比对）。`LineSpanMappingTests` 5 例 + `GeneratorContractTests` 3 处断言同步 | spec/02 §2.4/§12 D79 | ✅ G3 |
-| D80 | ✅ G3（实现口径补写）：EUI045 的「诊断位置在 code-behind 声明」原文未定载体。实现用纯数据 `UiSourceLocation`（路径 + span + 0 基行列）走逐文件 facts，`Report` 以 `Location.Create(path, span, lineSpan)` 重建外部文件位置（不把 `SyntaxTree`/`Location` 带进增量缓存）；保留名 = `__el/__cmp/__blk/__run/__bind/U/R` + 数字后缀，生成依赖成员白名单 = `Invalidate/Mount/Track/TrackContent/AddDisposable`，基类白名单 = 省略/`Component`/`EclipseUI.Component`/`global::EclipseUI.Component`；EUI045 报 Error 但不阻止生成输出，其它错误诊断仍短路。`CodeBehindConflictTests` 23 例 | spec/02 §10/§12 D80 | ✅ G3 |
+| D80 | ✅ G3（实现口径补写）：EUI045 的「诊断位置在 code-behind 声明」原文未定载体。实现用纯数据 `UiSourceLocation`（路径 + span + 0 基行列）走逐文件 facts，`Report` 以 `Location.Create(path, span, lineSpan)` 重建外部文件位置（不把 `SyntaxTree`/`Location` 带进增量缓存）；保留名 = `__el/__cmp/__blk/__run/__bind/U/R` + 数字后缀，生成依赖成员白名单 = `Invalidate/Mount/Track/TrackContent/AddDisposable`，基类白名单 = 省略/`Component`/`BubuUI.Component`/`global::BubuUI.Component`；EUI045 报 Error 但不阻止生成输出，其它错误诊断仍短路。`CodeBehindConflictTests` 23 例 | spec/02 §10/§12 D80 | ✅ G3 |
 | D81 | ✅ G3（实现口径补写）：D74 ② 原文未定位置载体/去重/码映射。实现：① `UiMetadataProblem` 增加可选纯数据 `UiSourceLocation`（成员符号 `Locations` 优先、类型声明兜底；引用程序集无源位置 → null），进 record 值相等/哈希；② 目录级 `RegisterSourceOutput(catalogProvider)` 与逐文件管道解耦，同一 problem 只报一次，`Distinct()` 去重 catalog/def 两处重复项；③ 源项目控件的 EUI019/EUI020/EUI021 problem 按 §14.9.2 折叠为 EUI026，EUI026/EUI028/EUI031 保持原码；④ 诊断不阻断生成输出，`Report` 对无 path 的内存语法树退化为 `Location.None`；⑤ 逐文件管道 `WithTrackingName("PerFileGeneration")`，增量断言不再混读所有 `SourceOutput` step；⑥ 标签码分流只改 `Analyzer.VisitElement` 的 code，消息与 span 不变。`MetadataOutletTests` 14 例。口径正本在 spec/02 §12 D81 | spec/02 §12 D81、design/14 §14.9.1/§14.9.2 | ✅ G3 |
-| D82 | ✅ G3（2026-11-08，实现口径）：EUI024 事件处理器签名匹配落地——常量 `UiDiagnostics.EventHandlerSignature` 早已分配；`TemplateGenerator.ValidateEventHandlerSignature` + `TemplateProbe.IsHandlerCompatible`（复用 `ProbeTree` 合成 partial 方法体）借 Roslyn 把处理器表达式放进 code-behind 符号上下文，仅当「表达式自身语义干净 + 对目标委托的转换确定失败」时在 `.ui` 属性值报 Error 并短路生成输出（与 EUI004 一致）；符号未解析/重载失败/`dynamic`/表达式内部错误静默，交回生成代码经 `#line` 由 C# 报错（spec/02 §2.4 规则 8 不重复报告）。控件事件复用 `Emitter.EventHandlerType`（`internal static`）、组件委托参数用 `UiParameterDef.ClrTypeDisplayName`，保证诊断与生成代码类型判定一致。`EventHandlerSignatureTests` 16 例 | spec/02 §4.6.1 规则 7、§9 T20、design/14 §14.11.2 | ✅ G3 |
+| D82 | ✅ G3（2026-11-08，实现口径）：EUI024 事件处理器签名匹配落地——常量 `UiDiagnostics.EventHandlerSignature` 早已分配；`TemplateGenerator.ValidateEventHandlerSignature` + `TemplateProbe.IsHandlerCompatible`（复用 `ProbeTree` 合成 partial 方法体）借 Roslyn 把处理器表达式放进 code-behind 符号上下文，仅当「表达式自身语义干净 + 对目标委托的转换确定失败」时在 `.bui` 属性值报 Error 并短路生成输出（与 EUI004 一致）；符号未解析/重载失败/`dynamic`/表达式内部错误静默，交回生成代码经 `#line` 由 C# 报错（spec/02 §2.4 规则 8 不重复报告）。控件事件复用 `Emitter.EventHandlerType`（`internal static`）、组件委托参数用 `UiParameterDef.ClrTypeDisplayName`，保证诊断与生成代码类型判定一致。`EventHandlerSignatureTests` 16 例 | spec/02 §4.6.1 规则 7、§9 T20、design/14 §14.11.2 | ✅ G3 |
 | D83 | 部分收敛（S4/S5，2026-11-08）：`PropertySystem.cs` 新增 `IValueBox`/`ValueBox<T>`，`Element._localValues` 由 `Dictionary<StyledProperty, object?>` 改为 `Dictionary<StyledProperty, IValueBox>`，重复赋值只改泛型字段、消除值类型装箱；`Component.Dispose` 在锁内清 `_pendingRenders`/`_pendingSet`。`RuntimeHardeningTests` 7 例（分配预算、继承/绑定/通知语义、泄漏回归）。**明确未做**：`Element.Unmount/Detach`（design/14 明确 v1 不提供、G4 才补）、AOT/裁剪配置、旧语法清理、最终审计清单、帧预算/分配预算门槛、CI 配置、S5 基准门槛 | spec/03 §13.1、design/09 §9.3 G8/S5 | 部分收敛（S4/S5） |
-| D84 | 部分收敛（G2 CPU 侧，2026-11-08）：`PixelGoldenTests` 4 例 + `TestData/PixelGolden.baseline.txt`（纯图元、无字体依赖的 CPU 像素 golden：`ContentHash` 全图门禁 + 探针 ±2 容差 + `ECLIPSEUI_UPDATE_GOLDEN=1` 生成开关 + 失败输出实际 PNG 到 TestResults）；`SceneGraph/RetainedFrameCompositor.cs`（CPU 侧 retained 合成原型：持有上一帧 `RenderTarget`，按 `FrameDamage` 只 blit 脏区，断言脏区外逐字节不变、与整帧重绘等价）；`tools/bench-60fps.ps1` 与 `design/reports/target-machine-60fps-template.md`。**明确未做/边界**：原型只是合成层、不减少光栅化工作量，真正局部重绘需 `IRenderBackend.Render` 增加脏区/scissor 重载且 VelloSharp 0.5.0-alpha.3 未提供公开 API；GPU surface 的 retained layer 依赖 HWND + wgpu device 本机无法验证；「稳定 60fps」结论依赖目标机真实显示器（本机 29Hz 虚拟显示），只给可复现测量程序与报告模板；像素探针 DSL（render-gate-2026-11 backlog #7）仍缺 | design/09 §9.3 G2、design/reports/render-gate-2026-11.md | 部分收敛（G2 CPU 侧） |
+| D84 | 部分收敛（G2 CPU 侧，2026-11-08）：`PixelGoldenTests` 4 例 + `TestData/PixelGolden.baseline.txt`（纯图元、无字体依赖的 CPU 像素 golden：`ContentHash` 全图门禁 + 探针 ±2 容差 + `BUBUUI_UPDATE_GOLDEN=1` 生成开关 + 失败输出实际 PNG 到 TestResults）；`SceneGraph/RetainedFrameCompositor.cs`（CPU 侧 retained 合成原型：持有上一帧 `RenderTarget`，按 `FrameDamage` 只 blit 脏区，断言脏区外逐字节不变、与整帧重绘等价）；`tools/bench-60fps.ps1` 与 `design/reports/target-machine-60fps-template.md`。**明确未做/边界**：原型只是合成层、不减少光栅化工作量，真正局部重绘需 `IRenderBackend.Render` 增加脏区/scissor 重载且 VelloSharp 0.5.0-alpha.3 未提供公开 API；GPU surface 的 retained layer 依赖 HWND + wgpu device 本机无法验证；「稳定 60fps」结论依赖目标机真实显示器（本机 29Hz 虚拟显示），只给可复现测量程序与报告模板；像素探针 DSL（render-gate-2026-11 backlog #7）仍缺 | design/09 §9.3 G2、design/reports/render-gate-2026-11.md | 部分收敛（G2 CPU 侧） |
 | D85 | 规范先行（K22，2026-11-08）：模板 `@using {Ns}` 已定为合法指令、生成文件须按模板顺序输出普通 `using {Ns};`、标签只在导入命名空间内解析且内置控件无豁免（未导入报 `EUI001` + 缺 using 建议）。**当前实现**：`Lexer.ParseDirective` 仍把 `@using` 归 `EUI009`，`Emitter` 不输出任何 using，`UiCatalog.Resolve` 仍是全局短名字典、与命名空间无关；spec/02 §2.2/§2.5 旧口径已加注取代关系。收敛条件：P1 指令表、P2 `UiUsingDirective`、P3 文件头与目录过滤、P6 全部样例 / 约 94 例 golden 一次性迁移补 `@using` 并回归 | K22、spec/01 §1.5、design/16 §5.3 | ✅ S6（2026-11-08 收敛） |
 | D86 | 规范先行（K21/K23 ④，2026-11-08）：`@code { }` 为合法顶层节点，位置不限、可多个块、书写顺序不影响成员可见性，成员合并进同一 partial 类并与 code-behind 并存，`EUI005` 放宽。**当前实现**：`@code` 撞 `EUI009`，`EUI005` 仍强制同名 `.cs`，`TemplateProbe.ProbeTree` 只注入 code-behind 声明。收敛条件：P1 块体捕获、P2 `UiCodeBlock` + 根层例外、P3 成员透传 + **先全量收集再建探针 Compilation**（否则前置 `{expr}` 误报 `EUI007`/`EUI024`）+ `EUI045` 扩到 `@code` 成员、P6 单文件端到端用例与底部 `@code` 样例 | K21、K23、spec/01 §1.5、design/16 §5.2/附录 B | ✅ S6（2026-11-08 收敛） |
 | D87 | 规范先行（K23 ③，2026-11-08）：`else`/`else if`（不带 `@`）与 `@switch`（`case`/`break`/`default`）纳入目标语法，`EUI008` 停用、新码从 `EUI046` 起。**当前实现**：只有单分支 `@if`，分支续接撞 `EUI100`，`@switch` 报 `EUI008`。收敛条件：P1 续接与 case 头、P2 分支/switch 节点、P4 `ConditionalBlock` 多分支（`AddBranch`/`SetDefault`）与 `SwitchBlock<T>`（草案见 design/16 附录 B）、P5 停用码零出现 + 诊断快照；`case` 内嵌 `@foreach` 与 `@for`/`@while` 属 Q3/P4 待定 | K23、spec/01 §1.5、design/16 §3.1/附录 A | ✅ S6（2026-11-08 收敛） |
@@ -909,9 +909,9 @@ v4 换轨后，**S1 已收敛（2026-10-30）、S2 已收敛（2026-10-30）、S
 | D101 | ✅ G4：**AppBuilder + 依赖注入（Avalonia 式启动形态）**——Runtime `Application`/`AppBuilder`（Configure/ConfigureServices/UseTheme/UseStyles/UseSetup/Build/Start）/描述式 `Window`；依赖解耦：`IHostTheme` 标记（Runtime 不引用 Rendering）、`IStyleProvider` 泛型接线；MEDI 容器（平台 setup 先注册、用户后注册可覆盖）；扩展片 `UseWindows()`（`ClassicDesktopLifetime` + `IWindowHost`）/`UseVello()`（`ISurfaceFactory`）/`UseHarfBuzzText()`；画廊 `GalleryApp` + CLI→DI，`--cpu/--shot` 走 `Build()` 离屏；`AppBuilderTests` 8 例，全量 678 例全绿（340/241/97） | spec/02 §12、design/09 §9.3 工程化 | ✅ G4（2026-11-09） |
 | D102 | ✅ G4：**伪类状态样式（`:hover`/`:active`/`:focus`）**——`PseudoStates` 掩码进 Element（InputRouter/FocusManager 维护）；`Define` 返回链式 `ClassStyleVariants`（变体按声明序应用）；状态变化 = 失效 + class 层重应用；段键含状态位 + 焦点判定「元素状态 ∪ 参数」同源化；Button/CheckBox `_pressed` 迁移基类；修复焦点环 visualBounds 覆盖不足（1×→1.5×+1，GPU 逐像素比对抓出）；688 例全绿（346/241/101） | spec/02 §12、design/09 §9.3 G4 | ✅ G4（2026-11-09） |
 | D103 | ✅ G4：**:disabled + IsEnabled（E3 片）**——`PseudoStates.Disabled=8`（**有效值**沿祖先链继承合成进掩码：`IsEnabled` 声明值 + `IsEffectiveEnabled` 合取；变体/段键零特殊处理）；`IsEnabled` setter 逐子代失效重应用；Router 吞禁用按下/滚轮/移动（按住中途禁用释放吞 Click）、Focus 拒绝禁用、Tab 跳过；painter `Resolve*` 置灰令牌回落（DisabledForeground/Background，class 变体优先）；`.Disabled()` 变体链；`Visual.FocusRingWidth` class 覆盖（环宽进样式）；画廊 `:disabled` 演示；699 例全绿（352/241/106） | spec/02 §12、design/17 §3.2/§7 | ✅ G4（2026-11-09） |
-| D104 | ✅ G4：**Eustyle 样式表编译器（E1 片）**——`.eustyle`/`@style` 块 → 生成 `Define` 调用（运行时零引擎）：解析器（类规则 + 变体两形态 `.card:hover`/`&:hover` + `$var` + `theme()` + hex + 注释；恢复消费停止字符防死循环）；生成器块 lambda 变体链（全限定、闭合括号随块，产物过语法级校验）；EUI050/051/052（design/17 初版误分配 EUI048–052 撞 K31/G4 已占用码，顺延修正 + 预留 053/054）；`.eustyle` 管道 → 单 `StyleBootstrap.g.cs`（Apply 直连 UseStyles）；`@style` → 组件前缀 `{Component}__{class}` + 静态幂等 `__RegisterStyles()`；画廊 `GalleryStyles.cs` → `app.eustyle` + Showcase.ui 块演示；`EustyleTests` +23；722 例全绿（352/264/106） | spec/02 §12、design/17 §4/§5 | ✅ G4（2026-11-09） |
+| D104 | ✅ G4：**Bss 样式表编译器（E1 片）**——`.bss`/`@style` 块 → 生成 `Define` 调用（运行时零引擎）：解析器（类规则 + 变体两形态 `.card:hover`/`&:hover` + `$var` + `theme()` + hex + 注释；恢复消费停止字符防死循环）；生成器块 lambda 变体链（全限定、闭合括号随块，产物过语法级校验）；EUI050/051/052（design/17 初版误分配 EUI048–052 撞 K31/G4 已占用码，顺延修正 + 预留 053/054）；`.bss` 管道 → 单 `StyleBootstrap.g.cs`（Apply 直连 UseStyles）；`@style` → 组件前缀 `{Component}__{class}` + 静态幂等 `__RegisterStyles()`；画廊 `GalleryStyles.cs` → `app.bss` + Showcase.bui 块演示；`BssTests` +23；722 例全绿（352/264/106） | spec/02 §12、design/17 §4/§5 | ✅ G4（2026-11-09） |
 | D113 | ✅ G2：**TextRun 文字变更连带失效 TextBlock 段（retained 段缓存回归）**——`PaintTextBlock` 把 run 文字画进 block 自身段（段键 block.RenderVersion），`run.Text` 只 bump run 版本 → 段复用旧文字：点 +1 数字不变、悬停 TextBlock 空白区（伪类态变）才重画；`TextBlock.AddRun` 订阅 `run.PropertyChanged` 连带 `InvalidateRender()`；「retained==全量」金标准同复用旧段抓不到（D97 盲区），`RetainedPaintTests` +1 记录型绘制器回归（无修复必挂）；像素级 E2E（真实 Gallery.Desktop + 注入鼠标消息）验证 0→5→10 | spec/02 §12、design/13 DG-1 | ✅ G2（2026-11-12） |
-| D114 | ✅ 线程调度：**单线程 UI 同步上下文（design/15 §15.14 全片落地）**——`UiSynchronizationContext`（单队列 + `Post`/`Send`/`Drain` 快照批 + `UiThreadId` + `Install`/scope + `CreateCopy` 返回自身）；`Component.InvalidateSubtree()` 沿 `Adopt` 所有权子表把整棵挂载子树按批入队一次（根级 `Invalidate` 不级联、块内组件只登记在 `BlockScope` 不进 `_tracked`，故必须走所有权树）；`WindowHost.Run` 安装/还原上下文并把 tick 顺序改为 PumpMessages → Drain → 自动失效 → ProcessInvalidations → 布局 → present；`HeadlessRoot` 给显式安装/排空入口（不自动 drain，便于钉住两帧时序）；`Element.SetValue`/`Component.Render` 的 Debug 线程亲和以可捕获的 `UiThreadViolationException` 实现（根绑定 + 父链查找，避开 ambient 上下文漏判与全局上下文误伤并行测试）；生成器事件包装 `h(); Invalidate();` 不变。用例 `UiSynchronizationContextTests` 15 例（含 `Fixtures/AsyncProbe.ui` 真生成模板端到端）+ `UiSynchronizationContextPaintTests` 1 例（记录型绘制器锁 retained 段以新文字重建，D113 盲区）；契约正本 spec/03 §9.3 同步 | spec/03 §9.3/§1.3/§14、design/15 §15.14.9、design/09 §9.5 | ✅（2026-11-12） |
+| D114 | ✅ 线程调度：**单线程 UI 同步上下文（design/15 §15.14 全片落地）**——`UiSynchronizationContext`（单队列 + `Post`/`Send`/`Drain` 快照批 + `UiThreadId` + `Install`/scope + `CreateCopy` 返回自身）；`Component.InvalidateSubtree()` 沿 `Adopt` 所有权子表把整棵挂载子树按批入队一次（根级 `Invalidate` 不级联、块内组件只登记在 `BlockScope` 不进 `_tracked`，故必须走所有权树）；`WindowHost.Run` 安装/还原上下文并把 tick 顺序改为 PumpMessages → Drain → 自动失效 → ProcessInvalidations → 布局 → present；`HeadlessRoot` 给显式安装/排空入口（不自动 drain，便于钉住两帧时序）；`Element.SetValue`/`Component.Render` 的 Debug 线程亲和以可捕获的 `UiThreadViolationException` 实现（根绑定 + 父链查找，避开 ambient 上下文漏判与全局上下文误伤并行测试）；生成器事件包装 `h(); Invalidate();` 不变。用例 `UiSynchronizationContextTests` 15 例（含 `Fixtures/AsyncProbe.bui` 真生成模板端到端）+ `UiSynchronizationContextPaintTests` 1 例（记录型绘制器锁 retained 段以新文字重建，D113 盲区）；契约正本 spec/03 §9.3 同步 | spec/03 §9.3/§1.3/§14、design/15 §15.14.9、design/09 §9.5 | ✅（2026-11-12） |
 
 - 每项收敛必须同时删除对应的 v3 路径；不得两套模型并存。
 - 新增偏差必须登记编号（从 D89 起）并注明目标阶段；不得只改代码不改台账。
@@ -931,7 +931,7 @@ v4 换轨后，**S1 已收敛（2026-10-30）、S2 已收敛（2026-10-30）、S
 > 本节后续"当前实现"描述均指 v3 代码（v4 差距见 §3.5.4）。
 
 ```
-.ui AdditionalFiles ─┐
+.bui AdditionalFiles ─┐
                      ├→ Lexer       词法：文本/标记两模式、{expr}、@directive、@bind-、注释删除
                      │→ Parser      AST + span；闭合检查；文本规范化
                      │→ Analyzer    目录解析、属性/事件/@bind 校验、字面量转换、内容模型、Key
@@ -942,7 +942,7 @@ v4 换轨后，**S1 已收敛（2026-10-30）、S2 已收敛（2026-10-30）、S
                         [UiState]/[UiObservable]/[UiComputed] → {Type}.EuiState.g.cs
 ```
 
-- 全部是 Roslyn 增量源生成器：`.ui` 作为 AdditionalFile 进入编译（[TemplateGenerator.cs:27](../src/EclipseUI.Compiler.Generator/TemplateGenerator.cs#L27)）。
+- 全部是 Roslyn 增量源生成器：`.bui` 作为 AdditionalFile 进入编译（[TemplateGenerator.cs:27](../src/BubuUI.Compiler.Generator/TemplateGenerator.cs#L27)）。
 - **两个生成器互不读取对方输出**：模板生成器按用户声明（`partial` 属性 + 特性 + 语义模型）判定可观察性，
   只生成对 `IUiObservable`/`UiWatch` 等公开 API 的调用；状态生成器负责实现这些成员。最终编译合并两者。
   因此模板生成器不得依赖 `{Type}.EuiState.g.cs` 里的字段名/私有成员。
@@ -959,32 +959,32 @@ v4 换轨后，**S1 已收敛（2026-10-30）、S2 已收敛（2026-10-30）、S
 
 | 模板 | 生成代码（简化） | 说明 |
 |---|---|---|
-| `<Button />` | `var el0 = new global::EclipseUI.Elements.Button();` | public 无参构造 |
+| `<Button />` | `var el0 = new global::BubuUI.Elements.Button();` | public 无参构造 |
 | `Gap="8"` | `el0.Gap = 8d;` | 编译期转换 |
-| `Gap={vm.Gap}` | `void U0() => el0.Gap = vm.Gap; U0(); Track(global::EclipseUI.UiWatch.Subscribe(this, path, U0));` | 单向反应式（S2）；不可观察时只留 `U0()` + `EUI036` |
-| `@bind-Checked={vm.Show}` | `Track(global::EclipseUI.UiBinding.TwoWay(el0, global::...CheckBox.CheckedProperty, readTarget: () => el0.Checked, writeTarget: v => el0.Checked = v, readSource: () => vm.Show, writeSource: v => vm.Show = v, subscribeSource: h => global::EclipseUI.UiWatch.Subscribe(this, path, h)));` | 双向（S3）；源值胜出 |
-| `Checked:bind={show}` | `Track(global::EclipseUI.UiBinding.TwoWay(el0, global::...CheckBox.CheckedProperty, readTarget: () => el0.Checked, writeTarget: v => el0.Checked = v, readSource: () => show.Value, writeSource: v => show.Value = v, subscribeSource: h => show.Subscribe(h)));` | 旧语法，`EUI043` Warning（S5 移除） |
+| `Gap={vm.Gap}` | `void U0() => el0.Gap = vm.Gap; U0(); Track(global::BubuUI.UiWatch.Subscribe(this, path, U0));` | 单向反应式（S2）；不可观察时只留 `U0()` + `EUI036` |
+| `@bind-Checked={vm.Show}` | `Track(global::BubuUI.UiBinding.TwoWay(el0, global::...CheckBox.CheckedProperty, readTarget: () => el0.Checked, writeTarget: v => el0.Checked = v, readSource: () => vm.Show, writeSource: v => vm.Show = v, subscribeSource: h => global::BubuUI.UiWatch.Subscribe(this, path, h)));` | 双向（S3）；源值胜出 |
+| `Checked:bind={show}` | `Track(global::BubuUI.UiBinding.TwoWay(el0, global::...CheckBox.CheckedProperty, readTarget: () => el0.Checked, writeTarget: v => el0.Checked = v, readSource: () => show.Value, writeSource: v => show.Value = v, subscribeSource: h => show.Subscribe(h)));` | 旧语法，`EUI043` Warning（S5 移除） |
 | `OnClick={() => n++}` | `el0.AddHandler(global::...Button.ClickEvent, () => n++);` | 事件表达式 |
 | 文本静态 | `el0.Label = "OK";` | `Text` 模型 |
-| 文本插值（状态） | `void U0() { el0.Label = $"Count: {Count}"; } U0(); Track(((global::EclipseUI.IUiObservable)this).Subscribe(nameof(Count), U0));` | 状态属性直接读（S2） |
+| 文本插值（状态） | `void U0() { el0.Label = $"Count: {Count}"; } U0(); Track(((global::BubuUI.IUiObservable)this).Subscribe(nameof(Count), U0));` | 状态属性直接读（S2） |
 | 文本插值（`Signal<T>`） | `void U0() { el0.Label = $"Count: {count.Value}"; } U0(); Track(count.Subscribe(U0));` | 兼容形态 |
-| TextRuns | `var run0 = ((global::EclipseUI.ITextContentHost)el0).AddRun("Hi ");` | 每段一个 run（C2） |
+| TextRuns | `var run0 = ((global::BubuUI.ITextContentHost)el0).AddRun("Hi ");` | 每段一个 run（C2） |
 | 子元素 | `el0.Children.Add(el1);` | `Children` 模型 |
-| `@if` | `var blk0 = new global::EclipseUI.ConditionalBlock(); parent.Children.Add(blk0); blk0.SetCondition(() => Show, h => ((global::EclipseUI.IUiObservable)this).Subscribe(nameof(Show), h)); blk0.SetContent(subs0 => { ... return new Element[] { ... }; }); Track(blk0);` | 依赖为空时省略 subscribe 参数（S2） |
-| `@foreach` | `var blk0 = new global::EclipseUI.ForEachBlock<T>(); parent.Children.Add(blk0); blk0.SetItems(() => Tasks, h => global::EclipseUI.UiWatch.Subscribe(this, path, h, watchCollection: true)); blk0.SetKeySelector(t => t.Id); blk0.SetTemplate(t => { ... return new BlockScope(...); }); Track(blk0);` | 集合路径 + INCC（S2/S4） |
+| `@if` | `var blk0 = new global::BubuUI.ConditionalBlock(); parent.Children.Add(blk0); blk0.SetCondition(() => Show, h => ((global::BubuUI.IUiObservable)this).Subscribe(nameof(Show), h)); blk0.SetContent(subs0 => { ... return new Element[] { ... }; }); Track(blk0);` | 依赖为空时省略 subscribe 参数（S2） |
+| `@foreach` | `var blk0 = new global::BubuUI.ForEachBlock<T>(); parent.Children.Add(blk0); blk0.SetItems(() => Tasks, h => global::BubuUI.UiWatch.Subscribe(this, path, h, watchCollection: true)); blk0.SetKeySelector(t => t.Id); blk0.SetTemplate(t => { ... return new BlockScope(...); }); Track(blk0);` | 集合路径 + INCC（S2/S4） |
 | 组件（C4） | `var c0 = new global::App.Card(); c0.Title = ...; Track(c0); c0.Mount(); parent.Children.Add(c0.Root);` | 参数→内容→Track→Mount→挂根 |
 | 组件可观察参数（S3） | `void U0() => c0.Title = vm.Name; U0(); Track(UiWatch.Subscribe(this, path, U0));` | 不重跑 `Build()`，子组件内部 watcher 更新 |
 
 - 块与绑定的订阅作用域按 §3.3.4 选择 `Track` / `subs.Add` / `itemSubs.Add`；表中以根上下文示意。
 - 生成代码只用公开运行时 API（R4），不写反射/字符串查找；类型全用 `global::` 限定（D22 已在 C2 修复）。
 - 变量/函数编号按遍历顺序固定，同一输入生成相同文本（R6/14.8.4）。
-- 表达式行带 `#line`，随后 `#line hidden`（[Emitter.cs](../src/EclipseUI.Compiler.Generator/Emitter.cs)）。
+- 表达式行带 `#line`，随后 `#line hidden`（[Emitter.cs](../src/BubuUI.Compiler.Generator/Emitter.cs)）。
 - ✅ G3（D79，2026-11-08）：指令已由行型换成 span 型 `#line (sl, sc) - (el, ec) "<path>"`，
   口径见 spec/02 §2.4 规则 9/10；本节其余生成形态仍是 v3 历史记录。
 
 ### 3.6.3 增量、确定性与工具链
 
-- **S2 目标**：按 `.ui` 文件的 `IncrementalValuesProvider` 生成；目录由 `IncrementalValuesProvider<UiCatalog>` 提供，
+- **S2 目标**：按 `.bui` 文件的 `IncrementalValuesProvider` 生成；目录由 `IncrementalValuesProvider<UiCatalog>` 提供，
   依赖管道值比较，生成器不持可变静态状态（14.10.3，14.14 决策 D14）。
 - 输出名改为稳定名（类名 + 路径哈希/相对路径），不因文件顺序增删漂移。
 - LSP（G5）复用同一 `FrontEnd`/`UiCatalog`/诊断；悬停/补全只显示符号可派生信息，
@@ -1025,7 +1025,7 @@ v4 换轨后，**S1 已收敛（2026-10-30）、S2 已收敛（2026-10-30）、S
 [spec/02 附录 A](../spec/02-generated-code-contract.md) 为准。
 当前实现下的等价写法见 A.6（可编译、可运行）。
 
-### A.1 `TodoList.ui`
+### A.1 `TodoList.bui`
 
 ```xml
 <StackPanel Gap="8">
@@ -1050,7 +1050,7 @@ v4 换轨后，**S1 已收敛（2026-10-30）、S2 已收敛（2026-10-30）、S
 ### A.2 `TodoItem.cs`
 
 ```csharp
-using EclipseUI;
+using BubuUI;
 
 namespace Examples;
 
@@ -1070,7 +1070,7 @@ public partial class TodoItem
 
 ```csharp
 using System.Collections.ObjectModel;
-using EclipseUI;
+using BubuUI;
 
 namespace Examples;
 
@@ -1151,7 +1151,7 @@ public partial class TodoList : Component
 
 ```csharp
 using System.Collections.Generic;
-using EclipseUI;
+using BubuUI;
 
 namespace Examples;
 

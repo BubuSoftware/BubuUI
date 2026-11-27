@@ -1,4 +1,0 @@
-@namespace EclipseUI.Headless.Tests
-@using EclipseUI.Elements
-
-<CodeCard Gap="13" />

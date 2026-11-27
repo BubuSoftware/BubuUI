@@ -1,0 +1,10 @@
+@namespace BubuUI.Headless.Tests
+@using BubuUI.Elements
+
+<StackPanel>
+    <Button Grid.Row="1" Grid.Column={extraCol}>ok</Button>
+    <CheckBox Grid.Row="2" />
+    <Grid RowDefinitions="60,Auto" ColumnDefinitions="*,2*">
+        <TextBlock Grid.Row="1" Grid.Column="1">cell</TextBlock>
+    </Grid>
+</StackPanel>

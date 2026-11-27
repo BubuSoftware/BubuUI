@@ -1,0 +1,39 @@
+@namespace Gallery
+@using BubuUI.Elements
+@using System.Collections.Generic
+
+<StackPanel Gap="4">
+    <TextBlock FontSize="20">Tasks</TextBlock>
+    @foreach (var t in tasks) {
+        <ListBoxItem Key={t.Id}>
+            <CheckBox @bind-Checked={t.Done}>done</CheckBox>
+            <TextBlock>{t.Name}</TextBlock>
+        </ListBoxItem>
+    }
+</StackPanel>
+
+@* spec/02 §2.7 第二组件来源：组件本身没有 .cs；TaskItem 是普通模型类型，住在自己的 .cs 里。
+   种子数据与「追加一条」逻辑随 P2 模板化（design/20）收进组件自身——
+   MainWindow 只调 Add()，不再触碰 tasks 字段。 *@
+@code {
+    public List<TaskItem> tasks = new()
+    {
+        new TaskItem { Id = 1, Name = "Design review" },
+        new TaskItem { Id = 2, Name = "Damage tracking v0" },
+        new TaskItem { Id = 3, Name = "Golden image test" },
+    };
+
+    private int _nextId = 4;
+
+    /// <summary>追加一条待办（MainWindow 的 "+ Add task" 按钮经 OnClick 调用）。</summary>
+    public void Add()
+    {
+        var updated = new List<TaskItem>(tasks)
+        {
+            new TaskItem { Id = _nextId, Name = $"Task {_nextId}" },
+        };
+        _nextId++;
+        tasks = updated;
+        Invalidate();
+    }
+}

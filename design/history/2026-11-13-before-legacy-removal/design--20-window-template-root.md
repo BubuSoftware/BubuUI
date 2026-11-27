@@ -3,23 +3,23 @@
 > **后续决策（2026-11-13）：** 本文 WindowComponent / CreateWindow 包装由 [21 · 根类型统一](./21-root-type-unification.md)（K35）替代。下文保留历史记录；新实现以根标签直接作为基类、内容成员类型检查为准。
 
 > 状态：**P1+P2 落地（2026-11-13，D117；P2 当日随手落地）**——P1 起草并当日实施，
-> P2（Gallery 迁移）同日完成：GalleryScene 手工树删除，UI 100% 模板化（MainWindow.ui + Section.ui），
+> P2（Gallery 迁移）同日完成：GalleryScene 手工树删除，UI 100% 模板化（MainWindow.bui + Section.bui），
 > 渲染基线 hash 与迁移前逐字节一致；P3 仍为提案（未实施）
 > 关联：D101（窗口 = 纯数据描述 + 平台材料化，`Window` 数据类）、design/14 §14.5（目录/标签解析）、
 > design/15 §15.14（失效与调度）、spec/01 §1.1（单根冻结规则）、spec/01 §6.2（EUI060–063）、
 > spec/02 §2（生成契约）、spec/02 §4.1（根发射）、spec/03 §5.3（组件不派生 Element）
-> 代码基线：`src/EclipseUI.Runtime/WindowComponent.cs`、`src/EclipseUI.Runtime/UiAttributes.cs`、
-> `src/EclipseUI.Compiler/{UiComponentScanner,Analyzer,UiCatalogModel,Diagnostics}.cs`、
-> `src/EclipseUI.Compiler.Metadata/UiCatalogFactory.cs`、
-> `src/EclipseUI.Compiler.Generator/{TemplateGenerator,Emitter}.cs`、
-> `src/EclipseUI.Platform.Windows/{Win32WindowLiveUpdater,WindowsAppBuilderExtensions}.cs`
+> 代码基线：`src/BubuUI.Runtime/WindowComponent.cs`、`src/BubuUI.Runtime/UiAttributes.cs`、
+> `src/BubuUI.Compiler/{UiComponentScanner,Analyzer,UiCatalogModel,Diagnostics}.cs`、
+> `src/BubuUI.Compiler.Metadata/UiCatalogFactory.cs`、
+> `src/BubuUI.Compiler.Generator/{TemplateGenerator,Emitter}.cs`、
+> `src/BubuUI.Platform.Windows/{Win32WindowLiveUpdater,WindowsAppBuilderExtensions}.cs`
 
 ---
 
 ## 0. 一句话总纲
 
 把「描述一个窗口」从应用代码里的三处手工样板（Mount + `Content`/`RootComponent` 同步 + `new Window{…}`）
-收敛为 **`.ui` 根节点上的一对 `<Window>` 标签**：根标签决定生成类的基类（Avalonia 式「根 = 基类」，
+收敛为 **`.bui` 根节点上的一对 `<Window>` 标签**：根标签决定生成类的基类（Avalonia 式「根 = 基类」，
 落在 Component 家族内），窗口属性 = 基类 `[UiParameter]` 面，窗口模板退出可组合表面（不可被其他
 ui 当组件使用），动态属性经既有失效循环回推到已材料化的窗口。
 
@@ -33,7 +33,7 @@ D101 之后显示一个窗口的最短路径仍要三处样板（`samples/Galler
 |---|----|---------|------|
 | L1 | 应用侧手工 `Mount()` 组件再取 `Root` | `GalleryApp.cs:22-23` | 组件生命周期细节泄漏给每个应用 |
 | L2 | `Content`（Element）与 `RootComponent`（Component）必须手工保持同源 | `GalleryApp.cs:32-33` | 忘一个就是生命周期/失效队列断裂（运行期才炸） |
-| L3 | 窗口参数（Title/尺寸/帧调节项）只能写在 C# | `Window.cs`（纯数据类，对模板目录不可见） | `.ui` 描述得了内容、描述不了窗口本身 |
+| L3 | 窗口参数（Title/尺寸/帧调节项）只能写在 C# | `Window.cs`（纯数据类，对模板目录不可见） | `.bui` 描述得了内容、描述不了窗口本身 |
 
 窗口参数无法进模板的根因：`Window` 是 sealed 数据类，不是 `Element`/`Component`，目录扫描
 （`UiCatalogFactory.OriginOf`）对它不可见；且「哪些属性允许在模板上写」没有任何声明面。
@@ -44,7 +44,7 @@ D101 之后显示一个窗口的最短路径仍要三处样板（`samples/Galler
 
 | # | 目标 | 承载机制 |
 |---|------|----------|
-| G1 | `.ui` 根节点直接写 `<Window Title=… Width={W} …>` 声明窗口 | 保留根标签 + `WindowComponent` 基类（§4） |
+| G1 | `.bui` 根节点直接写 `<Window Title=… Width={W} …>` 声明窗口 | 保留根标签 + `WindowComponent` 基类（§4） |
 | G2 | 应用侧收敛为一行：`MainWindow = new MainWindow { … }.CreateWindow()` | `CreateWindow()` 自动接线 Content/RootComponent（§5） |
 | G3 | 根为 Window 的 ui 不能被其他 ui 当组件使用 | HiddenTag 通道（EUI060）+ 非根 `<Window>` 拦截（§6） |
 | G4 | 窗口属性支持动态更新（Title/尺寸随失效循环回推已显示窗口） | 生成 U 推送 + `IWindowLiveUpdater` 平台回推通道（§7） |
@@ -66,14 +66,14 @@ D101 之后显示一个窗口的最短路径仍要三处样板（`samples/Galler
 
 ```
 之前：Program.cs(AppBuilder) + Application 子类{ 手工 Mount + Content/RootComponent 同步 + new Window{…} } + GalleryScene.cs
-之后：Program.cs(AppBuilder) + Application 子类{ MainWindow = new MainWindow { W = options.Width }.CreateWindow(); } + MainWindow.ui
+之后：Program.cs(AppBuilder) + Application 子类{ MainWindow = new MainWindow { W = options.Width }.CreateWindow(); } + MainWindow.bui
 ```
 
 ```xml
 @namespace Gallery
-@using EclipseUI.Elements
+@using BubuUI.Elements
 
-<Window Title="EclipseUI Gallery" Width={W} Height={H}>
+<Window Title="BubuUI Gallery" Width={W} Height={H}>
     <StackPanel Gap="8">…</StackPanel>
 </Window>
 
@@ -85,7 +85,7 @@ D101 之后显示一个窗口的最短路径仍要三处样板（`samples/Galler
 
 与 Avalonia 的两条有意差异（R 约束）：
 
-- **R1**：Avalonia 的 `Window : ContentControl` 是控件本体，模板类派生它天经地义；EclipseUI 的
+- **R1**：Avalonia 的 `Window : ContentControl` 是控件本体，模板类派生它天经地义；BubuUI 的
   `Window` 是纯数据描述（D101），模板基类是 `WindowComponent : Component`，由 `CreateWindow()`
   产出 `Window` 描述——「类是控件」与「类产出描述」的分界即「派生必须留在 Component 家族内」。
 - **R2**：spec/03 §5.3 组件不派生 Element，控件根（`<StackPanel>`）维持现有包装语义；
@@ -96,7 +96,7 @@ D101 之后显示一个窗口的最短路径仍要三处样板（`samples/Galler
 ### 4.1 保留根标签
 
 根节点的 `Window` 标签名保留（同 `<Slot>`/`<ContentSlot>` 的保留伪标签先例）：根位置绕过
-命名空间可见性（模板无需 `@using EclipseUI`），属性按 `catalog.WindowRoot` def 的
+命名空间可见性（模板无需 `@using BubuUI`），属性按 `catalog.WindowRoot` def 的
 `Parameters`（= `WindowComponent` 的 `[UiParameter]` 面）解析——EUI002/EUI003/EUI023 与
 `Suggest` 建议全部复用。非根位置 `<Window>` 在解析前拦截 → **EUI060**（定向消息优于
 「unknown tag」）。
@@ -115,10 +115,10 @@ public sealed class UiTemplateRootAttribute : Attribute { }
 标注的 `Component` 派生类可作模板根；**标记类型的任何子类同为模板根类型**并退出可组合表面。
 目录侧两个进料口都拦截（`UiCatalogFactory`）：
 
-- CLR 类型（基链含标记类型，或同名 `.ui` 声明 `IsWindowRoot`）→ 不进 `Elements`，注册
+- CLR 类型（基链含标记类型，或同名 `.bui` 声明 `IsWindowRoot`）→ 不进 `Elements`，注册
   `HiddenTag(ReasonCode = EUI060)`——使用点走既有 Unavailable 通道（`Analyzer.cs` 的
   `resolution.Hidden!.ReasonCode`）拿定向诊断，LSP 补全自动过滤；
-- 纯 `.ui` 窗口文件（无 code-behind）→ `AppendTemplateOnlyComponents` 跳过合成，同样 HiddenTag。
+- 纯 `.bui` 窗口文件（无 code-behind）→ `AppendTemplateOnlyComponents` 跳过合成，同样 HiddenTag。
 
 `UiCatalog` 新增独立槽位 `WindowRoot`（`UiElementDef?`）：由**既有组件 CLR 扫描**产出
 （`Describe(WindowComponent)`，[UiParameter] 面自动进 `Parameters`），不进 `_byTag`——它永远
@@ -135,13 +135,13 @@ public sealed class UiTemplateRootAttribute : Attribute { }
 ## 5. 生成契约（`Emitter`）
 
 ```csharp
-public partial class Shell : global::EclipseUI.WindowComponent   // ← 类基切换（唯一硬编码分支）
+public partial class Shell : global::BubuUI.WindowComponent   // ← 类基切换（唯一硬编码分支）
 {
-    protected override global::EclipseUI.Element Build()
+    protected override global::BubuUI.Element Build()
     {
-        this.Title = "EclipseUI Gallery";                  // 字面量：build-once
+        this.Title = "BubuUI Gallery";                  // 字面量：build-once
         this.Width = (global::System.Double)(W);           // 表达式：一次性求值
-        var el0 = new global::EclipseUI.Elements.StackPanel(); …
+        var el0 = new global::BubuUI.Elements.StackPanel(); …
         return el0;                                        // 内容 = Window 的恰一子元素
     }
     protected override void Render() { U0(); … }           // 动态属性推送 + 内容更新同列
@@ -199,16 +199,16 @@ private void U0()
 
 - `UiComponentDeclaration` + `IsWindowRoot`（手写值相等同步）；`UiCatalog` + `WindowRoot`
   （Equals/GetHash 同步）——目录值比较口径不变。
-- LSP（`ide/EclipseUI.LanguageServer`）复用同一 `FrontEnd`/`UiCatalogFactory`：窗口诊断、
+- LSP（`ide/BubuUI.LanguageServer`）复用同一 `FrontEnd`/`UiCatalogFactory`：窗口诊断、
   HiddenTag 过滤与 `dotnet build` 同源零漂移；补全过滤继承既有 HiddenTags 行为。
 - 探针：窗口属性表达式走既有 `ValidateExpressionValue`（ParamDef 已 stamp），EUI049 免费。
 
 ## 9. 测试与验收（P1 实测）
 
-- `tests/EclipseUI.Compiler.Tests/WindowTemplateTests.cs` 17 例：生成契约（基类/赋值/推送/
+- `tests/BubuUI.Compiler.Tests/WindowTemplateTests.cs` 17 例：生成契约（基类/赋值/推送/
   无缓存字段/静态模板无 Render）、EUI060×2 / EUI061×3 / EUI062 / EUI002 建议 / EUI023 /
   EUI063×3（含合法 `: WindowComponent`）、目录装配（WindowRoot 参数面 + HiddenTag）+ 值相等。
-- `tests/EclipseUI.Headless.Tests/WindowTemplateTests.cs` 6 例 + `Fixtures/ShellWindow.ui`：
+- `tests/BubuUI.Headless.Tests/WindowTemplateTests.cs` 6 例 + `Fixtures/ShellWindow.bui`：
   CreateWindow 接线、one-shot 守卫、无头布局、live 推送（组件属性更新 + 描述一次性 + 批内取最新值）、
   AppBuilder 一行装配。
 - golden：`BuiltInSurface.golden.txt` +1 行（`[hidden] WindowComponent … EUI060`，预期表面变化）。
@@ -221,7 +221,7 @@ private void U0()
 | 阶段 | 内容 | 状态 |
 |------|------|------|
 | P1 | 保留根标签 + WindowComponent + CreateWindow + HiddenTag/EUI060–063 + live 回推（Title/尺寸）+ 编译器/无头测试 + spec 同步 | ✅ 2026-11-13（D117） |
-| P2 | Gallery 迁移：`GalleryScene.cs` 删除，新增 `MainWindow.ui`（窗口模板全页 + Ref 锚点）与 `Section.ui`（`[UiSlot]`/`<ContentSlot>` 卡片），种子数据与 Add() 收进 `TaskList.ui`；GalleryApp 收敛为一行装配 + `WireInteractions`（树内不表达的应用关切：主题切换/注册伪类掩码/CLR 事件桥/条目工厂/IsEnabled）；GalleryCheck 验证壳改用 MainWindow；离屏渲染 hash 与迁移前一致（74E18D1331BE373D）。LSP hover/补全展示；第二个模板根类型按需 | ✅（2026-11-13） |
+| P2 | Gallery 迁移：`GalleryScene.cs` 删除，新增 `MainWindow.bui`（窗口模板全页 + Ref 锚点）与 `Section.bui`（`[UiSlot]`/`<ContentSlot>` 卡片），种子数据与 Add() 收进 `TaskList.bui`；GalleryApp 收敛为一行装配 + `WireInteractions`（树内不表达的应用关切：主题切换/注册伪类掩码/CLR 事件桥/条目工厂/IsEnabled）；GalleryCheck 验证壳改用 MainWindow；离屏渲染 hash 与迁移前一致（74E18D1331BE373D）。LSP hover/补全展示；第二个模板根类型按需 | ✅（2026-11-13） |
 | P3 | 帧调节项动态化（WindowHostOptions 可变）；多窗口前置；（独立立项）控件根派生探索 | 提案 |
 
 ## 11. 前提与风险

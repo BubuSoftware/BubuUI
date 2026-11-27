@@ -10,7 +10,7 @@
 ## 0. 一句话总纲
 
 **外观三问，各答各的**：谁来写值（有效值级联，D99；后续增加template层和[主题默认值](./27-fluent-theme.md)）、状态怎么变（伪类位掩码，D102 + E3/E5 扩展）、
-作者怎么写（`.eustyle` 样式表，类 SCSS 语法，编译期编译为 `Define` 调用——E1/E2/E4）。
+作者怎么写（`.bss` 样式表，类 SCSS 语法，编译期编译为 `Define` 调用——E1/E2/E4）。
 全程**无运行时选择器引擎**：字符串只允许出现在「定义/注册」时刻，绝不进入「每帧匹配」路径。
 
 ---
@@ -21,7 +21,7 @@
 
 | # | 目标 | 承载机制 |
 |---|------|----------|
-| G1 | 类 CSS/SCSS 的作者体验 | `.eustyle` 样式表（E1+），嵌套/伪类/变量 |
+| G1 | 类 CSS/SCSS 的作者体验 | `.bss` 样式表（E1+），嵌套/伪类/变量 |
 | G2 | 编译期校验（CSS 做不到的核心卖点） | 共享样式目录：模板类名（EUI031 解禁）、属性名、状态名编译期报错 |
 | G3 | AOT / trimming 零反射 | 样式表 → 生成 C# `Define` 序列；运行期 O(setter) 直配 |
 | G4 | 主题双色一等公民 | `theme(深色, 亮色)` 函数 → `ThemeColor`（D100） |
@@ -124,7 +124,7 @@ registry.Define("primary", s => s.Background(new ThemeColor(Dark: ..., Light: ..
 
 ### 3.4 与 Web / Avalonia 的对照（写入哲学一致）
 
-| | Web 标准 | Avalonia | EclipseUI |
+| | Web 标准 | Avalonia | BubuUI |
 |---|---|---|---|
 | 自定义状态 | `:state(x)`（仅自定义元素） | 任意控件子类 | 注册位（E5） |
 | 写入权 | `ElementInternals`（组件私有） | `protected`（继承才能写） | `internal` + 注册者句柄 |
@@ -134,11 +134,11 @@ registry.Define("primary", s => s.Background(new ThemeColor(Dark: ..., Light: ..
 
 ---
 
-## 4. 样式表语法 `.eustyle`（E1/E4 核心提案）
+## 4. 样式表语法 `.bss`（E1/E4 核心提案）
 
 ### 4.1 文件与入口
 
-- 扩展名：`*.eustyle`（与 `*.ui` 平行的独立文件，随程序集编译）。
+- 扩展名：`*.bss`（与 `*.bui` 平行的独立文件，随程序集编译）。
 - 编译产物：`StyleBootstrap.g.cs`（生成 `Apply(StyleRegistry)` 静态方法）。
 - 接入：`AppBuilder.Configure<App>().UseStyles(StyleRegistry.Instance, StyleBootstrap.Apply)`——
   **与现有 API 完全一致，运行时零改动**。
@@ -195,7 +195,7 @@ registry.Define("primary", s => s.Background(new ThemeColor(Dark: ..., Light: ..
 | `Padding` | number | `Panel.PaddingProperty` | — |
 | `FontSize` | number | `TextBlock.FontSizeProperty` | — |
 
-**命名**：属性名就是控件/属性对象的原始 CLR 名（`CornerRadius`、`FontSize`），与 `.ui` 模板属性
+**命名**：属性名就是控件/属性对象的原始 CLR 名（`CornerRadius`、`FontSize`），与 `.bui` 模板属性
 的书写一致，**大小写敏感、精确匹配**：`StylePropertyCatalog.Find` 按 `Ordinal` 比较，没有别名、
 没有大小写或 `-`/`_` 归一化。因此 `corner-radius` / `cornerradius` / `CORNERRADIUS` 一律未命中，
 报 **EUI051**（消息提示使用大小写敏感的 CLR 名并列出目录支持项）。不设旧写法兼容层。
@@ -273,8 +273,8 @@ $primary: theme(#22c55e, #16a34a);     // SCSS 编译期变量（E1 就支持：
    `text-block-title`）；同一派生名的多个嵌套段**合并**（CSS 同选择器多块 = 声明合并，
    声明序后者胜；同名子嵌套递归聚合）；派生名与**显式类名**撞车报 `EUI053`，
    第一版不提供显式改名（拆两个中间类规避，人工成本低）。
-2. **注入**：`.ui` 编译器解析模板时，对「挂 `panel` 类的元素」的静态子树做匹配
-   （`.ui` 树编译期已知，`@foreach`/`@if`/`@switch` 分支内的模板编译期展开、运行时就是
+2. **注入**：`.bui` 编译器解析模板时，对「挂 `panel` 类的元素」的静态子树做匹配
+   （`.bui` 树编译期已知，`@foreach`/`@if`/`@switch` 分支内的模板编译期展开、运行时就是
    直接子——直接子匹配穿透块结构；插槽填充不穿透——内容运行时挂进组件内部），给匹配
    子元素的 `Classes` **追加**派生类（排在原类之后 → §2.2 派生类胜）。
 3. **边界（明示）**：C# 代码动态建树与 `Class={expr}` 表达式形态拿不到注入
@@ -285,7 +285,7 @@ $primary: theme(#22c55e, #16a34a);     // SCSS 编译期变量（E1 就支持：
 ### 4.6 完整示例（源 → 生成代码）
 
 ```scss
-// app.eustyle
+// app.bss
 $accent: theme(#22c55e, #16a34a);
 
 .card {
@@ -341,7 +341,7 @@ public static class StyleBootstrap
 
 ### 4.8 内联形态：`@style` 组件块与元素级 `Style=` 属性（E1 扩展 + E2 转正）
 
-「样式内联在 .ui 里」拆成**两个正交机制**，各有 Web 先例对应：
+「样式内联在 .bui 里」拆成**两个正交机制**，各有 Web 先例对应：
 
 **① 组件级 `@style` 块**（HTML `<style>` / Vue SFC scoped 的对应物）——E1 扩展：
 
@@ -357,7 +357,7 @@ public static class StyleBootstrap
         Background: $card-bg;
         CornerRadius: 12;
 
-        &:hover { Background: theme(#30d158, #1aad52); }  // 变体同 .eustyle
+        &:hover { Background: theme(#30d158, #1aad52); }  // 变体同 .bss
     }
     .primary { Foreground: theme(#e8ecf4, #1a1f2e); }
 }
@@ -373,9 +373,9 @@ public static class StyleBootstrap
 - **解析顺序**：本文件 `Class="…"` 先查本文件 `@style` 块、再查全局样式目录；
   两处皆无 → EUI031。定义与引用在同一编译单元内闭环校验——类名拼错直接编译不过，
   这是外部样式表（甚至 CSS）都拿不到的作者体验。
-- 与 `.eustyle` **共享同一解析核心**（词法/属性表/变体/`$var`/`theme()`）——E1 落地解析器后，
+- 与 `.bss` **共享同一解析核心**（词法/属性表/变体/`$var`/`theme()`）——E1 落地解析器后，
   块形态只是 UiCompiler 侧的接入薄层（解析产物→生成 `Define` 调用挂到组件初始化）。
-- 分工约定：**组件私有样式进 `@style`，跨组件复用进 `.eustyle`**（SCSS 的局部/全局惯例同款）。
+- 分工约定：**组件私有样式进 `@style`，跨组件复用进 `.bss`**（SCSS 的局部/全局惯例同款）。
 
 **② 元素级 `Style="…"` 属性**（HTML `style=""` 的对应物）——✅ E2 落地（EUI031 原保留语义之一）：
 
@@ -391,28 +391,28 @@ public static class StyleBootstrap
 - 值校验复用 EUI050–052，诊断定位到属性值 span。
 
 **取舍记录**：不做「块内类名不加前缀直进全局表」的文件级全局注入形态——作用域是内联样式的
-核心价值；要全局复用请写 `.eustyle`（同一语法，挪个位置而已）。
+核心价值；要全局复用请写 `.bss`（同一语法，挪个位置而已）。
 
-### 4.9 `.eustyle` 命名空间查找
+### 4.9 `.bss` 命名空间查找
 
-`.eustyle` 模块可声明一次 `@namespace My.Controls`，把该命名空间及逐级外层命名空间设为
+`.bss` 模块可声明一次 `@namespace My.Controls`，把该命名空间及逐级外层命名空间设为
 控件、模板和 `ThemeResource<T>` 类型的隐式查找范围。查找按完整名称、当前命名空间到外层链、
 显式 `@using` 导入的顺序进行；命中更内层命名空间后，该层独占同名选择。该指令不改变生成
-`StyleBootstrap` 使用的项目 `RootNamespace`。内联 `.ui` 的 `@style` 块不接受 `@namespace`，
-使用宿主 `.ui` 的命名空间。
+`StyleBootstrap` 使用的项目 `RootNamespace`。内联 `.bui` 的 `@style` 块不接受 `@namespace`，
+使用宿主 `.bui` 的命名空间。
 
 ---
 
 ## 5. 编译管线与校验
 
 ```
-app.eustyle ──► EustyleCompiler ──► StyleBootstrap.g.cs ─┐
+app.bss ──► BssCompiler ──► StyleBootstrap.g.cs ─┐
                  │（解析产物：样式目录）                   │
                  │  { 类名 → 属性集/变体/派生类名 }        ├─► C# 编译 ──► 程序集
                  ▼                                       │
              样式目录（内存/中间文件）                     │
                  │                                       │
-*.ui ──► UiCompiler ──► *.g.cs ──────────────────────────┘
+*.bui ──► UiCompiler ──► *.g.cs ──────────────────────────┘
             │  ① Class="…" 逐个查目录 → 未知类名 EUI031（✅ E2 已落）
             │  ② E4：静态子树匹配 → 子元素注入派生类（✅ 已落）
             └ ③ 注册位（✅ E5）：@states 声明目录（StyleStatesCatalog）校验 :state 名
@@ -457,10 +457,10 @@ CSS 里 `var(--accent)` 的角色，在我们的模型里由**层的缺席**天�
 
 | 片 | 内容 | 验收口径 | 依赖 |
 |----|------|----------|------|
-| **E1** | EustyleCompiler：词法/语法解析、属性值绑定、伪类变体、`$变量`、生成器 + EUI050–052；**`@style` 组件块（§4.8①，共享解析核心）** | 画廊样式表化（GalleryStyles → app.eustyle）；`@style` 块编译+作用域前缀用例；测试 +15 左右 | 无 |
-| **E2** | 类名目录接入 UiCompiler + 模板 `Class` 语法转正（EUI031）+ 元素级 `Style=` 属性（§4.8②） | Showcase.ui 用 `Class`，未知类名编译期报错用例；`Style=` 属性生成 local 直调用例 | E1 |
+| **E1** | BssCompiler：词法/语法解析、属性值绑定、伪类变体、`$变量`、生成器 + EUI050–052；**`@style` 组件块（§4.8①，共享解析核心）** | 画廊样式表化（GalleryStyles → app.bss）；`@style` 块编译+作用域前缀用例；测试 +15 左右 | 无 |
+| **E2** | 类名目录接入 UiCompiler + 模板 `Class` 语法转正（EUI031）+ 元素级 `Style=` 属性（§4.8②） | Showcase.bui 用 `Class`，未知类名编译期报错用例；`Style=` 属性生成 local 直调用例 | E1 |
 | **E3** | `:disabled`：`IsEnabled` 属性 + 第 4 枚举位 + painter 置灰兜底 + `.Disabled(...)` / `:disabled` | 全控件可禁用；TextBox 顺路受益；InputRouter 对 disabled 元素跳过命中 | 无（可与 E1 并行） |
-| **E4** | 嵌套塌缩 + `.ui` 注入 + EUI053 | 画廊分区卡派生样式走塌缩链路；注入用例（含 @foreach 分支） | E1+E2 |
+| **E4** | 嵌套塌缩 + `.bui` 注入 + EUI053 | 画廊分区卡派生样式走塌缩链路；注入用例（含 @foreach 分支） | E1+E2 |
 | **E5** | 注册制伪类（`PseudoStates.Register`）+ `@states` 声明 + EUI052 + 可选颜色函数 | 第三方状态端到端用例 | E1 |
 
 **执行顺序（已批准，2026-11-12 定案）：E3 → E1 → E2 → E4 → E5**。
@@ -471,9 +471,9 @@ E4 依赖 E1+E2；E5 收尾开放性。0.1 alpha 出口只需 E3（+ 可选 E1�
 | 片 | 状态 |
 |----|------|
 | E3 | ✅ 完成（2026-11-09，D103）：Disabled 位 + IsEnabled 继承 + 路由/焦点门控 + 置灰令牌 + `.Disabled()` 变体 + FocusRingWidth；699 例全绿 |
-| E1 | ✅ 完成（2026-11-09，D104）：EustyleParser/Generator + EUI050–052 + `.eustyle` → StyleBootstrap.g.cs + `@style` 组件块（前缀注册）；画廊迁移 app.eustyle；722 例全绿（352/264/106） |
+| E1 | ✅ 完成（2026-11-09，D104）：BssParser/Generator + EUI050–052 + `.bss` → StyleBootstrap.g.cs + `@style` 组件块（前缀注册）；画廊迁移 app.bss；722 例全绿（352/264/106） |
 | E2 | ✅ 完成（2026-11-09，D105）：类名目录管道（StyleClassCatalog 值相等跨管道）+ `Class=` 转正（本地 @style 优先解析、未知类名 EUI031、表达式 Split/ToArray 探针形态）+ `Style=` local 直赋（ParseDeclarations + Visual.SetXxx/SetValue）；739 例全绿（352/281/106） |
-| E4 | ✅ 完成（2026-11-09，D106）：嵌套塌缩（EustyleNested + EustyleCollapse 合并/命名/EUI053）+ 注入规则跨管道（StyleClassCatalog 扩展）+ 模板静态子树匹配（直接子穿透块结构、插槽不穿透）+ Emitter 合并发射（派生类排后）；画廊 card 塌缩链路 + @foreach 注入；752 例全绿（352/294/106） |
+| E4 | ✅ 完成（2026-11-09，D106）：嵌套塌缩（BssNested + BssCollapse 合并/命名/EUI053）+ 注入规则跨管道（StyleClassCatalog 扩展）+ 模板静态子树匹配（直接子穿透块结构、插槽不穿透）+ Emitter 合并发射（派生类排后）；画廊 card 塌缩链路 + @foreach 注入；752 例全绿（352/294/106） |
 | E5 | ✅ 完成（2026-11-10，D107）：PseudoStatesRegistry.Register（幂等/平台名拒绝/位 0x10 起）+ Element.SetRegisteredState（掩码即凭证）+ ClassStyleVariants.State 变体 + @states 声明（预扫两遍/跨文件全局目录/撞平台名 EUI050）+ EUI054 双通道 Warning（手写 Define 扫描）；painter 补齐 TextBlock class 背景绘制；画廊 spinner 双芯片演示；769 例全绿（359/304/106）。**样式系统五片全部落地** |
 
 ---

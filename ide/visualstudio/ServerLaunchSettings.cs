@@ -5,13 +5,13 @@ using System.IO;
 using System.Linq;
 using System.Text;
 
-namespace EclipseUI.VisualStudio;
+namespace BubuUI.VisualStudio;
 
 internal static class ServerLaunchSettings
 {
     internal static readonly string[] WatchPatterns =
     {
-        "**/*.cs", "**/*.ui", "**/*.eustyle", "**/*.csproj",
+        "**/*.cs", "**/*.bui", "**/*.bss", "**/*.csproj",
         "**/Directory.Build.props", "**/obj/project.assets.json",
     };
 
@@ -37,21 +37,21 @@ internal static class ServerLaunchSettings
         {
             var configured = Path.GetFullPath(Environment.ExpandEnvironmentVariables(configuredPath!.Trim()));
             if (!File.Exists(configured))
-                throw new FileNotFoundException("EclipseUI: ECLIPSEUI_SERVER_DLL does not exist.", configured);
+                throw new FileNotFoundException("BubuUI: BUBUUI_SERVER_DLL does not exist.", configured);
             return configured;
         }
 
-        var bundled = Path.Combine(extensionDirectory, "server", "EclipseUI.LanguageServer.dll");
+        var bundled = Path.Combine(extensionDirectory, "server", "BubuUI.LanguageServer.dll");
         if (File.Exists(bundled)) return bundled;
         foreach (var root in Ancestors(workspace).Concat(Ancestors(extensionDirectory)))
         foreach (var configuration in new[] { "Release", "Debug" })
         {
-            var candidate = Path.Combine(root, "ide", "EclipseUI.LanguageServer", "bin",
-                configuration, "net11.0", "EclipseUI.LanguageServer.dll");
+            var candidate = Path.Combine(root, "ide", "BubuUI.LanguageServer", "bin",
+                configuration, "net11.0", "BubuUI.LanguageServer.dll");
             if (File.Exists(candidate)) return candidate;
         }
-        throw new FileNotFoundException("EclipseUI language server not found. Reinstall the VSIX, " +
-            "run ide/visualstudio/build.ps1, or set ECLIPSEUI_SERVER_DLL.");
+        throw new FileNotFoundException("BubuUI language server not found. Reinstall the VSIX, " +
+            "run ide/visualstudio/build.ps1, or set BUBUUI_SERVER_DLL.");
     }
 
     internal static ProcessStartInfo CreateStartInfo(string serverPath, string? workspace,

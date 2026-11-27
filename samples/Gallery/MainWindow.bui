@@ -1,0 +1,17 @@
+@namespace Gallery
+@using BubuUI
+@using BubuUI.Elements
+
+<Window Title="BubuUI Gallery" Width={W} Height={H}>
+    <FluentGalleryPage Ref={Page} InitialTheme={InitialTheme} ApplyTheme={ApplyTheme} />
+</Window>
+
+@code {
+    [UiParameter] public double W { get; set; }
+    [UiParameter] public double H { get; set; }
+    [UiParameter] public ThemeVariant InitialTheme { get; set; } = ThemeVariant.System;
+    [UiParameter] public Action<IHostTheme> ApplyTheme { get; set; } = _ => { };
+    public FluentGalleryPage Page = null!;
+    public Button ThemeButton => Page.ThemeButton;
+    public ScrollViewer RootViewer => Page.Viewer;
+}

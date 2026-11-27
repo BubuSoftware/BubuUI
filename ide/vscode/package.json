@@ -1,9 +1,9 @@
 {
-  "name": "eclipseui",
-  "displayName": "EclipseUI",
-  "description": "EclipseUI templates, styles and control themes: completion, diagnostics, navigation, rename and embedded C#.",
+  "name": "bubuui",
+  "displayName": "BubuUI",
+  "description": "BubuUI templates, styles and control themes: completion, diagnostics, navigation, rename and embedded C#.",
   "version": "0.2.0",
-  "publisher": "eclipseui",
+  "publisher": "bubuui",
   "license": "MIT",
   "engines": {
     "vscode": "^1.82.0"
@@ -12,95 +12,95 @@
     "Programming Languages"
   ],
   "keywords": [
-    "eclipseui",
+    "bubuui",
     "ui",
     "templates",
     "intellisense"
   ],
   "activationEvents": [
-    "onLanguage:eclipseui",
-    "onLanguage:eustyle",
-    "workspaceContains:**/*.ui"
+    "onLanguage:bubuui",
+    "onLanguage:bss",
+    "workspaceContains:**/*.bui"
   ],
   "main": "./client/extension.js",
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": false,
-      "description": "The extension starts the EclipseUI language server (a local .NET process)."
+      "description": "The extension starts the BubuUI language server (a local .NET process)."
     }
   },
   "contributes": {
     "languages": [
       {
-        "id": "eclipseui",
+        "id": "bubuui",
         "aliases": [
-          "EclipseUI",
-          "eclipseui"
+          "BubuUI",
+          "bubuui"
         ],
         "extensions": [
-          ".ui"
+          ".bui"
         ],
         "configuration": "./language-configuration.json"
       },
       {
-        "id": "eustyle",
+        "id": "bss",
         "aliases": [
-          "Eustyle"
+          "Bss"
         ],
         "extensions": [
-          ".eustyle"
+          ".bss"
         ],
-        "configuration": "./eustyle-language-configuration.json"
+        "configuration": "./bss-language-configuration.json"
       }
     ],
     "grammars": [
       {
-        "language": "eclipseui",
-        "scopeName": "source.eclipseui",
-        "path": "./syntaxes/eclipseui.tmLanguage.json",
+        "language": "bubuui",
+        "scopeName": "source.bubuui",
+        "path": "./syntaxes/bubuui.tmLanguage.json",
         "embeddedLanguages": {
-          "meta.embedded.line.csharp.eclipseui": "csharp",
-          "meta.embedded.block.csharp.eclipseui": "csharp",
-          "meta.embedded.block.eustyle.eclipseui": "eustyle"
+          "meta.embedded.line.csharp.bubuui": "csharp",
+          "meta.embedded.block.csharp.bubuui": "csharp",
+          "meta.embedded.block.bss.bubuui": "bss"
         }
       },
       {
-        "language": "eustyle",
-        "scopeName": "source.eustyle",
-        "path": "./syntaxes/eustyle.tmLanguage.json"
+        "language": "bss",
+        "scopeName": "source.bss",
+        "path": "./syntaxes/bss.tmLanguage.json"
       }
     ],
     "snippets": [
       {
-        "language": "eclipseui",
-        "path": "./snippets/eclipseui.json"
+        "language": "bubuui",
+        "path": "./snippets/bubuui.json"
       }
     ],
     "commands": [
       {
-        "command": "eclipseui.reloadCatalog",
-        "title": "EclipseUI: Reload Tag Catalog"
+        "command": "bubuui.reloadCatalog",
+        "title": "BubuUI: Reload Tag Catalog"
       }
     ],
     "configuration": {
-      "title": "EclipseUI",
+      "title": "BubuUI",
       "properties": {
-        "eclipseui.server.path": {
+        "bubuui.server.path": {
           "type": "string",
           "default": "",
-          "description": "Path to EclipseUI.LanguageServer.dll. Empty = bundled server/ folder, then the repository build output."
+          "description": "Path to BubuUI.LanguageServer.dll. Empty = bundled server/ folder, then the repository build output."
         },
-        "eclipseui.server.dotnet": {
+        "bubuui.server.dotnet": {
           "type": "string",
           "default": "dotnet",
           "description": "dotnet executable used to start the language server."
         },
-        "eclipseui.runtime.path": {
+        "bubuui.runtime.path": {
           "type": "string",
           "default": "",
-          "description": "EclipseUI.Runtime.dll or the directory containing it. Empty = auto-detect (server folder, then src/EclipseUI.Runtime/bin/**)."
+          "description": "BubuUI.Runtime.dll or the directory containing it. Empty = auto-detect (server folder, then src/BubuUI.Runtime/bin/**)."
         },
-        "eclipseui.catalog.assemblies": {
+        "bubuui.catalog.assemblies": {
           "type": "array",
           "items": {
             "type": "string"
@@ -108,7 +108,7 @@
           "default": [],
           "description": "Extra assemblies whose Element/Component types should become template tags (your app's output dll)."
         },
-        "eclipseui.trace.server": {
+        "bubuui.trace.server": {
           "type": "string",
           "enum": [
             "off",
@@ -116,13 +116,13 @@
             "verbose"
           ],
           "default": "off",
-          "description": "Trace LSP traffic in the EclipseUI output channel."
+          "description": "Trace LSP traffic in the BubuUI output channel."
         }
       }
     }
   },
   "scripts": {
-    "build:server": "dotnet publish ../EclipseUI.LanguageServer -c Release -o server",
+    "build:server": "dotnet publish ../BubuUI.LanguageServer -c Release -o server",
     "test": "node test/tokenize.test.js && node test/extension.test.js",
     "test:grammar": "node test/tokenize.test.js",
     "test:shell": "node test/extension.test.js",
@@ -138,7 +138,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/CeSun/EclipseUI.git",
+    "url": "https://github.com/CeSun/BubuUI.git",
     "directory": "ide/vscode"
   }
 }

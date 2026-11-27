@@ -39,7 +39,7 @@ DataGridColumn 是列描述对象，通过 C# 或表达式传入 Columns；它�
 
 ## 使用方式
 
-完整可编译示例见 [FluentControlExamples.ui](../samples/Gallery/FluentControlExamples.ui)。
+完整可编译示例见 [FluentControlExamples.bui](../samples/Gallery/FluentControlExamples.bui)。
 
 ```xml
 <TextBox @bind-Text={query} Placeholder="Search" />
@@ -138,13 +138,13 @@ Home/End、初始选中项和指针选择会将目标带入视口。调用方直
 ## 验证
 
 ```powershell
-dotnet build EclipseUI.slnx
-dotnet test EclipseUI.slnx --no-build -m:1
+dotnet build BubuUI.slnx
+dotnet test BubuUI.slnx --no-build -m:1
 dotnet run --project sandbox/ControlCheck -- out/controls.png
 dotnet run --project sandbox/ControlNativeCheck
 ```
 
-ControlCheck 使用真实 .ui 编译产物验证双向绑定、撤销、选择、排序及浮层，并生成深浅主题截图；ControlNativeCheck 验证真实 Win32 WM_CHAR（含中文和代理对）、KeyUp、编辑、Escape 关闭顺序与 GPU 上屏。
+ControlCheck 使用真实 .bui 编译产物验证双向绑定、撤销、选择、排序及浮层，并生成深浅主题截图；ControlNativeCheck 验证真实 Win32 WM_CHAR（含中文和代理对）、KeyUp、编辑、Escape 关闭顺序与 GPU 上屏。
 
 结果及可复现证据见 [验证报告](./reports/controls-2026-11-14.md)。
 

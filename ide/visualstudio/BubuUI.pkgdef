@@ -1,0 +1,10 @@
+[$RootKey$\TextMate\Repositories]
+"BubuUI"="$PackageFolder$\Grammars"
+
+[$RootKey$\TextMate\LanguageConfiguration\ContentTypeMapping]
+"bubuui"="$PackageFolder$\Grammars\language-configuration.json"
+"bss"="$PackageFolder$\Grammars\bss-language-configuration.json"
+
+[$RootKey$\TextMate\LanguageConfiguration\GrammarMapping]
+"source.bubuui"="$PackageFolder$\Grammars\language-configuration.json"
+"source.bss"="$PackageFolder$\Grammars\bss-language-configuration.json"

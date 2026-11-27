@@ -1,8 +1,0 @@
-@namespace EclipseUI.Themes.Fluent
-@using EclipseUI.Elements
-@template ListBoxItem
-
-<Grid ColumnDefinitions="8,*">
-    <FluentListBoxItemVisual Grid.ColumnSpan="2" Owner={Owner} IsHitTestVisible="false" />
-    <ItemsPresenter Grid.Column="1" Owner={Owner} />
-</Grid>

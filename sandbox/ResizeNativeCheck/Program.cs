@@ -1,10 +1,10 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
-using EclipseUI;
-using EclipseUI.Elements;
-using EclipseUI.Platform.Windows;
-using EclipseUI.Rendering.Vello;
-using EclipseUI.Text.Shaping;
+using BubuUI;
+using BubuUI.Elements;
+using BubuUI.Platform.Windows;
+using BubuUI.Rendering.Vello;
+using BubuUI.Text.Shaping;
 using Gallery;
 
 [assembly: SupportedOSPlatform("windows")]
@@ -13,7 +13,7 @@ if (!OperatingSystem.IsWindows()) return 0;
 using var shaper = TextShaperFactory.TryCreate();
 using var text = shaper is null ? null : new HarfBuzzTextPainter(shaper);
 if (text is not null) TextMeasurer.Current = text;
-using var window = new Win32Window("EclipseUI live resize selfcheck", 720, 480);
+using var window = new Win32Window("BubuUI live resize selfcheck", 720, 480);
 using var presenter = VelloSurfaceBackend.Create(window.Handle, window.ClientWidth, window.ClientHeight,
     new VelloSurfaceOptions { PreferVsync = false, ValidateDisplayList = true });
 using var root = new StackPanel { Padding = 16, Gap = 12 };

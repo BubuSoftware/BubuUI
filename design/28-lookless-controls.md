@@ -4,11 +4,11 @@
 
 ## 作者入口
 
-`ButtonSkin.ui` 定义视觉结构：
+`ButtonSkin.bui` 定义视觉结构：
 
 ```xml
 @namespace MyApp.Themes
-@using EclipseUI.Elements
+@using BubuUI.Elements
 @template Button
 
 <Border Class="chrome" Background={Owner.Background}
@@ -21,10 +21,10 @@
 </Border>
 ```
 
-`controls.eustyle` 定义命名主题及应用规则：
+`controls.bss` 定义命名主题及应用规则：
 
 ```scss
-@using EclipseUI.Elements;
+@using BubuUI.Elements;
 @using MyApp.Themes;
 
 @theme RoundedButton for Button {
@@ -48,7 +48,7 @@ Button.primary:focus-visible /template/ Border.chrome {
 
 ## Element 模板契约
 
-所有 `Element` 都提供 `Theme`、`Template`、`TemplateRoot` 和 `ApplyTemplate()`。`ControlTemplate<T>` 的 T 可以是任意 Element，不要求控件改为继承 TemplatedControl。普通 `.ui` 仍按根类型生成组件；显式 `@template T` 文件生成模板工厂和承载代码的模板视图，`Owner` 类型为 T。
+所有 `Element` 都提供 `Theme`、`Template`、`TemplateRoot` 和 `ApplyTemplate()`。`ControlTemplate<T>` 的 T 可以是任意 Element，不要求控件改为继承 TemplatedControl。普通 `.bui` 仍按根类型生成组件；显式 `@template T` 文件生成模板工厂和承载代码的模板视图，`Owner` 类型为 T。
 
 显式 `Template` 优先于 `Theme.Template`。共享的是模板定义，每次 Build 创建独立视觉树。编译模板继续复用现有组件发射器，因此视觉根需为可继承的 Element，不能使用 Window 或 sealed 元素作为根。模板视图使用强类型 `Owner` 指向行为控件；已经声明 `Owner` 属性的呈现器或主题视觉元素应放在 Grid/Border 根的内部，分别绑定其 Owner。
 
@@ -78,7 +78,7 @@ local > 普通组件 template > class > 类型化应用样式
 
 控件模板中的属性赋值使用独立 skin 层；模板实例中的显式 C# 赋值仍为 local。状态退出时清除失效 setter，恢复下层有效值。
 
-`.eustyle` 主题模块支持命名空间导入、类型/类/状态选择器、嵌套 `&:state`、一次显式 `/template/ Type.class` 边界及类型化 setter。模板边界按 `TemplatedParent` 限定，不穿透嵌套控件自己的模板，也不把借入内容当作模板部件。多个应用规则按类/状态、类型和声明顺序决定逐属性结果。
+`.bss` 主题模块支持命名空间导入、类型/类/状态选择器、嵌套 `&:state`、一次显式 `/template/ Type.class` 边界及类型化 setter。模板边界按 `TemplatedParent` 限定，不穿透嵌套控件自己的模板，也不把借入内容当作模板部件。多个应用规则按类/状态、类型和声明顺序决定逐属性结果。
 
 `theme(dark, light)` 接受相同目标类型的两个字面量，按接收元素的明暗状态解析；不限于颜色。`@theme` 声明需要一个 `Template: template(Type)`，其余声明设置属性和状态规则，不直接修改元素树。
 
@@ -92,7 +92,7 @@ public static readonly ThemeResource<UiColor> ControlBackground =
 ```
 
 ```scss
-@using EclipseUI.Themes.Fluent;
+@using BubuUI.Themes.Fluent;
 Button.primary {
     Background: resource(FluentResources.ControlBackground);
 }
@@ -112,7 +112,7 @@ Runtime 只保留行为、属性、状态、数据、输入、焦点和部件契
 
 编译器、Headless、Rendering 和平台测试分别验证类型检查、模板及资源生成、生命周期、内容保留、部件重接、输入/编辑/选择、裁剪、浮层、焦点、动画、明暗切换和 retained 绘制。架构测试约束模块依赖和主题绘制边界；性能预算继续使用独立回归。
 
-IDE 对 `.ui`、`@template`、`@theme`、类型化属性、状态、模板边界、命名控件主题和静态 `ThemeResource<T>` 提供共享 LSP 支持。资源补全按属性值类型过滤，并支持悬停、定义跳转及类型错误诊断。项目范围以求值后的 AdditionalFiles 为准，未保存文本参与分析；歧义导航不猜测目标。
+IDE 对 `.bui`、`@template`、`@theme`、类型化属性、状态、模板边界、命名控件主题和静态 `ThemeResource<T>` 提供共享 LSP 支持。资源补全按属性值类型过滤，并支持悬停、定义跳转及类型错误诊断。项目范围以求值后的 AdditionalFiles 为准，未保存文本参与分析；歧义导航不猜测目标。
 
 历史构建数字与截图保留在对应日期的报告中，不代表当前工作区测试结果。跨模块动态资源字典、无需可继承根的模板工厂及更多专用呈现部件仍是独立扩展范围。
 

@@ -1,38 +1,38 @@
 {
-  "name": "eclipseui-textmate",
-  "displayName": "EclipseUI TextMate bundle",
-  "description": "Shared TextMate grammars for EclipseUI .ui templates and .eustyle stylesheets (assembled from ide/vscode at build time).",
+  "name": "bubuui-textmate",
+  "displayName": "BubuUI TextMate bundle",
+  "description": "Shared TextMate grammars for BubuUI .bui templates and .bss stylesheets (assembled from ide/vscode at build time).",
   "version": "0.2.0",
   "contributes": {
     "languages": [
       {
-        "id": "eclipseui",
-        "aliases": ["EclipseUI", "eclipseui"],
-        "extensions": [".ui"],
+        "id": "bubuui",
+        "aliases": ["BubuUI", "bubuui"],
+        "extensions": [".bui"],
         "configuration": "./language-configuration.json"
       },
       {
-        "id": "eustyle",
-        "aliases": ["Eustyle", "eustyle"],
-        "extensions": [".eustyle"],
-        "configuration": "./eustyle-language-configuration.json"
+        "id": "bss",
+        "aliases": ["Bss", "bss"],
+        "extensions": [".bss"],
+        "configuration": "./bss-language-configuration.json"
       }
     ],
     "grammars": [
       {
-        "language": "eclipseui",
-        "scopeName": "source.eclipseui",
-        "path": "./syntaxes/eclipseui.tmLanguage.json",
+        "language": "bubuui",
+        "scopeName": "source.bubuui",
+        "path": "./syntaxes/bubuui.tmLanguage.json",
         "embeddedLanguages": {
-          "meta.embedded.line.csharp.eclipseui": "csharp",
-          "meta.embedded.block.csharp.eclipseui": "csharp",
-          "meta.embedded.block.eustyle.eclipseui": "eustyle"
+          "meta.embedded.line.csharp.bubuui": "csharp",
+          "meta.embedded.block.csharp.bubuui": "csharp",
+          "meta.embedded.block.bss.bubuui": "bss"
         }
       },
       {
-        "language": "eustyle",
-        "scopeName": "source.eustyle",
-        "path": "./syntaxes/eustyle.tmLanguage.json"
+        "language": "bss",
+        "scopeName": "source.bss",
+        "path": "./syntaxes/bss.tmLanguage.json"
       }
     ]
   }

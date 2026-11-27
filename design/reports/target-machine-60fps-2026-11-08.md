@@ -21,8 +21,8 @@
 ## 2. 复测命令（全部实跑，`--no-build` 复用同一 Release 构建）
 
 ```powershell
-dotnet build EclipseUI.slnx -c Release                                   # 0 错误（2 个既有 CS8604 警告）
-dotnet test  tests/EclipseUI.Rendering.Tests -c Release                  # ② 65/65 通过
+dotnet build BubuUI.slnx -c Release                                   # 0 错误（2 个既有 CS8604 警告）
+dotnet test  tests/BubuUI.Rendering.Tests -c Release                  # ② 65/65 通过
 $env:RENDERSPIKE_ITERATIONS = 20
 dotnet run --project samples/RenderSpike  -c Release -- bench            # ③ 离屏 bench
 # ④ GalleryApp 两态
@@ -129,7 +129,7 @@ dotnet run --project samples/WindowSpike  -c Release -- --frames 600 --max-fps 1
 ### 7.1 定时器分辨率（问题 4.1 根因）
 
 `Win32Window` 构造/析构以引用计数调用 `timeBeginPeriod(1)`/`timeEndPeriod(1)`
-（`src/EclipseUI.Platform.Windows/Win32Native.cs` + `Win32Window.cs`）：`Thread.Sleep` 的实际粒度
+（`src/BubuUI.Platform.Windows/Win32Native.cs` + `Win32Window.cs`）：`Thread.Sleep` 的实际粒度
 等于系统定时器分辨率（默认 ~15.6ms），软限速器 `Sleep(6)` 实际睡一个量子，tick 落 ~30ms。
 
 ### 7.2 软限速器收敛（提前唤醒 + 自旋）
@@ -157,7 +157,7 @@ DWM 合成节奏抖动大，合成钟本身不可靠，把节奏锚上去反而�
 ### 7.5 契约补充
 
 `ISurfacePresenter.IsVsync`（`Fifo`/`AutoVsync` 为 true）随本次新增到
-`src/EclipseUI.Rendering/ISurfacePresenter.cs`（`VelloSurfaceBackend` 返回实际配置的呈现模式）。
+`src/BubuUI.Rendering/ISurfacePresenter.cs`（`VelloSurfaceBackend` 返回实际配置的呈现模式）。
 按决策口径：`IsVsync == false` 沿用软限速、不做 DWM 对齐，文档说明即可，不做专门处理。
 
 ## 8. 2026-11-09 复测（retained 显示列表 D93 后；机器已更换）
@@ -200,7 +200,7 @@ DWM 合成节奏抖动大，合成钟本身不可靠，把节奏锚上去反而�
    关闭可变刷新率（G-Sync/FreeSync）与 HDR（减少干扰项）；电源计划「高性能」；窗口保持前台无遮挡。
 2. **步骤**（仓库根目录）：
    ```powershell
-   dotnet build EclipseUI.slnx -c Release
+   dotnet build BubuUI.slnx -c Release
    powershell -File tools/bench-60fps.ps1 -RunWindowMeasure -IncludeWindowSpike -Frames 1200 -MaxFps 60
    ```
    脚本自动：列出适配器并优先取物理适配器刷新率 → Release 构建 → CPU 渲染测试 →

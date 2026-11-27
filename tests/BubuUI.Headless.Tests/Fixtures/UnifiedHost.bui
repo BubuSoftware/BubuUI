@@ -1,0 +1,13 @@
+@namespace BubuUI.Headless.Tests
+@using BubuUI.Elements
+@using Gallery
+
+<StackPanel Gap="3">
+    <CodeCard Ref={Card} Gap="11" />
+    <Counter Ref={CounterView} />
+</StackPanel>
+
+@code {
+    public CodeCard Card = null!;
+    public Counter CounterView = null!;
+}

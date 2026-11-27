@@ -27,7 +27,7 @@
 普通文件继续采用下述根类型继承规则。详见 [design/28](../design/28-lookless-controls.md)。
 
 - 文件名去扩展名就是类名，必须为合法 C# 标识符。`@namespace` 必填，必须与同名 code-behind 一致。
-- `.ui` 本身是类型来源；没有 `.cs`、没有 `@code` 也合法。
+- `.bui` 本身是类型来源；没有 `.cs`、没有 `@code` 也合法。
 - 生成 `partial class Name : RootClrType`。可访问性沿用同名源类型，独立模板默认 public。
 - 根类型必须是目录内可继承、可合法构造的 UiObject 派生类型。sealed 和根继承环报 EUI064。
 - code-behind 必须为顶层 partial 类；可省略基类，显式基类必须与解析后的根类型一致。
@@ -38,7 +38,7 @@
 
 ## 3. 编译管线
 
-1. 扫描全部 `.ui` 的类名、命名空间、根类型、using/alias 与 `@code`。
+1. 扫描全部 `.bui` 的类名、命名空间、根类型、using/alias 与 `@code`。
 2. 为模板声明建立同一 Roslyn partial 类型符号视图，解析 C# 根、同项目模板根、引用程序集根及继承成员。
 3. 检测根继承环，扫描属性、事件、插槽和内容成员；目录是不可变的值相等数据。
 4. 分析语法、标签作用域、赋值类型、绑定源和内容基数；语义探针在实际继承上下文内运行。
@@ -53,23 +53,23 @@
 
 ```xml
 @namespace Demo
-@using EclipseUI.Elements
+@using BubuUI.Elements
 <StackPanel Gap="8"><Button>OK</Button></StackPanel>
 ```
 
 对应形态（省略映射与稳定编号细节）：
 
 ```csharp
-public partial class Card : global::EclipseUI.Elements.StackPanel
+public partial class Card : global::BubuUI.Elements.StackPanel
 {
     protected override void InitializeUi()
     {
-        using var construction = new global::EclipseUI.UiConstructionScope();
+        using var construction = new global::BubuUI.UiConstructionScope();
         try
         {
             base.InitializeUi();
             using (this.BeginTemplateValues()) this.Gap = 8d;
-            var button = new global::EclipseUI.Elements.Button();
+            var button = new global::BubuUI.Elements.Button();
             construction.Track(button);
             button.Label = "OK";
             button.EnsureInitialized();
@@ -141,7 +141,7 @@ public TypeName Name { get; private set; } = null!;
 
 protected override void InitializeUi()
 {
-    Name = (TypeName)(global::EclipseUI.Application.Current?.Services
+    Name = (TypeName)(global::BubuUI.Application.Current?.Services
         .GetService(typeof(TypeName)) ?? throw new global::System.InvalidOperationException(
             "@inject 'Name' (TypeName) is not registered in Application.Current.Services …"));
     // ……构造作用域、base.InitializeUi()、根输入与结构内容（§4.1）
@@ -189,7 +189,7 @@ StyledProperty 有效值优先级：local > template > class > template rule > c
 
 ## 8. 源映射与 IDE
 
-用户语句使用 span 型 `#line` 回到 `.ui` 行列；`@code` 原文透传并保存精确映射，生成辅助语句 hidden。代码块内部 C# 错误不在生成器重造语义诊断。IDE 的诊断、补全和跳转使用同一目录和生成文档；不可嵌入类型只在子内容补全中过滤，根位置仍可选择。
+用户语句使用 span 型 `#line` 回到 `.bui` 行列；`@code` 原文透传并保存精确映射，生成辅助语句 hidden。代码块内部 C# 错误不在生成器重造语义诊断。IDE 的诊断、补全和跳转使用同一目录和生成文档；不可嵌入类型只在子内容补全中过滤，根位置仍可选择。
 
 IDE 补全需要交付完整编辑：主替换与可回映的附加编辑一起返回；未导入类型或标签的命名空间按语言规则生成去重的 `@using`，不把 C# using 写入 @code。`@using` 候选来自项目符号中的命名空间与类型，不限于 UI 目录。`@inject`（K37）按参数位分流：类型名参数的候选同样来自项目符号（非泛型可访问类型与命名空间，不限 UI 目录，短名按可见性过滤），属性名参数是自由标识符、无候选；指令关键字与 `@inject` 行内两处均纳入补全与悬停。override 成员声明补全使用真实基类的可覆盖成员，生成器占用的 InitializeUi/Render 不作为作者 override 候选。所有编辑必须有明确源码区间或明确的指令插入规则，不允许近似套用生成代码偏移。
 

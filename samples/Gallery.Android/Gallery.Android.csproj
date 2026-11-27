@@ -4,7 +4,7 @@
     <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
     <RuntimeIdentifier>android-arm64</RuntimeIdentifier>
     <OutputType>Exe</OutputType>
-    <ApplicationId>org.eclipseui.gallery.android</ApplicationId>
+    <ApplicationId>org.bubuui.gallery.android</ApplicationId>
     <ApplicationVersion>1</ApplicationVersion>
     <ApplicationDisplayVersion>0.1</ApplicationDisplayVersion>
     <AndroidPackageFormats>apk</AndroidPackageFormats>
@@ -15,7 +15,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Gallery/Gallery.csproj" />
-    <ProjectReference Include="../../src/EclipseUI.Platform.Android/EclipseUI.Platform.Android.csproj" />
+    <ProjectReference Include="../../src/BubuUI.Platform.Android/BubuUI.Platform.Android.csproj" />
     <AndroidNativeLibrary Include="$(AndroidCppRuntime)" Abi="arm64-v8a" Link="lib/arm64-v8a/libc++_shared.so" />
   </ItemGroup>
   <Target Name="CheckAndroidCppRuntime" BeforeTargets="PrepareForBuild" Condition="!Exists('$(AndroidCppRuntime)')">

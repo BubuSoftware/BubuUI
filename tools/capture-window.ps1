@@ -1,5 +1,5 @@
 # 截取指定窗口的客户区，用于人工/自动核对真实窗口像素。
-#   powershell -ExecutionPolicy Bypass -File tools/capture-window.ps1 -Class EclipseUI.Win32Window -Out out/window-screen.png
+#   powershell -ExecutionPolicy Bypass -File tools/capture-window.ps1 -Class BubuUI.Win32Window -Out out/window-screen.png
 param(
     [string]$Title,
     [string]$Class,

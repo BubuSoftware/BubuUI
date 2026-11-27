@@ -5,9 +5,9 @@
 > 关联：design/17（样式系统 §4.3 目录单一来源 / §4.4 值语法，已随 P1 同步）、
 > design/14 §14.7.3（字面量转换与
 > `[UiLiteralParser]` 声明式扩展先例）、spec/01 §5（模板字面量）、spec/02 §1（R1/R2 约束）
-> 代码基线：`src/EclipseUI.Compiler.Metadata/StylePropertyCatalogFactory.cs`、
-> `src/EclipseUI.Compiler/Style/`（EustyleParser/EustyleGenerator/EustyleAst）、
-> `src/EclipseUI.Rendering/StyleRegistry.cs`
+> 代码基线：`src/BubuUI.Compiler.Metadata/StylePropertyCatalogFactory.cs`、
+> `src/BubuUI.Compiler/Style/`（BssParser/BssGenerator/BssAst）、
+> `src/BubuUI.Rendering/StyleRegistry.cs`
 
 ---
 
@@ -27,11 +27,11 @@
 
 | # | 锁 | 代码位置 | 后果 |
 |---|----|---------|------|
-| L1 | setter 必须是 `EclipseUI.Rendering.StyleBuilder` 的 public 实例单参方法（按元数据名精确取类型） | `StylePropertyCatalogFactory.cs:26` `StyleBuilderMetadataName` | 用户程序集的同签名类、子类、扩展方法（非该类型成员）一律不可见 |
+| L1 | setter 必须是 `BubuUI.Rendering.StyleBuilder` 的 public 实例单参方法（按元数据名精确取类型） | `StylePropertyCatalogFactory.cs:26` `StyleBuilderMetadataName` | 用户程序集的同签名类、子类、扩展方法（非该类型成员）一律不可见 |
 | L2 | 值形态仅 `double` / `Color` / `ThemeColor`，其余参数类型进 EUI026 | `KindOf`，工厂 ：100 附近 | `Thickness` / 枚举 / 字符串 / 画刷不可能成为样式值 |
-| L3 | 每条声明只取一个值 token，随即要求 `;` | `EustyleParser.ParseDeclaration`（:637 起） | CSS 式多值 `Padding: 8 16` 语法上不存在 |
+| L3 | 每条声明只取一个值 token，随即要求 `;` | `BssParser.ParseDeclaration`（:637 起） | CSS 式多值 `Padding: 8 16` 语法上不存在 |
 
-用户当前的等效替代只有两条，且都不进 `.eustyle` 语法：手写 C# `registry.Define("x", s =>
+用户当前的等效替代只有两条，且都不进 `.bss` 语法：手写 C# `registry.Define("x", s =>
 s.Set(任意字段, 值))`（`Set<T>` 泛型逃生口，工厂明确跳过泛型方法不进目录），或模板 local 层
 `P={expr}`。第三方 NuGet 消费者**没有任何**给样式表加属性的途径。
 
@@ -108,7 +108,7 @@ public sealed class UiStylePropertyAttribute : Attribute
 
 ## 5. 值语法与转换分派
 
-### 5.1 值语法扩展（`EustyleAst` + `EustyleParser.ParseValue`）
+### 5.1 值语法扩展（`BssAst` + `BssParser.ParseValue`）
 
 ```scss
 .badge {
@@ -120,18 +120,18 @@ public sealed class UiStylePropertyAttribute : Attribute
 }
 ```
 
-`EustyleValue` 新增两个 record：
+`BssValue` 新增两个 record：
 
 ```csharp
-public sealed record EustyleKeyword(string Name, TextSpan Span) : EustyleValue(Span);
-public sealed record EustyleString(string Value, TextSpan Span) : EustyleValue(Span);
+public sealed record BssKeyword(string Name, TextSpan Span) : BssValue(Span);
+public sealed record BssString(string Value, TextSpan Span) : BssValue(Span);
 ```
 
-解析规则：`ParseValue` 中 `char.IsLetter` 分支识别出的标识符，若不是 `theme` → `EustyleKeyword`
-（现状是报错）；`"` 开头 → `EustyleString`。`$var` 对新值形态**不做**插值（变量仍限于数字/颜色，
+解析规则：`ParseValue` 中 `char.IsLetter` 分支识别出的标识符，若不是 `theme` → `BssKeyword`
+（现状是报错）；`"` 开头 → `BssString`。`$var` 对新值形态**不做**插值（变量仍限于数字/颜色，
 P1 保持简单；P2 视需求放开）。
 
-### 5.2 转换分派表（`EustyleGenerator.ValueLiteral` 泛化）
+### 5.2 转换分派表（`BssGenerator.ValueLiteral` 泛化）
 
 | 目标类型 T | 值形态 | 转换 | 生成代码 | 现成设施 |
 |---|---|---|---|---|
@@ -156,7 +156,7 @@ def，发射期零符号依赖）。`theme()` 准入：仍按是否存在主题�
 
 ## 6. 发射通道
 
-### 6.1 class 规则（`EustyleGenerator.EmitRule` / `EmitSetterGroup`）
+### 6.1 class 规则（`BssGenerator.EmitRule` / `EmitSetterGroup`）
 
 内建属性照旧发 `s.Background(...)` 命名方法；**自定义属性改发泛型逃生口**（`StyleBuilder` 上
 没有对应方法）：
@@ -215,7 +215,7 @@ EUI055–057 已被 IDE 支持与模板契约占用（spec/01 §5 / design/06 §
 
 | 阶段 | 内容 | 改动面 | 出口标准 |
 |---|---|---|---|
-| ✅ **P1**（2026-11-12，D115） | `[UiStyleProperty]` + 标注扫描 + enum/string/number 值 + `s.Set` 发射 + EUI058/059 | `UiAttributes.cs`、`StylePropertyCatalogFactory.cs`、`EustyleAst/Parser`（两种新值）、`EustyleGenerator`（ValueLiteral 分派 + EmitRule 判据）、`Diagnostics.cs`、LSP 候选 | ✅ Gallery 端到端：`BadgeStyles.cs` + `.badge` 类通道（第 5 分区可见读回 + hover 变体实时刷新）+ Showcase inline `Style=` 读回文案；新测试 17 例；全量 0 回归 |
+| ✅ **P1**（2026-11-12，D115） | `[UiStyleProperty]` + 标注扫描 + enum/string/number 值 + `s.Set` 发射 + EUI058/059 | `UiAttributes.cs`、`StylePropertyCatalogFactory.cs`、`BssAst/Parser`（两种新值）、`BssGenerator`（ValueLiteral 分派 + EmitRule 判据）、`Diagnostics.cs`、LSP 候选 | ✅ Gallery 端到端：`BadgeStyles.cs` + `.badge` 类通道（第 5 分区可见读回 + hover 变体实时刷新）+ Showcase inline `Style=` 读回文案；新测试 17 例；全量 0 回归 |
 | **P2** | 复用 `[UiLiteralParser]` 支持任意复杂类型（`Thickness.Parse` 等） | 目录 def 预计算分派接 `UiCatalog.FindLiteralParser`；发射期 `Parse` 调用 | `Inset: "8 16 8 16"`（`Thickness.Parse(string)`）端到端 |
 | **P3** | 多值语法 `Padding: 8 16 8 16` + `Owner` 适用性诊断（清 design/17 §4.3 待办「`Padding` 写在 `Button` 上静默无效」） | `ParseDeclaration` 多 token 消费 + 声明 arity 约定 + Analyzer 适用性检查 | 多值端到端 + 误用报错 |
 

@@ -1,0 +1,82 @@
+// BubuUI Gallery stylesheet (E1, design/17 §4):
+//   app.bss --(BssCompiler)--> StyleBootstrap.g.cs (generated)
+// theme(dark, light) compiles to ThemeColor dual-color resources (S-C, auto-follows theme);
+// &:hover / &:pressed / &:disabled are pseudo-class variants (D102/D103 semantics);
+// @states declares registered pseudo-classes (E5: PseudoStatesRegistry at bootstrap,
+// elements flip the bit via SetRegisteredState — mask is the credential).
+// Property names are the original CLR names (Background, CornerRadius, Padding, FontSize) —
+// the catalog is derived from StyleBuilder setters + StyledProperty fields (design/17 §4.3).
+// Matching is exact and case-sensitive: no aliases, no kebab-case / case normalization.
+
+// Primary action green — both theme shades.
+$primary: theme(#22a064, #1c8c58);
+
+.primary {
+    Background: $primary;
+    Foreground: #ffffff;
+
+    &:hover    { Background: theme(#30ba78, #26a268); }  // brighten on hover
+    &:pressed  { Background: theme(#187e4e, #146e44); }  // darken while pressed
+    &:disabled { Background: theme(#2e3e3a, #ced6d2); Foreground: theme(#9aa4bc, #616161); }  // explicit :disabled variant (E3)
+}
+
+// Tool buttons: neutral grey, both shades.
+.tool {
+    Background: theme(#606a84, #b0b7c6);
+
+    &:hover   { Background: theme(#7682a0, #9ea6ba); }
+    &:pressed { Background: theme(#4e566e, #929ab0); }
+}
+
+// E4 nested collapse (design/17 4.5): structural selectors compile to BEM-derived
+// classes — card__button etc. — and the .bui compiler injects them into the static
+// subtree of elements carrying `card` (no runtime selector engine; same-name
+// segments merge, CSS same-selector multi-block semantics).
+.card {
+    Background: theme(#2a3040, #1a2030);
+    CornerRadius: 12;
+    Padding: 12;
+
+    > Button { Padding: 8; }              // direct child  → card__button
+    TextBlock.hint { FontSize: 12; }     // descendant + class → card__text-block-hint
+
+    > Button:hover { Padding: 12; }       // same derived name: merges into card__button's Hover variant
+}
+
+.hint { Foreground: theme(#9aa4bc, #5a6272); }
+
+// E5 registered pseudo-state (design/17 §3.2): 'spinning' is not a platform bit —
+// it is declared here, registered at bootstrap (idempotent Register), and flipped
+// by code via Element.SetRegisteredState. The variant chains like any other state.
+@states { spinning; }
+
+.spinner {
+    Background: theme(#606a84, #aeb5c4);
+    CornerRadius: 10;
+
+    &:spinning { Background: theme(#22c55e, #1aad52); }  // state-driven highlight
+}
+
+// design/19 P1: custom style properties declared in the app assembly
+// (tests/GalleryFixtures/BadgeStyles.cs, [UiStyleProperty] fields — no framework changes).
+// Value forms cover the dispatch table: number, enum keyword (member-checked at
+// compile time, emitted as T.Member) and string. Class channel emits the generic
+// s.Set(field, value) escape hatch; inline Style= emits target.SetValue(field, value).
+// More catalog-union forms (gallery section 5 reads these values back live):
+//   BadgeLabel: inline;     keyword passes through as a string on string properties
+//                           (a quoted "..." literal — used below — is the other form)
+//   $g: 6;  Glow: $g;       $variables stay number/color: a keyword or string in a
+//                           variable declaration is rejected (EUI050)
+//   Glow: theme(#000, #fff); rejected: custom properties have no XxxResourceProperty
+//                           convention yet → EUI052 "does not accept theme(dark, light)"
+//   [UiStyleProperty(Name = "Tone")] — explicit Name overrides the default
+//                           field-name-minus-"Property" rule (Glow/BadgeLabel rely on it)
+.badge {
+    Glow: 6;
+    Tone: Success;
+    BadgeLabel: "bss";
+
+    // Variants chain over custom properties like any built-in: the section-5 demo
+    // button flips Glow 6 → 12 while hovered (readback label refreshes via PropertyChanged).
+    &:hover { Glow: 12; }
+}

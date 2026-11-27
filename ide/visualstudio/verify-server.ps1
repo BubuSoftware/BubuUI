@@ -3,10 +3,10 @@ param([Parameter(Mandatory = $true)][string]$ServerPath, [switch]$MaterializeDec
 # Exercise the actual published process and stdio framing, not an in-process test double.
 $ErrorActionPreference = 'Stop'
 $server = [IO.Path]::GetFullPath($ServerPath)
-$workspace = Join-Path ([IO.Path]::GetTempPath()) ("eclipseui-visualstudio-smoke-" + [Guid]::NewGuid().ToString('N'))
+$workspace = Join-Path ([IO.Path]::GetTempPath()) ("bubuui-visualstudio-smoke-" + [Guid]::NewGuid().ToString('N'))
 [IO.Directory]::CreateDirectory($workspace) | Out-Null
-$document = Join-Path $workspace 'Smoke.ui'
-$text = "@namespace Smoke`n@using EclipseUI.Elements`n`n<But"
+$document = Join-Path $workspace 'Smoke.bui'
+$text = "@namespace Smoke`n@using BubuUI.Elements`n`n<But"
 [IO.File]::WriteAllText($document, $text)
 $start = New-Object Diagnostics.ProcessStartInfo
 $start.FileName = 'dotnet'
@@ -78,7 +78,7 @@ try {
     Send-Message @{ jsonrpc = '2.0'; method = 'initialized'; params = @{} }
     $uri = ([Uri]$document).AbsoluteUri
     Send-Message @{ jsonrpc = '2.0'; method = 'textDocument/didOpen'; params = @{
-        textDocument = @{ uri = $uri; languageId = 'eclipseui'; version = 1; text = $text }
+        textDocument = @{ uri = $uri; languageId = 'bubuui'; version = 1; text = $text }
     } }
     Send-Message @{ jsonrpc = '2.0'; id = 2; method = 'textDocument/completion'; params = @{
         textDocument = @{ uri = $uri }; position = @{ line = 3; character = 4 }
@@ -86,7 +86,7 @@ try {
     $completion = Read-Response 2
     if (-not ($completion.items | Where-Object { $_.label -eq 'Button' })) { throw 'Bundled server did not complete Button from its bundled Runtime metadata.' }
     # VS Ctrl+hover sends the first character of the attribute, not its middle.
-    $updatedText = "@namespace Smoke`n@using EclipseUI.Elements`n`n<Button Label=""demo"" />"
+    $updatedText = "@namespace Smoke`n@using BubuUI.Elements`n`n<Button Label=""demo"" />"
     Send-Message @{ jsonrpc = '2.0'; method = 'textDocument/didChange'; params = @{
         textDocument = @{ uri = $uri; version = 2 }; contentChanges = @(@{ text = $updatedText })
     } }
@@ -105,19 +105,19 @@ try {
     }
     else {
         if (-not $definition -or $definition.uri -notlike 'eui-decompiled:*') { throw 'Attribute-start definition did not resolve the Label member.' }
-        Send-Message @{ jsonrpc = '2.0'; id = 5; method = 'eclipseui/decompiledContent'; params = @{ uri = $definition.uri } }
+        Send-Message @{ jsonrpc = '2.0'; id = 5; method = 'bubuui/decompiledContent'; params = @{ uri = $definition.uri } }
         $decompiled = Read-Response 5
         if (-not $decompiled.content -or $decompiled.content -notmatch 'Label') { throw 'Attribute definition did not provide decompiled source.' }
     }
-    $skinUri = ([Uri](Join-Path $workspace 'Skin.ui')).AbsoluteUri
-    $skinText = "@namespace Smoke`n@using EclipseUI.Elements`n@template Button`n<Border Background={Owner.Background} />"
+    $skinUri = ([Uri](Join-Path $workspace 'Skin.bui')).AbsoluteUri
+    $skinText = "@namespace Smoke`n@using BubuUI.Elements`n@template Button`n<Border Background={Owner.Background} />"
     Send-Message @{ jsonrpc = '2.0'; method = 'textDocument/didOpen'; params = @{
-        textDocument = @{ uri = $skinUri; languageId = 'eclipseui'; version = 1; text = $skinText }
+        textDocument = @{ uri = $skinUri; languageId = 'bubuui'; version = 1; text = $skinText }
     } }
-    $styleUri = ([Uri](Join-Path $workspace 'controls.eustyle')).AbsoluteUri
-    $styleText = "@using EclipseUI.Elements;`n@using Smoke;`n@theme Rounded for Button { Template: template(Skin); }`nButton { Theme: resource(Rounded); }"
+    $styleUri = ([Uri](Join-Path $workspace 'controls.bss')).AbsoluteUri
+    $styleText = "@using BubuUI.Elements;`n@using Smoke;`n@theme Rounded for Button { Template: template(Skin); }`nButton { Theme: resource(Rounded); }"
     Send-Message @{ jsonrpc = '2.0'; method = 'textDocument/didOpen'; params = @{
-        textDocument = @{ uri = $styleUri; languageId = 'eustyle'; version = 1; text = $styleText }
+        textDocument = @{ uri = $styleUri; languageId = 'bss'; version = 1; text = $styleText }
     } }
     $resourcePosition = @{ textDocument = @{ uri = $styleUri }; position = @{ line = 3; character = 27 } }
     Send-Message @{ jsonrpc = '2.0'; id = 6; method = 'textDocument/completion'; params = $resourcePosition }
@@ -126,7 +126,7 @@ try {
     Send-Message @{ jsonrpc = '2.0'; id = 7; method = 'textDocument/definition'; params = $resourcePosition }
     $resourceDefinition = Read-Response 7
     if (-not $resourceDefinition -or $resourceDefinition.uri -ne $styleUri -or $resourceDefinition.range.start.line -ne 2) { throw 'Theme definition did not map to its stylesheet declaration.' }
-    $embeddedText = '@namespace Smoke' + "`n" + '@using EclipseUI.Elements' + "`n" + '@style {' + "`n" + '$accent: #112233;' + "`n" + '.primary { Background: $accent; }' + "`n" + '}' + "`n" + '<Border Style="Background: th" />'
+    $embeddedText = '@namespace Smoke' + "`n" + '@using BubuUI.Elements' + "`n" + '@style {' + "`n" + '$accent: #112233;' + "`n" + '.primary { Background: $accent; }' + "`n" + '}' + "`n" + '<Border Style="Background: th" />'
     Send-Message @{ jsonrpc = '2.0'; method = 'textDocument/didChange'; params = @{
         textDocument = @{ uri = $uri; version = 3 }; contentChanges = @(@{ text = $embeddedText })
     } }

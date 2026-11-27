@@ -7,7 +7,7 @@
 > 关联：[03 模板引擎](./03-template-engine.md)、[04 运行时与元素系统](./04-runtime-and-elements.md)、
 > [09 开发计划](./09-development-plan.md)、[13 damage v0](./13-g2-damage-v0.md)、
 > [15 状态与反应式（v3 历史）](./15-state-and-reactivity.md)。
-> 范围：C# 控件与 `.ui` 组件如何向模板引擎声明接口；模板如何校验、生成代码、在运行期更新。
+> 范围：C# 控件与 `.bui` 组件如何向模板引擎声明接口；模板如何校验、生成代码、在运行期更新。
 > 样式、主题、ControlTemplate（换肤）不在本文，见 G4。
 >
 > **规范迁移（2026-10-29）**：§14.8 的生成代码契约已由 [spec/02](../spec/02-generated-code-contract.md) 取代；
@@ -26,10 +26,10 @@
 | 事实 | 证据 | 后果 |
 |---|---|---|
 | 目录手写、封闭 | v3 的 `UiCatalog.CreateDefault()` 固定 5 个标签（手写目录，C2 已删除） | 新增控件必须改编译器；第三方无法进入模板 |
-| 元数据双写 | 控件侧 `Button.LabelProperty`（[Controls.cs:9](../src/EclipseUI.Runtime/Controls.cs#L9)）与目录侧 `new UiPropDef("Label","string")` 各写一份 | 漂移时生成 C# 编译错误，而不是 `.ui` 诊断 |
-| 生成器隐式约定 | [Emitter.cs:144](../src/EclipseUI.Compiler.Generator/Emitter.cs#L144)：`new ClrType()`、属性名=CLR 属性名、`:bind` 需 `{Name}Property`、事件挂 `{Name}Event` | 契约只存在于代码行为里，控件作者无从遵循 |
-| 暴露面不全 | `Panel.Padding`/`ClipToBounds` 已注册（[Panels.cs:15](../src/EclipseUI.Runtime/Panels.cs#L15)），但目录的 StackPanel 只列了 `Gap` | `<StackPanel Padding="16">` 报 EUI002 |
-| 无法自定义 | 未知标签 EUI001；组件 `Component` 只能在 C# 里 `Mount()` | 无法用 `.ui` 组合自定义控件 |
+| 元数据双写 | 控件侧 `Button.LabelProperty`（[Controls.cs:9](../src/BubuUI.Runtime/Controls.cs#L9)）与目录侧 `new UiPropDef("Label","string")` 各写一份 | 漂移时生成 C# 编译错误，而不是 `.bui` 诊断 |
+| 生成器隐式约定 | [Emitter.cs:144](../src/BubuUI.Compiler.Generator/Emitter.cs#L144)：`new ClrType()`、属性名=CLR 属性名、`:bind` 需 `{Name}Property`、事件挂 `{Name}Event` | 契约只存在于代码行为里，控件作者无从遵循 |
+| 暴露面不全 | `Panel.Padding`/`ClipToBounds` 已注册（[Panels.cs:15](../src/BubuUI.Runtime/Panels.cs#L15)），但目录的 StackPanel 只列了 `Gap` | `<StackPanel Padding="16">` 报 EUI002 |
+| 无法自定义 | 未知标签 EUI001；组件 `Component` 只能在 C# 里 `Mount()` | 无法用 `.bui` 组合自定义控件 |
 | 无契约测试 | v3 时 `tests/` 无生成器集成测试；前端测试直接用 `CreateDefault()`（现已有目录扫描/生成器契约/交叉一致性测试） | 目录与控件漂移无回归保护 |
 
 契约表面的实测对比（本文规则生效后 vs v3 手写目录，用于 14.12 的行为变更记录）：
@@ -40,7 +40,7 @@
 | 模板可见属性项 | 6 | 17（`Padding`、`ClipToBounds`、`IsHitTestVisible` 全面铺开） | 17 ✅ 差集 12 项逐条评审 |
 | 模板可见事件 | 1（`OnClick`） | 8（含输入/焦点 7 个，前提是按 14.4.3 v2 把 `InputEvents` 迁入 `Element`） | C1 实测 1（`InputEvents` 静态宿主 → EUI026，D69）→ **C2 ✅ 9 个事件名 / 37 事件项**（5 标签 × 7 继承事件 + `OnClick` + `OnCheckedChanged`，见 §14.12.2） |
 
-「C1 实测」列扫的是已编译的 `EclipseUI.Runtime.dll`，见 `CatalogScannerTests`；标签/属性项在 C2 后数值不变，
+「C1 实测」列扫的是已编译的 `BubuUI.Runtime.dll`，见 `CatalogScannerTests`；标签/属性项在 C2 后数值不变，
 事件行随 `InputEvents` 迁入 `Element` 变宽。**C2（2026-11-02）起模板实际可见表面已等于本文规则**
 （D64/D69 关闭，手写目录删除），落地记录见 §14.12.2。
 
@@ -51,7 +51,7 @@
 **目标（按优先级）**
 
 - **T1 单一事实源**：控件元数据从 C# 符号派生；目录不再手写。
-- **T2 编译期全量校验**：标签、属性、事件、内容、字面量错误都在 `.ui` 上带 span 报出。
+- **T2 编译期全量校验**：标签、属性、事件、内容、字面量错误都在 `.bui` 上带 span 报出。
 - **T3 第三方可扩展**：NuGet 控件/组件不改框架源码即可使用；只读符号，不执行程序集。
 - **T4 AOT/裁剪友好**：运行时不反射、不扫描程序集；生成代码直接引用类型。
 - **T5 LSP 同源**：分析器、生成器、LSP 共用同一份 `UiCatalog` 与诊断。
@@ -71,7 +71,7 @@
 |---|---|---|---|
 | 声明 | C# 类型、`StyledProperty`、`RoutedEvent`、`[Ui*]` 特性 | 符号扫描器 | 编译期 |
 | 目录 | 不可变 `UiElementDef` POCO | 分析器 / 生成器 / LSP | 编译期 |
-| 模板 | `.ui` 文本 | Lexer / Parser / Analyzer | 编译期 |
+| 模板 | `.bui` 文本 | Lexer / Parser / Analyzer | 编译期 |
 | 生成 | 直接引用类型的 C# | Roslyn | 编译期 |
 | 运行 | 元素树 + 属性引擎 + 失效队列 | 帧循环 | 运行时 |
 
@@ -94,14 +94,14 @@ R7–R9 的 v3 出处是 [15 §15.5.7](./15-state-and-reactivity.md#1557-新增�
 
 一个类型成为模板标签，必须同时满足：
 
-1. 是 `EclipseUI.Element` 或 `EclipseUI.Component` 的子类（基链判定，按 metadata name）；
+1. 是 `BubuUI.Element` 或 `BubuUI.Component` 的子类（基链判定，按 metadata name）；
 2. `public`、顶层（非嵌套）、非抽象、非泛型；
 3. 有 `public` 无参构造函数；
 4. 类型上没有 `[UiIgnore]`。
 
 标签名规则：
 
-- **恒等于类型短名**（`EclipseUI.Elements.Button` → `Button`）。没有改名手段：`[UiTag]` 已于 2026-11-09 退役（K32）。
+- **恒等于类型短名**（`BubuUI.Elements.Button` → `Button`）。没有改名手段：`[UiTag]` 已于 2026-11-09 退役（K32）。
 - **不做命名空间优先级**。同一标签映射到 ≥2 个类型时，使用点报 EUI016 并列出候选全名，
   同时给出可直接粘贴的消歧建议 `@using <Tag>Alt = <Ns>.<Tag>`（模板别名，见 K31 / spec/01 §4.17）。
   消费端拿别名解决，**不需要、也无法**让控件作者改标签名。
@@ -137,7 +137,7 @@ R7–R9 的 v3 出处是 [15 §15.5.7](./15-state-and-reactivity.md#1557-新增�
   （`Measure` / `Arrange` / `Render` / `None`）。模板引擎只负责赋值，不猜测失效范围；
   声明 `None` 的属性变更不保证重排/重绘，这是控件责任。
   **编译期无法校验这条**：`Invalidate` 来自 `StyledProperty<T>.Register(...)` 的构造实参
-  （[PropertySystem.cs:48](../src/EclipseUI.Runtime/PropertySystem.cs#L48)），是运行期事实，R1 禁止在编译期执行它（D13）。
+  （[PropertySystem.cs:48](../src/BubuUI.Runtime/PropertySystem.cs#L48)），是运行期事实，R1 禁止在编译期执行它（D13）。
   守卫只能落在 14.11.1 的运行期快照测试：模板可见属性的 `Invalidate` 非 `None`，例外必须写进显式白名单
   （实测现状：`Panel.ClipToBounds` 与 `Element.IsHitTestVisible` 都注册为 `None`，前者必须在 C2 修为 `Render`，
   后者确实不需要重绘 → 白名单）。
@@ -161,26 +161,26 @@ R7–R9 的 v3 出处是 [15 §15.5.7](./15-state-and-reactivity.md#1557-新增�
 声明位置必须落在元素/组件类型上，派生类型才能继承；声明在 `public static class` 里的事件字段
 既不参与扫描，也在源项目声明处报 EUI026（消息给出迁移建议）。
 
-框架自己曾是反例：v3 把 7 个输入/焦点事件声明在 `EclipseUI.InputEvents` 静态类上
+框架自己曾是反例：v3 把 7 个输入/焦点事件声明在 `BubuUI.InputEvents` 静态类上
 （旧 `Input.cs:20-28`）。若沿用 v1 规则，换符号目录后模板能写的事件只剩
 `OnClick` 一个，而 C# 侧 `AddHandler(InputEvents.XEvent, …)` 有 19 处调用——直接违背 T6 能力对等。
-**处置已落地（C2，2026-11-02）**：7 个字段迁入 [Element.cs:118-124](../src/EclipseUI.Runtime/Element.cs#L118)
+**处置已落地（C2，2026-11-02）**：7 个字段迁入 [Element.cs:118-124](../src/BubuUI.Runtime/Element.cs#L118)
 （`PointerPressed/Released/Moved`、`PointerWheelChanged`（✅ G4 滚轮）、`KeyDown/Up`、`GotFocus/LostFocus`），`InputEvents` 类删除，
 模板事件表面由 1 个变为 8 个（加 `CheckBox.CheckedChanged` 后共 9 个事件名）。控件作者同理：
 新增事件一律声明在自己的类型上，不要建静态宿主类。
 
 同期控件补齐（C2 已落地，不属于契约本身）：`CheckBox` 补上 `CheckedChangedEvent`
-（[Controls.cs](../src/EclipseUI.Runtime/Controls.cs)）。语义注意：事件只在交互路径广播，
+（[Controls.cs](../src/BubuUI.Runtime/Controls.cs)）。语义注意：事件只在交互路径广播，
 绑定回推走 setter 且不广播，避免模板的 `OnCheckedChanged` 被源写回再次触发。
 
 语义：
 
 - `On{E}` MUST 使用 `{expression}`；字面量报 EUI004；`:bind` / `@bind-` 用于事件报 EUI004/EUI040。
 - 处理器允许转换为 `Action` 或 `Action<RoutedEventArgs>`（对应现有两个 `AddHandler` 重载，
-  [Element.cs:221](../src/EclipseUI.Runtime/Element.cs#L221)）。参数类型更强的 typed args 属 G4。
+  [Element.cs:221](../src/BubuUI.Runtime/Element.cs#L221)）。参数类型更强的 typed args 属 G4。
 - 冒泡/隧道由 `RoutedEvent.Strategy` 决定，与模板无关。
 - 生成代码使用字段的**声明类型**引用（继承事件用基类名）：
-  `global::EclipseUI.Elements.Button.ClickEvent`、`global::EclipseUI.Element.PointerPressedEvent`。
+  `global::BubuUI.Elements.Button.ClickEvent`、`global::BubuUI.Element.PointerPressedEvent`。
 
 ### 14.4.4 内容模型
 
@@ -239,7 +239,7 @@ public sealed class TextBlock : Panel, ITextContentHost
 ### 14.4.6 声明特性
 
 ```csharp
-namespace EclipseUI;
+namespace BubuUI;
 
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Property)]
 public sealed class UiContentAttribute : Attribute
@@ -266,9 +266,9 @@ public sealed class UiSlotAttribute : Attribute          // 具名插槽，✅ C
 }
 ```
 
-- 特性定义在 `src/EclipseUI.Runtime`：**程序集名是 `EclipseUI.Runtime`，命名空间是 `EclipseUI`**
-  （csproj 只设了 `RootNamespace`，未覆写 `AssemblyName`，实测反射得到 `EclipseUI.Runtime`）。
-- 编译器/生成器按 **全 metadata 名**识别特性（`EclipseUI.UiContentAttribute`、`EclipseUI.UiIgnoreAttribute`…），
+- 特性定义在 `src/BubuUI.Runtime`：**程序集名是 `BubuUI.Runtime`，命名空间是 `BubuUI`**
+  （csproj 只设了 `RootNamespace`，未覆写 `AssemblyName`，实测反射得到 `BubuUI.Runtime`）。
+- 编译器/生成器按 **全 metadata 名**识别特性（`BubuUI.UiContentAttribute`、`BubuUI.UiIgnoreAttribute`…），
   **不得按程序集名匹配**；不引用运行时程序集，避免生成器加载用户程序集。
 - `UiContentKind` 与编译器内部 `UiContentModel` 的数值必须一一对应；测试断言两者一致（14.11）。
 
@@ -279,7 +279,7 @@ public sealed class UiSlotAttribute : Attribute          // 具名插槽，✅ C
 3. 需要从模板触发的事件：`public static readonly RoutedEvent YEvent` **声明在本类型上**，不放静态宿主类。
 4. 声明 `[UiContent]`；不参与模板的公共属性/字段/类型加 `[UiIgnore]`。
 5. 类型短名即标签名；与已有标签重名时**不要改名妥协**——消费端用 `@using XxxAlt = Ns.Xxx` 别名消歧（K31/K32）。
-6. 写一个使用该控件的 `.ui` 集成测试（14.11）。
+6. 写一个使用该控件的 `.bui` 集成测试（14.11）。
 7. 确认属性在无父元素时 set 不会抛异常；重复 set 幂等。
 
 ## 14.5 目录与元数据模型
@@ -303,7 +303,7 @@ public sealed record UiEventDef(
     string EventName,             // Click
     string DeclaringTypeName,     // 声明该字段的元素/组件类型（继承事件为基类）
     string FieldName,             // ClickEvent
-    string ArgsTypeName);         // global::EclipseUI.RoutedEventArgs
+    string ArgsTypeName);         // global::BubuUI.RoutedEventArgs
 
 public sealed record UiParameterDef(
     string Name,
@@ -353,10 +353,10 @@ public sealed record UiTypeShape(
 
 **类型名的两个字段各管一件事（v2 修订）**：
 
-- `ClrTypeDisplayName` 一律取 `SymbolDisplayFormat.FullyQualifiedFormat` 的结果（`global::System.Collections.Generic.List<EclipseUI.TextRun>`
+- `ClrTypeDisplayName` 一律取 `SymbolDisplayFormat.FullyQualifiedFormat` 的结果（`global::System.Collections.Generic.List<BubuUI.TextRun>`
   这类嵌套/泛型/可空形态由 Roslyn 负责，扫描器不自己拼字符串）。
 - `UiTypeShape.CanonicalKey` 是查表键：内置类型用 C# 关键字名（`double`、`string`、`bool`、`int`…，
-  与现有 `UiLiterals.TryConvert(clrType, …)` 的键一致，[Catalog.cs:84](../src/EclipseUI.Compiler/Catalog.cs#L84)），
+  与现有 `UiLiterals.TryConvert(clrType, …)` 的键一致，[Catalog.cs:84](../src/BubuUI.Compiler/Catalog.cs#L84)），
   其余用不含 `global::` 的命名空间限定全名。v1 用裸 `"double"` 字符串同时充当生成类型名和转换器键，
   换成派生目录后必然出现"`global::System.Double` 查不到转换器"这类静默失配。
 
@@ -436,13 +436,13 @@ public sealed class UiCatalog
 - 附加属性声明：`public static readonly AttachedProperty<T> RowProperty` + `public static GetRow/SetRow`。
 - 模板语法：`Owner.Prop="..."`（如 `Grid.Row="1"`）。目录增加 `UiAttachedPropDef(OwnerTag, Name, ClrTypeDisplayName, SetterMethod)`；实现另带 `OwnerClrName`（生成代码用全限定宿主名）与 `TypeShape`（字面量转换分派）。✅ G4 布局切片（2026-11-09）起宿主 `Grid` 已扩展为 `Panel` 子类（行列布局见 §14.12 迁移表 G4-Grid 行），静态附加成员原样保留。
 - 生成：`global::Ns.Grid.SetRow(el, 1);`；表达式值走动态语句（根级 `U{N}` / 块内 `R{N}`，语句形态即调用本身，不再是赋值左值）。
-- ✅ **G4 首批落地记录（2026-11-09）**：载体 `EclipseUI.Elements.Grid` 静态类（`Row`/`Column`，int）；值存储为 `AttachedProperty<T>` 内的 `ConditionalWeakTable<Element, ValueBox<T>>` 弱表——元素卸载后随 GC 回收，Unmount 无需清理（K33 泄漏口径）；重复赋值复用值盒（A1 去装箱口径）。扫描规则：宿主必须**顶层、public 可见、无 `[UiIgnore]`**（嵌套宿主 v1 静默跳过）；候选 = `public static readonly AttachedProperty<T> XxxProperty` 字段，命名必须 `XxxProperty`，要求配对 `public static GetXxx(Element)` / `SetXxx(Element, T)` 且值类型与字段泛型实参一致（不一致报 EUI019 家族问题、不进目录）；同 `(OwnerTag, Name)` 冲突报 EUI026 家族问题、先声明者胜出；组件标签同样可携带附加属性，但目标是**根元素**（`cmp.Root`），因为组件实例不是 `Element`——发射点在 `Mount()` 之后（spec/02 §4.12.6）。
+- ✅ **G4 首批落地记录（2026-11-09）**：载体 `BubuUI.Elements.Grid` 静态类（`Row`/`Column`，int）；值存储为 `AttachedProperty<T>` 内的 `ConditionalWeakTable<Element, ValueBox<T>>` 弱表——元素卸载后随 GC 回收，Unmount 无需清理（K33 泄漏口径）；重复赋值复用值盒（A1 去装箱口径）。扫描规则：宿主必须**顶层、public 可见、无 `[UiIgnore]`**（嵌套宿主 v1 静默跳过）；候选 = `public static readonly AttachedProperty<T> XxxProperty` 字段，命名必须 `XxxProperty`，要求配对 `public static GetXxx(Element)` / `SetXxx(Element, T)` 且值类型与字段泛型实参一致（不一致报 EUI019 家族问题、不进目录）；同 `(OwnerTag, Name)` 冲突报 EUI026 家族问题、先声明者胜出；组件标签同样可携带附加属性，但目标是**根元素**（`cmp.Root`），因为组件实例不是 `Element`——发射点在 `Mount()` 之后（spec/02 §4.12.6）。
 - 泛型标签：`<DataGrid<Order>>`，要求类型 public、非抽象、有对应元数据；标签名带元数（`DataGrid\`1`），
   模板侧写实参。元数据模型预留 `Arity`；附加属性实现排 G4，泛型标签按 K19 暂缓、不排期（形状保留冻结）。
 
-## 14.6 组件契约（`.ui` + code-behind 作为标签）
+## 14.6 组件契约（`.bui` + code-behind 作为标签）
 
-组件是 `EclipseUI.Component` 子类；它的标签暴露规则与控件相同（14.4.1），额外提供参数、事件、内容与生命周期。
+组件是 `BubuUI.Component` 子类；它的标签暴露规则与控件相同（14.4.1），额外提供参数、事件、内容与生命周期。
 **v4 起组件参数只有一种形态：普通 CLR 属性**（spec/03 §10）。
 
 ### 14.6.1 参数
@@ -500,7 +500,7 @@ public sealed class UiCatalog
   （Single：`if (Header is { } s) parent.Children.Add(s);`；Multiple：`foreach (var s in Rows)`，
   spec/02 §4.12.5）。
 - 自身插槽解析（D75）：生成器用 code-behind 符号沿基类链读 `[UiSlot]` 作权威（code-behind
-  类在源码里不派生 `Component`，目录不会有它的 def）；静态前端按目录显示名与 `.ui` 文件名
+  类在源码里不派生 `Component`，目录不会有它的 def）；静态前端按目录显示名与 `.bui` 文件名
   短名匹配投影（spec/02 §4.12.5 / design/14 §14.12.6）。
 - 插槽/内容在 `Mount()` 前赋值；父级状态变化不重建内容（与 14.6.6 一致）。
 - 其他参数与默认内容规则 v1 不变；具名插槽 C6 已落地；附加属性 G4 首批已落地（组件标签可携带，见 §14.5.5）；剩余泛型标签见 §14.12.6 范围说明。
@@ -517,7 +517,7 @@ U0();                        // 动态参数推送 / @bind 的 PChanged 赋值
 cmp0.Body = content5;        // 默认内容（若有）
 cmp0.Mount();
 cmp0.ApplyClasses(new global::System.String[] { "wide" });   // Class= → 根元素（§14.6.7）
-global::EclipseUI.Elements.Grid.SetRow(cmp0.Root, 1);        // 附加属性 → 根元素
+global::BubuUI.Elements.Grid.SetRow(cmp0.Root, 1);        // 附加属性 → 根元素
 parentN.Children.Add(cmp0.Root);
 ```
 
@@ -534,7 +534,7 @@ parentN.Children.Add(cmp0.Root);
 
 ### 14.6.5 第三方组件
 
-- 包作者在类库中放置 `.ui` + code-behind，引用与本项目同版本的生成器与运行时；生成代码编入类库。
+- 包作者在类库中放置 `.bui` + code-behind，引用与本项目同版本的生成器与运行时；生成代码编入类库。
 - 消费端只读类库符号（类型 + 特性 + 生成方法签名），不执行类库代码（R1）。
 - 类库 MUST NOT 依赖消费端的 code-behind；跨边界只通过普通参数、委托参数、元素内容（`Signal<T>` 仅作 legacy 类型）。
 
@@ -600,7 +600,7 @@ parentN.Children.Add(cmp0.Root);
   需要字面花括号时写表达式 `{"{x}"}`。
 - 字符串字面量不解析 XML 实体（`&amp;` 原样保留）。03 冻结"不解析实体"；若未来支持，必须先在 03 登记语法变更。
 - `Children` 模型下，纯空白文本忽略；含非空白字符的裸文本 → EUI006。
-- 数字/布尔转换固定 `InvariantCulture`（现状，[Catalog.cs:80](../src/EclipseUI.Compiler/Catalog.cs#L80)）。
+- 数字/布尔转换固定 `InvariantCulture`（现状，[Catalog.cs:80](../src/BubuUI.Compiler/Catalog.cs#L80)）。
 
 ### 14.7.3 字面量转换器
 
@@ -641,7 +641,7 @@ parentN.Children.Add(cmp0.Root);
   `Signal<T>` 只是普通类型，读写须显式 `.Value`，写入后由作者 `Invalidate()`。
 - item 模板可以引用组件级状态（`EUI014` 停用）；`Key` 可以引用任意可读表达式（`EUI039` 停用）；
   item `@bind` 源可以 rooted at 组件状态（`EUI042` 停用）。
-- 表达式错误由 Roslyn 报在映射后的 `.ui` 行（`#line`），生成器不再重复报。
+- 表达式错误由 Roslyn 报在映射后的 `.bui` 行（`#line`），生成器不再重复报。
 - 完整规则见 [spec/03 §4](../spec/03-reactivity-and-binding.md)；生成形态见 [spec/02 §4.15](../spec/02-generated-code-contract.md)。
 
 ### 14.7.5 保留属性
@@ -671,17 +671,17 @@ parentN.Children.Add(cmp0.Root);
 
 | 模板 | 生成代码 | 前置条件 |
 |---|---|---|
-| `<Button />` | `var el0 = new global::EclipseUI.Elements.Button();` | public 无参构造 |
+| `<Button />` | `var el0 = new global::BubuUI.Elements.Button();` | public 无参构造 |
 | `Label="OK"` | `el0.Label = "OK";` | 可写属性 + 转换器 |
-| `Gap={vm.Gap}` | `void U0() => el0.Gap = vm.Gap; U0(); Track(global::EclipseUI.UiWatch.Subscribe(this, path, U0));` | 可写属性 + 依赖可观察；否则只 `U0()` + `EUI036` |
-| `@bind-Checked={vm.Show}` | `Track(global::EclipseUI.UiBinding.TwoWay(el0, ...CheckedProperty, readTarget: () => el0.Checked, writeTarget: v => el0.Checked = v, readSource: () => vm.Show, writeSource: v => vm.Show = v, subscribeSource: h => UiWatch.Subscribe(this, path, h)));` | 目标可写 + 源可写可观察 |
-| `Checked:bind={show}` | `Track(global::EclipseUI.UiBinding.TwoWay(el0, global::EclipseUI.Elements.CheckBox.CheckedProperty, readTarget: () => el0.Checked, writeTarget: v => el0.Checked = v, readSource: () => show.Value, writeSource: v => show.Value = v, subscribeSource: h => show.Subscribe(h)));` | 旧语法，`EUI043`（S5 移除） |
-| `OnClick={() => n++}` | `el0.AddHandler(global::EclipseUI.Elements.Button.ClickEvent, () => n++);` | 字段存在、签名兼容 |
+| `Gap={vm.Gap}` | `void U0() => el0.Gap = vm.Gap; U0(); Track(global::BubuUI.UiWatch.Subscribe(this, path, U0));` | 可写属性 + 依赖可观察；否则只 `U0()` + `EUI036` |
+| `@bind-Checked={vm.Show}` | `Track(global::BubuUI.UiBinding.TwoWay(el0, ...CheckedProperty, readTarget: () => el0.Checked, writeTarget: v => el0.Checked = v, readSource: () => vm.Show, writeSource: v => vm.Show = v, subscribeSource: h => UiWatch.Subscribe(this, path, h)));` | 目标可写 + 源可写可观察 |
+| `Checked:bind={show}` | `Track(global::BubuUI.UiBinding.TwoWay(el0, global::BubuUI.Elements.CheckBox.CheckedProperty, readTarget: () => el0.Checked, writeTarget: v => el0.Checked = v, readSource: () => show.Value, writeSource: v => show.Value = v, subscribeSource: h => show.Subscribe(h)));` | 旧语法，`EUI043`（S5 移除） |
+| `OnClick={() => n++}` | `el0.AddHandler(global::BubuUI.Elements.Button.ClickEvent, () => n++);` | 字段存在、签名兼容 |
 | 子元素 | `el0.Children.Add(el1);` | `Children` 模型 + 目标有 `Add(Element)` |
 | 文本（静态） | `el0.Label = "OK";` | `Text` 模型 |
 | 文本（状态插值） | `void U1() { el0.Label = $"Count: {Count}"; } U1(); Track(((IUiObservable)this).Subscribe(nameof(Count), U1));` | `Text` 模型 + 状态属性 |
 | 文本（信号插值） | `void U1() { el0.Label = $"Count: {count.Value}"; } U1(); Track(count.Subscribe(U1));` | `Text` 模型 + legacy 信号 |
-| 文本（runs） | `var run0 = ((global::EclipseUI.ITextContentHost)el0).AddRun("Hi ");` | `TextRuns` 模型 |
+| 文本（runs） | `var run0 = ((global::BubuUI.ITextContentHost)el0).AddRun("Hi ");` | `TextRuns` 模型 |
 | 组件 | `var c0 = new global::App.UserCard(); c0.Title = ...; Track(c0); c0.Mount(); el0.Children.Add(c0.Root);` | 参数规则 |
 | 组件可观察参数 | `void U2() => c0.Title = vm.Name; U2(); Track(UiWatch.Subscribe(this, path, U2));` | 参数是 observable partial |
 
@@ -699,7 +699,7 @@ parentN.Children.Add(cmp0.Root);
 
 1. 每个模板节点构造一次（`@foreach` 同 Key 同 item 复用条目，只重跑 updater；同 Key 不同 item 重建条目）。
 2. 属性/事件在元素加入父级之前完成；构造期父元素为 null。
-3. 属性按 `.ui` 源码顺序赋值；控件不应依赖顺序，但可依赖"构造后、挂载前"。
+3. 属性按 `.bui` 源码顺序赋值；控件不应依赖顺序，但可依赖"构造后、挂载前"。
 4. 构建阶段框架不触发控件事件、不调用 `Measure/Arrange`。
 5. `Measure/Arrange` 之后可能多次发生，控件布局必须无副作用、可重复。
 6. 失效由属性引擎负责；模板引擎不额外调用 `InvalidateMeasure`。
@@ -781,7 +781,7 @@ spec/02 §10 五类触发，诊断用纯数据 `UiSourceLocation` 定位到 code
 [spec/02 §12 D81](../spec/02-generated-code-contract.md#12-实现偏差台账-d42d88)。
 EUI024 事件处理器签名匹配已落地（✅ 2026-11-08/D82）：`TemplateGenerator.ValidateEventHandlerSignature` +
 `TemplateProbe.IsHandlerCompatible` 复用 `ProbeTree` 合成 partial 方法体，借 Roslyn 把处理器表达式放进
-code-behind 符号上下文，仅当「表达式自身语义干净 + 对目标委托的转换确定失败」时在 `.ui` 属性值报
+code-behind 符号上下文，仅当「表达式自身语义干净 + 对目标委托的转换确定失败」时在 `.bui` 属性值报
 Error（短路生成输出，与 EUI004 一致）；符号未解析/重载失败/`dynamic`/表达式内部错误静默，交回生成代码
 经 `#line` 由 C# 报错（spec/02 §2.4 规则 8 不重复报告）。控件事件复用 `Emitter.EventHandlerType`
 （`internal static`）、组件委托参数用 `UiParameterDef.ClrTypeDisplayName`，保证诊断与生成代码类型判定一致。
@@ -798,32 +798,32 @@ Error（短路生成输出，与 EUI004 一致）；符号未解析/重载失败
 
 ### 14.10.1 项目结构
 
-`UiCatalogFactory` 依赖 Roslyn，不能放进零依赖的 `EclipseUI.Compiler`。采用与前端相同的"源码链接"模式：
+`UiCatalogFactory` 依赖 Roslyn，不能放进零依赖的 `BubuUI.Compiler`。采用与前端相同的"源码链接"模式：
 
 ```
-src/EclipseUI.Compiler/            零 Roslyn 依赖：AST、Parser、Analyzer、Catalog POCO
-src/EclipseUI.Compiler.Metadata/   依赖 Microsoft.CodeAnalysis：符号扫描、目录工厂
-  └─ 源码链接进 EclipseUI.Compiler.Generator（同 Compiler 前端的做法）
+src/BubuUI.Compiler/            零 Roslyn 依赖：AST、Parser、Analyzer、Catalog POCO
+src/BubuUI.Compiler.Metadata/   依赖 Microsoft.CodeAnalysis：符号扫描、目录工厂
+  └─ 源码链接进 BubuUI.Compiler.Generator（同 Compiler 前端的做法）
   └─ G5 的 LSP 直接引用本项目
 ```
 
 ✅ **C2 已落地**：`Metadata` 源码链接进生成器程序集（`Compile Include`，排除
-`EclipseUI.Compiler.Metadata/Polyfills.cs`——`EclipseUI.Compiler/Polyfills.cs` 已提供
-`internal IsExternalInit`）；`EclipseUI.Compiler.Metadata` 仍是独立项目（`ProjectReference` 指向
-`EclipseUI.Compiler`，只为共用 §14.9.1 诊断码常量，`PrivateAssets=all` 不外流）。LSP（G5）可直接引用本项目。
+`BubuUI.Compiler.Metadata/Polyfills.cs`——`BubuUI.Compiler/Polyfills.cs` 已提供
+`internal IsExternalInit`）；`BubuUI.Compiler.Metadata` 仍是独立项目（`ProjectReference` 指向
+`BubuUI.Compiler`，只为共用 §14.9.1 诊断码常量，`PrivateAssets=all` 不外流）。LSP（G5）可直接引用本项目。
 并入动作与 §14.10.2 的伪码差异都记在 §14.12.1 / §14.12.2 / 台账 D65。
 
 ### 14.10.2 扫描算法
 
 ```
 Build(Compilation c, declarations):          // 纯函数：同样的输入 → 同样可结构比较的目录值
-  exposed = []; hidden = []; problems = []   // declarations = .ui 声明的组件（spec/02 §2.7）
+  exposed = []; hidden = []; problems = []   // declarations = .bui 声明的组件（spec/02 §2.7）
   for asm in [c.Assembly] + c.SourceModule.ReferencedAssemblySymbols:
-      if asm != c.Assembly && !ReferencesEclipseUiRuntime(asm): continue   // 跳过 System.* 等
+      if asm != c.Assembly && !ReferencesBubuUiRuntime(asm): continue   // 跳过 System.* 等
       for type in WalkNamespace(asm.GlobalNamespace):
           if IsStaticEventHostAbuse(type):                 // public 静态类上有 RoutedEvent 字段
               problems.Add(EUI026(...)); continue          // 14.4.3 v2：事件必须声明在元素/组件上
-          if !IsComponentOrControl(type): continue         // 基类链，或同名同命名空间的 .ui 声明
+          if !IsComponentOrControl(type): continue         // 基类链，或同名同命名空间的 .bui 声明
           if !IsPublic(type): continue                     // 不可见 → EUI001
           if !CanExpose(type, out reason):                 // 抽象/嵌套/无参构造/泛型
               hidden.Add(HiddenTag(type, reason)); continue
@@ -831,18 +831,18 @@ Build(Compilation c, declarations):          // 纯函数：同样的输入 → 
               hidden.Add(HiddenTag(tag, EUI031)); problems.Add(EUI031(...)); continue
           exposed.Add(Describe(type))                      // 标签/属性/事件/内容/参数/插槽
   for d in declarations where d.Tag not in exposed and not in hidden:
-      exposed.Add(TemplateOnly(d))                         // 纯 .ui（K34）：@code 模板特性语法级提取；
+      exposed.Add(TemplateOnly(d))                         // 纯 .bui（K34）：@code 模板特性语法级提取；
                                                            //   无 @code 时 = 无内容/参数/事件/属性
   groups = GroupByTag(exposed)                             // 同 Tag ≥2 → Ambiguous（EUI016）
   return UiCatalog(groups, hidden, problems)               // 记录类型 + 稳定排序 → 可结构比较
 ```
 
-**第二组件来源（2026-11-11）**：`declarations` 让「`.ui` 本身是组件」在输入编译里成立。
+**第二组件来源（2026-11-11）**：`declarations` 让「`.bui` 本身是组件」在输入编译里成立。
 生成器读不到自己的产物，所以 `OriginOf` 原来只认基类链；现在放宽为两条证据——基类链，
-或「存在同名且同命名空间的 `.ui`」，后者只在类型**没写基类**时生效（显式派生其他类的仍按
-继承链判定，避免同名无关类型被误认）。输入编译里连类型都没有的（纯 `.ui`）由 `TemplateOnly`
+或「存在同名且同命名空间的 `.bui`」，后者只在类型**没写基类**时生效（显式派生其他类的仍按
+继承链判定，避免同名无关类型被误认）。输入编译里连类型都没有的（纯 `.bui`）由 `TemplateOnly`
 合成：`Content = None`、属性/事件为空，**参数/插槽/内容来自 `@code` 模板特性的语法级提取
-（K34/D112，spec/02 §2.7）**，声明问题带 `UiSourceLocation` 指回 `.ui`；`ClrTypeDisplayName =
+（K34/D112，spec/02 §2.7）**，声明问题带 `UiSourceLocation` 指回 `.bui`；`ClrTypeDisplayName =
 @namespace + Tag`。
 
 清单为空时目录与加这个参数之前**完全一致**，所以现有调用点（`Build(compilation)`）与测试夹具
@@ -860,13 +860,13 @@ Build(Compilation c, declarations):          // 纯函数：同样的输入 → 
 
 `Describe` 要点：
 
-- 程序集过滤：只扫源程序集与**直接引用 `EclipseUI.Runtime`** 的程序集（第三方控件必须直接引用运行时才能继承 `Element`/`Component`），避免扫描 `System.*` 等无关类型。
-- 基链判定用 `EclipseUI.Element` / `EclipseUI.Component` 的 metadata name，逐级 `BaseType` 比较。
+- 程序集过滤：只扫源程序集与**直接引用 `BubuUI.Runtime`** 的程序集（第三方控件必须直接引用运行时才能继承 `Element`/`Component`），避免扫描 `System.*` 等无关类型。
+- 基链判定用 `BubuUI.Element` / `BubuUI.Component` 的 metadata name，逐级 `BaseType` 比较。
   **跨程序集可行（实测）**：读 CounterApp.dll 元数据时 `Counter`/`Prefs`/`TaskList` 的 `BaseType` 解析为
-  `EclipseUI.Component`，且 public 无参构造可见，所以 14.6.5 的第三方组件发现不依赖源码。
+  `BubuUI.Component`，且 public 无参构造可见，所以 14.6.5 的第三方组件发现不依赖源码。
 - 属性：遍历类型 + 基类的 `IPropertySymbol`；找 `PProperty` 字段；校验类型一致与可写性
   （`IPropertySymbol.IsRequired`、`SetMethod.IsInitOnly` 判定 `required`/`init`，Roslyn 4.9.2 实测可用）。
-- 事件：遍历类型 + 基类的 `IFieldSymbol`；类型为 `EclipseUI.RoutedEvent`、名字以 `Event` 结尾。
+- 事件：遍历类型 + 基类的 `IFieldSymbol`；类型为 `BubuUI.RoutedEvent`、名字以 `Event` 结尾。
   基类字段一并继承（迁移后的 `Element.PointerPressedEvent` 会出现在每个标签上）。
 - 内容：沿基链找最近的 `UiContentAttribute`；参数属性上的特性优先。
   注意 `GetAttributes()` **不返回继承来的特性**，基链必须自己走（`Panel` 上的 `[UiContent(Children)]` 要传到 `StackPanel`）。
@@ -892,7 +892,7 @@ Build(Compilation c, declarations):          // 纯函数：同样的输入 → 
 | 引用程序集数 | 14 |
 | 全量无过滤扫描类型数 | 688 |
 | 全量无过滤扫描（热态） | **45.1 ms** |
-| `直接引用 EclipseUI.Runtime` 过滤判定 | 5.6 ms |
+| `直接引用 BubuUI.Runtime` 过滤判定 | 5.6 ms |
 | 过滤后需扫描的程序集 | 7 个，热态单个 0.2–11.2 ms |
 
 结论：本仓库规模下目录构建 ~10–20 ms，**远低于 14.10.2 原设想的 100 ms 预算**，
@@ -903,17 +903,17 @@ Build(Compilation c, declarations):          // 纯函数：同样的输入 → 
 - 目录依赖 `Compilation`，项目里任何改动都会让它**重建**（这是事实，别再承诺"不重建"）；
   目标是重建后**下游生成输出不变**，即 `CSharpGeneratorDriver` 的 `GetRunResults()` 里
   每个文件的 `IncrementalStepRunReason` 为 `Cached`/`Unchanged`。14.11.2 的增量测试按这个口径断言。
-- 目录构建仍是**每批编译一次**，不是每个 `.ui` 一次（✅ G3 2026-11-08：管道根改为
-  `AdditionalTexts → UiFileInput` 与 `(AdditionalTexts .ui → 组件声明清单) + Compilation → UiCatalog`
+- 目录构建仍是**每批编译一次**，不是每个 `.bui` 一次（✅ G3 2026-11-08：管道根改为
+  `AdditionalTexts → UiFileInput` 与 `(AdditionalTexts .bui → 组件声明清单) + Compilation → UiCatalog`
   两条；逐文件 `Combine` 后 `Select` 出 `(Input, Catalog, UiFileFacts)` 再逐文件
   `RegisterSourceOutput`。清单是值相等 record（`UiComponentDeclarations`，逐项比 + 排序），
   所以改模板正文不会让目录值变化：`TemplateComponents` 步骤重跑但输出 `Unchanged`、
   `TemplateCatalog` 命中缓存，由 `TemplateComponents_ChangingBodyOnly_KeepsCatalogValueStable` 钉住。
   `UiFileFacts`（code-behind 表面 + 探针事实）是值相等 record，与目录同口径每轮重建、
-  下游按值命中缓存；单个 `.ui` 变化只重跑该文件的发射。
+  下游按值命中缓存；单个 `.bui` 变化只重跑该文件的发射。
   验收：`Incremental_UnrelatedSourceChange_KeepsPerFileOutputsCached`（无关源码改动，
   两个文件均 `Cached`/`Unchanged`）、`Incremental_SingleUiChange_RerunsOnlyThatFile`
-  （只改 A.ui，A `Modified`/`New`、B `Cached`/`Unchanged`）。
+  （只改 A.bui，A `Modified`/`New`、B `Cached`/`Unchanged`）。
   更正旧测试注释：Roslyn 4.9.2 的 `TrackedSteps[...].Outputs` 元素是
   `(object Value, IncrementalStepRunReason Reason)` 元组，reason **可以**公开断言，
   此前「公开 API 没有 step reason」的说法是误读。facts 与目录一样每轮重建，
@@ -923,7 +923,7 @@ Build(Compilation c, declarations):          // 纯函数：同样的输入 → 
 
 ### 14.10.4 版本与兼容
 
-- 0.x 期间生成器与运行时同版本发布；第三方控件包声明对 `EclipseUI.Runtime` 的同线依赖。
+- 0.x 期间生成器与运行时同版本发布；第三方控件包声明对 `BubuUI.Runtime` 的同线依赖。
 - 元数据形状变更（新增字段/枚举值）保持向后兼容：旧控件包 + 新生成器 = 按默认规则工作；
   新控件包 + 旧生成器不在支持范围（包依赖约束）。
 - `UiContentKind` 数值与 `UiContentModel` 数值绑定；测试断言（14.11）。
@@ -934,7 +934,7 @@ Build(Compilation c, declarations):          // 纯函数：同样的输入 → 
   在补全中隐藏，冲突标签标注歧义。
 - 悬停：只显示**符号可派生**的信息——类型全名、声明程序集、是否可写、内容模型、可用字面量形态、枚举成员候选。
   **`Invalidate` 级别与默认值不在编译期目录里（v2 修订，D13）**：它们来自 `Register(...)` 的构造实参与
-  构造函数赋值（`ListBoxItem` 在构造里设 `Padding = 8`，[Panels.cs:89](../src/EclipseUI.Runtime/Panels.cs#L89)），
+  构造函数赋值（`ListBoxItem` 在构造里设 `Padding = 8`，[Panels.cs:89](../src/BubuUI.Runtime/Panels.cs#L89)），
   R1 禁止编译期执行；如果将来要显示，只能由 LSP 另走运行期查询并在 UI 上标注"运行期值"，不得进 `UiCatalog`。
 - 签名帮助：`On{E}` 展开 `Action` / `Action<RoutedEventArgs>`；`@bind-P` 提示目标是否可绑（控件属性需 `{Name}Property`，
   组件参数需 public setter，组件 `@bind` 另需 `{P}Changed`），`:bind`/`:value` 标注弃用。
@@ -957,8 +957,8 @@ Build(Compilation c, declarations):          // 纯函数：同样的输入 → 
   改为断言生成代码只包含 spec/02 §2.3 白名单成员，且不含已停用/禁止 token（spec/02 §9 T15）。
 - 迁移完成后删除 `UiCatalog.CreateDefault()`。✅ **C2 已删除**（`Catalog.cs` 只剩 `UiLiterals`/`Suggest`）。
   **测试目录不得再手写一份**（那会制造 T1 禁止的第二事实源）：
-  `UiTestCatalogs.BuiltIn()` 的做法是用真实扫描器扫已编译的 `EclipseUI.Runtime.dll`（测试项目 net10.0，可引用 Roslyn），
-  结果与仓库内的 golden 快照文件比对（`TestData/BuiltInSurface.golden.txt`，`ECLIPSEUI_UPDATE_SURFACE_GOLDEN=1`
+  `UiTestCatalogs.BuiltIn()` 的做法是用真实扫描器扫已编译的 `BubuUI.Runtime.dll`（测试项目 net10.0，可引用 Roslyn），
+  结果与仓库内的 golden 快照文件比对（`TestData/BuiltInSurface.golden.txt`，`BUBUUI_UPDATE_SURFACE_GOLDEN=1`
   重新生成——表面变宽必须走显式评审，见 diff 即知）。
   ✅ **C2 修订**：golden 是**扫描结果的渲染快照**，不是第二事实源，也没有反序列化路径——
   全扫实测仅 45 ms（14.10.3），纯结构测试各自现扫 `Compilation`，比从快照反序列化更少一道漂移源。→ D72 已收敛。
@@ -979,7 +979,7 @@ Build(Compilation c, declarations):          // 纯函数：同样的输入 → 
 | 发现 | 内置控件快照；标签=类型短名；`[UiIgnore]`；internal/抽象/嵌套/泛型 | 入目录/不入目录符合规则 |
 | 属性 | 继承的 `Padding`；普通 CLR 属性；只读属性；类型不符的 `PProperty` | 正确暴露/忽略/元数据问题 |
 | 事件 | `ClickEvent`；字段缺失；字段类型错；**静态宿主类上的 `RoutedEvent` 字段**；`InputEvents` 迁入 `Element` 后 8 事件全员可见；`:bind` | `OnClick` 可用/EUI020/EUI026/EUI004 |
-| 事件签名（EUI024） | ✅ 2026-11-08/D82 契约：可静态判定（表达式自身语义干净 + 对目标委托转换确定失败）→ EUI024 报在 `.ui` 属性值并短路生成输出；符号未解析/重载失败/`dynamic`/表达式内部错误静默交回生成代码经 `#line` 由 C# 报错（不重复报告）；控件事件复用 `Emitter.EventHandlerType`、组件委托参数用 `UiParameterDef.ClrTypeDisplayName`；`EventHandlerSignatureTests` 16 例 | EUI024/零误报/C# 兜底分工 |
+| 事件签名（EUI024） | ✅ 2026-11-08/D82 契约：可静态判定（表达式自身语义干净 + 对目标委托转换确定失败）→ EUI024 报在 `.bui` 属性值并短路生成输出；符号未解析/重载失败/`dynamic`/表达式内部错误静默交回生成代码经 `#line` 由 C# 报错（不重复报告）；控件事件复用 `Emitter.EventHandlerType`、组件委托参数用 `UiParameterDef.ClrTypeDisplayName`；`EventHandlerSignatureTests` 16 例 | EUI024/零误报/C# 兜底分工 |
 | 内容 | Text/Label、TextRuns、Children、None；空白文本；控制流 | 生成/EUI006 |
 | 字面量 | double/int/bool/string/enum/TimeSpan；格式错；无转换器；**`CanonicalKey` 与 `global::` 显示名不串键** | 转换/EUI003/EUI023 |
 | 组件 | 参数、`[UiParameter(Required=true)]` 缺参、委托参数、`{P}Changed`、C# `required`/`init` 拒绝、默认内容/单根、✅ C6 插槽：`<Slot>` 填充解析/重复/多根拼接、`<ContentSlot>` 宿主解析/重复放置/块内非法、各自未知名带建议 | 生成/EUI027/EUI028/EUI040/EUI021/EUI022 |
@@ -987,11 +987,11 @@ Build(Compilation c, declarations):          // 纯函数：同样的输入 → 
 | 冲突 | 两个程序集同标签；暴露属性名占用 `On{事件}` / 保留名 | EUI016 + 候选名 / EUI026 |
 | 保留语法 | `Class=`、`Style=`、把 `Slot`/`ContentSlot` 注册为控件/组件标签名（✅ C6 保留冲突进 HiddenTags）；`:bind`/`:value`（附加属性 ✅ G4 解禁，未知点号名落 EUI002） | EUI031（不是"未知"）；EUI043 Warning |
 | 生成代码 | 每类构造的 golden 文本；`Track`/`BlockScope` 作用域登记 | 确定性一致 |
-| 集成 | `CSharpGeneratorDriver` 编译含 `.ui` 的测试项目；模拟第三方程序集（含跨程序集组件发现） | 无诊断 + 生成代码可编译 |
-| 增量 | 无关文件修改后跑 `CSharpGeneratorDriver`，读 `GetRunResults()` | ✅ G3 2026-11-08：目录重建但**每个生成文件 `IncrementalStepRunReason` 为 `Cached`/`Unchanged`**；单 `.ui` 变化只重跑该文件（v2 口径，见 14.10.3；`GeneratorContractTests` 3 例） |
+| 集成 | `CSharpGeneratorDriver` 编译含 `.bui` 的测试项目；模拟第三方程序集（含跨程序集组件发现） | 无诊断 + 生成代码可编译 |
+| 增量 | 无关文件修改后跑 `CSharpGeneratorDriver`，读 `GetRunResults()` | ✅ G3 2026-11-08：目录重建但**每个生成文件 `IncrementalStepRunReason` 为 `Cached`/`Unchanged`**；单 `.bui` 变化只重跑该文件（v2 口径，见 14.10.3；`GeneratorContractTests` 3 例） |
 
-测试项目：新增 `tests/EclipseUI.Compiler.Tests`（net10.0，引用 Microsoft.CodeAnalysis.CSharp、生成器、运行时）。
-现有 `EclipseUI.Headless.Tests` 继续负责前端/分析器的纯结构测试。
+测试项目：新增 `tests/BubuUI.Compiler.Tests`（net10.0，引用 Microsoft.CodeAnalysis.CSharp、生成器、运行时）。
+现有 `BubuUI.Headless.Tests` 继续负责前端/分析器的纯结构测试。
 
 ## 14.12 迁移计划
 
@@ -1000,7 +1000,7 @@ Build(Compilation c, declarations):          // 纯函数：同样的输入 → 
 | **C1** ✅ | 特性、目录模型、符号扫描器、一致性/快照测试；不改分析器与生成器行为 | 派生目录 **⊇** 手写目录，差集（属性 6→17）逐条评审并写进变更记录；`dotnet test` 全绿 | `Runtime/UiAttributes.cs`、`Compiler.Metadata/*`、`Catalog.cs` |
 | **C2** ✅（2026-11-02） | 生成器切到派生目录；内置控件加 `[UiContent]`；基础设施元素加 `[UiIgnore]`；**输入事件字段从 `InputEvents` 迁入 `Element`（19 处调用改名，删静态类）**；`ClipToBounds` 失效级别改 `Render`；删除手写目录 | Gallery/Counter 渲染与交互不变；`Padding` 等属性、8 个事件变为模板可用（更新文档）—— ✅ 全部落地（落地记录见 §14.12.2） | `Input.cs`、`Element.cs`、`InputRouter.cs`、`FocusManager.cs`、`Controls.cs`、`TemplateGenerator.cs`、`Panels.cs`、`TextBlock.cs`、`Blocks.cs` |
 | **C3** ✅（2026-11-03） | 转换器扩展（float/decimal/long/short/byte/char/枚举/TimeSpan；Color 预留 G4）；使用点诊断 **EUI023**（无转换器）/ **EUI025**（纯普值重复属性）/ **EUI031**（Class/Style/点号附加属性/`<Slot>`/`<ContentSlot>`）落地；属性暴露一致性测试 | 诊断表前半可用；无转换器类型正确报 EUI023 —— ✅ 全部落地（落地记录见 §14.12.3） | `Catalog.cs`、`Analyzer.cs`、`Metadata/UiCatalogFactory.cs` |
-| **C4** ✅（2026-11-05） | 组件标签：参数元数据（`[UiParameter(Required=true)]`、`{P}Changed`）、委托事件、默认内容、生命周期与作用域释放；生成器集成测试 | 第三方/自定义组件可写入 `.ui`；参数/内容生成与 spec/02 §4.12 一致 —— ✅ 全部落地（落地记录见 §14.12.4） | `TemplateGenerator.cs`、`Emitter.cs`、`Component.cs`、`Metadata/UiCatalogFactory.cs`、`Analyzer.cs` |
+| **C4** ✅（2026-11-05） | 组件标签：参数元数据（`[UiParameter(Required=true)]`、`{P}Changed`）、委托事件、默认内容、生命周期与作用域释放；生成器集成测试 | 第三方/自定义组件可写入 `.bui`；参数/内容生成与 spec/02 §4.12 一致 —— ✅ 全部落地（落地记录见 §14.12.4） | `TemplateGenerator.cs`、`Emitter.cs`、`Component.cs`、`Metadata/UiCatalogFactory.cs`、`Analyzer.cs` |
 | **C5** ✅ | `Ref`（G3）；保留语法诊断与剩余分析器收敛（**EUI019/EUI020/EUI021** 使用点与 **EUI029**；EUI025/EUI031 已由 C3 落地，EUI033 为 S2 既有） | G3 非反应式缺口收敛；诊断不再落"未知" | `Analyzer.cs`、`Emitter.cs` |
 | **C6** | 具名插槽 + `ContentSlot` 宿主（✅ 2026-11-05，§14.12.6）；附加属性实拆留 G4，泛型标签暂缓（K19） | 与 03 语法表对齐 | 编译器/运行时/样式 |
 | **G4-列表虚拟化** ✅（2026-11-09） | `VirtualizingStackPanel : Panel`：`ItemCount` + `ItemFactory`（index → 容器）只实例化视口窗口（含上下各 1 缓冲）；extent = 均匀行高 × 数（行高取 item 0 测量期望）；滚动时在 **ArrangeCore** 同步窗口（滚动只触发 Arrange 失效、Measure 被约束短路）；窗口外容器出树即释放，item 0 容器留作探针缓存；无 ScrollViewer 祖先时退化全量纵向堆叠（变高可用）。后续片：容器复用（pooling）、变高行、item 模板编译为 RenderUnit（design/05 意图全量） | 10 万行 RealizedCount=22；滚动/滚轮/Gap/退化/Refresh 7 例 | `VirtualizingStackPanel.cs`、`VirtualizingStackPanelTests.cs` |
@@ -1025,7 +1025,7 @@ C4 只负责组件标签与参数/内容元数据，C5 只保留 `Ref` 与语法
 
 ### 14.12.1 C1 落地记录（2026-11-02）
 
-扫描真实 `EclipseUI.Runtime.dll` 得到的**派生目录实际表面**（`CatalogScannerTests.BuiltInSurface_MatchesGoldenSnapshot` 逐标签钉死，
+扫描真实 `BubuUI.Runtime.dll` 得到的**派生目录实际表面**（`CatalogScannerTests.BuiltInSurface_MatchesGoldenSnapshot` 逐标签钉死，
 属性/事件名按 Ordinal 排序）：
 
 | 标签 | 内容模型:目标 | 属性项 | 事件项 |
@@ -1043,7 +1043,7 @@ C4 只负责组件标签与参数/内容元数据，C5 只保留 `Ref` 与语法
 
 隐藏标签 4 个（`Component`/`Element`/`Panel`/`StackPanelBase`，均 EUI017「类型是抽象的」）；
 `TextRun`/`ConditionalBlock`/`ForEachBlock<T>` 走 `[UiIgnore]` 完全退出表面，不进 `HiddenTags`。
-静态宿主类按**类型**报一条 EUI026（不是每个元素一条）：实测内置目录只有 1 条，指向 `global::EclipseUI.InputEvents`
+静态宿主类按**类型**报一条 EUI026（不是每个元素一条）：实测内置目录只有 1 条，指向 `global::BubuUI.InputEvents`
 （`StaticEventHost_IsReportedAsMetadataProblemNotATag`），其 7 个 `RoutedEvent` 字段全部不入事件表面 → D69。
 
 **差集（手写 6 → 派生 17）逐条评审**，全部是继承来的 `StyledProperty`，无一是新增控件 API，
@@ -1071,10 +1071,10 @@ C4 只负责组件标签与参数/内容元数据，C5 只保留 `Ref` 与语法
 **扫描器与 14.10.2 伪码的一处实现差异**：伪码写 `c.SourceModule.ReferencedAssemblySymbols`，
 Roslyn 4.9.2 的公开 API 没有这个成员（公开的是 `IModuleSymbol.ReferencedAssemblies : ImmutableArray<AssemblyIdentity>`，
 只有标识符没有符号）。实现改为遍历 `Compilation.References` → `GetAssemblyOrModuleSymbol` 取回 `IAssemblySymbol`，
-再按 `assembly.Identity.Name == "EclipseUI.Runtime"` 或任一 module 的 `ReferencedAssemblies` 命中该名字来过滤；
+再按 `assembly.Identity.Name == "BubuUI.Runtime"` 或任一 module 的 `ReferencedAssemblies` 命中该名字来过滤；
 语义等价（同样是「源程序集 + 直接引用运行时的程序集」）。
 
-**测试覆盖**（`tests/EclipseUI.Compiler.Tests/CatalogScannerTests.cs`，42 例，Theory 按数据行计数）：
+**测试覆盖**（`tests/BubuUI.Compiler.Tests/CatalogScannerTests.cs`，42 例，Theory 按数据行计数）：
 发现规则 12（含暴露判定 6 数据行）、属性暴露 5、内容模型 8（含内置标注 5 数据行）、
 组件参数/插槽与空编译 5、注册表/事件字段/失效级别交叉校验 3、派生 ⊇ 手写与差集枚举 3、
 标签解析与冲突 3（含真正跨两个已编译程序集的同标签 → `Ambiguous` + 候选名）、快照与确定性 2、
@@ -1086,12 +1086,12 @@ Roslyn 4.9.2 的公开 API 没有这个成员（公开的是 `IModuleSymbol.Refe
 
 | 工作项 | 结果 |
 |---|---|
-| 生成器切到派生目录 | `TemplateGenerator` 的管道值是 `UiCatalogFactory.Build(compilation)`；分析器 `EUI040` 目标判定改读派生 `CanWrite`（spec/03 D62 关闭）。样例项目（Counter/Prefs/TaskList 组件经 `.ui`）与合成第三方程序集均由扫描器/生成器间接覆盖 |
+| 生成器切到派生目录 | `TemplateGenerator` 的管道值是 `UiCatalogFactory.Build(compilation)`；分析器 `EUI040` 目标判定改读派生 `CanWrite`（spec/03 D62 关闭）。样例项目（Counter/Prefs/TaskList 组件经 `.bui`）与合成第三方程序集均由扫描器/生成器间接覆盖 |
 | 内置控件加 `[UiContent]` / 基础设施元素加 `[UiIgnore]` | C1 已随标注落地（§14.12.1） |
-| `InputEvents` 迁入 `Element` | 7 个 `RoutedEvent` 字段迁入 `Element`（[Element.cs:118-124](../src/EclipseUI.Runtime/Element.cs#L118)），静态类删除；19 处 `InputEvents.X` 调用点（Runtime + 测试）机械改名，路由行为测试全绿 |
+| `InputEvents` 迁入 `Element` | 7 个 `RoutedEvent` 字段迁入 `Element`（[Element.cs:118-124](../src/BubuUI.Runtime/Element.cs#L118)），静态类删除；19 处 `InputEvents.X` 调用点（Runtime + 测试）机械改名，路由行为测试全绿 |
 | `CheckBox.CheckedChangedEvent` | 已补（`Controls.cs`）；仅交互路径广播，绑定回推走 setter 不广播 |
 | 手写目录删除 | `Catalog.cs` 重写为只剩 `UiLiterals`/`Suggest`；`CreateDefault()` 全仓零引用 |
-| golden 快照落成文件 | `tests/EclipseUI.Compiler.Tests/TestData/BuiltInSurface.golden.txt`（`ECLIPSEUI_UPDATE_SURFACE_GOLDEN=1` 再生）+ 枚举快照测试钉 9 个事件名 / 37 事件项。D72 按修订语义收敛：快照是评审门，不是反序列化源 |
+| golden 快照落成文件 | `tests/BubuUI.Compiler.Tests/TestData/BuiltInSurface.golden.txt`（`BUBUUI_UPDATE_SURFACE_GOLDEN=1` 再生）+ 枚举快照测试钉 9 个事件名 / 37 事件项。D72 按修订语义收敛：快照是评审门，不是反序列化源 |
 | `Metadata` 源码链接进生成器 | 生成器程序集 `Compile Include` Compiler + Metadata（排除 Metadata 的 `Polyfills.cs`）；测试项目只引用生成器，避免重复类型身份。D65 关闭 |
 | `@foreach` 生成代码 `global::` 限定 | Emitter 不再生成未限定 `List<...>`，生成代码零 `ImplicitUsings` 依赖。D22 关闭 |
 
@@ -1099,9 +1099,9 @@ Roslyn 4.9.2 的公开 API 没有这个成员（公开的是 `IModuleSymbol.Refe
 9 个不同事件名（7 继承输入/焦点 + `OnClick` + `OnCheckedChanged`）。
 样例（Counter/TaskList/S1Probe）语法零改动即通过——表面变宽是纯增量。
 
-**一处附带代码结构变化**（记为 C2 表面变更的一部分）：内置控件命名空间从 `EclipseUI` 迁到
-`EclipseUI.Elements`（`Panels.cs`/`TextBlock.cs`/`Controls.cs`），生成代码引用全部走 `global::` 限定，
-`.ui` 标签名不受影响；code-behind 若直接声明控件存量引用需带 using（样例已调整）。
+**一处附带代码结构变化**（记为 C2 表面变更的一部分）：内置控件命名空间从 `BubuUI` 迁到
+`BubuUI.Elements`（`Panels.cs`/`TextBlock.cs`/`Controls.cs`），生成代码引用全部走 `global::` 限定，
+`.bui` 标签名不受影响；code-behind 若直接声明控件存量引用需带 using（样例已调整）。
 
 **运行期不变量**复测通过：`StyledPropertyRegistry`/事件字段交叉一致、失效级别白名单
 （唯一例外仍是 `Element.IsHitTestVisible`）均随新表面复跑。
@@ -1116,7 +1116,7 @@ Roslyn 4.9.2 的公开 API 没有这个成员（公开的是 `IModuleSymbol.Refe
 | EUI023 | 与 EUI003 拆分：无转换器 → EUI023（提示 `{expression}`）；有转换器但格式/范围/成员错 → EUI003（design/03 D14 关闭）；`UiCatalogFactory.CanonicalKey` 补 `System_Int16 → "short"` |
 | EUI025 | 全重复普值属性在属性级收敛；**同名且任一侧是绑定（`@bind-P`/`:bind`）仍走目标级 EUI033**，与 S2 测试语义保持一致（spec/01 §3.1/§3.3）。design/03 D6 关闭 |
 | EUI031 | `Class`/`Style` 在使用点报 EUI031；点号附加属性 ✅ G4 解禁——已注册的 `Owner.Prop` 正常解析，未注册的按未知附加属性报 **EUI002**（带建议）；`<Slot>`/`<ContentSlot>` **仅当目录无同名真实控件时**报 EUI031。design/03 D2/D3 关闭；D19（附加属性报 EUI002）✅ G4 落地 |
-| 测试 | `tests/EclipseUI.Headless.Tests/C3LiteralAndDiagnosticsTests.cs`：24 例（合成 Probe 标签测使用点诊断；`UiLiterals` 单元级直测，含负 TimeSpan、`\0`/`\uXXXX` 转义、char 不 Trim、范围拒绝） |
+| 测试 | `tests/BubuUI.Headless.Tests/C3LiteralAndDiagnosticsTests.cs`：24 例（合成 Probe 标签测使用点诊断；`UiLiterals` 单元级直测，含负 TimeSpan、`\0`/`\uXXXX` 转义、char 不 Trim、范围拒绝） |
 
 **范围说明**：EUI016/EUI019/EUI020/EUI021/EUI026 的扫描侧元数据诊断已在 C1/C2 落地（`Problems`/`HiddenTags`），
 其**使用点**口径已在 C5 落地（§14.12.5）；`Ref`（EUI029）也在 C5 落地（此前即 EUI002）。
@@ -1162,7 +1162,7 @@ Roslyn 4.9.2 的公开 API 没有这个成员（公开的是 `IModuleSymbol.Refe
 | 声明侧 | `UiSlotDef(名字, 属性名, 类型显示名, 基数)`；`Element?`/`Element` → Single、`IReadOnlyList<Element>` → Multiple（严格匹配 OriginalDefinition，`List<Element>` 不算）、其余类型 → **EUI021** 且槽不进表面；重复槽名 / `[UiParameter]+[UiSlot]`（参数胜出，槽退出）/ `[UiIgnore]+[UiSlot]`（忽略胜出）/ `[UiSlot]` 空名 → **EUI028** |
 | 基链胜出规则 | 成员基链自己走（Roslyn 不把特性带进 override），但同名成员**只在派生侧显式声明模板特性或 `[UiIgnore]` 时才算覆盖**：否则基类声明继续生效（override 不写特性 = 继承，写 `[UiIgnore]` = 显式退出）。契约原文未定此规则，登记 **D76** |
 | 消费侧分析 | 位置（只允许已解析组件标签的直属子级；控件容器、`@if`/`@foreach`、文档根、未知标签下 → EUI022）/ `Name` 形状（缺失、非字面量、重复、多余属性）/ 未知槽名含建议 / Single 的重复填充与多根填充 → **EUI022** 家族；解析成功按基数进 `ContentSingle`/`ContentMulti`，继承 build-once 内容规则（`@bind` → EUI040、`Key` → EUI010、裸文本 → EUI006）；单根多根报错仍保留首根解析（与 §4.12.3 同口径） |
-| 宿主侧分析 | 自身插槽两级解析（**D75**：生成器按 code-behind 符号沿基类链读 `[UiSlot]` 作权威，静态前端按目录显示名与 `.ui` 文件名短名匹配）；位置（元素容器子级才合法；`@if`/`@foreach`、模板根、`Text`/`TextRuns`/`Label` 模型、组件使用点的槽填充内 → EUI022）/ 同名重复放置 / 带内容 / 多余属性 / 非字面量 `Name` / 自身插槽不可解析 → **EUI022** |
+| 宿主侧分析 | 自身插槽两级解析（**D75**：生成器按 code-behind 符号沿基类链读 `[UiSlot]` 作权威，静态前端按目录显示名与 `.bui` 文件名短名匹配）；位置（元素容器子级才合法；`@if`/`@foreach`、模板根、`Text`/`TextRuns`/`Label` 模型、组件使用点的槽填充内 → EUI022）/ 同名重复放置 / 带内容 / 多余属性 / 非字面量 `Name` / 自身插槽不可解析 → **EUI022** |
 | 生成形态 | spec/02 §4.12.5 冻结：消费侧按填充源码顺序聚合到同一条 `List<Element>`，Single 赋 `slot.Count == 0 ? null : slot[0]`、Multiple 整表一次赋值，位置在参数与默认内容之后、`Mount()` 之前（子组件首次 `Build()` 在 `Mount()` 内读槽属性）；无填充不生成任何插槽代码。宿主侧**不引入运行时元素**，在组件自身 `Build()` 的该位置内联拼接（Single `if (P is { } s) parent.Children.Add(s);`，Multiple `foreach (var s in P)`） |
 | 测试 | `C6SlotTests`（Headless 26 例：消费侧解析/形状/未知含建议/重复填充/多根拼接/位置三态/`@bind`与`Key`继承；宿主侧单多根解析/未知/缺名/多余属性/带内容/块内/根位/重复放置/使用点/自身 def 不可解析/`Text` 模型）+ `CatalogScannerTests` 15 例（基数、EUI021 三形态、EUI028 重复/空名/参数胜出/忽略胜出、继承/override/`[UiIgnore]` 覆盖、保留标签名冲突 EUI031 + HiddenTags）+ `GeneratorContractTests` 13 例（单/多根发射形态、多填充拼接一次赋值、宿主 Single/Multiple 内联拼接、EUI022 阻断生成、**真实编译生成代码零 C# 错误**、赋值先于 `Mount()` 的顺序契约） |
 
@@ -1199,7 +1199,7 @@ EUI026 声明处诊断（D74 ②）已落地（2026-11-08，D81）；EUI024 处�
 3. `Ref` 的清理语义（卸载时置 null？）与作用域（code-behind 字段）。
 4. 事件 typed args（`Action<TArgs>`）的泛型事件模型。
 5. ~~`#line` 列映射（G3）~~ ✅ 已落地（2026-11-08，D79，口径见 spec/02 §2.4 规则 9/10）；
-   剩余 `.ui` 行列号在 LSP/调试器中的统一口径；XML 实体不解析已由 03 冻结。
+   剩余 `.bui` 行列号在 LSP/调试器中的统一口径；XML 实体不解析已由 03 冻结。
 6. 第三方字面量转换器的长期机制（当前明确不支持，避免编译期执行用户代码）。
 7. 8 个继承事件是否需要在个别标签上用 `[UiIgnore]` 裁剪（如 `TextBlock.OnKeyDown` 合法但罕用）。
 
@@ -1243,16 +1243,16 @@ EUI026 声明处诊断（D74 ②）已落地（2026-11-08，D81）；EUI024 处�
 | B3 | 14.10.5 悬停要显示 `Invalidate` 与默认值——编译期拿不到 | D13；悬停只列符号可派生项；失效契约改由 14.11.1 运行期快照 + 白名单守卫 |
 | B4 | 14.10.2/14.10.3 手工按 `AssemblyIdentity` 缓存 + 14.11.2「目录不重建」在增量生成器里不成立 | D14；删缓存，改「目录重建、下游 `Cached`/`Unchanged`」，附实测数字 |
 | C1 | C1 出口「派生目录与手写目录等价」不可能成立（6 → 17 属性项） | 改为 ⊇ + 差集评审 |
-| C2 | `UiTestCatalogs.BuiltIn()` 手写会造第二事实源 | 改为扫描真实 `EclipseUI.Runtime.dll` + golden 快照 |
+| C2 | `UiTestCatalogs.BuiltIn()` 手写会造第二事实源 | 改为扫描真实 `BubuUI.Runtime.dll` + golden 快照 |
 | C3 | `ClrTypeName` 裸字符串同时当生成类型名与转换器键 | D15；`ClrTypeDisplayName` + `CanonicalKey` 分离 |
 | C4 | EUI019 与 opt-out 发现规则冲突（未注册属性只会撞 EUI002） | 14.9.1 限定 EUI019 口径；EUI002 增加"未注册 StyledProperty"提示 |
 | C5 | `Invalidate` 契约无任何可执行守卫（框架自己 2 个属性是 `None`） | 14.11.1 失效级别守卫 + 显式白名单 |
 | C6 | 暴露属性可占用 `On{事件}` 名被静默吃掉 | 14.4.2 禁止 + EUI026 |
 | C7 | 未实现的保留语法（`Class`/`Style`/`:value`/`<Slot>`）会报"未知" | 新增 EUI031 |
 | C8 | 组件参数一次性赋值引用信号无提示 | 新增 Warning EUI032（C4 落地） |
-| C9 | 14.4.6 写「程序集 `EclipseUI`」——实际程序集名是 `EclipseUI.Runtime` | 修正为按全 metadata 名（`EclipseUI.UiContentAttribute`…）识别，禁止按程序集名匹配 |
+| C9 | 14.4.6 写「程序集 `BubuUI`」——实际程序集名是 `BubuUI.Runtime` | 修正为按全 metadata 名（`BubuUI.UiContentAttribute`…）识别，禁止按程序集名匹配 |
 | C10 | 14.5.3 未区分控件/组件的属性解析分支 | 按 `Origin` 分支写明 |
-| K32 | `[UiTag]` 与模板别名（K31）职责重叠：改名只能改自家库，改不了第三方库，且给目录引入第二事实源（类型名 ≠ 标签名） | **退役 `[UiTag]`**（2026-11-09）：标签恒为类型短名；重名一律在消费端用 `@using XxxAlt = Ns.Xxx` 消歧；EUI016 消息直接给出该建议；`UiCatalogFactory.TagOf/IsValidTag` 删除，`UiTagAttribute` 从 `EclipseUI.Runtime` 移除 |
+| K32 | `[UiTag]` 与模板别名（K31）职责重叠：改名只能改自家库，改不了第三方库，且给目录引入第二事实源（类型名 ≠ 标签名） | **退役 `[UiTag]`**（2026-11-09）：标签恒为类型短名；重名一律在消费端用 `@using XxxAlt = Ns.Xxx` 消歧；EUI016 消息直接给出该建议；`UiCatalogFactory.TagOf/IsValidTag` 删除，`UiTagAttribute` 从 `BubuUI.Runtime` 移除 |
 | — | 已验证为**可行**、无需改动：跨程序集组件发现（元数据 `BaseType` 可解析）、`IsRequired`/`IsInitOnly` 判定、扫描性能、HiddenTags 建议机制、诊断码续号（EUI016+ 空闲） | 保持 |
 
 ## 14.16 与 03 语言规范对齐（v2.1）

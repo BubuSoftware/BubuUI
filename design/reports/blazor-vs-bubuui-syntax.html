@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Blazor .razor 与 BubuUI .bui 语法对比</title>
+<style>
+:root { --ink:#20242b; --muted:#5c6572; --line:#dfe3e8; --soft:#f5f7f9; --head:#eef2f6; --accent:#185fa5; }
+* { box-sizing:border-box; }
+body { margin:0; padding:32px 28px 56px; color:var(--ink); background:#fff; font-family:"Segoe UI","Microsoft YaHei",system-ui,-apple-system,sans-serif; font-size:14px; line-height:1.65; }
+.wrap { max-width:1080px; margin:0 auto; }
+h1 { font-size:22px; font-weight:600; margin:0 0 6px; }
+h2 { font-size:16px; font-weight:600; margin:32px 0 10px; }
+p.sub { color:var(--muted); margin:0 0 4px; font-size:13px; }
+p.note { color:var(--muted); font-size:13px; margin:10px 0 0; }
+table { width:100%; border-collapse:collapse; table-layout:fixed; margin-top:14px; }
+col.c1 { width:15%; } col.c2 { width:34%; } col.c3 { width:38%; } col.c4 { width:13%; }
+th,td { border:0.5px solid var(--line); padding:9px 11px; vertical-align:top; text-align:left; word-break:break-word; }
+th { background:var(--head); font-weight:600; font-size:13px; }
+td.dim { font-weight:600; background:var(--soft); }
+tr.group td { background:var(--head); font-weight:600; font-size:13px; color:var(--accent); letter-spacing:.02em; }
+code { font-family:Consolas,"Cascadia Mono",monospace; font-size:12.5px; background:var(--soft); padding:1px 4px; border-radius:3px; }
+.tag { display:inline-block; font-size:11.5px; line-height:1.5; padding:1px 7px; border-radius:10px; border:0.5px solid var(--line); white-space:nowrap; }
+.ok { background:#e8f4ec; color:#1f6b3b; border-color:#bcdcc7; }
+.part { background:#fdf3dd; color:#8a5b0d; border-color:#ecd7a4; }
+.hold { background:#eef0f3; color:#4b5561; border-color:#d5dae0; }
+.gap { background:#fbe9e8; color:#9a3533; border-color:#eed0ce; }
+.none { background:#f2f4f7; color:#5c6572; }
+.legend { display:flex; flex-wrap:wrap; gap:10px 18px; margin:14px 0 0; font-size:12.5px; color:var(--muted); }
+.cols { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:12px; }
+.card { border:0.5px solid var(--line); border-radius:8px; padding:12px 14px; background:var(--soft); }
+.card h3 { font-size:13px; font-weight:600; margin:0 0 8px; }
+pre { margin:0; white-space:pre-wrap; font-family:Consolas,"Cascadia Mono",monospace; font-size:12.5px; line-height:1.6; }
+ol { margin:10px 0 0; padding-left:20px; } li { margin-bottom:7px; }
+.lead { border-left:3px solid var(--accent); padding:8px 14px; margin-top:26px; background:var(--soft); }
+@media print { body { padding:0; font-size:11.5px; } th,td { padding:5px 7px; } tr.group { page-break-after:avoid; } .card { break-inside:avoid; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Blazor <code>.razor</code> 与 BubuUI <code>.bui</code> 语法对比</h1>
+<p class="sub">Blazor 侧依据 Microsoft Learn · ASP.NET Core 10.0 组件 / 数据绑定 / Razor 语法文档；BubuUI 侧依据 <code>spec/01</code> v2、<code>spec/02</code>、<code>spec/03</code> 与 <code>samples/CounterApp</code>。</p>
+<p class="sub">整理日期：2026-11-08　·　状态列反映当前 v2 实现；<b>K23（已定 · 待 S6 实施）</b> 的目标语法见 spec/01 §1.5 与 design/16，偏差 D85–D88。</p>
+
+<div class="legend">
+<span><span class="tag ok">已实现</span> 语法可用</span>
+<span><span class="tag part">受限 / 偏差</span> 可用但有已知限制或口径不一致</span>
+<span><span class="tag hold">保留位</span> 规范已占位，报保留诊断</span>
+<span><span class="tag gap">暂缓</span> 不排期（K19）</span>
+<span><span class="tag none">无对应物</span> 语义不适用</span>
+</div>
+
+<table>
+<colgroup><col class="c1"><col class="c2"><col class="c3"><col class="c4"></colgroup>
+<thead><tr><th>维度</th><th>Blazor <code>.razor</code></th><th>BubuUI <code>.bui</code></th><th>状态</th></tr></thead>
+<tbody>
+<tr class="group"><td colspan="4">A · 文件与代码组织</td></tr>
+<tr><td class="dim">文件与类</td><td>单文件组件，<code>@code { }</code> 可内联 C#；也支持 code-behind 分部类</td><td><code>.bui</code> + 同名 <code>.cs</code> partial；模板不声明局部、方法、类型参数，<code>@code</code> 等指令 → <code>EUI009</code></td><td><span class="tag ok">已实现</span></td></tr>
+<tr><td class="dim">指令集</td><td><code>@page</code> <code>@using</code> <code>@inject</code> <code>@inherits</code> <code>@implements</code> <code>@attribute</code> <code>@namespace</code> <code>@layout</code> <code>@rendermode</code> <code>@preservewhitespace</code> <code>@typeparam</code></td><td>仅 <code>@if</code> / <code>@foreach</code>；<code>@bind-</code> 是属性形态不是指令；<code>@switch</code> 保留 <code>EUI008</code>；<b><code>@using</code> 由 K22/K23 定为合法指令（待 S6 实施 / D85，当前仍 <code>EUI009</code>）</b>；<code>else</code>/<code>@switch</code>/<code>@code</code> 同由 K23 定为目标语法（D86/D87）；<code>@page</code>/<code>@rendermode</code> 等按 K23 ② 永久不提供；其它 <code>@name</code> → <code>EUI009</code></td><td><span class="tag ok">已实现</span></td></tr>
+<tr><td class="dim">泛型组件</td><td><code>@typeparam T where T : ...</code>，可按类型实参实例化组件</td><td>泛型标签 <code>&lt;DataGrid&lt;Order&gt;&gt;</code> 暂缓、不排期（K19）；当前写法落 <code>EUI100</code>；目录侧「泛型类型标签不可用」仍报 <code>EUI030</code></td><td><span class="tag gap">暂缓</span></td></tr>
+
+<tr class="group"><td colspan="4">B · 表达式、文本与词法</td></tr>
+<tr><td class="dim">动态值</td><td><code>@expr</code> / <code>@(expr)</code>，<code>@</code> 是统一前缀</td><td>单花括号 <code>{expr}</code>，文本位置与属性位置共用，表达式原样输出；生成 <code>$"..."</code> 时用 <code>{(expr)}</code> 避免 <code>:</code> 被当格式符（K12）</td><td><span class="tag ok">已实现</span></td></tr>
+<tr><td class="dim">引号内语义</td><td>组件参数可写 C#：<code>Title="count"</code> 或 <code>Title="@title"</code></td><td><strong>永远是字面量</strong>：<code>Label="{x}"</code> 就是字符串 <code>{x}</code>（§2.5）</td><td><span class="tag ok">已实现</span></td></tr>
+<tr><td class="dim">显式表达式 / 转义</td><td><code>@(expr)</code>、<code>@@</code> 转义、<code>@{ }</code> 代码块</td><td>无对应物；字面 <code>{</code> <code>}</code> <code>@</code> <code>&lt;</code> 分别写 <code>{"{"}</code> <code>{"}"}</code> <code>{"@"}</code> <code>{"&lt;"}</code></td><td><span class="tag none">无对应物</span></td></tr>
+<tr><td class="dim">插值格式符 / C# 词法</td><td>标准 C# 表达式，支持格式说明符与完整字符串字面量</td><td><code>{price:F2}</code> 被当成表达式 <code>price:F2</code>，需写 <code>{price.ToString("F2")}</code>；表达式捕获仍是手写扫描器，不支持 verbatim / raw string / 注释内不平衡大括号（D11，§2.6 口径待关账）</td><td><span class="tag part">受限 / 偏差</span></td></tr>
+<tr><td class="dim">注释</td><td><code>@* ... *@</code></td><td><code>&lt;!-- ... --&gt;</code>；未闭合时规范要求 <code>EUI100</code>，当前实现静默消费到文件尾（D12）</td><td><span class="tag part">受限 / 偏差</span></td></tr>
+<tr><td class="dim">无值属性</td><td>HTML 允许最小化属性，如 <code>&lt;button disabled&gt;</code></td><td>属性必须有 <code>=</code> 和值，否则 <code>EUI100</code>；无 XML 实体、无 CDATA</td><td><span class="tag ok">已实现</span></td></tr>
+
+<tr class="group"><td colspan="4">C · 控制流与结构</td></tr>
+<tr><td class="dim">控制流</td><td><code>@if</code> <code>@foreach</code> <code>@for</code> <code>@while</code> <code>@switch</code></td><td>仅 <code>@if</code> / <code>@foreach</code>（含 Keyed 复用、嵌套块）；无 <code>else</code> / <code>else if</code> / <code>@for</code> / <code>@while</code>；<code>@switch</code> 保留 <code>EUI008</code></td><td><span class="tag ok">已实现</span></td></tr>
+<tr><td class="dim">键 / 身份</td><td><code>@key</code> 供渲染树 diff 保留元素身份</td><td><code>Key={expr}</code> 用于 <code>@foreach</code> 的 Keyed 复用；元素树固定后不做 diff，语义不同</td><td><span class="tag ok">已实现</span></td></tr>
+<tr><td class="dim">组件内容 / 插槽</td><td><code>RenderFragment ChildContent</code>、具名 <code>RenderFragment</code>，父组件重渲染时片段跟着重算</td><td><code>[UiParameter]</code> / <code>[UiContent]</code> / <code>[UiSlot]</code> 符号派生目录 + <code>&lt;Slot&gt;</code> / <code>&lt;ContentSlot&gt;</code>；默认内容与具名插槽都是 <strong>build-once 元素列表</strong>（K10），错误走 <code>EUI022</code></td><td><span class="tag ok">已实现</span></td></tr>
+
+<tr class="group"><td colspan="4">D · 属性、事件与绑定</td></tr>
+<tr><td class="dim">组件参数</td><td><code>[Parameter]</code> / <code>[EditorRequired]</code>，值可为 C# 表达式</td><td><code>[UiParameter]</code> 目录派生；<code>P={expr}</code> 每次组件渲染重算；未知属性 <code>EUI002</code> + 最近名建议；属性名大小写敏感</td><td><span class="tag ok">已实现</span></td></tr>
+<tr><td class="dim">事件</td><td><code>@onclick="Handler"</code>、<code>:preventDefault</code> / <code>:stopPropagation</code>、<code>EventCallback&lt;T&gt;</code></td><td><code>OnClick={Handler}</code>，build-once 且包装内自动 <code>Invalidate()</code>；组件用委托参数，不做 <code>On*</code> 推断；签名不匹配报 <code>EUI024</code></td><td><span class="tag ok">已实现</span></td></tr>
+<tr><td class="dim">双向绑定</td><td><code>@bind="x"</code>（默认 <code>onchange</code>）、<code>:event</code> <code>:format</code> <code>:culture</code> <code>:get</code> / <code>:set</code>；组件侧 <code>@bind-Value</code> + <code>ValueChanged</code>（<code>EventCallback</code>）</td><td><code>@bind-P={可写左值}</code>；控件走 <code>UiBinding.TwoWay</code>，组件走 <code>{P}Changed</code>（<code>Action&lt;T&gt;</code>）+ 相等保护推送并 <code>Invalidate()</code>；无 format / culture / get-set；旧 <code>P:bind</code> / <code>P:value</code> 报 <code>EUI043</code> Warning（S5 未决策）</td><td><span class="tag part">受限 / 偏差</span></td></tr>
+<tr><td class="dim">特殊属性 / 展开</td><td><code>@ref</code>、<code>@attributes</code> 任意属性展开</td><td><code>Ref={_box}</code>、<code>Key={t.Id}</code>；<strong>无属性展开</strong>，未知属性 <code>EUI002</code></td><td><span class="tag part">受限 / 偏差</span></td></tr>
+<tr><td class="dim">样式 / 附加属性</td><td><code>class</code> / <code>style</code> + CSS isolation，任意 HTML 属性</td><td><code>Class</code> / <code>Style</code> / 内联样式 / <code>Grid.Row</code> 均为 G4 保留位，报 <code>EUI031</code>；<code>Color</code>/<code>Thickness</code>/<code>CornerRadius</code> 转换器未实现</td><td><span class="tag hold">保留位</span></td></tr>
+
+<tr class="group"><td colspan="4">E · 工具链与运行平台</td></tr>
+<tr><td class="dim">编译期反馈</td><td>Razor 编译 + C# 类型检查，错误落在生成代码</td><td>目录驱动 <code>EUI001</code>–<code>EUI045</code>；span 型 <code>#line</code> 把 C# 错误指回 <code>.bui</code> 行列；逐文件增量生成</td><td><span class="tag ok">已实现</span></td></tr>
+<tr><td class="dim">更新模型</td><td>每次重渲染生成整棵渲染树，再做 diff 应用到 DOM</td><td><strong>Build 时固定元素树</strong>，之后只重算动态表达式、由块显式刷新；无渲染树 diff</td><td><span class="tag none">无对应物</span></td></tr>
+<tr><td class="dim">平台 / 输出</td><td>Web：HTML / CSS / DOM，SSR · Server · WASM</td><td>桌面自绘：元素树 → display list → Vello / wgpu；无 DOM、无 CSS</td><td><span class="tag none">无对应物</span></td></tr>
+</tbody>
+</table>
+
+<h2>Razor 指令速查（11 项）</h2>
+<p class="note">按 Blazor 组件（<code>.razor</code>）语境整理。在 MVC 视图 / Razor Pages（<code>.cshtml</code>）中，<code>@page</code> 表示该文件是 Razor Page，<code>@inherits</code> 常写 <code>CustomRazorPage&lt;TModel&gt;</code>，imports 文件是 <code>_ViewImports.cshtml</code>。</p>
+<table style="table-layout:auto">
+<thead><tr><th style="width:13%">指令</th><th style="width:35%">作用</th><th style="width:24%">典型写法</th><th style="width:9%">可放 <code>_Imports.razor</code></th><th style="width:19%">BubuUI 对应</th></tr></thead>
+<tbody>
+<tr><td class="dim"><code>@page</code></td><td>把组件声明为可直接用 URL 访问的可路由组件；路由参数可填同名 <code>[Parameter]</code> 属性</td><td><code>@page "/counter"</code></td><td>否，逐组件</td><td>无路由概念；模板内写触发 <code>EUI009</code>，窗口/页面切换由应用宿主承担</td></tr>
+<tr><td class="dim"><code>@using</code></td><td>导入 C# 命名空间；对 <code>.razor</code> 还决定哪些组件在作用域内。imports 文件里的 <code>@using</code> 只作用于 .razor，不作用于 .cs</td><td><code>@using BlazorSample.Components</code></td><td>是</td><td><b>K22/K23 已定（待 S6 实施 / D85）</b>：模板内写 <code>@using {Ns}</code>，内置控件也须 <code>@using BubuUI.Elements</code>；生成代码保留 <code>using {Ns};</code>，并按导入命名空间决定标签可见性</td></tr>
+<tr><td class="dim"><code>@inject</code></td><td>从 DI 容器取服务，生成可直接使用的服务属性</td><td><code>@inject IJSRuntime JS</code></td><td>是</td><td>无 DI 指令；依赖由构造函数 / 参数传入</td></tr>
+<tr><td class="dim"><code>@inherits</code></td><td>指定生成类的基类（与 code-behind partial 不同，用于一组组件共享基类逻辑）</td><td><code>@inherits MyComponentBase</code></td><td>是</td><td>基类继承写在 <code>.cs</code> partial 类声明上</td></tr>
+<tr><td class="dim"><code>@implements</code></td><td>让生成的组件类实现指定接口，典型用于资源释放</td><td><code>@implements IAsyncDisposable</code></td><td>是</td><td>接口列表写在 <code>.cs</code> partial 类声明上</td></tr>
+<tr><td class="dim"><code>@attribute</code></td><td>给生成的组件类加 .NET 特性；也可替代 <code>@page</code> 提供常量路由模板</td><td><code>@attribute [Authorize]</code><br><code>@attribute [Route(Constants.CounterRoute)]</code></td><td>是</td><td>特性写在 <code>.cs</code> partial 类上</td></tr>
+<tr><td class="dim"><code>@namespace</code></td><td>设置生成类的命名空间；放在 imports 文件时按目录树设置根命名空间（就近优先）</td><td><code>@namespace MyApp.Components</code></td><td>是</td><td>由项目根命名空间与 <code>.cs</code> 类声明决定</td></tr>
+<tr><td class="dim"><code>@layout</code></td><td>为带 <code>@page</code> 的可路由组件指定布局组件，减少重复外壳</td><td><code>@layout MainLayout</code></td><td>是，对同目录及子目录生效</td><td>无布局概念；外壳就是元素树本身</td></tr>
+<tr><td class="dim"><code>@rendermode</code></td><td>指定 Blazor Web App 的渲染位置与交互性（.NET 8+）：<code>InteractiveServer</code> / <code>InteractiveWebAssembly</code> / <code>InteractiveAuto</code>；不指定即静态 SSR</td><td><code>@rendermode InteractiveServer</code><br><code>&lt;Dialog @rendermode="InteractiveServer" /&gt;</code></td><td>否，逐组件</td><td>无 SSR / CSR 之分，只有桌面自绘一条路径</td></tr>
+<tr><td class="dim"><code>@preservewhitespace</code></td><td>控制标记中的空白是否保留到渲染输出；默认 <code>false</code>，会移除元素 / <code>RenderFragment</code> 首尾及代码块前后的空白</td><td><code>@preservewhitespace true</code></td><td>是</td><td>空白规范化是 <code>spec/01</code> 固定行为，无开关</td></tr>
+<tr><td class="dim"><code>@typeparam</code></td><td>为生成的组件类声明泛型类型参数，支持 <code>where</code> 约束</td><td><code>@typeparam TItem where TItem : IEntity</code></td><td>否，逐组件</td><td>泛型标签暂缓（K19），当前写法落 <code>EUI100</code></td></tr>
+</tbody>
+</table>
+<p class="note">拼写提醒：官方文档写作 <code>@preservewhitespace</code>（<code>whitespace</code> 全小写），不是 <code>@preserveWhitespace</code>。<code>_Imports.razor</code> 口径按 Blazor 组件文档：<code>@page</code> / <code>@rendermode</code> / <code>@typeparam</code> 必须逐组件声明。</p>
+
+<h2>同一段界面的写法</h2>
+<div class="cols">
+<div class="card"><h3>Blazor · Counter.razor</h3><pre>&lt;p&gt;Count: @count&lt;/p&gt;
+&lt;button @onclick="Increment"&gt;+1&lt;/button&gt;
+&lt;input @bind="name" /&gt;
+
+@code {
+    int count = 0;
+    string name = "";
+    void Increment() =&gt; count++;
+}</pre></div>
+<div class="card"><h3>BubuUI · Counter.bui + Counter.cs</h3><pre>&lt;TextBlock Text={$"Count: {Vm.Count}"} /&gt;
+&lt;Button OnClick={Increment} Text="+1" /&gt;
+&lt;TextBox @bind-Text={Vm.Name} /&gt;
+
+// Counter.cs：partial 类中声明 Vm、Increment</pre></div>
+</div>
+
+<h2>三个「看着一样、其实不同」的点</h2>
+<ol>
+<li><strong><code>@</code> 的权限。</strong>Blazor 里它同时是表达式前缀、指令前缀、指令属性前缀；BubuUI 里它只管 <code>@bind-</code> 与 <code>@if</code>/<code>@foreach</code>，动态值一律 <code>{...}</code>。因此 Razor 的 <code>@()</code>、<code>@@</code>、<code>@{}</code> 在这里都没有对应物。</li>
+<li><strong>内容的生命周期。</strong>Blazor 的 <code>RenderFragment</code> 随组件重渲染重算；BubuUI 的默认内容与具名插槽是 build-once 元素列表，不随父组件 <code>Render()</code> 重算（K10）。</li>
+<li><strong>近乎同名的巧合。</strong><code>@bind-Value</code> + <code>ValueChanged</code>（<code>EventCallback</code>，回调整体参与重渲染）与 <code>@bind-P</code> + <code>{P}Changed</code>（<code>Action&lt;T&gt;</code>，build-once 赋值 + 差异才推送并 <code>Invalidate()</code>）形态相似，运行语义不同。</li>
+</ol>
+
+<div class="lead"><strong>一句话概括：</strong>BubuUI 表面像「XAML 的属性语法 + Razor 的 C# 表达式」，但 <code>@</code> 的语义窄得多，运行时是固定元素树 + 表达式重算，而不是渲染树 diff；Blazor 的路由、DI、泛型组件、CSS isolation、属性展开等 Web 侧能力，在 <code>.bui</code> 里要么没有对应物，要么仍是保留语法位。</div>
+
+<p class="note">本表为参考资料，不构成关键决策（K1–K23 见 <code>spec/02</code> §14）；实现状态与开放偏差以 <code>design/03</code> §3.5 / <code>spec/02</code> §12 台账为准。</p>
+</div>
+</body>
+</html>

@@ -1,0 +1,139 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Bss",
+  "scopeName": "source.bss",
+  "fileTypes": ["bss"],
+  "comment": "Bss：SCSS 子集，编译成 StyleRegistry 调用（design/17 §4.8）。同一份 grammar 也嵌在 .bui 的 @style 块里。",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#string" },
+    { "include": "#theme-declaration" },
+    { "include": "#template-boundary" },
+    { "include": "#namespace-directive" },
+    { "include": "#directive" },
+    { "include": "#variable" },
+    { "include": "#function" },
+    { "include": "#color" },
+    { "include": "#property" },
+    { "include": "#class-selector" },
+    { "include": "#pseudo-class" },
+    { "include": "#type-selector" },
+    { "include": "#number" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+    "string": {
+      "begin": "\"", "end": "\"", "name": "string.quoted.double.bss",
+      "patterns": [{ "match": "\\\\.", "name": "constant.character.escape.bss" }]
+    },
+    "theme-declaration": {
+      "match": "(@)(theme)\\b\\s+([A-Za-z_][A-Za-z0-9_]*)\\s+(for)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+      "captures": {
+        "1": { "name": "punctuation.definition.directive.bss" },
+        "2": { "name": "keyword.control.directive.bss" },
+        "3": { "name": "entity.name.type.bss" },
+        "4": { "name": "keyword.control.bss" },
+        "5": { "name": "entity.name.tag.bss" }
+      }
+    },
+    "namespace-directive": {
+      "match": "(@)(namespace)\\b\\s+([A-Za-z_][A-Za-z0-9_.]*)",
+      "captures": {
+        "1": { "name": "punctuation.definition.directive.bss" },
+        "2": { "name": "keyword.control.directive.bss" },
+        "3": { "name": "entity.name.namespace.bss" }
+      }
+    },
+    "template-boundary": { "match": "/template/", "name": "keyword.operator.template.bss" },
+    "comment": {
+      "patterns": [
+        { "match": "//.*$", "name": "comment.line.double-slash.bss" },
+        { "begin": "/\\*", "end": "\\*/", "name": "comment.block.bss" }
+      ]
+    },
+
+    "directive": {
+      "match": "(@)(namespace|states|style|using|theme)\\b",
+      "captures": {
+        "1": { "name": "punctuation.definition.directive.bss" },
+        "2": { "name": "keyword.control.directive.bss" }
+      }
+    },
+
+    "variable": {
+      "comment": "定义形态（$name:）必须排在引用形态之前，否则冒号会落到 property 规则上。",
+      "patterns": [
+        {
+          "match": "(\\$)([A-Za-z_][A-Za-z0-9_-]*)(\\s*)(:)",
+          "name": "meta.definition.variable.bss",
+          "captures": {
+            "1": { "name": "punctuation.definition.variable.bss" },
+            "2": { "name": "variable.other.bss" },
+            "4": { "name": "punctuation.separator.key-value.bss" }
+          }
+        },
+        {
+          "match": "(\\$)([A-Za-z_][A-Za-z0-9_-]*)",
+          "captures": {
+            "1": { "name": "punctuation.definition.variable.bss" },
+            "2": { "name": "variable.other.bss" }
+          }
+        }
+      ]
+    },
+
+    "function": {
+      "match": "\\b(theme|template|resource|rgb|rgba)\\b(?=\\s*\\()",
+      "name": "support.function.bss"
+    },
+
+    "color": {
+      "match": "#[0-9a-fA-F]{3,8}\\b",
+      "name": "constant.other.color.bss"
+    },
+
+    "property": {
+      "match": "([A-Za-z_][A-Za-z0-9_]*)(\\s*)(:)(?!:)",
+      "captures": {
+        "1": { "name": "support.type.property-name.bss" },
+        "3": { "name": "punctuation.separator.key-value.bss" }
+      }
+    },
+
+    "class-selector": {
+      "match": "(\\.)([A-Za-z_][A-Za-z0-9_-]*)",
+      "captures": {
+        "1": { "name": "punctuation.definition.selector.bss" },
+        "2": { "name": "entity.other.attribute-name.class.bss" }
+      }
+    },
+
+    "pseudo-class": {
+      "match": "(::?)([A-Za-z_][A-Za-z0-9_-]*)",
+      "captures": {
+        "1": { "name": "punctuation.definition.pseudo.bss" },
+        "2": { "name": "entity.other.attribute-name.pseudo-class.bss" }
+      }
+    },
+
+    "type-selector": {
+      "match": "\\b[A-Z][A-Za-z0-9]*\\b",
+      "name": "entity.name.tag.bss"
+    },
+
+    "number": {
+      "match": "\\b\\d+(?:\\.\\d+)?\\b",
+      "name": "constant.numeric.bss"
+    },
+
+    "punctuation": {
+      "patterns": [
+        { "match": "[{}]", "name": "punctuation.section.block.bss" },
+        { "match": "[()]", "name": "punctuation.section.parens.bss" },
+        { "match": "[;]", "name": "punctuation.terminator.bss" },
+        { "match": "[>,]", "name": "punctuation.separator.selector.bss" },
+        { "match": "&", "name": "keyword.operator.nesting.bss" }
+      ]
+    }
+  }
+}

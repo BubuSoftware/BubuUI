@@ -36,15 +36,15 @@
 ## 验证命令
 
 ```powershell
-dotnet build EclipseUI.slnx --no-restore
-dotnet test tests/EclipseUI.Ide.Tests/EclipseUI.Ide.Tests.csproj --no-build --logger "trx;LogFileName=ide-completion-full.trx" --results-directory TestResults/ide-completion/final
+dotnet build BubuUI.slnx --no-restore
+dotnet test tests/BubuUI.Ide.Tests/BubuUI.Ide.Tests.csproj --no-build --logger "trx;LogFileName=ide-completion-full.trx" --results-directory TestResults/ide-completion/final
 powershell -NoProfile -ExecutionPolicy Bypass -File ide/build.ps1 -SkipNpm
 git diff --check
 ```
 
 最终 TRX：`TestResults/ide-completion/final/ide-completion-full.trx`。
 
-发布核对：Release 输出和 `ide/vscode/server/EclipseUI.LanguageServer.dll` SHA256 一致；
+发布核对：Release 输出和 `ide/vscode/server/BubuUI.LanguageServer.dll` SHA256 一致；
 随包 Runtime 与最新 Debug Runtime DLL 的 SHA256 一致，包含统一生命周期钩子。
 
 ## 使用与边界

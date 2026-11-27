@@ -1,8 +1,8 @@
-using EclipseUI;
-using EclipseUI.Elements;
-using EclipseUI.Rendering;
-using EclipseUI.Rendering.Vello;
-using EclipseUI.Themes.Fluent;
+using BubuUI;
+using BubuUI.Elements;
+using BubuUI.Rendering;
+using BubuUI.Rendering.Vello;
+using BubuUI.Themes.Fluent;
 
 /// <summary>Actual input-driven control states, with no Gallery class styles or hand-painted controls.</summary>
 internal static class StateSheet
@@ -17,7 +17,7 @@ internal static class StateSheet
         list.Add(new PushTransform(Transform.Scale(scale)));
         list.Add(new FillRect(new(Point.Zero, size), theme.Surface));
         text.Paint(list, "Fluent / Windows 11 control states", 24, new(24, 20), theme.Foreground);
-        text.Paint(list, $"{(theme.IsLight ? "Light" : "Dark")}  |  {scale * 100:0}% DPI  |  EclipseUI rendering - not a native WinUI reference", 13, new(24, 56), theme.MutedForeground);
+        text.Paint(list, $"{(theme.IsLight ? "Light" : "Dark")}  |  {scale * 100:0}% DPI  |  BubuUI rendering - not a native WinUI reference", 13, new(24, 56), theme.MutedForeground);
         for (var col = 0; col < states.Length; col++) text.Paint(list, states[col], 14, new(202 + col * 180, 91), theme.MutedForeground);
         for (var row = 0; row < rows.Count; row++)
         {

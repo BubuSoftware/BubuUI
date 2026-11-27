@@ -1,8 +1,8 @@
-using EclipseUI;
-using EclipseUI.Rendering;
-using EclipseUI.Rendering.Vello;
-using EclipseUI.Text;
-using EclipseUI.Text.Shaping;
+using BubuUI;
+using BubuUI.Rendering;
+using BubuUI.Rendering.Vello;
+using BubuUI.Text;
+using BubuUI.Text.Shaping;
 
 namespace WindowSpike;
 
@@ -66,7 +66,7 @@ public sealed class DemoScene : IDisposable
         // 页头
         if (hasLatin)
         {
-            list.Add(new DrawGlyphs(Font(arial), Shape(arial, "EclipseUI · G2 surface slice", 26),
+            list.Add(new DrawGlyphs(Font(arial), Shape(arial, "BubuUI · G2 surface slice", 26),
                 new Point(40, 64), new Color(236, 240, 250)));
             list.Add(new DrawGlyphs(Font(arial), Shape(arial, "Win32 host + Vello GPU present", 14),
                 new Point(40, 90), new Color(140, 158, 190)));

@@ -15,7 +15,7 @@ function Read-Entry($entry) {
     try { return $reader.ReadToEnd() } finally { $reader.Dispose() }
 }
 function Check-Grammar($archive, [string]$prefix) {
-    foreach ($name in @('eclipseui', 'eustyle')) {
+    foreach ($name in @('bubuui', 'bss')) {
         $entry = $archive.GetEntry("$prefix$name.tmLanguage.json")
         if (-not $entry) { throw "Missing $name grammar." }
         $source = [IO.File]::ReadAllText((Join-Path $PSScriptRoot "vscode\syntaxes\$name.tmLanguage.json"))
@@ -25,12 +25,12 @@ function Check-Grammar($archive, [string]$prefix) {
 
 foreach ($ide in @('VSCode', 'VisualStudio', 'Rider')) {
     $extension = if ($ide -eq 'Rider') { 'zip' } else { 'vsix' }
-    $path = Join-Path $Directory "EclipseUI-$ide-$version.$extension"
+    $path = Join-Path $Directory "BubuUI-$ide-$version.$extension"
     $zip = [IO.Compression.ZipFile]::OpenRead($path)
     try {
-        $dll = @($zip.Entries | Where-Object FullName -like '*server/EclipseUI.LanguageServer.dll')
+        $dll = @($zip.Entries | Where-Object FullName -like '*server/BubuUI.LanguageServer.dll')
         if ($dll.Count -ne 1) { throw "$ide must contain exactly one bundled server." }
-        $prefix = $dll[0].FullName.Substring(0, $dll[0].FullName.Length - 'EclipseUI.LanguageServer.dll'.Length)
+        $prefix = $dll[0].FullName.Substring(0, $dll[0].FullName.Length - 'BubuUI.LanguageServer.dll'.Length)
         foreach ($relative in $expected.Keys) {
             $entry = $zip.Entries | Where-Object { [Uri]::UnescapeDataString($_.FullName) -ceq ($prefix + $relative) } | Select-Object -First 1
             if (-not $entry) { throw "$ide missing server dependency: $relative" }
@@ -51,7 +51,7 @@ foreach ($ide in @('VSCode', 'VisualStudio', 'Rider')) {
             Check-Grammar $zip 'Grammars/'
         }
         else {
-            $jar = $zip.Entries | Where-Object FullName -like "*/lib/eclipseui-rider-$version.jar" | Select-Object -First 1
+            $jar = $zip.Entries | Where-Object FullName -like "*/lib/bubuui-rider-$version.jar" | Select-Object -First 1
             if (-not $jar) { throw 'Rider plugin JAR is missing.' }
             $memory = New-Object IO.MemoryStream
             $stream = $jar.Open()

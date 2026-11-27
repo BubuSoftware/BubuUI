@@ -1,15 +1,15 @@
-using EclipseUI;
-using EclipseUI.Elements;
-using EclipseUI.Platform.Windows;
-using EclipseUI.Rendering;
-using EclipseUI.Rendering.Vello;
-using EclipseUI.Text.Shaping;
+using BubuUI;
+using BubuUI.Elements;
+using BubuUI.Platform.Windows;
+using BubuUI.Rendering;
+using BubuUI.Rendering.Vello;
+using BubuUI.Text.Shaping;
 using Gallery;
 
 using var shaper = TextShaperFactory.TryCreate();
 using var text = shaper is null ? null : new HarfBuzzTextPainter(shaper);
 if (text is not null) TextMeasurer.Current = text;
-using var window = new Win32Window("EclipseUI control input selfcheck", 500, 430);
+using var window = new Win32Window("BubuUI control input selfcheck", 500, 430);
 using var presenter = VelloSurfaceBackend.Create(window.Handle, window.ClientWidth, window.ClientHeight, new VelloSurfaceOptions { PreferVsync = false, ValidateDisplayList = true });
 using var root = new StackPanel { Padding = 16, Gap = 12 };
 var editor = new TextBox(); var combo = new ComboBox { ItemsSource = new[] { "one", "two" } };

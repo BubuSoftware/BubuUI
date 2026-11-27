@@ -2,14 +2,14 @@
   <PropertyGroup>
     <TargetFramework>net11.0</TargetFramework>
     <RootNamespace>Gallery</RootNamespace>
-    <Description>EclipseUI 画廊共享 UI、交互逻辑与应用装配；由 Desktop / Android / iOS 项目提供平台入口。</Description>
+    <Description>BubuUI 画廊共享 UI、交互逻辑与应用装配；由 Desktop / Android / iOS 项目提供平台入口。</Description>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../../src/EclipseUI.Runtime/EclipseUI.Runtime.csproj" />
-    <ProjectReference Include="../../src/EclipseUI.Rendering/EclipseUI.Rendering.csproj" />
-    <ProjectReference Include="../../src/EclipseUI.Themes.Fluent/EclipseUI.Themes.Fluent.csproj" />
-    <ProjectReference Include="../../src/EclipseUI.Compiler.Generator/EclipseUI.Compiler.Generator.csproj"
+    <ProjectReference Include="../../src/BubuUI.Runtime/BubuUI.Runtime.csproj" />
+    <ProjectReference Include="../../src/BubuUI.Rendering/BubuUI.Rendering.csproj" />
+    <ProjectReference Include="../../src/BubuUI.Themes.Fluent/BubuUI.Themes.Fluent.csproj" />
+    <ProjectReference Include="../../src/BubuUI.Compiler.Generator/BubuUI.Compiler.Generator.csproj"
                       OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-    <AdditionalFiles Include="**/*.ui;**/*.eustyle" />
+    <AdditionalFiles Include="**/*.bui;**/*.bss" />
   </ItemGroup>
 </Project>

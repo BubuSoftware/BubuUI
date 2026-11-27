@@ -1,0 +1,54 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="iOS" />
+  </Configurations>
+  <Folder Name="/samples/">
+    <Project Path="samples/Gallery/Gallery.csproj" />
+    <Project Path="samples/Gallery.Offscreen/Gallery.Offscreen.csproj" />
+    <Project Path="samples/Gallery.Desktop/Gallery.Desktop.csproj" />
+    <Project Path="samples/Gallery.Android/Gallery.Android.csproj">
+      <Build Solution="*|iOS" Project="false" />
+      <Deploy Solution="Debug|Any CPU" />
+    </Project>
+    <Project Path="samples/Gallery.iOS/Gallery.iOS.csproj">
+      <Build Solution="*|Any CPU" Project="false" />
+      <Deploy Solution="Debug|iOS" />
+    </Project>
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/BubuUI.Compiler.Generator/BubuUI.Compiler.Generator.csproj" />
+    <Project Path="src/BubuUI.Compiler.Metadata/BubuUI.Compiler.Metadata.csproj" />
+    <Project Path="src/BubuUI.Compiler.Probe/BubuUI.Compiler.Probe.csproj" />
+    <Project Path="src/BubuUI.Compiler/BubuUI.Compiler.csproj" />
+    <Project Path="src/BubuUI.Platform.Android/BubuUI.Platform.Android.csproj">
+      <Build Solution="*|iOS" Project="false" />
+    </Project>
+    <Project Path="src/BubuUI.Platform.iOS/BubuUI.Platform.iOS.csproj">
+      <Build Solution="*|Any CPU" Project="false" />
+    </Project>
+    <Project Path="src/BubuUI.Platform.Windows/BubuUI.Platform.Windows.csproj" />
+    <Project Path="src/BubuUI.Platform.Linux/BubuUI.Platform.Linux.csproj" />
+    <Project Path="src/BubuUI.Platform.MacOS/BubuUI.Platform.MacOS.csproj" />
+    <Project Path="src/BubuUI.Rendering.Vello/BubuUI.Rendering.Vello.csproj" />
+    <Project Path="src/BubuUI.Rendering/BubuUI.Rendering.csproj" />
+    <Project Path="src/BubuUI.Themes.Fluent/BubuUI.Themes.Fluent.csproj" />
+    <Project Path="src/BubuUI.Runtime/BubuUI.Runtime.csproj" />
+    <Project Path="src/BubuUI.Text.Shaping/BubuUI.Text.Shaping.csproj" />
+  </Folder>
+  <Folder Name="/ide/">
+    <Project Path="ide/BubuUI.LanguageServer/BubuUI.LanguageServer.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/GalleryFixtures/GalleryFixtures.csproj" />
+    <Project Path="tests/BubuUI.Compiler.Tests/BubuUI.Compiler.Tests.csproj" />
+    <Project Path="tests/BubuUI.Headless.Tests/BubuUI.Headless.Tests.csproj" />
+    <Project Path="tests/BubuUI.WindowLifetime.Tests/BubuUI.WindowLifetime.Tests.csproj" />
+    <Project Path="tests/BubuUI.Platform.Linux.Tests/BubuUI.Platform.Linux.Tests.csproj" />
+    <Project Path="tests/BubuUI.Platform.MacOS.Tests/BubuUI.Platform.MacOS.Tests.csproj" />
+    <Project Path="tests/BubuUI.Platform.Windows.Tests/BubuUI.Platform.Windows.Tests.csproj" />
+    <Project Path="tests/BubuUI.Ide.Tests/BubuUI.Ide.Tests.csproj" />
+    <Project Path="tests/BubuUI.Rendering.Tests/BubuUI.Rendering.Tests.csproj" />
+    <Project Path="tests/BubuUI.VisualStudio.Tests/BubuUI.VisualStudio.Tests.csproj" />
+  </Folder>
+</Solution>

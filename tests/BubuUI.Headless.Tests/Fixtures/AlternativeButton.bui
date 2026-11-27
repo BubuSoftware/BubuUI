@@ -1,0 +1,8 @@
+@namespace BubuUI.Headless.Tests.Fixtures
+@using BubuUI.Elements
+@template Button
+
+<StackPanel>
+    <TextBlock>Alternative layout</TextBlock>
+    <ContentPresenter Part="PART_ContentPresenter" Content={Owner.Content} Label={Owner.Label} />
+</StackPanel>

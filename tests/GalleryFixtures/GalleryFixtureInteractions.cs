@@ -1,5 +1,5 @@
-using EclipseUI;
-using EclipseUI.Elements;
+using BubuUI;
+using BubuUI.Elements;
 
 namespace Gallery;
 
@@ -8,7 +8,7 @@ public static class GalleryFixtureInteractions
 {
     public static void Wire(LegacyWindow mainWindow)
     {
-        // E5 注册伪类（design/17 §3.2）：'spinning' 已由 app.eustyle 的 @states 启动期注册
+        // E5 注册伪类（design/17 §3.2）：'spinning' 已由 app.bss 的 @states 启动期注册
         // （Register 幂等，重复注册返回同一掩码），掩码即凭证——:spinning 变体命中即变体色。
         mainWindow.BusyChip.SetRegisteredState(PseudoStatesRegistry.Register("spinning"), true);
 

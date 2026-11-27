@@ -1,0 +1,14 @@
+@namespace BubuUI.Themes.Fluent
+@using BubuUI.Elements
+@template NumericUpDown
+
+<Grid IsHitTestVisible="false">
+    <FluentNumericUpDownChrome Class="chrome" Owner={Owner} />
+    <TextPresenter Part="PART_TextPresenter" Editor={Owner}
+                   MinimumLines={Owner.AcceptsReturn ? 3 : 1}
+                   Foreground={FluentTextAppearance.Foreground(Owner)}
+                   PlaceholderForeground={FluentTextAppearance.Placeholder(Owner)}
+                   SelectionBackground={FluentTextAppearance.Selection(Owner)}
+                   CaretBrush={FluentTextAppearance.Foreground(Owner)}
+                   CompositionUnderlineBrush={FluentTextAppearance.CompositionUnderline(Owner)} />
+</Grid>

@@ -1,0 +1,25 @@
+@namespace BubuUI.Themes.Fluent
+@using BubuUI.Elements;
+
+@theme FluentButton for Button {
+    Template: template(FluentButtonTemplate);
+    Background: resource(FluentResources.ControlBackground);
+    Foreground: resource(FluentResources.Foreground);
+    BorderBrush: resource(FluentResources.ControlBorder);
+    CornerRadius: 4;
+    MinHeight: 32;
+    HorizontalPadding: 12;
+    VerticalPadding: 5;
+
+    &:hover {
+        Background: resource(FluentResources.ControlHoverBackground);
+    }
+    &:pressed {
+        Background: resource(FluentResources.ControlPressedBackground);
+        Foreground: resource(FluentResources.PressedForeground);
+    }
+    &:disabled {
+        Background: resource(FluentResources.DisabledBackground);
+        Foreground: resource(FluentResources.DisabledForeground);
+    }
+}

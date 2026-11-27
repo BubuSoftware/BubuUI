@@ -1,8 +1,8 @@
-using EclipseUI;
-using EclipseUI.Elements;
-using EclipseUI.Rendering;
-using EclipseUI.Text.Shaping;
-using EclipseUI.Themes.Fluent;
+using BubuUI;
+using BubuUI.Elements;
+using BubuUI.Rendering;
+using BubuUI.Text.Shaping;
+using BubuUI.Themes.Fluent;
 using Gallery;
 using Path = System.IO.Path;
 

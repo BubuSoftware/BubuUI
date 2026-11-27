@@ -12,7 +12,7 @@
 
 ## 主题包
 
-EclipseUI.Themes.Fluent 独立提供各交互控件的 .ui 模板、@theme 属性和状态规则、共享配色、外观尺寸及默认主题映射。Runtime 和通用渲染器不引用 Fluent。应用显式安装主题包，平台默认使用中性主题来源。
+BubuUI.Themes.Fluent 独立提供各交互控件的 .bui 模板、@theme 属性和状态规则、共享配色、外观尺寸及默认主题映射。Runtime 和通用渲染器不引用 Fluent。应用显式安装主题包，平台默认使用中性主题来源。
 
 控件外观使用通用绘图操作；通用绘制接口不包含 Fluent 开关、控件皮肤绘制捷径或按钮、复选框等类型分发。复杂视觉元素可以在主题包中以 C# 实现，但必须由可替换的控件模板创建，不得通过控件 Render 或渲染器分支回退调用。
 
@@ -31,9 +31,9 @@ public static readonly ThemeResource<UiColor> ControlBackground =
     new(element => element.IsLightTheme ? lightColor : darkColor);
 ```
 
-`.eustyle` 中的 `Background: resource(FluentResources.ControlBackground)` 可通过 `@namespace` 将当前命名空间及其外层命名空间设为隐式查找范围，也可通过 `@using` 导入字段所在命名空间，或写类型全名。查找顺序为完整类型名、`@namespace` 自身到外层链、显式 `@using` 导入。引用程序集中的公开静态字段使用同一语法。编译器必须验证字段可访问、静态、公开、类型为 `ThemeResource<T>`，且 T 与目标 `StyledProperty<T>` 的值类型一致；名称歧义、字段缺失和类型不匹配均产生样式文件诊断。
+`.bss` 中的 `Background: resource(FluentResources.ControlBackground)` 可通过 `@namespace` 将当前命名空间及其外层命名空间设为隐式查找范围，也可通过 `@using` 导入字段所在命名空间，或写类型全名。查找顺序为完整类型名、`@namespace` 自身到外层链、显式 `@using` 导入。引用程序集中的公开静态字段使用同一语法。编译器必须验证字段可访问、静态、公开、类型为 `ThemeResource<T>`，且 T 与目标 `StyledProperty<T>` 的值类型一致；名称歧义、字段缺失和类型不匹配均产生样式文件诊断。
 
-`.eustyle` 的 `@namespace` 只控制控件、模板和类型化资源的名称查找，不决定生成的 `StyleBootstrap` 命名空间；生成代码仍使用项目 `RootNamespace`。每个样式模块至多声明一次。内联 `.ui` 的 `@style` 块不能声明 `@namespace`，并沿用宿主 `.ui` 的命名空间。
+`.bss` 的 `@namespace` 只控制控件、模板和类型化资源的名称查找，不决定生成的 `StyleBootstrap` 命名空间；生成代码仍使用项目 `RootNamespace`。每个样式模块至多声明一次。内联 `.bui` 的 `@style` 块不能声明 `@namespace`，并沿用宿主 `.bui` 的命名空间。
 
 生成代码直接引用字段及其 `Resolve` 方法，将其作为动态 setter。在控件状态或应用主题变化时重新求值，明确的 local/样式覆盖继续遵守值来源优先级。编译阶段不得执行资源初始化器或解析委托，运行阶段不使用反射或字符串资源注册表。
 

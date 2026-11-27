@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <RootNamespace>BubuUI.Platform.Linux</RootNamespace>
+    <Description>BubuUI Linux desktop host: SDL3, X11/Wayland, DPI, input and clipboard.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../BubuUI.Runtime/BubuUI.Runtime.csproj" />
+    <ProjectReference Include="../BubuUI.Rendering/BubuUI.Rendering.csproj" />
+    <InternalsVisibleTo Include="BubuUI.Platform.Linux.Tests" />
+  </ItemGroup>
+</Project>

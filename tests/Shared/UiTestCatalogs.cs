@@ -3,22 +3,22 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using EclipseUI.Compiler;
-using EclipseUI.Compiler.Metadata;
+using BubuUI.Compiler;
+using BubuUI.Compiler.Metadata;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 
-namespace EclipseUI.TestKit;
+namespace BubuUI.TestKit;
 
 /// <summary>
-/// 测试用目录：一律扫描已编译的 <c>EclipseUI.Runtime.dll</c> 得到（design/14 §14.11.1）。
+/// 测试用目录：一律扫描已编译的 <c>BubuUI.Runtime.dll</c> 得到（design/14 §14.11.1）。
 /// 不得再手写一份固定目录——那会制造 T1 禁止的第二事实源。
-/// 本项目（net11.0）可以引用 Roslyn，生产侧的 <c>EclipseUI.Compiler</c> 保持零 Roslyn 依赖。
+/// 本项目（net11.0）可以引用 Roslyn，生产侧的 <c>BubuUI.Compiler</c> 保持零 Roslyn 依赖。
 /// </summary>
 public static class UiTestCatalogs
 {
     /// <summary>内置控件所在程序集；扫描锚点。</summary>
-    public static readonly Assembly RuntimeAssembly = typeof(EclipseUI.Elements.Button).Assembly;
+    public static readonly Assembly RuntimeAssembly = typeof(BubuUI.Elements.Button).Assembly;
 
     private static readonly Lazy<UiCatalog> Built = new(() => ScanRuntime());
 
@@ -31,7 +31,7 @@ public static class UiTestCatalogs
     /// </summary>
     public static CSharpCompilation ProbeCompilation(string source = "", string assemblyName = "CatalogProbe")
     {
-        const string preamble = "using System;\nusing EclipseUI;\nusing EclipseUI.Elements;\n";
+        const string preamble = "using System;\nusing BubuUI;\nusing BubuUI.Elements;\n";
         return CSharpCompilation.Create(assemblyName,
             new[] { CSharpSyntaxTree.ParseText(preamble + source) },
             ReferenceFiles(),
@@ -43,7 +43,7 @@ public static class UiTestCatalogs
     public static UiCatalog ScanRuntime() => UiCatalogFactory.Build(ProbeCompilation());
 
     /// <summary>
-    /// 探针编译的引用集：共享框架程序集 + <c>EclipseUI.Runtime.dll</c>（扫描锚点）。
+    /// 探针编译的引用集：共享框架程序集 + <c>BubuUI.Runtime.dll</c>（扫描锚点）。
     /// 刻意排除与测试同目录的应用程序集（xunit、样例、测试自身）：扫描器按 §14.4.6 会把
     /// 直接引用运行时的程序集里的类型也算成标签，include 它们会让「内置表面」随测试项目而变。
     /// </summary>
@@ -61,7 +61,7 @@ public static class UiTestCatalogs
         // 探针编译必须像真实宿主一样引用渲染程序集，否则得到空目录。
         // 按路径取而非 typeof(...)：本文件同时被两种测试项目编译，不强加编译期引用。
         var rendering = Path.Combine(Path.GetDirectoryName(RuntimeAssembly.Location)!,
-            "EclipseUI.Rendering.dll");
+            "BubuUI.Rendering.dll");
         if (File.Exists(rendering)) references.Add(MetadataReference.CreateFromFile(rendering));
         return references;
     }
@@ -74,7 +74,7 @@ public static class UiTestCatalogs
     {
         var lines = new List<string>
         {
-            "# EclipseUI 内置模板表面（design/14 §14.11.1）。",
+            "# BubuUI 内置模板表面（design/14 §14.11.1）。",
             "# 由 CatalogScannerTests.Surface_MatchesGoldenSnapshotFile 生成/比对；控件 API 变化时必须连同变更记录一起更新。",
             $"# 标签 {catalog.Elements.Count} / 属性项 {catalog.Elements.Sum(e => e.Properties.Count)} / 事件项 {catalog.Elements.Sum(e => e.Events.Count)}" +
             $" / 附加属性项 {catalog.AttachedProperties.Count}",

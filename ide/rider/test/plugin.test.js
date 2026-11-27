@@ -17,7 +17,7 @@ const path = require('path');
 const root = path.resolve(__dirname, '..');
 const ide = path.resolve(root, '..');
 const vscode = path.join(ide, 'vscode');
-const server = path.join(ide, 'EclipseUI.LanguageServer');
+const server = path.join(ide, 'BubuUI.LanguageServer');
 
 let passed = 0;
 function check(name, fn) {
@@ -51,13 +51,13 @@ const vscodePackage = JSON.parse(read(path.join(vscode, 'package.json')));
 const clientJs = read(path.join(vscode, 'client', 'extension.js'));
 const hostCs = read(path.join(server, 'Server', 'LanguageServerHost.cs'));
 const connectionCs = read(path.join(server, 'Protocol', 'JsonRpcConnection.cs'));
-const projectTests = read(path.join(ide, '..', 'tests', 'EclipseUI.Ide.Tests', 'ProjectSystemTests.cs'));
-const protocolTests = read(path.join(ide, '..', 'tests', 'EclipseUI.Ide.Tests', 'ProtocolTests.cs'));
+const projectTests = read(path.join(ide, '..', 'tests', 'BubuUI.Ide.Tests', 'ProjectSystemTests.cs'));
+const protocolTests = read(path.join(ide, '..', 'tests', 'BubuUI.Ide.Tests', 'ProtocolTests.cs'));
 
 console.log('Rider shell contract');
 
 check('plugin identity and platform dependencies', () => {
-    has(pluginXml, '<id>com.eclipseui</id>');
+    has(pluginXml, '<id>com.bubuui</id>');
     has(pluginXml, '<idea-version since-build="242.*"/>');
     has(pluginXml, '<depends>com.intellij.modules.platform</depends>');
     has(pluginXml, '<depends>com.redhat.devtools.lsp4ij</depends>');
@@ -73,45 +73,45 @@ check('plugin identity and platform dependencies', () => {
 
 check('LSP4IJ server + language mappings use the official extension points', () => {
     has(pluginXml, '<extensions defaultExtensionNs="com.redhat.devtools.lsp4ij">');
-    assert(/<server\s+id="eclipseui"[\s\S]*?factoryClass="com\.eclipseui\.rider\.EclipseUiLanguageServerFactory"/.test(pluginXml),
-        'server EP needs id=eclipseui and the factory class');
+    assert(/<server\s+id="bubuui"[\s\S]*?factoryClass="com\.bubuui\.rider\.BubuUiLanguageServerFactory"/.test(pluginXml),
+        'server EP needs id=bubuui and the factory class');
     const mappings = [...pluginXml.matchAll(/<languageMapping\s+([^>]+)\/>/g)].map(m => m[1]);
     assert(mappings.length === 2, 'exactly two languageMapping entries expected, got ' + mappings.length);
-    has(mappings.join('\n'), 'language="EclipseUI"');
-    has(mappings.join('\n'), 'language="Eustyle"');
-    has(mappings.join('\n'), 'languageId="eclipseui"');
-    has(mappings.join('\n'), 'languageId="eustyle"');
-    for (const mapping of mappings) has(mapping, 'serverId="eclipseui"');
+    has(mappings.join('\n'), 'language="BubuUI"');
+    has(mappings.join('\n'), 'language="Bss"');
+    has(mappings.join('\n'), 'languageId="bubuui"');
+    has(mappings.join('\n'), 'languageId="bss"');
+    for (const mapping of mappings) has(mapping, 'serverId="bubuui"');
     // The pattern mapping is a documented fallback, not an active duplicate.
     assert(!/^\s*<fileNamePatternMapping/m.test(pluginXml),
         'do not enable fileNamePatternMapping alongside languageMapping (double connection)');
 });
 
 check('Language + FileType pairs are declared for both extensions', () => {
-    assert(/<fileType\s+name="EclipseUI"[\s\S]*?extensions="ui"[\s\S]*?implementationClass="com\.eclipseui\.rider\.EclipseUiFileType"/.test(pluginXml),
-        '*.ui must bind to EclipseUiFileType');
-    assert(/<fileType\s+name="Eustyle"[\s\S]*?extensions="eustyle"[\s\S]*?implementationClass="com\.eclipseui\.rider\.EustyleFileType"/.test(pluginXml),
-        '*.eustyle must bind to EustyleFileType');
-    has(rider('src/main/java/com/eclipseui/rider/EclipseUiLanguage.java'), 'super("EclipseUI")');
-    has(rider('src/main/java/com/eclipseui/rider/EustyleLanguage.java'), 'super("Eustyle")');
-    has(rider('src/main/java/com/eclipseui/rider/EclipseUiFileType.java'), 'EclipseUiLanguage.INSTANCE');
-    has(rider('src/main/java/com/eclipseui/rider/EustyleFileType.java'), 'EustyleLanguage.INSTANCE');
+    assert(/<fileType\s+name="BubuUI"[\s\S]*?extensions="bui"[\s\S]*?implementationClass="com\.bubuui\.rider\.BubuUiFileType"/.test(pluginXml),
+        '*.bui must bind to BubuUiFileType');
+    assert(/<fileType\s+name="Bss"[\s\S]*?extensions="bss"[\s\S]*?implementationClass="com\.bubuui\.rider\.BssFileType"/.test(pluginXml),
+        '*.bss must bind to BssFileType');
+    has(rider('src/main/java/com/bubuui/rider/BubuUiLanguage.java'), 'super("BubuUI")');
+    has(rider('src/main/java/com/bubuui/rider/BssLanguage.java'), 'super("Bss")');
+    has(rider('src/main/java/com/bubuui/rider/BubuUiFileType.java'), 'BubuUiLanguage.INSTANCE');
+    has(rider('src/main/java/com/bubuui/rider/BssFileType.java'), 'BssLanguage.INSTANCE');
 });
 
 check('TextMate highlighter is explicitly bound (custom FileType workaround)', () => {
     has(pluginXml, '<textmate.bundleProvider');
-    has(pluginXml, 'implementation="com.eclipseui.rider.EclipseUiTextMateBundleProvider"');
+    has(pluginXml, 'implementation="com.bubuui.rider.BubuUiTextMateBundleProvider"');
     const highlighters = [...pluginXml.matchAll(/<editorHighlighterProvider\s+([^>]+)\/>/g)].map(m => m[1]);
     assert(highlighters.length === 2, 'two editorHighlighterProvider entries expected');
-    has(highlighters.join('\n'), 'filetype="EclipseUI"');
-    has(highlighters.join('\n'), 'filetype="Eustyle"');
+    has(highlighters.join('\n'), 'filetype="BubuUI"');
+    has(highlighters.join('\n'), 'filetype="Bss"');
     for (const entry of highlighters) {
         has(entry, 'org.jetbrains.plugins.textmate.language.syntax.highlighting.TextMateEditorHighlighterProvider');
     }
     const factories = [...pluginXml.matchAll(/<lang\.syntaxHighlighterFactory\s+([^>]+)\/>/g)].map(m => m[1]);
     assert(factories.length === 2, 'two lang.syntaxHighlighterFactory entries expected');
-    has(factories.join('\n'), 'language="EclipseUI"');
-    has(factories.join('\n'), 'language="Eustyle"');
+    has(factories.join('\n'), 'language="BubuUI"');
+    has(factories.join('\n'), 'language="Bss"');
     for (const entry of factories) {
         has(entry, 'org.jetbrains.plugins.textmate.language.syntax.highlighting.TextMateSyntaxHighlighterFactory');
     }
@@ -121,13 +121,13 @@ check('every plugin.xml class reference resolves to a real Java source file', ()
     // Collect every FQN regardless of the attribute name (implementationClass /
     // factoryClass / instance / implementation / serviceImplementation).
     // Third-party classes (org.jetbrains.plugins.textmate.*) are checked above.
-    const references = [...pluginXml.matchAll(/"(com\.eclipseui\.rider\.[A-Za-z0-9_]+)"/g)]
+    const references = [...pluginXml.matchAll(/"(com\.bubuui\.rider\.[A-Za-z0-9_]+)"/g)]
         .map(m => m[1]);
     assert(references.length >= 6, 'expected several platform class references, got ' + references.length);
-    has(pluginXml, 'serviceImplementation="com.eclipseui.rider.EclipseUiSettings"');
+    has(pluginXml, 'serviceImplementation="com.bubuui.rider.BubuUiSettings"');
     for (const fqn of new Set(references)) {
         const simple = fqn.slice(fqn.lastIndexOf('.') + 1);
-        const file = path.join(root, 'src/main/java/com/eclipseui/rider', simple + '.java');
+        const file = path.join(root, 'src/main/java/com/bubuui/rider', simple + '.java');
         assert(fs.existsSync(file), 'missing Java source for ' + fqn);
         has(read(file), 'class ' + simple, 'class name mismatch in ' + simple + '.java');
     }
@@ -137,14 +137,14 @@ check('grammars come from ide/vscode only (single shared asset)', () => {
     has(gradle, 'val vscodeDir = layout.projectDirectory.dir("../vscode")');
     has(gradle, 'from(vscodeDir.dir("syntaxes"))');
     has(gradle, 'from(vscodeDir.file("language-configuration.json"))');
-    has(gradle, 'from(vscodeDir.file("eustyle-language-configuration.json"))');
+    has(gradle, 'from(vscodeDir.file("bss-language-configuration.json"))');
     has(gradle, 'into("textmate")');
     has(gradle, 'val generatedBundle = layout.buildDirectory.dir("generated/textmate")');
     assert(!fs.existsSync(path.join(root, 'src/main/resources/textmate')),
         'do not check in a second copy of the grammars under src/main/resources');
     assert(!fs.existsSync(path.join(root, 'syntaxes')),
         'do not check in a syntaxes/ folder in the Rider module');
-    has(rider('src/main/java/com/eclipseui/rider/EclipseUiTextMateBundleProvider.java'),
+    has(rider('src/main/java/com/bubuui/rider/BubuUiTextMateBundleProvider.java'),
         'getResourceAsStream(RESOURCE_PREFIX + name)');
 });
 
@@ -164,16 +164,16 @@ check('bundle package.json declares the same grammars/scopeNames as VS Code', ()
     assert(JSON.stringify(grammars[0].embeddedLanguages) === JSON.stringify(vsGrammars[0].embeddedLanguages),
         'embeddedLanguages must stay in sync with the VS Code extension');
     const extensions = bundleJson.contributes.languages.map(l => l.extensions[0]).sort();
-    assert(JSON.stringify(extensions) === JSON.stringify(['.eustyle', '.ui']),
+    assert(JSON.stringify(extensions) === JSON.stringify(['.bss', '.bui']),
         'bundle language extensions must match the FileTypes');
 });
 
 check('server launch command mirrors the VS Code client', () => {
-    const command = rider('src/main/java/com/eclipseui/rider/ServerCommand.java');
-    const provider = rider('src/main/java/com/eclipseui/rider/EclipseUiServerConnectionProvider.java');
-    const factory = rider('src/main/java/com/eclipseui/rider/EclipseUiLanguageServerFactory.java');
-    has(command, 'EclipseUI.LanguageServer.dll');
-    has(clientJs, "'server', 'EclipseUI.LanguageServer.dll'");
+    const command = rider('src/main/java/com/bubuui/rider/ServerCommand.java');
+    const provider = rider('src/main/java/com/bubuui/rider/BubuUiServerConnectionProvider.java');
+    const factory = rider('src/main/java/com/bubuui/rider/BubuUiLanguageServerFactory.java');
+    has(command, 'BubuUI.LanguageServer.dll');
+    has(clientJs, "'server', 'BubuUI.LanguageServer.dll'");
     for (const flag of ['--stdio', '--workspace', '--runtime', '--assembly', '--log', '--log-stderr']) {
         has(command, 'args.add("' + flag + '")', 'Rider command is missing flag');
         has(clientJs, "'" + flag + "'", 'VS Code client is missing flag');
@@ -188,7 +188,7 @@ check('server launch command mirrors the VS Code client', () => {
     has(provider, 'super.setUserEnvironmentVariables(DotnetExecutable.serverEnvironment(commands.get(0)))');
     has(factory, 'implements LanguageServerFactory');
     has(factory, 'createConnectionProvider(@NotNull Project project)');
-    has(pluginXml, '<applicationService serviceImplementation="com.eclipseui.rider.EclipseUiSettings"/>');
+    has(pluginXml, '<applicationService serviceImplementation="com.bubuui.rider.BubuUiSettings"/>');
 });
 
 check('watcher globs are identical in VS Code, Rider and the server', () => {
@@ -210,16 +210,16 @@ check('watcher globs are identical in VS Code, Rider and the server', () => {
 });
 
 check('IntelliJ file URI forms are covered by server conversion tests', () => {
-    has(projectTests, 'file:/D:/workspace/repo/Sample.ui');
-    has(projectTests, 'file://D:/workspace/repo/Sample.ui');
-    has(projectTests, 'file:///d%3A/workspace/repo/Sample.ui');
+    has(projectTests, 'file:/D:/workspace/repo/Sample.bui');
+    has(projectTests, 'file://D:/workspace/repo/Sample.bui');
+    has(projectTests, 'file:///d%3A/workspace/repo/Sample.bui');
 });
 
 check('settings page and user guidance are wired', () => {
     has(pluginXml, '<applicationConfigurable');
-    has(pluginXml, '<notificationGroup id="EclipseUI"');
-    has(rider('src/main/java/com/eclipseui/rider/EclipseUiSettingsConfigurable.java'), 'implements Configurable');
-    has(rider('src/main/java/com/eclipseui/rider/EclipseUiLanguageServerFactory.java'), 'NotificationGroupManager');
+    has(pluginXml, '<notificationGroup id="BubuUI"');
+    has(rider('src/main/java/com/bubuui/rider/BubuUiSettingsConfigurable.java'), 'implements Configurable');
+    has(rider('src/main/java/com/bubuui/rider/BubuUiLanguageServerFactory.java'), 'NotificationGroupManager');
     const readme = read(path.join(ide, 'README.md'));
     has(readme, 'ide/rider');
     has(readme, 'buildPlugin');
@@ -241,7 +241,7 @@ check('gradle wrapper pins a reproducible Gradle 9 distribution', () => {
 check('release bundles the shared server and enables readable metadata navigation', () => {
     has(gradle, 'tasks.withType<PrepareSandboxTask>()');
     has(gradle, 'from(vscodeDir.dir("server"))');
-    has(rider('src/main/java/com/eclipseui/rider/ServerCommand.java'), '--materialize-decompiled');
+    has(rider('src/main/java/com/bubuui/rider/ServerCommand.java'), '--materialize-decompiled');
 });
 
 console.log('\n' + passed + ' checks passed' + (process.exitCode ? ' (with failures)' : ''));

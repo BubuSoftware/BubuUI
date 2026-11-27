@@ -1,0 +1,5 @@
+@namespace BubuUI.Themes.Fluent
+@using BubuUI.Elements
+@template Calendar
+
+<Grid><FluentCalendarVisual Owner={Owner} /></Grid>

@@ -6,7 +6,7 @@
 
 | 检查 | 结果 |
 |---|---|
-| `dotnet build EclipseUI.slnx --no-restore -v quiet` | 0 警告、0 错误 |
+| `dotnet build BubuUI.slnx --no-restore -v quiet` | 0 警告、0 错误 |
 | Compiler | 421/421 |
 | Headless | 447/447 |
 | IDE | 205/205 |
@@ -18,15 +18,15 @@
 最终全量命令：
 
 ```powershell
-dotnet test EclipseUI.slnx --no-build -m:1 -v quiet --logger trx --results-directory F:/EclipseUI/TestResults/unification-cleanup/final-v3
-dotnet run --project sandbox/GalleryCheck/GalleryCheck.csproj --no-restore -- --cpu --selfcheck --shot F:/EclipseUI/TestResults/unification-cleanup/gallery-final.png
+dotnet test BubuUI.slnx --no-build -m:1 -v quiet --logger trx --results-directory F:/BubuUI/TestResults/unification-cleanup/final-v3
+dotnet run --project sandbox/GalleryCheck/GalleryCheck.csproj --no-restore -- --cpu --selfcheck --shot F:/BubuUI/TestResults/unification-cleanup/gallery-final.png
 ```
 
 旧层删除后最终串行全量共 1181 项，1180 项通过，进程因下面的既有 golden 失败返回非零。目录性能测试已放入独立的非并行测试集合，保留原有轮数及 40ms/100ms 门槛。初次迁移阶段为 1163/1164，通过数变化来自清理旧诊断测试及新增边界回归。
 
 ## 既有像素基线差异
 
-失败：`EclipseUI.Rendering.Tests.PixelGoldenTests.PixelGoldens_MatchBaseline` 的 `solid-primitives` 场景，期望 hash `FA65021E5F9A5DAD`，实际 `84BB45A4DF46D827`。语义探针、颜色采样和其余场景通过。
+失败：`BubuUI.Rendering.Tests.PixelGoldenTests.PixelGoldens_MatchBaseline` 的 `solid-primitives` 场景，期望 hash `FA65021E5F9A5DAD`，实际 `84BB45A4DF46D827`。语义探针、颜色采样和其余场景通过。
 
 通过 `git archive HEAD` 将重构前相关源码导出至独立临时目录，重新 restore/build 后运行相同测试，得到相同失败和相同实际 hash。前后实际 PNG 的 SHA-256 完全相同：
 

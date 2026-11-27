@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <RootNamespace>BubuUI.Platform.Windows</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Description>BubuUI Win32 window host: window, message loop, resize/DPI, mouse and keyboard bridging.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\BubuUI.Runtime\BubuUI.Runtime.csproj" />
+    <ProjectReference Include="..\BubuUI.Rendering\BubuUI.Rendering.csproj" />
+  </ItemGroup>
+
+</Project>

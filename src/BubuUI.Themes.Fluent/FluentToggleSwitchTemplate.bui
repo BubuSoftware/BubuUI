@@ -1,0 +1,15 @@
+@namespace BubuUI.Themes.Fluent
+@using BubuUI.Elements
+@using BubuUI.Themes.Fluent
+@template ToggleSwitch
+
+<Grid ColumnDefinitions="Auto,*" Gap="8">
+    <FluentToggleSwitchGlyph Owner={Owner} VerticalAlignment="Center" />
+    <ContentPresenter Grid.Column="1" Label={Owner.Label}
+                      Foreground={FluentValueColors.Foreground(Owner, Palette)}
+                      VerticalAlignment="Center" />
+</Grid>
+
+@code {
+    private FluentTheme Palette => Owner.ThemeDefaults as FluentTheme ?? FluentTheme.Light;
+}

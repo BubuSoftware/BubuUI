@@ -30,7 +30,7 @@
 
 | ID | 任务 | 工期 | 状态 | 产出 |
 |---|---|---:|---|---|
-| G2-10 | scene graph → display list | 1.5d | DONE | `src/EclipseUI.Rendering/SceneGraph/ElementPainter.cs` |
+| G2-10 | scene graph → display list | 1.5d | DONE | `src/BubuUI.Rendering/SceneGraph/ElementPainter.cs` |
 | G2-11 | 输入路由：窗口事件 → 元素树 / 焦点 | 1d | DONE | `InputRouter`、`WindowHost`、Win32 指针捕获 |
 | G2-12 | 文本 shaping 接入布局与绘制 | 1d | DONE | `ITextPainter` / `HarfBuzzTextPainter` / `ITextMeasurer` |
 | G2-15 | CounterApp + TaskList 真窗口可交互 | 1d | DONE | `samples/GalleryApp`（`--selfcheck` PASS） |
@@ -43,7 +43,7 @@
 ## 12.3 结构
 
 ```
-.ui → 元素树 → Measure/Arrange → ElementPainter ─┬→ VelloCpuBackend → RenderTarget → PNG / 探针
+.bui → 元素树 → Measure/Arrange → ElementPainter ─┬→ VelloCpuBackend → RenderTarget → PNG / 探针
                                                 └→ VelloSurfaceBackend → wgpu surface → 窗口像素
                                                           ↑
                           WindowHost（消息循环 + 帧循环）← Win32Window（鼠标 / 键盘 / resize / DPI）
@@ -55,10 +55,10 @@
 
 | 层 | 程序集 | 新增内容 | 说明 |
 |---|---|---|---|
-| 运行时 | `EclipseUI.Runtime` | `InputRouter`、`Panel.Padding` / `ClipToBounds`、`IsVisualTransparent`、`IsPressed` | 不感知渲染后端 |
-| 渲染契约 | `EclipseUI.Rendering` | `SceneGraph/ElementPainter`、`ElementTheme`、`ITextPainter` / `MeasuringTextPainter` | 读元素树建 display list，不依赖 Vello / HarfBuzz |
-| 文本 | `EclipseUI.Text.Shaping` | `HarfBuzzTextPainter`、`ITextMeasurer` 实现、`LineMetrics`、线程安全 shaping | 布局与绘制共用一个 shaping 缓存 |
-| 平台 | `EclipseUI.Platform.Windows` | `WindowHost`、`Close`、`PostPointerClick`、指针捕获 | 纯 P/Invoke |
+| 运行时 | `BubuUI.Runtime` | `InputRouter`、`Panel.Padding` / `ClipToBounds`、`IsVisualTransparent`、`IsPressed` | 不感知渲染后端 |
+| 渲染契约 | `BubuUI.Rendering` | `SceneGraph/ElementPainter`、`ElementTheme`、`ITextPainter` / `MeasuringTextPainter` | 读元素树建 display list，不依赖 Vello / HarfBuzz |
+| 文本 | `BubuUI.Text.Shaping` | `HarfBuzzTextPainter`、`ITextMeasurer` 实现、`LineMetrics`、线程安全 shaping | 布局与绘制共用一个 shaping 缓存 |
+| 平台 | `BubuUI.Platform.Windows` | `WindowHost`、`Close`、`PostPointerClick`、指针捕获 | 纯 P/Invoke |
 | 样例 | `samples/GalleryApp` | Counter + TaskList + 6 步 selfcheck | G2 验收 harness |
 
 ### 绘制顺序与坐标系

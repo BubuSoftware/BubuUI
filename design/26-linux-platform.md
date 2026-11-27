@@ -1,14 +1,14 @@
 # Linux 桌面平台
 
-`EclipseUI.Platform.Linux` 面向 glibc Linux x64 / arm64，使用 SDL3 3.2+ 管理 X11 / Wayland 窗口，复用 Runtime 的元素树、输入路由和生命周期，以及 Vello 的 GPU 呈现。`Gallery` 根据运行系统选择 `UseWindows()` / `UseLinux()`，目标框架统一为 `net11.0`；Win32 API 仍有 Windows 平台标注和运行时保护。
+`BubuUI.Platform.Linux` 面向 glibc Linux x64 / arm64，使用 SDL3 3.2+ 管理 X11 / Wayland 窗口，复用 Runtime 的元素树、输入路由和生命周期，以及 Vello 的 GPU 呈现。`Gallery` 根据运行系统选择 `UseWindows()` / `UseLinux()`，目标框架统一为 `net11.0`；Win32 API 仍有 Windows 平台标注和运行时保护。
 
 ## 启动与依赖
 
 ```csharp
-using EclipseUI;
-using EclipseUI.Platform.Linux;
-using EclipseUI.Rendering.Vello;
-using EclipseUI.Text.Shaping;
+using BubuUI;
+using BubuUI.Platform.Linux;
+using BubuUI.Rendering.Vello;
+using BubuUI.Text.Shaping;
 
 return AppBuilder.Configure<MyApplication>()
     .UseLinux()
@@ -62,12 +62,12 @@ sudo apt-get install -y dotnet-sdk-10.0 libsdl3-0 libvulkan1 mesa-vulkan-drivers
 WSL 与 Windows 同用一份源码时，使用独立 artifacts 目录，避免两套 SDK 共用 `obj` 内的 NuGet 路径和构建状态：
 
 ```bash
-cd /mnt/d/workspace/EclipseUI
+cd /mnt/d/workspace/BubuUI
 dotnet build samples/Gallery.Desktop --artifacts-path out/wsl-artifacts
 SDL_VIDEODRIVER=x11 dotnet out/wsl-artifacts/bin/Gallery.Desktop/debug/Gallery.Desktop.dll
 SDL_VIDEODRIVER=wayland dotnet out/wsl-artifacts/bin/Gallery.Desktop/debug/Gallery.Desktop.dll
 
-dotnet test tests/EclipseUI.Platform.Linux.Tests --artifacts-path out/wsl-artifacts
+dotnet test tests/BubuUI.Platform.Linux.Tests --artifacts-path out/wsl-artifacts
 ```
 
 当前 WSLg 缺少上述输入法协议，配合 SDL 3.4.2 时会打印一次基本输入回退诊断；如需完整原生 IME，应选择 X11。队列中的中文/emoji 提交、基本键盘输入、剪贴板和 resize 已自动验证，真实中英文输入法切换与候选交互尚待验收。
@@ -76,13 +76,13 @@ dotnet test tests/EclipseUI.Platform.Linux.Tests --artifacts-path out/wsl-artifa
 
 ```bash
 # 无显示服务器也可执行的平台逻辑测试
-dotnet test tests/EclipseUI.Platform.Linux.Tests
+dotnet test tests/BubuUI.Platform.Linux.Tests
 
 # Linux 原生测试：SDL 队列、Unicode、剪贴板、Vulkan、默认字体和完整生命周期
-xvfb-run -a env SDL_VIDEODRIVER=x11 dotnet test tests/EclipseUI.Platform.Linux.Tests
+xvfb-run -a env SDL_VIDEODRIVER=x11 dotnet test tests/BubuUI.Platform.Linux.Tests
 
 # 在 Wayland 会话执行相同原生测试
-SDL_VIDEODRIVER=wayland dotnet test tests/EclipseUI.Platform.Linux.Tests
+SDL_VIDEODRIVER=wayland dotnet test tests/BubuUI.Platform.Linux.Tests
 ```
 
 测试覆盖 ABI、按键与修饰键、DPI 坐标、滚轮、组合文字、控件输入、Tab、浮层、失焦、damage/主题/resize、Content 替换、UI 续体及异常恢复。原生用例在非 Linux 或无显示会话时显式跳过。

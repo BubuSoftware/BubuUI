@@ -1,0 +1,8 @@
+@namespace BubuUI.Themes.Fluent
+@using BubuUI.Elements
+@template Popup
+
+<Grid RowDefinitions="Auto" ColumnDefinitions="Auto">
+    <FluentPopupVisual Owner={Owner} />
+    <ItemsPresenter Owner={Owner} UseOwnerLayout="false" />
+</Grid>

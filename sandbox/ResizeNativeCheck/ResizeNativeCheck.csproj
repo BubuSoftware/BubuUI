@@ -3,6 +3,6 @@
   <ItemGroup>
     <ProjectReference Include="../../samples/Gallery/Gallery.csproj" />
     <ProjectReference Include="../../samples/Gallery.Offscreen/Gallery.Offscreen.csproj" />
-    <ProjectReference Include="../../src/EclipseUI.Platform.Windows/EclipseUI.Platform.Windows.csproj" />
+    <ProjectReference Include="../../src/BubuUI.Platform.Windows/BubuUI.Platform.Windows.csproj" />
   </ItemGroup>
 </Project>

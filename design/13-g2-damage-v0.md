@@ -98,14 +98,14 @@ v0 的收益路径是“**空闲零提交** + 为上述方案提供输入契约�
 
 | 文件 | 变更 |
 |---|---|
-| `src/EclipseUI.Runtime/Element.cs` | `RenderVersion` / `InvalidateRender()`；SetValue / 继承传播 / 子集合挂接 |
-| `src/EclipseUI.Runtime/FocusManager.cs` | 焦点切换 bump 旧/新元素 |
-| `src/EclipseUI.Runtime/Controls.cs` | 按下/释放 bump |
-| `src/EclipseUI.Rendering/SceneGraph/FrameDamage.cs` | 新增：`FrameDamage` + `DamageTracker` |
-| `src/EclipseUI.Rendering/SceneGraph/ElementPainter.cs` | `BuildFrame` / `PaintedFrame` / `ResetDamage`；按元素 visit |
-| `src/EclipseUI.Platform.Windows/WindowHost.cs` | 跳帧 present、`AlwaysRender`、`IdleSleepMilliseconds`、`FrameTicked`、统计属性 |
+| `src/BubuUI.Runtime/Element.cs` | `RenderVersion` / `InvalidateRender()`；SetValue / 继承传播 / 子集合挂接 |
+| `src/BubuUI.Runtime/FocusManager.cs` | 焦点切换 bump 旧/新元素 |
+| `src/BubuUI.Runtime/Controls.cs` | 按下/释放 bump |
+| `src/BubuUI.Rendering/SceneGraph/FrameDamage.cs` | 新增：`FrameDamage` + `DamageTracker` |
+| `src/BubuUI.Rendering/SceneGraph/ElementPainter.cs` | `BuildFrame` / `PaintedFrame` / `ResetDamage`；按元素 visit |
+| `src/BubuUI.Platform.Windows/WindowHost.cs` | 跳帧 present、`AlwaysRender`、`IdleSleepMilliseconds`、`FrameTicked`、统计属性 |
 | `samples/GalleryApp/Program.cs` | `--always-render`；damage 覆盖率与 ticks/rendered/skipped 汇总 |
-| `tests/EclipseUI.Rendering.Tests/DamageTests.cs` | 新增 11 个用例 |
+| `tests/BubuUI.Rendering.Tests/DamageTests.cs` | 新增 11 个用例 |
 
 ## 13.4 验证
 

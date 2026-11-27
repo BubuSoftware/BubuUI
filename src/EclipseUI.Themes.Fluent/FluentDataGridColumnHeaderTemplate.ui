@@ -1,5 +1,0 @@
-@namespace EclipseUI.Themes.Fluent
-@using EclipseUI.Elements
-@template DataGridColumnHeader
-
-<Grid><FluentDataGridColumnHeaderVisual Owner={Owner} /></Grid>

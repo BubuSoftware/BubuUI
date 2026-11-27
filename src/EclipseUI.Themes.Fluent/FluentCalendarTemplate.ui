@@ -1,5 +1,0 @@
-@namespace EclipseUI.Themes.Fluent
-@using EclipseUI.Elements
-@template Calendar
-
-<Grid><FluentCalendarVisual Owner={Owner} /></Grid>

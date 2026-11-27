@@ -90,7 +90,7 @@ assert.ok(decompiled, 'decompiled content provider must be registered for the eu
 assert.strictEqual(typeof decompiled.provider.provideTextDocumentContent, 'function');
 
 const serverPath = args[0];
-assert.ok(serverPath.endsWith('EclipseUI.LanguageServer.dll'), `unexpected server path: ${serverPath}`);
+assert.ok(serverPath.endsWith('BubuUI.LanguageServer.dll'), `unexpected server path: ${serverPath}`);
 assert.ok(fs.existsSync(serverPath), `resolved server does not exist: ${serverPath}`);
 assert.strictEqual(args[1], '--stdio', 'stdio transport must be requested explicitly');
 assert.ok(args.includes('--workspace'), 'workspace folder should be passed for catalog probing');
@@ -98,23 +98,23 @@ assert.strictEqual(args[args.indexOf('--workspace') + 1], workspace, 'workspace 
 assert.strictEqual(client.serverOptions.run.command, 'dotnet');
 assert.deepStrictEqual(
   client.clientOptions.documentSelector.map((s) => s.language),
-  ['eclipseui', 'eclipseui', 'eustyle', 'eustyle'],
-  '.ui and .eustyle documents are served');
-// L7：watcher 必须覆盖项目 Compilation 的全部输入（.eustyle 也在内）。
+  ['bubuui', 'bubuui', 'bss', 'bss'],
+  '.bui and .bss documents are served');
+// L7：watcher 必须覆盖项目 Compilation 的全部输入（.bss 也在内）。
 const watchPatterns = client.clientOptions.synchronize.fileEvents.map((w) => w.pattern.pattern);
-for (const expected of ['**/*.cs', '**/*.ui', '**/*.eustyle', '**/*.csproj',
+for (const expected of ['**/*.cs', '**/*.bui', '**/*.bss', '**/*.csproj',
   '**/Directory.Build.props', '**/obj/project.assets.json']) {
   assert.ok(watchPatterns.includes(expected), `missing file watcher for ${expected}`);
 }
 
 // 2) 显式配置优先
-configuration['server.path'] = 'D:/custom/EclipseUI.LanguageServer.dll';
+configuration['server.path'] = 'D:/custom/BubuUI.LanguageServer.dll';
 configuration['runtime.path'] = 'D:/app/bin';
 configuration['catalog.assemblies'] = ['D:/app/bin/MyApp.dll'];
 
 extension.activate(fakeContext());
 const configuredArgs = lastClient().serverOptions.run.args;
-assert.strictEqual(configuredArgs[0], 'D:/custom/EclipseUI.LanguageServer.dll');
+assert.strictEqual(configuredArgs[0], 'D:/custom/BubuUI.LanguageServer.dll');
 assert.ok(configuredArgs.includes('--runtime'));
 assert.strictEqual(configuredArgs[configuredArgs.indexOf('--runtime') + 1], 'D:/app/bin');
 assert.ok(configuredArgs.includes('--assembly'));
@@ -126,7 +126,7 @@ assert.ok(extension.deactivate() instanceof Promise);
 // 4) 没找到 server 时必须明确报错，而不是静默什么都不做
 configuration['server.path'] = '';
 const originalExists = fs.existsSync;
-fs.existsSync = (candidate) => (String(candidate).endsWith('EclipseUI.LanguageServer.dll') ? false : originalExists(candidate));
+fs.existsSync = (candidate) => (String(candidate).endsWith('BubuUI.LanguageServer.dll') ? false : originalExists(candidate));
 const before = started.length;
 extension.activate(fakeContext());
 fs.existsSync = originalExists;

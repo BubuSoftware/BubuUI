@@ -1,0 +1,12 @@
+@namespace BubuUI.Headless.Tests
+@using BubuUI.Elements
+
+<Canvas Width="160" Height="100">
+    <Popup Ref={Details} HostMode="Window" IsOpen="true" Placement="Pointer" PointerPosition={new Point(130, 90)}>
+        <Button Width="100" Height="40">Popup content</Button>
+    </Popup>
+</Canvas>
+
+@code {
+    public Popup Details = null!;
+}

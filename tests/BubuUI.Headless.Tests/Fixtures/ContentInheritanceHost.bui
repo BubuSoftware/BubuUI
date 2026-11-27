@@ -1,0 +1,14 @@
+@namespace BubuUI.Headless.Tests
+@using BubuUI.Elements
+
+<StackPanel>
+    <ContentInherited Ref={ExplicitCard}>
+        <TextBlock>external content</TextBlock>
+    </ContentInherited>
+    <ContentInherited Ref={DefaultCard}/>
+</StackPanel>
+
+@code {
+    public ContentInherited ExplicitCard = null!;
+    public ContentInherited DefaultCard = null!;
+}

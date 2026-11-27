@@ -1,6 +1,0 @@
-@namespace EclipseUI.Headless.Tests
-@using EclipseUI.Elements
-<TextBlock>{Message}</TextBlock>
-@code {
-    public string Message = "before";
-}

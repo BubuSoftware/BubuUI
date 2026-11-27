@@ -1,0 +1,6 @@
+@namespace BubuUI.Headless.Tests
+@using BubuUI.Elements
+
+<RootSlotCard>
+    <Slot Name="Header"><TextBlock>header from ui</TextBlock></Slot>
+</RootSlotCard>

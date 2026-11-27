@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <RootNamespace>BubuUI.Platform.MacOS</RootNamespace>
+    <Description>BubuUI macOS desktop host: SDL3 Cocoa, Metal, Retina, input and clipboard.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../BubuUI.Runtime/BubuUI.Runtime.csproj" />
+    <ProjectReference Include="../BubuUI.Rendering/BubuUI.Rendering.csproj" />
+    <InternalsVisibleTo Include="BubuUI.Platform.MacOS.Tests" />
+  </ItemGroup>
+</Project>

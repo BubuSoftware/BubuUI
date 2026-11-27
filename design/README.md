@@ -1,6 +1,6 @@
-# EclipseUI 设计文档
+# BubuUI 设计文档
 
-当前模型：`.ui` 根标签作为基类，实例即根；UiObject 统一初始化、更新及资源，Element 与 Window 分别表达控件与窗口能力。
+当前模型：`.bui` 根标签作为基类，实例即根；UiObject 统一初始化、更新及资源，Element 与 Window 分别表达控件与窗口能力。
 
 规范正本是 [spec](../spec/README.md)。本目录说明架构与实施；历史设计不代表当前 API。
 

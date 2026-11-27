@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RootNamespace>BubuUI.Compiler.Generator</RootNamespace>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <IsRoslynComponent>true</IsRoslynComponent>
+    <Description>BubuUI .bui → C# Roslyn incremental source generator.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.9.2" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- 编译器前端以源码形式并入生成器程序集，避免多文件分析器加载问题 -->
+  <ItemGroup>
+    <Compile Include="..\BubuUI.Compiler\**\*.cs" LinkBase="Compiler"
+             Exclude="..\BubuUI.Compiler\obj\**\*.cs;..\BubuUI.Compiler\bin\**\*.cs" />
+    <!-- C2：符号扫描目录同样是生成器的一部分（模板表面只有派生目录这一事实源）。
+         Polyfills.cs 不并入：BubuUI.Compiler/Polyfills.cs 已提供 internal IsExternalInit。 -->
+    <Compile Include="..\BubuUI.Compiler.Metadata\**\*.cs" LinkBase="Metadata"
+             Exclude="..\BubuUI.Compiler.Metadata\obj\**\*.cs;..\BubuUI.Compiler.Metadata\bin\**\*.cs;..\BubuUI.Compiler.Metadata\Polyfills.cs" />
+    <!-- 表达式探针核心（design/06 §6.3）：与 LSP 共享同一实现，所以也是源码并入。 -->
+    <Compile Include="..\BubuUI.Compiler.Probe\**\*.cs" LinkBase="Probe"
+             Exclude="..\BubuUI.Compiler.Probe\obj\**\*.cs;..\BubuUI.Compiler.Probe\bin\**\*.cs" />
+  </ItemGroup>
+
+</Project>

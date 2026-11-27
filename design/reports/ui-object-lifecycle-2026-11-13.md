@@ -18,10 +18,10 @@ Headless 相比变更前的 447 项新增 49 项，涵盖 ui / C# / Window 共�
 ## 命令与产物
 
 ```powershell
-dotnet build EclipseUI.slnx --no-restore
-dotnet test EclipseUI.slnx --logger trx --results-directory TestResults/lifecycle/full
-dotnet test tests/EclipseUI.Headless.Tests/EclipseUI.Headless.Tests.csproj --no-build --logger "trx;LogFileName=headless-final.trx" --results-directory TestResults/lifecycle/final
-dotnet test tests/EclipseUI.Rendering.Tests/EclipseUI.Rendering.Tests.csproj --no-build --blame-hang --blame-hang-timeout 60s --blame-hang-dump-type mini --logger "console;verbosity=normal" --logger "trx;LogFileName=rendering-final.trx" --results-directory TestResults/lifecycle/final
+dotnet build BubuUI.slnx --no-restore
+dotnet test BubuUI.slnx --logger trx --results-directory TestResults/lifecycle/full
+dotnet test tests/BubuUI.Headless.Tests/BubuUI.Headless.Tests.csproj --no-build --logger "trx;LogFileName=headless-final.trx" --results-directory TestResults/lifecycle/final
+dotnet test tests/BubuUI.Rendering.Tests/BubuUI.Rendering.Tests.csproj --no-build --blame-hang --blame-hang-timeout 60s --blame-hang-dump-type mini --logger "console;verbosity=normal" --logger "trx;LogFileName=rendering-final.trx" --results-directory TestResults/lifecycle/final
 git diff --check
 ```
 

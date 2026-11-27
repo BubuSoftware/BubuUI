@@ -17,10 +17,10 @@
 修复前先新增四项回归，横向/纵向宽命中区拖动及按住重复全部失败；修复后全部通过。
 
 ```powershell
-dotnet build EclipseUI.slnx --no-restore -v:q
-dotnet test tests/EclipseUI.Headless.Tests --no-build -v:q --logger "trx;LogFileName=scrollbar-final.trx"
-dotnet test tests/EclipseUI.Rendering.Tests --no-build -v:q --logger "trx;LogFileName=scrollbar-final.trx"
-dotnet test tests/EclipseUI.Compiler.Tests --no-build -v:q --filter "FullyQualifiedName~CatalogScannerTests.Surface_MatchesGoldenSnapshotFile"
+dotnet build BubuUI.slnx --no-restore -v:q
+dotnet test tests/BubuUI.Headless.Tests --no-build -v:q --logger "trx;LogFileName=scrollbar-final.trx"
+dotnet test tests/BubuUI.Rendering.Tests --no-build -v:q --logger "trx;LogFileName=scrollbar-final.trx"
+dotnet test tests/BubuUI.Compiler.Tests --no-build -v:q --filter "FullyQualifiedName~CatalogScannerTests.Surface_MatchesGoldenSnapshotFile"
 dotnet run --project sandbox/ControlNativeCheck --no-restore
 ```
 

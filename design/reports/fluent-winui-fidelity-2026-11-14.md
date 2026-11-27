@@ -54,16 +54,16 @@
 `sandbox/FluentCheck/StateSheet.cs` 用实际控件、InputRouter 和 FocusManager 生成 14 行 × 5 状态的状态图，覆盖 rest、hover、pressed、disabled、keyboard focus；ProgressBar 无交互，相关列仅用于排版对照。同时生成浅/深色 × 100%/125%/150%/200% 共 8 张图，加上原有目录/浮层截图 12 张，共 20 张。
 
 ```powershell
-dotnet build EclipseUI.slnx --no-restore --nologo -v quiet
-dotnet test tests/EclipseUI.Rendering.Tests --no-build --no-restore -- xUnit.ParallelizeTestCollections=false xUnit.MaxParallelThreads=1
-dotnet test tests/EclipseUI.Headless.Tests --no-build --no-restore -- xUnit.ParallelizeTestCollections=false xUnit.MaxParallelThreads=1
-dotnet test tests/EclipseUI.Compiler.Tests --no-build --no-restore -- xUnit.ParallelizeTestCollections=false xUnit.MaxParallelThreads=1
+dotnet build BubuUI.slnx --no-restore --nologo -v quiet
+dotnet test tests/BubuUI.Rendering.Tests --no-build --no-restore -- xUnit.ParallelizeTestCollections=false xUnit.MaxParallelThreads=1
+dotnet test tests/BubuUI.Headless.Tests --no-build --no-restore -- xUnit.ParallelizeTestCollections=false xUnit.MaxParallelThreads=1
+dotnet test tests/BubuUI.Compiler.Tests --no-build --no-restore -- xUnit.ParallelizeTestCollections=false xUnit.MaxParallelThreads=1
 dotnet run --project sandbox/FluentCheck --no-restore -- out/fluent-winui
 ```
 
 输出位置：`out/fluent-winui/states-light-100.png`、`states-dark-100.png`，其余 DPI 用 `125`、`150`、`200` 后缀。图片不是微软原生控件截图。
 
-新增回归覆盖鼠标聚焦的圆角底线、禁用状态、尺寸默认值与显式覆盖、渐变边框状态，以及四档 DPI 下 retained 与 fresh 绘制像素一致。后者验证缓存正确性，**不代表 EclipseUI 与 WinUI 像素一致**。
+新增回归覆盖鼠标聚焦的圆角底线、禁用状态、尺寸默认值与显式覆盖、渐变边框状态，以及四档 DPI 下 retained 与 fresh 绘制像素一致。后者验证缓存正确性，**不代表 BubuUI 与 WinUI 像素一致**。
 
 逐像素验收还需独立 WinUI reference harness：锁定 Windows/App SDK/字体版本/强调色，使用相同控件数据、状态与尺寸导出原生图，生成差分图并分别统计文字、几何、材质区域。目前没有这组原生基线，不能给出可信的相似度百分比。
 

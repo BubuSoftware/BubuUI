@@ -1,9 +1,9 @@
 using System.Diagnostics;
-using EclipseUI;
-using EclipseUI.Rendering;
-using EclipseUI.Rendering.Vello;
-using EclipseUI.Text;
-using EclipseUI.Text.Shaping;
+using BubuUI;
+using BubuUI.Rendering;
+using BubuUI.Rendering.Vello;
+using BubuUI.Text;
+using BubuUI.Text.Shaping;
 
 namespace RenderSpike;
 

@@ -76,7 +76,7 @@ function To-Double {
 
 Push-Location $script:RepoRoot
 try {
-    Write-Log "========== EclipseUI 60fps 复测 =========="
+    Write-Log "========== BubuUI 60fps 复测 =========="
     Write-Log ("时间: " + (Get-Date -Format "yyyy-MM-dd HH:mm:ss"))
     Write-Log ("机器: " + $env:COMPUTERNAME)
     Write-Log ("参数: Configuration=" + $Configuration + " Iterations=" + $Iterations +
@@ -126,7 +126,7 @@ try {
 
     # ---- ① Release 构建 ----
     if (-not $SkipBuild) {
-        $r = Invoke-Step "① Release 构建 (EclipseUI.slnx)" @("build", "EclipseUI.slnx", "-c", $Configuration)
+        $r = Invoke-Step "① Release 构建 (BubuUI.slnx)" @("build", "BubuUI.slnx", "-c", $Configuration)
         $combined += $r.Text
         if ($r.Exit -ne 0) { Write-Log ("警告: 构建退出码 " + $r.Exit + "，后续结果可能无效") }
     } else {
@@ -135,7 +135,7 @@ try {
 
     # ---- ② CPU 渲染测试 ----
     if (-not $SkipCpuTests) {
-        $r = Invoke-Step "② CPU 渲染测试 (tests/EclipseUI.Rendering.Tests)" @("test", "tests/EclipseUI.Rendering.Tests", "-c", $Configuration)
+        $r = Invoke-Step "② CPU 渲染测试 (tests/BubuUI.Rendering.Tests)" @("test", "tests/BubuUI.Rendering.Tests", "-c", $Configuration)
         $combined += $r.Text
         if ($r.Exit -ne 0) { Write-Log ("警告: CPU 渲染测试退出码 " + $r.Exit) }
     } else {

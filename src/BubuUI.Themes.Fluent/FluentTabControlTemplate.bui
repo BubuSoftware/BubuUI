@@ -1,0 +1,8 @@
+@namespace BubuUI.Themes.Fluent
+@using BubuUI.Elements
+@template TabControl
+
+<Grid>
+    <FluentTabControlVisual Owner={Owner} />
+    <ItemsPresenter Owner={Owner} />
+</Grid>

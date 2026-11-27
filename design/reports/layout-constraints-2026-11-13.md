@@ -26,9 +26,9 @@
 按各程序集最后一次验证结果统计，共 1,356 项通过。本次增加 43 项无头用例及 8 项渲染用例，迁移旧契约下的超宽期望及对齐断言；没有更新像素基线。
 
 ```powershell
-dotnet build EclipseUI.slnx --no-restore -v quiet
-dotnet test EclipseUI.slnx --no-restore -m:1 -v quiet --logger trx --results-directory TestResults/layout-contract/final
-dotnet test tests/EclipseUI.Rendering.Tests --no-restore -v quiet --logger trx --results-directory TestResults/layout-contract/final-rendering
+dotnet build BubuUI.slnx --no-restore -v quiet
+dotnet test BubuUI.slnx --no-restore -m:1 -v quiet --logger trx --results-directory TestResults/layout-contract/final
+dotnet test tests/BubuUI.Rendering.Tests --no-restore -v quiet --logger trx --results-directory TestResults/layout-contract/final-rendering
 ```
 
 全量验证后补齐 Visible 无溢出边界，并重跑整个 Rendering 程序集；最新结果在 `final-rendering`。其他程序集的结果在 `final`。测试覆盖有限约束、非法输入/产物、尺寸优先级、Margin、透明块、缩放与受控重测、字体和内容失效、滚动模式与有效偏移、无界父级、虚拟化范围及剪裁命中。

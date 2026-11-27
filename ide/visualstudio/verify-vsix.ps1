@@ -6,13 +6,13 @@ $archive = [IO.Compression.ZipFile]::OpenRead([IO.Path]::GetFullPath($Path))
 try {
     $entries = @($archive.Entries | ForEach-Object { [Uri]::UnescapeDataString($_.FullName.Replace('\', '/')) })
     foreach ($required in @(
-        'extension.vsixmanifest', 'EclipseUI.VisualStudio.dll', 'EclipseUI.pkgdef',
-        'Grammars/eclipseui.tmLanguage.json', 'Grammars/eustyle.tmLanguage.json',
+        'extension.vsixmanifest', 'BubuUI.VisualStudio.dll', 'BubuUI.pkgdef',
+        'Grammars/bubuui.tmLanguage.json', 'Grammars/bss.tmLanguage.json',
         'Grammars/language-configuration.json',
-        'Grammars/eustyle-language-configuration.json',
-        'server/EclipseUI.LanguageServer.dll', 'server/EclipseUI.LanguageServer.deps.json',
-        'server/EclipseUI.LanguageServer.runtimeconfig.json', 'server/EclipseUI.Runtime.dll',
-        'server/EclipseUI.Rendering.dll', 'server/Microsoft.CodeAnalysis.CSharp.Features.dll'
+        'Grammars/bss-language-configuration.json',
+        'server/BubuUI.LanguageServer.dll', 'server/BubuUI.LanguageServer.deps.json',
+        'server/BubuUI.LanguageServer.runtimeconfig.json', 'server/BubuUI.Runtime.dll',
+        'server/BubuUI.Rendering.dll', 'server/Microsoft.CodeAnalysis.CSharp.Features.dll'
     )) {
         if ($entries -notcontains $required) { throw "Incomplete VSIX: missing $required" }
     }
@@ -26,7 +26,7 @@ try {
             throw "Stale VSIX manifest: $field differs from source.extension.vsixmanifest. Rebuild the VSIX."
         }
     }
-    foreach ($name in @('eclipseui', 'eustyle')) {
+    foreach ($name in @('bubuui', 'bss')) {
         $entry = $archive.GetEntry("Grammars/$name.tmLanguage.json")
         $reader = New-Object IO.StreamReader($entry.Open())
         try { $packagedGrammar = $reader.ReadToEnd() } finally { $reader.Dispose() }

@@ -1,0 +1,8 @@
+@namespace BubuUI.Themes.Fluent
+@using BubuUI.Elements
+@using BubuUI.Themes.Fluent
+@template Slider
+
+<Grid>
+    <FluentSliderVisual Owner={Owner} />
+</Grid>

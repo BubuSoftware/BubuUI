@@ -5,7 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 
-namespace EclipseUI.VisualStudio;
+namespace BubuUI.VisualStudio;
 
 // VS's FilesToWatch is tied to open-folder workspaces. Keep solution mode current too.
 internal sealed class WorkspaceFileWatcher : IDisposable
@@ -55,8 +55,8 @@ internal sealed class WorkspaceFileWatcher : IDisposable
     {
         var extension = Path.GetExtension(path);
         return extension.Equals(".cs", StringComparison.OrdinalIgnoreCase)
-            || extension.Equals(".ui", StringComparison.OrdinalIgnoreCase)
-            || extension.Equals(".eustyle", StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(".bui", StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(".bss", StringComparison.OrdinalIgnoreCase)
             || extension.Equals(".csproj", StringComparison.OrdinalIgnoreCase)
             || Path.GetFileName(path).Equals("Directory.Build.props", StringComparison.OrdinalIgnoreCase)
             || (Path.GetFileName(path).Equals("project.assets.json", StringComparison.OrdinalIgnoreCase)

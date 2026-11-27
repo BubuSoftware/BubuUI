@@ -1,6 +1,6 @@
-using EclipseUI;
-using EclipseUI.Rendering;
-using EclipseUI.Rendering.Vello;
+using BubuUI;
+using BubuUI.Rendering;
+using BubuUI.Rendering.Vello;
 
 namespace Gallery;
 

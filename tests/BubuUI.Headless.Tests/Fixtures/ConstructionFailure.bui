@@ -1,0 +1,9 @@
+@namespace BubuUI.Headless.Tests
+@using BubuUI.Elements
+
+<StackPanel>
+    @if (true) {
+        <ConstructionFirstChild />
+        <ConstructionThrowingChild Fail="true" />
+    }
+</StackPanel>

@@ -11,7 +11,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
-$serverProject = Join-Path $here 'EclipseUI.LanguageServer'
+$serverProject = Join-Path $here 'BubuUI.LanguageServer'
 $extensionRoot = Join-Path $here 'vscode'
 $serverOutput = Join-Path $extensionRoot 'server'
 
@@ -21,13 +21,13 @@ if ($LASTEXITCODE -ne 0) {
     throw "dotnet publish failed ($LASTEXITCODE). If VS Code is running the extension, its language server locks server/*.dll (MSB3026/3027). Use Developer: Reload Window or close the window, then retry."
 }
 
-# The server derives its tag catalog from EclipseUI.Runtime.dll (metadata only, no assembly
-# load) and style properties from EclipseUI.Rendering.dll. Neither is a build dependency of
+# The server derives its tag catalog from BubuUI.Runtime.dll (metadata only, no assembly
+# load) and style properties from BubuUI.Rendering.dll. Neither is a build dependency of
 # the server, so publish does NOT copy them. Bundle them so a packaged extension also works
 # when the open workspace is not this repository.
-dotnet build (Join-Path $here '..\src\EclipseUI.Rendering') -c $Configuration --nologo
+dotnet build (Join-Path $here '..\src\BubuUI.Rendering') -c $Configuration --nologo
 if ($LASTEXITCODE -ne 0) { throw "Runtime/rendering build failed ($LASTEXITCODE)." }
-foreach ($name in @('EclipseUI.Runtime', 'EclipseUI.Rendering')) {
+foreach ($name in @('BubuUI.Runtime', 'BubuUI.Rendering')) {
     $assembly = Join-Path $here "..\src\$name\bin\$Configuration\net11.0\$name.dll"
     if (-not (Test-Path -LiteralPath $assembly)) { throw "Required metadata assembly not found: $assembly" }
     Copy-Item -LiteralPath $assembly -Destination $serverOutput -Force

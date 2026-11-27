@@ -1,9 +1,9 @@
 using System.Diagnostics;
-using EclipseUI;
-using EclipseUI.Rendering;
-using EclipseUI.Rendering.Vello;
-using EclipseUI.Text;
-using EclipseUI.Text.Shaping;
+using BubuUI;
+using BubuUI.Rendering;
+using BubuUI.Rendering.Vello;
+using BubuUI.Text;
+using BubuUI.Text.Shaping;
 using RenderSpike;
 
 // G1 渲染 gate 的可运行入口。
@@ -106,7 +106,7 @@ static void WriteDemo(string directory, IRenderBackend backend)
     {
         using var shaper = new HarfBuzzTextShaper(fontPath);
         var font = FontFace.Load(fontPath);
-        var title = shaper.Shape("EclipseUI render gate", 28);
+        var title = shaper.Shape("BubuUI render gate", 28);
         var body = shaper.Shape("HarfBuzz shaping -> Vello glyph run", 16);
         list.Add(new DrawGlyphs(font, title, new Point(32, 360), new Color(255, 255, 255)));
         list.Add(new DrawGlyphs(font, body, new Point(32, 384), new Color(180, 200, 255)));

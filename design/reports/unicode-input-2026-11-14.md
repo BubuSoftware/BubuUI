@@ -19,16 +19,16 @@
 新增测试最终共 16 项：FontFallbackTests 11 项、UnicodeTextBoxTests 5 项，覆盖默认/指定/禁用回退、中文与 emoji 实际像素、彩色输出、混合字体基线与进距、组合 emoji、文本/彩色变体共存、缓存与资源、输入框光标/高度、占位/组合文字及 AppBuilder 装配。
 
 ```powershell
-dotnet build EclipseUI.slnx --no-restore -v:q
-dotnet test tests/EclipseUI.Rendering.Tests --no-build -v:q --logger "trx;LogFileName=unicode-rendering-final.trx"
-dotnet test tests/EclipseUI.Headless.Tests --no-build -v:q --logger "trx;LogFileName=unicode-headless-final.trx"
+dotnet build BubuUI.slnx --no-restore -v:q
+dotnet test tests/BubuUI.Rendering.Tests --no-build -v:q --logger "trx;LogFileName=unicode-rendering-final.trx"
+dotnet test tests/BubuUI.Headless.Tests --no-build -v:q --logger "trx;LogFileName=unicode-headless-final.trx"
 dotnet run --project sandbox/ControlCheck --no-restore -- out/controls.png
 dotnet run --project sandbox/ControlNativeCheck --no-restore
 ```
 
 结果：整仓构建 0 警告、0 错误；渲染测试 135 项、无头测试 615 项通过，合计 750 项。编译器和 IDE 实现未改动。
 
-离屏示例在真实 ControlCatalog.ui 输入框中输入 `Unicode + 中文 😀 👩‍💻 👍🏽 ❤️ 🎉`，断言使用中文/emoji 字体，并生成：
+离屏示例在真实 ControlCatalog.bui 输入框中输入 `Unicode + 中文 😀 👩‍💻 👍🏽 ❤️ 🎉`，断言使用中文/emoji 字体，并生成：
 
 - `out/unicode-input.png`：深色主题，900×220。
 - `out/unicode-input-light.png`：浅色主题，900×220。

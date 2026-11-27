@@ -1,0 +1,7 @@
+@namespace BubuUI.Headless.Tests
+@using BubuUI.Elements
+@inject IInjectGreeter Greeter
+
+<StackPanel>
+    <TextBlock>{Greeter.Greet()}</TextBlock>
+</StackPanel>

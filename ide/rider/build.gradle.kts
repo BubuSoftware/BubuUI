@@ -6,7 +6,7 @@ plugins {
     id("org.jetbrains.intellij.platform") version "2.20.1"
 }
 
-group = "com.eclipseui"
+group = "com.bubuui"
 version = providers.gradleProperty("pluginVersion").get()
 
 java {
@@ -31,7 +31,7 @@ dependencies {
     intellijPlatform {
         // Rider (RD) is the target IDE. LSP4IJ and JetBrains TextMate are the only
         // platform dependencies: the plugin is a thin shell, all semantics live in
-        // EclipseUI.LanguageServer (design/06 "one shared asset, two thin shells").
+        // BubuUI.LanguageServer (design/06 "one shared asset, two thin shells").
         val localPlatformPath = providers.gradleProperty("localPlatformPath")
         if (localPlatformPath.isPresent) {
             local(localPlatformPath.get())
@@ -49,11 +49,11 @@ dependencies {
 
 intellijPlatform {
     pluginConfiguration {
-        id = "com.eclipseui"
-        name = "EclipseUI"
+        id = "com.bubuui"
+        name = "BubuUI"
         version = providers.gradleProperty("pluginVersion").get()
         description = """
-            EclipseUI .ui templates and .eustyle stylesheets: diagnostics, completion,
+            BubuUI .bui templates and .bss stylesheets: diagnostics, completion,
             hover, navigation, rename and more, powered by the same stdio language
             server used by the VS Code extension.
         """.trimIndent()
@@ -70,19 +70,19 @@ intellijPlatform {
 // One shared TextMate asset: the grammars live in ide/vscode/syntaxes and are
 // NEVER copied into this source tree. At build time we assemble a VS Code-shaped
 // bundle (package.json + grammars + language configurations) under resources,
-// which EclipseUiTextMateBundleProvider extracts to disk at runtime.
+// which BubuUiTextMateBundleProvider extracts to disk at runtime.
 // ---------------------------------------------------------------------------
 val vscodeDir = layout.projectDirectory.dir("../vscode")
 val bundleTemplate = layout.projectDirectory.dir("src/main/textmate")
 val generatedBundle = layout.buildDirectory.dir("generated/textmate")
 
 val syncTextMateBundle by tasks.registering(Sync::class) {
-    group = "eclipseui"
+    group = "bubuui"
     description = "Assemble the TextMate bundle from the VS Code extension assets"
 
     from(vscodeDir.dir("syntaxes")) { into("syntaxes") }
     from(vscodeDir.file("language-configuration.json"))
-    from(vscodeDir.file("eustyle-language-configuration.json"))
+    from(vscodeDir.file("bss-language-configuration.json"))
     from(bundleTemplate.file("package.json"))
     into(generatedBundle)
 }
@@ -96,7 +96,7 @@ tasks.named<ProcessResources>("processResources") {
 tasks.withType<PrepareSandboxTask>().configureEach {
     from(vscodeDir.dir("server")) { into(pluginName.map { "$it/server" }) }
     doFirst {
-        check(vscodeDir.file("server/EclipseUI.LanguageServer.dll").asFile.isFile) {
+        check(vscodeDir.file("server/BubuUI.LanguageServer.dll").asFile.isFile) {
             "Publish the shared server first: pwsh -File ../build.ps1"
         }
     }
@@ -106,7 +106,7 @@ tasks.withType<PrepareSandboxTask>().configureEach {
 // Plain node needs no JVM at all; the Gradle task is just a convenient entry
 // point on machines that already have the toolchain.
 tasks.register<Exec>("verifyShell") {
-    group = "eclipseui"
+    group = "bubuui"
     description = "Static contract checks for the Rider shell (no IDE download needed)"
     dependsOn(syncTextMateBundle)
     workingDir(projectDir)

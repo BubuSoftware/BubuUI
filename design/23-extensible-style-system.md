@@ -48,7 +48,7 @@ Badge.notice {
 
 ```xml
 @namespace Demo
-@using EclipseUI.Elements
+@using BubuUI.Elements
 
 @style {
     .primary {
@@ -62,7 +62,7 @@ Badge.notice {
 </StackPanel>
 ```
 
-`.eustyle` 是可安装的样式模块，`@style` 的规则限定在组件实例子树中。
+`.bss` 是可安装的样式模块，`@style` 的规则限定在组件实例子树中。
 `Class` 为元素添加类名，`Style` 只接受声明列表，属性绑定和类型转换规则与样式表相同。
 内联 Style 在模板根写 template 层，在使用点或普通子项写 local 层，沿用 §4 的值层契约。
 上述 card 来自已安装的外部样式表；primary 来自本组件 sheet。
@@ -237,7 +237,7 @@ public class Button : Element { /* 测量和绘制读取上述属性 */ }
 属性的稳定身份是程序集身份与完整字段元数据名，运行期由该静态字段对象承载。
 `Glow` 是书写短名，不是全局唯一的属性注册键。
 
-`.eustyle` 引入与 `.ui` 一致的 namespace / using / using alias 查找能力：
+`.bss` 引入与 `.bui` 一致的 namespace / using / using alias 查找能力：
 
 ```scss
 @using Acme.Controls
@@ -249,7 +249,7 @@ Badge.notice {
 }
 ```
 
-带点属性名按类型/别名限定解析，最后一段定位标注字段的样式名。内建 EclipseUI 命名空间隐式导入。
+带点属性名按类型/别名限定解析，最后一段定位标注字段的样式名。内建 BubuUI 命名空间隐式导入。
 普通短名在导入范围内查找；目标类型已知时再按适用性过滤。多个合法候选报歧义并给限定名建议。
 不同库可以各自拥有 Glow，不因项目新增引用而把双方从目录删除，也不设置“内建优先”。
 同一属性的多个公开字段别名不受支持；复用通过引用 canonical 字段完成。
@@ -275,7 +275,7 @@ Badge.notice {
 类型自带解析器是缺省。外部 provider 在解析器静态类上声明
 `[UiLiteralParserFor(typeof(T), ParseMethod = "Parse")]`，格式和候选参数与 UiLiteralParser 相同。
 使用点通过模块级 `@converter External.Value = App.ValueParser;` 显式选择；类型名遵循导入规则。
-该指令同时适用于 `.ui` 的字面量与内联 Style，避免同一文件内产生两套转换约定。
+该指令同时适用于 `.bui` 的字面量与内联 Style，避免同一文件内产生两套转换约定。
 同一模块对同一 T 选择多个 provider 报歧义。仅引用库不产生全局覆盖。
 provider 声明只描述类型和方法，不加载或执行用户程序集。
 带 Pattern 的解析器沿用超时与确定性校验要求；无 Pattern 时只能保证签名，不能宣称业务值已通过校验。
@@ -662,7 +662,7 @@ IDE 与编译器共用上述目录，不为内建属性或第三方属性另建�
 候选查询使用文档版本一致的目录、导入、语法树和 converter 选择快照；旧版本异步结果不得覆盖新版本。
 文档修改优先重建局部语法；类型 API、引用库、导入或解析声明变化时使相关目录/绑定缓存失效。
 LSP 不执行用户 Parse/Validate/Normalize，不实例化属性句柄，不为了给候选而启动应用。
-`.eustyle`、`.ui` 的 @style、Style 属性共享语义服务，只由各自入口映射光标与替换 span。
+`.bss`、`.bui` 的 @style、Style 属性共享语义服务，只由各自入口映射光标与替换 span。
 
 ## 10. 实施切片与验收
 
@@ -671,9 +671,9 @@ LSP 不执行用户 Parse/Validate/Normalize，不实例化属性句柄，不为
 | 片 | 工作 | 主要改动位置 | 出口 |
 |---|---|---|---|
 | S1 属性核心 | 强类型 owner 句柄、metadata、ValueSource 常量骨架、统一校验、使用者声明 | Runtime/PropertySystem、UiAttributes、Element；Compiler.Metadata | 运行时与第三方属性同通道；所有写入层行为一致 |
-| S2 目录与值 | 单一字段目录、目标类型 converter、限定名、复合值、候选/片段元数据及共享补全语义服务 | StylePropertyCatalogFactory、EustyleAst/Parser/Generator、IDE | 第三方程序集新增复杂类型属性，无编译器改动即可生成并运行；属性和值补全自动出现 |
+| S2 目录与值 | 单一字段目录、目标类型 converter、限定名、复合值、候选/片段元数据及共享补全语义服务 | StylePropertyCatalogFactory、BssAst/Parser/Generator、IDE | 第三方程序集新增复杂类型属性，无编译器改动即可生成并运行；属性和值补全自动出现 |
 | S3 来源与资源 | ValueSource<T>、typed key、上下文、默认来源、原子快照 | Runtime 属性存储、Rendering/Visual、AppBuilder | 任意 T 的主题/资源与 local/template 正确级联；中间值不泄漏 |
-| S4 规则与树 | 完整选择器、状态声明目录、级联比较、变化索引、挂接传播 | EustyleCollapse 替换、TemplateGenerator、Emitter、ElementCollection | 动态类、树移动、多层链和交错状态正确；自定义状态可诊断/补全；静态 BEM 注入退出 |
+| S4 规则与树 | 完整选择器、状态声明目录、级联比较、变化索引、挂接传播 | BssCollapse 替换、TemplateGenerator、Emitter、ElementCollection | 动态类、树移动、多层链和交错状态正确；自定义状态可诊断/补全；静态 BEM 注入退出 |
 | S5 视觉闭环 | 通用装饰、内建属性迁移、控件消费、上下文装配 | ElementPainter、Controls、Panels、Window 宿主 | 圆角/内边距等实际生效；多窗口、独立 Registry 等价场景隔离 |
 | S6 清理与工具 | 移除旧通道、迁移 Gallery、ExplainValue、性能与文档 | samples、tests、IDE、design、spec | 无平行旧机制，样例和规范使用同一套 API |
 
@@ -711,7 +711,7 @@ S3 的快照与上下文是 S4 的前置条件；S4 完成后再整体切换生�
 ## 11. 完成标准
 
 拿一个框架未见过的类型 T 和一个第三方控件，作者只在自己的库中声明属性、解析器与消费实现，
-宿主就能在 `.eustyle`、`@style`、`Style=` 和 C# 中使用该属性，并获得相同的类型检查、
+宿主就能在 `.bss`、`@style`、`Style=` 和 C# 中使用该属性，并获得相同的类型检查、
 主题资源、级联、继承和失效行为。整个过程不修改 StyleBuilder、编译器分支或中央控件绘制分发。
 
 达到这一标准，才能称为属性及属性值均可扩展的样式系统。

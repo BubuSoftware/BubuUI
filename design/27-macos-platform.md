@@ -1,6 +1,6 @@
 # macOS 桌面平台
 
-`EclipseUI.Platform.MacOS` 使用 SDL3 Cocoa 窗口，Vello 通过 Metal 直接呈现。项目目标为 `net11.0`，`Gallery` 自动选择 macOS 平台；Runtime、模板、元素树与其他平台共享。
+`BubuUI.Platform.MacOS` 使用 SDL3 Cocoa 窗口，Vello 通过 Metal 直接呈现。项目目标为 `net11.0`，`Gallery` 自动选择 macOS 平台；Runtime、模板、元素树与其他平台共享。
 
 ## 启动
 
@@ -14,10 +14,10 @@ dotnet run --project samples/Gallery.Desktop -- --cpu --shot out/gallery-macos.p
 自建应用引用平台、Vello 和文本模块：
 
 ```csharp
-using EclipseUI;
-using EclipseUI.Platform.MacOS;
-using EclipseUI.Rendering.Vello;
-using EclipseUI.Text.Shaping;
+using BubuUI;
+using BubuUI.Platform.MacOS;
+using BubuUI.Rendering.Vello;
+using BubuUI.Text.Shaping;
 
 return AppBuilder.Configure<MyApplication>()
     .UseMacOS()
@@ -73,8 +73,8 @@ eng/package-macos.sh --publish-dir out/osx-arm64 --rid osx-arm64 --output out/ma
 ## 验证
 
 ```bash
-dotnet test tests/EclipseUI.Platform.MacOS.Tests
-dotnet build EclipseUI.slnx
+dotnet test tests/BubuUI.Platform.MacOS.Tests
+dotnet build BubuUI.slnx
 python3 eng/test_macos_bundle.py
 eng/verify-macos-package.sh out/macos/Gallery.app
 ```

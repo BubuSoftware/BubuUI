@@ -6,14 +6,14 @@ on:
       - '.github/workflows/rider.yml'
       - 'ide/**'
       - 'src/**'
-      - 'tests/EclipseUI.Ide.Tests/**'
+      - 'tests/BubuUI.Ide.Tests/**'
       - 'Directory.Build.*'
   pull_request:
     paths:
       - '.github/workflows/rider.yml'
       - 'ide/**'
       - 'src/**'
-      - 'tests/EclipseUI.Ide.Tests/**'
+      - 'tests/BubuUI.Ide.Tests/**'
       - 'Directory.Build.*'
   workflow_dispatch:
 
@@ -46,7 +46,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: eclipseui-rider-macos
+          name: bubuui-rider-macos
           path: |
             ide/rider/build/distributions/*.zip
             ide/rider/build/test-results/test/*.xml

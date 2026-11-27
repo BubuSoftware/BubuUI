@@ -1,4 +1,4 @@
-# 计划：`.ui` 语法向 Blazor/Razor 对齐（S6 语法对齐切片）
+# 计划：`.bui` 语法向 Blazor/Razor 对齐（S6 语法对齐切片）
 
 > **状态：✅ S6 已实现（2026-11-08）——K23 整波与 K24–K30 实施细项全部落地，D85–D88 收敛，497 例回归全绿**
 > 已落地的决策：**K21**（`@code` 位置与成员可见性，§5.2）、**K22**（`@using` 与标签作用域，§5.3）、
@@ -55,7 +55,7 @@
 | `@code { ... }` | ✅ **K21/K23 ④ 已定** | 类成员（字段/属性/方法）；**位置不限**、可多个块、书写顺序不影响可见性（K21）；与 code-behind 并存（K23 ④）；`@functions` 别名按 Q4 待定 |
 | `@{ ... }` | ⚠️ 待 Q1/Q3 | Razor 的代码块（局部变量/语句，与表达式共享作用域）；若采纳需明确与 `{expr}` 的共存规则 |
 | `@* ... *@` | ✅ **K23 已定** | 编译器丢弃的注释；未闭合报 `EUI100`（顺带关闭 D12，D88）；`<!-- -->` 弃用期形态待 Q6 |
-| `@using Ns` | ✅ **K22/K23 已定** | 导入命名空间；生成代码保留 `using Ns;`；标签只在导入命名空间内解析，内置控件亦须 `@using EclipseUI.Elements`（§5.3 / D85；**@namespace 链已由 K33/D111 修订为隐式可见**） |
+| `@using Ns` | ✅ **K22/K23 已定** | 导入命名空间；生成代码保留 `using Ns;`；标签只在导入命名空间内解析，内置控件亦须 `@using BubuUI.Elements`（§5.3 / D85；**@namespace 链已由 K33/D111 修订为隐式可见**） |
 | `@try/catch/finally`、`@lock` | ❌ 本波不做 | 与 UI 结构生成无对应关系；需要时用 `@code` 方法 |
 
 ### 3.2 不采纳（Web/HTML 糟粕）
@@ -69,7 +69,7 @@
 | HTML 语法债 | `<!-- -->` 作为模板注释、HTML 标签兜底、`@("xxx")` 字面量、属性大小写不敏感、最小化属性、XML 实体 / CDATA、`@attributes` 展开、CSS `class`/`style` 语义 |
 | 运行时 | 渲染树 diff、`RenderFragment`、`EventCallback`、DI、SSR/WASM、CSS isolation |
 
-### 3.3 保持（EclipseUI 自有资产，不动）
+### 3.3 保持（BubuUI 自有资产，不动）
 
 `{expr}` 单花括号表达式与引号字面量规则、`@bind-P`、`Key`/`Ref`、`On*` 事件、`Class`/`Style`/附加属性保留位（G4）、具名插槽（C6/K10）、`EUI001`–`EUI045` 诊断体系、span 型 `#line` 映射（D79）、逐文件增量生成（D81）、目录级诊断出口（D81）、`EUI024` 签名探针（D82）、K1–K18 运行时模型、K19 泛型暂缓、K20 决策权威位置。
 
@@ -111,7 +111,7 @@
 
 ### P3 · 生成器 · 单文件代码（风险最高）— ✅ 已完成 2026-11-08
 
-- `Emitter.Emit`（L77–128）类壳增加 `@code` 成员透传，并让 `Mapped`（L146–162）为 `@code` 内成员/语句建立 `.ui` span 映射。
+- `Emitter.Emit`（L77–128）类壳增加 `@code` 成员透传，并让 `Mapped`（L146–162）为 `@code` 内成员/语句建立 `.bui` span 映射。
 - `TemplateGenerator.ExtractFacts`（L62–120）放宽 `EUI005`；`ProbeCodeBehindConflicts`（L215）扩展到 `@code` 成员；`IsGeneratedMemberName`（L254）白名单不变。
 - **`TemplateProbe.ProbeTree`（L742–770）必须把 `@code` 成员所在语法树加入探针 `Compilation`**，否则 `InferType`/`IsWritableSource`/`IsRefTarget`/`IsHandlerCompatible` 全部看不到新成员，`EUI007`/`EUI037`/`EUI029`/`EUI024` 会集体误报（R1）。**K21 追加约束：先遍历整份文档收集全部 `@code` 成员，再生成类壳与探针 Compilation**，保证后置块成员对前置表达式同样可见；`EUI045` 与 `#line` 按各块实际 span 处理。**K22 追加**：`UiCatalog.Resolve` 按 `@using` 导入集合过滤，`EUI001` 建议补「缺失的 @using」，同名歧义仍 `EUI016`；文件头按模板顺序输出 using 行。
 - 增量管道 `WithTrackingName("PerFileGeneration")` 保持；`spec/02` §2.4 `#line` 契约「必须映射 / 不映射」清单重写。
@@ -133,10 +133,10 @@
 
 ### P6 · 收口与迁移 — ✅ 已完成 2026-11-08
 
-- 样例：`CounterApp`/`TaskList` 至少一个改为单文件 `@code` 形态，其余保留 code-behind 以验证并存；**至少一个样例把 `@code` 放在模板下方**，验证「上引用下」与多块合并（K21）；**全部 `.ui` 样例、约 94 例 golden 与块/诊断测试模板统一补 `@using`（K22，一次性迁移 + 回归）**。
+- 样例：`CounterApp`/`TaskList` 至少一个改为单文件 `@code` 形态，其余保留 code-behind 以验证并存；**至少一个样例把 `@code` 放在模板下方**，验证「上引用下」与多块合并（K21）；**全部 `.bui` 样例、约 94 例 golden 与块/诊断测试模板统一补 `@using`（K22，一次性迁移 + 回归）**。
 - 文档双向同步（spec ↔ design ↔ README）、`design/09` 里程碑进度、`spec/README`/`design/README` 边界声明。
 - ✅ 台账关账（2026-11-08）：D85–D88 全部 ✅、D12 ✅ S6、D11 ✅ S6、K21/K22/K23 ✅ S6；`EUI043`/`EUI008` 停用码零出现。
-- **验收**：`dotnet test EclipseUI.slnx` 全绿（基线 497 例：Headless 214 / Compiler 218 / Rendering 65）；golden 生成文本、诊断快照、样本项目编译与运行（`spec/01` §8 规则 5）。
+- **验收**：`dotnet test BubuUI.slnx` 全绿（基线 497 例：Headless 214 / Compiler 218 / Rendering 65）；golden 生成文本、诊断快照、样本项目编译与运行（`spec/01` §8 规则 5）。
 
 ## 5. 决策状态与待拍板细项（Q1–Q8）
 
@@ -178,7 +178,7 @@
 **保留 `{expr}` 的六条理由**
 
 1. **`@` 已被指令占满**：对齐后 `@` 要承担 `@if`/`@foreach`/`else`/`@switch`/`@code`/`@* *@`/`@bind-`。再引入隐式 `@expr`，词法上「`@` 后跟标识符」究竟是指令、C# 标识符还是转义，只能靠名字表 + 上下文猜；Razor 靠 HTML 标签/属性位置与保留字表消歧，这里没有 HTML 层，`EUI009`「未知指令」的边界也会被迫放宽到「排除所有可能的 C# 标识符」。
-2. **引号语义相反，会推翻冻结线**：Blazor 中非 string 参数 `Count="count"` 是 C# 表达式；EclipseUI 中 `Label="{x}"` 永远是字符串字面量（`spec/01` §2.5 L195、§1.4 冻结线 11）。改成 `@expr` 必须改这条已实现语义，按 §8 规则 2 要走「新语法 + 弃用期」，代价远高于收益；而 `P="..."` 原生字面量正是为了消灭 `@("xxx")` 债。
+2. **引号语义相反，会推翻冻结线**：Blazor 中非 string 参数 `Count="count"` 是 C# 表达式；BubuUI 中 `Label="{x}"` 永远是字符串字面量（`spec/01` §2.5 L195、§1.4 冻结线 11）。改成 `@expr` 必须改这条已实现语义，按 §8 规则 2 要走「新语法 + 弃用期」，代价远高于收益；而 `P="..."` 原生字面量正是为了消灭 `@("xxx")` 债。
 3. **隐式表达式的三个坑，`{expr}` 已经解决**：平衡大括号 + 字符串感知捕获（`Lexer.cs` L258–290）天然支持空格、lambda 块体、嵌套 `{}`、泛型 `<...>`，`>` 不截断（`Lambda_WithGt_IsNotTruncated` 有回归用例）。引入 `@expr` 等于把「什么时候必须加 `@()`」重新引回来，还附带 `@@` / `@:` / 双重转义。
 4. **`@code` 与表达式边界清晰**：`{expr}` 只放表达式不放语句/声明（`spec/01` §2.6 L203），`@code` 只放类成员，不需要 Razor 那种「C# ↔ 标记」状态机与隐式转换规则。
 5. **生成契约成本**：`{expr}` 的 span 直接驱动 span 型 `#line`（D79）、表达式原样输出不重写（K15）、插值用 `{(expr)}` 规避格式符（K12）。改成 `@expr` 要重做捕获边界、`UiSourceLocation`、`Emitter.Mapped`、约 94 例 `GeneratorContractTests` golden 与 5 例 `LineSpanMappingTests`，且 D11 扫描器口径要重定，纯成本无功能收益。
@@ -261,9 +261,9 @@
 | 指令形态 | `@using {Namespace}`（2026-11-16 修订：结尾分号可选），支持多条；**不做** compound `@using (...)`、`@using static`。类型别名 `@using Alias = Ns.Type` 在 S6 之后由 **K31** 放开（原文「不做别名 using」仅指当时范围） |
 | 生成代码 | 全部 `@using` 在 `#nullable enable` 之后、`namespace` 之前输出为普通 `using {Ns};`；**不生成 `global using`、不生成模板未声明的 using**；其余生成代码的 `global::` 全限定规则不变 |
 | 标签解析 | `UiCatalog.Resolve(tag)` 改为按导入命名空间过滤；只有导入命名空间中的控件/组件可被短名解析 |
-| 内置控件 | **无豁免**：内置控件在 `EclipseUI.Elements`（`Controls.cs` / `Panels.cs` / `TextBlock.cs`），必须 `@using EclipseUI.Elements` |
+| 内置控件 | **无豁免**：内置控件在 `BubuUI.Elements`（`Controls.cs` / `Panels.cs` / `TextBlock.cs`），必须 `@using BubuUI.Elements` |
 | 未导入标签 | 报 `EUI001` 并在建议里给出缺失的 `@using`；同名歧义仍 `EUI016`；不静默降级成别的状态 |
-| code-behind | `.cs` 里的 `using` **不参与**标签解析，只认 `.ui` 内的 `@using`（与 Blazor imports 文件不作用于 `.cs` 一致） |
+| code-behind | `.cs` 里的 `using` **不参与**标签解析，只认 `.bui` 内的 `@using`（与 Blazor imports 文件不作用于 `.cs` 一致） |
 | 位置 | 文档顶层任意位置均可，生成器统一收集并提到文件头；书写顺序不影响（与 K21 一致） |
 | `@code` 收益 | `@code` 原文（如 `List<string>`）不再依赖项目级 global using：写 `@using System.Collections.Generic` 即合法 |
 
@@ -272,7 +272,7 @@
 1. `Lexer`/`Parser`：`@using` 进指令表、从 `EUI009` 拒绝清单移除；解析为 `UiUsingDirective`（命名空间文本 + span）。
 2. `Analyzer`/`UiCatalog`：`UiElementDef` 已有 CLR 类型信息，过滤逻辑加导入集合；`EUI001` 建议文本扩展；补「缺 using」快照用例。
 3. `Emitter`：文件头按模板顺序输出 using 行；using 行是否做 `#line` 映射由 §2.4 清单补（倾向不映射，它不是用户表达式）。
-4. **迁移（P6 大头）**：`samples/CounterApp` 全部 `.ui`、`GeneratorContractTests` 约 94 例 golden、
+4. **迁移（P6 大头）**：`samples/CounterApp` 全部 `.bui`、`GeneratorContractTests` 约 94 例 golden、
    块/诊断测试的模板字符串都要补 `@using`；未迁移前 `EUI001` 会大面积失败，须按 §8 规则 2 走「一次性迁移 + 回归」，
    不做静默兼容。
 5. 偏差台账：✅ **D85 已登记**「现行实现仍是全局短名目录 / §2.2 旧口径」，S6 实施（P1–P3/P6）时关闭。
@@ -285,7 +285,7 @@
 | # | 风险 | 缓解 |
 |---|---|---|
 | **R1** | 探针语义模型看不到 `@code` 成员 → `EUI007`/`EUI024`/`EUI029`/`EUI037` 集体误报（P3 最高风险） | P3 先做「探针 Compilation 注入」并写专门回归测试，再改类壳 |
-| **R2** | Razor 的 `for`/`while` 是「重渲染时重新展开」，EclipseUI 是「块协调器 Keyed 复用」，动态次数变化的生命周期无现成语义 | ✅ K23 ③ 已先收敛到 `else` + `switch`；若要做循环，须在 P0 补写销毁/重建契约并登记 K24+（Q3 待拍板） |
+| **R2** | Razor 的 `for`/`while` 是「重渲染时重新展开」，BubuUI 是「块协调器 Keyed 复用」，动态次数变化的生命周期无现成语义 | ✅ K23 ③ 已先收敛到 `else` + `switch`；若要做循环，须在 P0 补写销毁/重建契约并登记 K24+（Q3 待拍板） |
 | **R3** | `@code` 内成员/语句的 `#line` span 映射，影响编译错误定位与 IDE 跳转 | 扩展 `LineSpanMappingTests`；`spec/02` §2.4 清单同步重写 |
 | **R4** | 文档先行纪律：K20 + `spec/01` §8 规则 1/8 要求先登记再改代码 | ✅ **P0 闸门已完成**（K23 + §1.5 + D85–D88 + 全仓同步）；`src/` 仍一行未动，Q3/Q4/Q6/Q7 待拍板细项不阻塞已定项 |
 | **R5** | `GeneratorContractTests` 约 94 例 golden 依赖类壳与 `#line` 形态，改动面大 | 分两步：先加 `@code` 透传（不影响无 `@code` 模板的字节输出），再改诊断 |
@@ -312,7 +312,7 @@ P1–P6 全部走完，Q3/Q4/Q6/Q7 已拍板为 K24–K28、`@switch` 细项为 
 
 ---
 
-## 附录 A · 对齐后单文件示例（TaskBoard.ui，按 K21 重写）
+## 附录 A · 对齐后单文件示例（TaskBoard.bui，按 K21 重写）
 
 > **2026-11-08 重写说明**：由「`@code` 置顶」改为「模板在上、`@code` 收尾」，与 Blazor 标准 `Counter`
 > 模板一致。K21 同时允许置顶、置底或前后各一块，这里取最常见的一种；§5.2 有简版与多块变体。
@@ -322,8 +322,8 @@ P1–P6 全部走完，Q3/Q4/Q6/Q7 已拍板为 K24–K28、`@switch` 细项为 
 > 按 **K22**，模板头两条 `@using` 分别让内置控件与 `List<string>` 可见，且会原样保留到生成文件。
 
 ```razor
-@* TaskBoard.ui — K23 目标语法形态，当前编译器（v2）尚不支持 *@
-@using EclipseUI.Elements
+@* TaskBoard.bui — K23 目标语法形态，当前编译器（v2）尚不支持 *@
+@using BubuUI.Elements
 @using System.Collections.Generic
 
 <StackPanel Gap="8">
@@ -391,9 +391,9 @@ P1–P6 全部走完，Q3/Q4/Q6/Q7 已拍板为 K24–K28、`@switch` 细项为 
 | 多块变体（K21） | 可拆成「顶部一块放 `_title` + 底部一块放状态与方法」，成员合并进同一个 partial 类；本例取单块 |
 | 流程对齐 | `@if` → `else if` → `else`（`else` 不带 `@`）、`@switch` 的 `case`/`break`/`default`、`@foreach` + `Key={}` |
 | 注释对齐（K23/D88） | `@* *@`；`<!-- -->` 按 Q6 给弃用期，本例不再使用 |
-| 单文件（K23 ④ 已定） | 无同名 `.cs`，状态与方法都在 `.ui`；`EUI005` 放宽为「`@code` 或同名 partial 至少其一」 |
+| 单文件（K23 ④ 已定） | 无同名 `.cs`，状态与方法都在 `.bui`；`EUI005` 放宽为「`@code` 或同名 partial 至少其一」 |
 | 保持不动 | `{expr}`、`Gap="8"` 字面量、`@bind-Checked={...}`、`OnClick={}`、单根元素树、`Invalidate()` 由事件包装自动触发 |
-| `@using`（K22） | 头两条：`@using EclipseUI.Elements` 让内置控件可见（无豁免），`@using System.Collections.Generic` 让 `@code` 里的 `List<string>` 合法；生成文件保留为 `using ...;` |
+| `@using`（K22） | 头两条：`@using BubuUI.Elements` 让内置控件可见（无豁免），`@using System.Collections.Generic` 让 `@code` 里的 `List<string>` 合法；生成文件保留为 `using ...;` |
 | 不出现（K23 ② 已定） | `@page`、`@rendermode`、`@inject`、`@inherits`、`@typeparam`、`@attributes`、`class`/`style` |
 | 待定边界 | `case` 内嵌 `@foreach` 属 **P4 待定义**（若不允许则抽成子组件）；`@for`/`@while`/`@do` 待 Q3；`@{}` 待定；`<!-- -->` 弃用期形态待 Q6 |
 | 实现注意（P3） | 生成器须**先全量收集 `@code` 成员**再建探针 Compilation，否则本例上方的 `{_title}` 会误报 `EUI007`（R1/K21） |
@@ -401,7 +401,7 @@ P1–P6 全部走完，Q3/Q4/Q6/Q7 已拍板为 K24–K28、`@switch` 细项为 
 
 ---
 
-## 附录 B · 生成契约草案（对应附录 A 的 `TaskBoard.ui`）
+## 附录 B · 生成契约草案（对应附录 A 的 `TaskBoard.bui`）
 
 > 状态：**草案**，随 Q3/Q4/Q6/Q7 / P3 / P4 定稿，不占 K 编号；`@using` 部分已由 **K22** 定稿（§5.3），
 > 整波方向由 **K23** 定稿（`spec/02` §14）；规范先行偏差见 D85–D88。
@@ -412,17 +412,17 @@ P1–P6 全部走完，Q3/Q4/Q6/Q7 已拍板为 K24–K28、`@switch` 细项为 
 ### B.1 文件头、`@code` 透传与类壳
 
 ```csharp
-// <auto-generated> 由 EclipseUI 模板编译器生成；请勿手动修改。 </auto-generated>
+// <auto-generated> 由 BubuUI 模板编译器生成；请勿手动修改。 </auto-generated>
 #nullable enable
-using EclipseUI.Elements;              // K22：由模板 @using 透传
+using BubuUI.Elements;              // K22：由模板 @using 透传
 using System.Collections.Generic;     // K22：让 @code 原文 List<string> 合法
 
 namespace Samples;
 
-internal partial class TaskBoard : global::EclipseUI.Component
+internal partial class TaskBoard : global::BubuUI.Component
 {
     // ── @code 成员：原样透传，本例来自模板尾部；K21 顺序无关 ──
-#line (33, 5) - (33, 45) "C:\Workspace\EclipseUI\samples\TaskBoard.ui"
+#line (33, 5) - (33, 45) "C:\Workspace\BubuUI\samples\TaskBoard.bui"
     private string _title = "Task Board";
     private int _count;
     private bool _showButton = true;
@@ -435,38 +435,38 @@ internal partial class TaskBoard : global::EclipseUI.Component
 #line hidden
 
     // ── 生成字段：仅跨方法引用者提升（§2.3）──
-    private global::EclipseUI.Elements.TextBlock __el1 = null!;
-    private global::EclipseUI.ConditionalBlock __blk2 = null!;
-    private global::EclipseUI.SwitchBlock<global::System.String> __blk3 = null!;   // P4 新增
-    private global::EclipseUI.ForEachBlock<global::System.String> __blk4 = null!;
-    private global::EclipseUI.UiBinding __bind5 = null!;
+    private global::BubuUI.Elements.TextBlock __el1 = null!;
+    private global::BubuUI.ConditionalBlock __blk2 = null!;
+    private global::BubuUI.SwitchBlock<global::System.String> __blk3 = null!;   // P4 新增
+    private global::BubuUI.ForEachBlock<global::System.String> __blk4 = null!;
+    private global::BubuUI.UiBinding __bind5 = null!;
 ```
 
 ### B.2 `Build()` 关键片段
 
 ```csharp
-    protected override global::EclipseUI.Element Build()
+    protected override global::BubuUI.Element Build()
     {
-        var el0 = new global::EclipseUI.Elements.StackPanel();
+        var el0 = new global::BubuUI.Elements.StackPanel();
         el0.Gap = 8;
-        __el1 = new global::EclipseUI.Elements.TextBlock();
+        __el1 = new global::BubuUI.Elements.TextBlock();
         el0.Children.Add(__el1);                       // 动态文本由 U0() 写，不在此处求值
 
-        __blk2 = new global::EclipseUI.ConditionalBlock();
+        __blk2 = new global::BubuUI.ConditionalBlock();
         el0.Children.Add(__blk2);
-#line (6, 5) - (6, 22) "C:\...\TaskBoard.ui"
+#line (6, 5) - (6, 22) "C:\...\TaskBoard.bui"
         __blk2.AddBranch(() => _count == 0, scope6 => { /* 还没开始 */ });
 #line hidden
-#line (8, 5) - (8, 27) "C:\...\TaskBoard.ui"
+#line (8, 5) - (8, 27) "C:\...\TaskBoard.bui"
         __blk2.AddBranch(() => _count < 5, scope7 => { /* 热身中：{5 - _count} */ });
 #line hidden
         __blk2.SetDefault(scope8 => { /* 达标了 */ });
         Track(__blk2);
         __blk2.Refresh();
 
-        __blk3 = new global::EclipseUI.SwitchBlock<global::System.String>();
+        __blk3 = new global::BubuUI.SwitchBlock<global::System.String>();
         el0.Children.Add(__blk3);
-#line (13, 5) - (13, 24) "C:\...\TaskBoard.ui"
+#line (13, 5) - (13, 24) "C:\...\TaskBoard.bui"
         __blk3.SetSelector(() => _view);
 #line hidden
         __blk3.AddCase("list", scope9 => { /* @foreach 条目模板 */ });
@@ -475,30 +475,30 @@ internal partial class TaskBoard : global::EclipseUI.Component
         Track(__blk3);
         __blk3.Refresh();
 
-        __blk4 = new global::EclipseUI.ForEachBlock<global::System.String>();
+        __blk4 = new global::BubuUI.ForEachBlock<global::System.String>();
         el0.Children.Add(__blk4);
         __blk4.SetItems(() => _tasks);
         __blk4.SetKeySelector((global::System.String t) => (object?)(t));
-        __blk4.SetTemplate((global::System.String t, global::EclipseUI.BlockScope scope12) =>
+        __blk4.SetTemplate((global::System.String t, global::BubuUI.BlockScope scope12) =>
         {
-            var el13 = new global::EclipseUI.Elements.ListBoxItem();
+            var el13 = new global::BubuUI.Elements.ListBoxItem();
             /* ... */
             scope12.AddRoot(el13);
         });
         Track(__blk4);
         __blk4.Refresh();
 
-        var btn14 = new global::EclipseUI.Elements.Button();
-#line (30, 25) - (30, 34) "C:\...\TaskBoard.ui"
+        var btn14 = new global::BubuUI.Elements.Button();
+#line (30, 25) - (30, 34) "C:\...\TaskBoard.bui"
         var h15 = (global::System.Action)(Increment);
 #line hidden
-        btn14.AddHandler(global::EclipseUI.Elements.Button.ClickEvent,
+        btn14.AddHandler(global::BubuUI.Elements.Button.ClickEvent,
             () => { h15(); Invalidate(); });          // 事件包装自动失效所属组件
         el0.Children.Add(btn14);
 
-        var chk16 = new global::EclipseUI.Elements.CheckBox();
-        __bind5 = global::EclipseUI.UiBinding.TwoWay(
-            chk16, global::EclipseUI.Elements.CheckBox.CheckedProperty,
+        var chk16 = new global::BubuUI.Elements.CheckBox();
+        __bind5 = global::BubuUI.UiBinding.TwoWay(
+            chk16, global::BubuUI.Elements.CheckBox.CheckedProperty,
             readTarget: () => chk16.Checked, writeTarget: v => chk16.Checked = v,
             readSource: () => _showButton, writeSource: v => _showButton = v,
             invalidate: Invalidate);
@@ -518,7 +518,7 @@ internal partial class TaskBoard : global::EclipseUI.Component
 
     private void U0()
     {
-#line (2, 26) - (2, 60) "C:\...\TaskBoard.ui"
+#line (2, 26) - (2, 60) "C:\...\TaskBoard.bui"
         __el1.Label = $"{(_title)} · 已点击 {(_count)} 次";   // K12：{(expr)} 防格式符
 #line hidden
     }
@@ -532,14 +532,14 @@ internal partial class TaskBoard : global::EclipseUI.Component
 | 生成成员白名单 | 仅字段 / `Build` / `Render` / `U{N}` 四类 | 增加「`@code` 透传成员」一类，**原文不改** | C4 / P3 |
 | `global::` 与 using（**K22 已定**） | 生成代码不得有 using，具名类型一律 `global::` | **模板 `@using` 透传为生成文件的普通 `using Ns;`**；`@code` 原文不改写，由这些 using 提供命名空间；其余生成代码仍全限定 | K22 / §5.3 |
 | 标签解析作用域（**K22 已定**） | `UiCatalog.Resolve` 全局短名字典，与命名空间无关 | 按导入命名空间过滤；未导入报 `EUI001` + 缺 using 建议，歧义仍 `EUI016`；内置控件无豁免（**@namespace 链已由 K33/D111 修订为隐式可见**） | K22 / §5.3 |
-| `#line` | 含用户表达式/字面量的语句做 span 映射 | `@code` 整段（或逐成员）映射回 `.ui`，`R{N}`/`U{N}` 不变 | R3 / D79 |
+| `#line` | 含用户表达式/字面量的语句做 span 映射 | `@code` 整段（或逐成员）映射回 `.bui`，`R{N}`/`U{N}` 不变 | R3 / D79 |
 | 语义探针 | 只看 code-behind 声明 | **合成一个只含 `@code` 成员的 partial 类语法树**加入 `ProbeTree` 的 Compilation；生成器不得读自己的输出（§2.1） | R1 / K21 / P3 |
 | 冲突守护 | `EUI045` 只守 code-behind | 扩到 `@code` 成员与生成保留名（`Build`/`Render`/`U*`/`__el*` 等），新诊断从 `EUI046` 起 | C6 / P5 |
 | 分支块 | `SetCondition` + `SetContent` 单分支 | `AddBranch(...)` + `SetDefault(...)`；`Refresh()` 取首个为真分支 | **P4 待定** |
 | switch 块 | 无 | `SwitchBlock<T>` + `SetSelector` / `AddCase` / `SetDefault`；常量比较用 `EqualityComparer<T>.Default` | **P4 待定** |
-| 输出文件数 | 一个 `.ui` → 恰好一个 `partial class` / 一个 hint name | **仍是一个**，不另出 `{Name}.code.g.cs`（避免违反 §2.1 与增量确定性） | §2.1 |
+| 输出文件数 | 一个 `.bui` → 恰好一个 `partial class` / 一个 hint name | **仍是一个**，不另出 `{Name}.code.g.cs`（避免违反 §2.1 与增量确定性） | §2.1 |
 
-> **K22 后**：`@code` 原文里的 `List<string>` 由模板头 `@using System.Collections.Generic` 解析，不再依赖项目级 global using；标签则全部（含内置）由 `@using EclipseUI.Elements` 提供作用域。
+> **K22 后**：`@code` 原文里的 `List<string>` 由模板头 `@using System.Collections.Generic` 解析，不再依赖项目级 global using；标签则全部（含内置）由 `@using BubuUI.Elements` 提供作用域。
 
 > `@code` 成员进的是**生成文件**，不是另开 partial 文件：C# 编译器看到同一个类，所以模板在上、代码在下天然可见（K21）；
 > 但生成器做 `InferType` / `IsWritableSource` / `IsHandlerCompatible` 判定时生成文件尚未编译，

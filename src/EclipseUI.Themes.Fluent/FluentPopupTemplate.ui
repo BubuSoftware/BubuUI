@@ -1,8 +1,0 @@
-@namespace EclipseUI.Themes.Fluent
-@using EclipseUI.Elements
-@template Popup
-
-<Grid RowDefinitions="Auto" ColumnDefinitions="Auto">
-    <FluentPopupVisual Owner={Owner} />
-    <ItemsPresenter Owner={Owner} UseOwnerLayout="false" />
-</Grid>

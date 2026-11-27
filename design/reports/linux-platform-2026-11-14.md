@@ -6,8 +6,8 @@
 
 | 验证 | 结果 |
 |---|---|
-| `dotnet build EclipseUI.slnx` | 通过，0 警告 / 0 错误 |
-| `dotnet test EclipseUI.slnx --no-build --no-restore -m:1` | 1,582 通过，2 个 Linux 原生用例明确跳过；编译器 425、无头 648、IDE 317、平台 22、渲染 146、VS 壳 24 |
+| `dotnet build BubuUI.slnx` | 通过，0 警告 / 0 错误 |
+| `dotnet test BubuUI.slnx --no-build --no-restore -m:1` | 1,582 通过，2 个 Linux 原生用例明确跳过；编译器 425、无头 648、IDE 317、平台 22、渲染 146、VS 壳 24 |
 | 最终新增工厂兼容性用例后，重跑 Linux 平台测试 | 23 通过，2 跳过 |
 | 启动器裁剪标注后，重跑 AppBuilderTests | 9 通过 |
 | Windows 原生 Gallery `--frames 3 --max-fps 60` | DX12 / Bgra8Unorm / Fifo；3 ticks、1 rendered、2 skipped，正常退出 |
@@ -66,4 +66,4 @@ WSL 下重新生成并实际运行了 `out/linux-x64` Release 裁剪自包含发
 
 测试 TRX 位于各测试项目的 `TestResults/wsl-*.trx`，比较图像为 `out/golden-windows.png` 和 `TestResults/PixelGolden-actual-solid-primitives.png`。真实 IME 候选窗口与中英文切换、死键组合、物理 GPU 和 arm64 运行尚未验收。
 
-用户已有的 `samples/Gallery/Counter.ui`、`Prefs.ui` 修改未被本次工作改写。
+用户已有的 `samples/Gallery/Counter.bui`、`Prefs.bui` 修改未被本次工作改写。

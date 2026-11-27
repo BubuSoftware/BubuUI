@@ -22,8 +22,8 @@ GPU 目前将多块脏区合并为一个向外对齐的设备像素包围矩形�
 
 命令及完整日志保存在 Git 忽略的 `out/framework-audit/`。
 
-最终 `dotnet build EclipseUI.slnx --no-restore`：0 警告、0 错误。
-随后执行 `dotnet test EclipseUI.slnx --no-build --no-restore -m:1`，结果如下。
+最终 `dotnet build BubuUI.slnx --no-restore`：0 警告、0 错误。
+随后执行 `dotnet test BubuUI.slnx --no-build --no-restore -m:1`，结果如下。
 
 | 测试项目 | 通过 / 总数 | 备注 |
 |---|---:|---|

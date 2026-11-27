@@ -1,6 +1,6 @@
 # Fluent control gallery
 
-Gallery is a shared UI library used by the Gallery.Desktop, Gallery.Android and Gallery.iOS entry projects. All layout and fourteen control examples are declared in `.ui` files; `@code` contains interaction and state logic.
+Gallery is a shared UI library used by the Gallery.Desktop, Gallery.Android and Gallery.iOS entry projects. All layout and fourteen control examples are declared in `.bui` files; `@code` contains interaction and state logic.
 
 ```sh
 dotnet run --project samples/Gallery.Desktop
@@ -25,11 +25,11 @@ dotnet run -r iossimulator-arm64 --device YOUR_SIMULATOR_UDID
 
 `Gallery.Desktop/Program.cs` selects Windows, Linux or macOS. `Gallery.Android/MainApplication.cs` and `MainActivity.cs` provide the Android lifecycle. `Gallery.iOS/Program.cs` configures the UIKit scene host. Select the entry project for the platform you want to debug. Each entry references the same `net11.0` Gallery library. The desktop entry and verification tools use `Gallery.Offscreen` for snapshots.
 
-`MainWindow.ui` hosts `FluentGalleryPage.ui`. `FluentControlExamples.ui` declares the controls, and `FluentExampleRow.ui` provides each label and control slot. All three platform entries apply the Fluent theme.
+`MainWindow.bui` hosts `FluentGalleryPage.bui`. `FluentControlExamples.bui` declares the controls, and `FluentExampleRow.bui` provides each label and control slot. All three platform entries apply the Fluent theme.
 
-`FluentGalleryPage.ui` also owns the theme button event, current mode and System → Light → Dark cycle. `GalleryApp` supplies the initial mode and a host theme callback; it contains no theme switching logic.
+`FluentGalleryPage.bui` also owns the theme button event, current mode and System → Light → Dark cycle. `GalleryApp` supplies the initial mode and a host theme callback; it contains no theme switching logic.
 
-`DependencyInjectionExample.ui` demonstrates K37 template dependency injection: `@inject IGalleryDemoState DemoState` generates a property that `InitializeUi` resolves from `Application.Current.Services` first thing (fail-fast when unregistered, per spec/02 R11). Both platform entries register `IGalleryDemoState` as a singleton (`GalleryDemoState`), so the example row's click count survives `Reset controls` — the visual tree is rebuilt and the property re-resolves to the same instance — while its build count grows on every rebuild. The row is mounted only when the service is registered, so harness code that constructs the templates without a built application keeps the plain fourteen-row catalog. `GalleryLaunchOptions` shows the complementary pattern: C#-side consumption via `GetRequiredService`.
+`DependencyInjectionExample.bui` demonstrates K37 template dependency injection: `@inject IGalleryDemoState DemoState` generates a property that `InitializeUi` resolves from `Application.Current.Services` first thing (fail-fast when unregistered, per spec/02 R11). Both platform entries register `IGalleryDemoState` as a singleton (`GalleryDemoState`), so the example row's click count survives `Reset controls` — the visual tree is rebuilt and the property re-resolves to the same instance — while its build count grows on every rebuild. The row is mounted only when the service is registered, so harness code that constructs the templates without a built application keeps the plain fourteen-row catalog. `GalleryLaunchOptions` shows the complementary pattern: C#-side consumption via `GetRequiredService`.
 
 Buttons report clicks, fields accept edits, radios share a group, switches update their captions, and the slider updates the progress bar. Reset restores initial values and releases removed controls, including open popups. Keyboard focus reveals controls when needed. Theme cycles through System, Light and Dark.
 

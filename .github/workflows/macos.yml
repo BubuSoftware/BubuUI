@@ -17,7 +17,7 @@ jobs:
       - name: Install native dependencies
         run: brew install sdl3 harfbuzz
       - name: Cocoa window, Metal presentation, Unicode and fonts
-        run: dotnet test tests/EclipseUI.Platform.MacOS.Tests --logger "trx;LogFileName=macos.trx"
+        run: dotnet test tests/BubuUI.Platform.MacOS.Tests --logger "trx;LogFileName=macos.trx"
       - name: Verify dependency relocation and signing
         run: python3 eng/test_macos_bundle.py
       - name: Package and run Gallery
@@ -33,7 +33,7 @@ jobs:
         with:
           name: macos-validation
           path: |
-            tests/EclipseUI.Platform.MacOS.Tests/TestResults/*.trx
+            tests/BubuUI.Platform.MacOS.Tests/TestResults/*.trx
             out/gallery-macos.png
             out/macos/Gallery.zip
             out/macos/verification.log

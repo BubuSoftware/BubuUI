@@ -1,0 +1,6 @@
+@namespace BubuUI.Headless.Tests
+@using BubuUI.Elements
+
+<RootInputCard Title="from ui">
+    <TextBlock>body from ui</TextBlock>
+</RootInputCard>

@@ -1,0 +1,139 @@
+@namespace Gallery
+@using BubuUI.Elements
+
+@* 控件展示区（G4 布局切片）：Grid 行列布局（Auto/固定/星号轨道 + 附加属性落格）、WrapPanel
+   流式换行、ScrollViewer 滚动、VirtualizingStackPanel 列表虚拟化。这个组件没有 .cs——
+   模板走真实编译管线，Grid.Row/Grid.Column 生成直调静态 setter，Ref 把面板交给下面的 @code
+   字段（spec/02 §2.7 第二组件来源）。 *@
+
+@style {
+    // Component-scoped stylesheet (E1, design/17 4.8): class names compile to
+    // Showcase__-prefixed registrations at component initialization. E2 lets
+    // templates reference them via Class="..." (local-first resolution).
+    .demo-scope {
+        CornerRadius: 12;
+
+        &:hover { CornerRadius: 4; }
+    }
+}
+
+<StackPanel Gap="10">
+    <TextBlock TextWrapping="Wrap" Class="demo-scope" FontSize="13">Text scale - runs share one shaping cache (this line is scoped by the component style block)</TextBlock>
+    <TextBlock TextWrapping="Wrap" FontSize="20">The quick brown fox · 20px</TextBlock>
+    <TextBlock TextWrapping="Wrap" FontSize="15">The quick brown fox · 15px</TextBlock>
+    <TextBlock TextWrapping="Wrap" FontSize="12">muted caption 12px - secondary color under threshold</TextBlock>
+
+    <TextBlock TextWrapping="Wrap" FontSize="13">CheckBox - Checked literal + interaction</TextBlock>
+    <StackPanel Gap="6">
+        <CheckBox Label="checked by default" Checked="true" />
+        <CheckBox Label="unchecked - click or Space to toggle" />
+    </StackPanel>
+
+    <TextBlock TextWrapping="Wrap" FontSize="13">Styles - Class= resolves through the shared catalog; Style= writes the local layer (local beats class)</TextBlock>
+    <Button Class="primary" Style="CornerRadius: 18">class=primary paint + inline CornerRadius override</Button>
+    <Button Class="tool primary">tool + primary stacked (array order: later wins)</Button>
+
+    @* design/19 P1 (see the custom-property block further down for the visible inline demo). *@
+
+    <TextBlock TextWrapping="Wrap" FontSize="13">Nested collapse - structural selectors compile to derived classes and inject into the static subtree (E4)</TextBlock>
+    <StackPanel Class="card" Gap="8">
+        <TextBlock TextWrapping="Wrap" Class="hint">descendant with class constraint gets card__text-block-hint</TextBlock>
+        <Button>direct child button gets card__button (hover pads to 12)</Button>
+        @foreach (var row in rows)
+        {
+            <Button>foreach row also matches the direct-child chain</Button>
+        }
+    </StackPanel>
+
+    <TextBlock TextWrapping="Wrap" FontSize="13">Grid - Auto, fixed and star tracks (Grid.Row / Grid.Column attached)</TextBlock>
+    <Grid RowDefinitions="Auto,44" ColumnDefinitions="120,*,2*" Gap="6">
+        <Button>row 0 / fixed 120</Button>
+        <Button Grid.Column="1">row 0 / star</Button>
+        <Button Grid.Column="2">row 0 / 2x star</Button>
+        <Button Grid.Row="1">row 1 / fixed 120</Button>
+        <Button Grid.Row="1" Grid.Column="1">row 1 / star</Button>
+        <Button Grid.Row="1" Grid.Column="2">row 1 / 2x star</Button>
+    </Grid>
+
+    <TextBlock TextWrapping="Wrap" FontSize="13">WrapPanel - wraps when the row is full</TextBlock>
+    <WrapPanel Gap="6">
+        <Button>alpha</Button>
+        <Button>beta</Button>
+        <Button>gamma</Button>
+        <Button>delta</Button>
+        <Button>epsilon</Button>
+        <Button>zeta</Button>
+    </WrapPanel>
+
+    <TextBlock TextWrapping="Wrap" FontSize="13">ScrollViewer - wheel to scroll, thumb follows offset</TextBlock>
+    <Grid RowDefinitions="140">
+        <ScrollViewer>
+            <StackPanel Gap="4">
+                <Button>scroll item 1</Button>
+                <Button>scroll item 2</Button>
+                <Button>scroll item 3</Button>
+                <Button>scroll item 4</Button>
+                <Button>scroll item 5</Button>
+                <Button>scroll item 6</Button>
+                <Button>scroll item 7</Button>
+                <Button>scroll item 8</Button>
+                <Button>scroll item 9</Button>
+                <Button>scroll item 10</Button>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+
+    <TextBlock TextWrapping="Wrap" FontSize="13">VirtualizingStackPanel - 1000 items, only the viewport is realized</TextBlock>
+    <Grid RowDefinitions="140">
+        <ScrollViewer>
+            <VirtualizingStackPanel Ref={virtualList} ItemCount="1000" Gap="4" />
+        </ScrollViewer>
+    </Grid>
+
+    @* design/19 P1: custom style properties - [UiStyleProperty] fields in the app assembly
+       (BadgeStyles.cs) join the catalog union, so inline Style= writes them like any built-in.
+       Value forms on show:
+         Glow: 6            number (bare literal)
+         Tone: Success      enum keyword - member table checked at compile time
+         BadgeLabel: inline keyword passes through as a string on string properties
+                            (a quoted "..." literal is the other form, used in app.bss)
+       theme() is rejected on custom properties (EUI052 "does not accept theme(dark, light)")
+       and $variables stay number/color only (EUI050). The Ref + {InlineDesc} caption below
+       reads the values back off this element after Style= applied - storage-layer proof
+       without a painter. *@
+    <TextBlock TextWrapping="Wrap" FontSize="13">Custom style properties - catalog union from [UiStyleProperty]; inline Style= writes the local layer</TextBlock>
+    <TextBlock TextWrapping="Wrap" Ref={inlineBadge} FontSize="12" Style="Glow: 6; Tone: Success; BadgeLabel: inline">{InlineDesc}</TextBlock>
+
+    <TextBlock TextWrapping="Wrap" FontSize="13">SwitchBlock - conditional branches rebuilt on state</TextBlock>
+    <Button OnClick={() => mode = (mode + 1) % 3}>Cycle mode (currently {mode})</Button>
+    @switch (mode) {
+        case 0:
+            <TextBlock>mode 0 · conditional branches rebuilt on state change</TextBlock>
+            break;
+        case 1:
+            <TextBlock>mode 1 · old branch unmounted, new branch mounted</TextBlock>
+            break;
+        default:
+            <TextBlock>mode 2 · default branch</TextBlock>
+            break;
+    }
+</StackPanel>
+
+@code {
+    public int mode;
+    public String[] rows = { "row A", "row B" };
+
+    // spec/02 §2.7：组件没有 .cs。Ref 的目标字段由模板自己声明——@code 成员就是生成的
+    // partial 类的成员，模板内的 Ref={…} 与外部消费者（GalleryScene）看到的是同一个字段。
+    public VirtualizingStackPanel virtualList = null!;
+
+    // design/19：Ref + 内联 Style= —— 元素构造后三种值已写进 local 层，渲染期读回成文案
+    // （属性访问形态与 {mode} 同一条表达式通道；Ref 在 Build 里先于首次渲染赋值）。
+    public TextBlock inlineBadge = null!;
+
+    public string InlineDesc => inlineBadge is null
+        ? ""
+        : $"inline Style= (local layer): Glow={inlineBadge.GetValue(BadgeStyles.GlowProperty)} · " +
+          $"Tone={inlineBadge.GetValue(BadgeStyles.ToneProperty)} · " +
+          $"BadgeLabel=\"{inlineBadge.GetValue(BadgeStyles.BadgeLabelProperty)}\"";
+}

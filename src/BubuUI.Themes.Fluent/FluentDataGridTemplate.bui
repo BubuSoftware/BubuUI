@@ -1,0 +1,10 @@
+@namespace BubuUI.Themes.Fluent
+@using BubuUI.Elements
+@template DataGrid
+
+<Grid RowDefinitions="Auto,*">
+    <ContentPresenter Content={Owner.HeaderHost} />
+    <ScrollViewer Grid.Row="1" Part="PART_Scroll">
+        <ContentPresenter Content={Owner.RowsHost} />
+    </ScrollViewer>
+</Grid>

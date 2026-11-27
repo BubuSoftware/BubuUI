@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publish and package EclipseUI desktop applications without machine-local dylib links."""
+"""Publish and package BubuUI desktop applications without machine-local dylib links."""
 import argparse
 import json
 import os
@@ -201,9 +201,9 @@ def parser():
     result.add_argument("--project", default="samples/Gallery.Desktop/Gallery.Desktop.csproj")
     result.add_argument("--publish-dir", type=Path, help="Use an existing self-contained publish output")
     result.add_argument("--output", type=Path, default=Path("out/macos/Gallery.app"))
-    result.add_argument("--name", default="EclipseUI Gallery")
+    result.add_argument("--name", default="BubuUI Gallery")
     result.add_argument("--executable", default="Gallery.Desktop")
-    result.add_argument("--bundle-id", default="io.eclipseui.gallery")
+    result.add_argument("--bundle-id", default="io.bubuui.gallery")
     result.add_argument("--version", default="1.0.0")
     result.add_argument("--framework", default="net11.0")
     result.add_argument("--configuration", default="Release")
@@ -245,7 +245,7 @@ def main():
     output.parent.mkdir(parents=True, exist_ok=True)
     repo = Path(__file__).resolve().parent.parent
     library_dirs = options.library_dir + ["/opt/homebrew/lib", "/usr/local/lib"]
-    with tempfile.TemporaryDirectory(prefix=".eclipseui-package-", dir=output.parent) as temporary:
+    with tempfile.TemporaryDirectory(prefix=".bubuui-package-", dir=output.parent) as temporary:
         temporary = Path(temporary)
         publish = options.publish_dir.resolve() if options.publish_dir else temporary / "publish"
         if not options.publish_dir:

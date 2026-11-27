@@ -1,0 +1,98 @@
+@namespace Gallery
+@using BubuUI
+@using BubuUI.Elements
+@using BubuUI.Rendering
+@using BubuUI.Themes.Fluent
+
+<Grid RowDefinitions="Auto,*">
+    <StackPanel Padding="24" Gap="8">
+        <TextBlock FontSize="28">Fluent / Windows 12</TextBlock>
+        <TextBlock FontSize="14" Style="Foreground: theme(#FFFFFFC5, #0000009E)">Hover, click or press Tab to explore</TextBlock>
+        <WrapPanel Gap="8">
+            <Button Ref={ThemeButton} MinWidth="144" OnClick={CycleTheme}>Theme: System</Button>
+            <Button Ref={ResetButton} OnClick={ResetControls}>Reset controls</Button>
+        </WrapPanel>
+        <TextBlock Ref={StatusText} FontSize="12" Style="Foreground: theme(#FFFFFFC5, #0000009E)">Ready to explore</TextBlock>
+    </StackPanel>
+    <ScrollViewer Grid.Row="1" Ref={Viewer} HorizontalScrollBarVisibility="Disabled">
+        <FluentControlExamples Ref={Examples} />
+    </ScrollViewer>
+</Grid>
+
+@code {
+    [UiParameter] public ThemeVariant InitialTheme { get; set; } = ThemeVariant.System;
+    [UiParameter] public Action<IHostTheme> ApplyTheme { get; set; } = _ => { };
+    public Button ThemeButton = null!;
+    public Button ResetButton = null!;
+    public ScrollViewer Viewer = null!;
+    private TextBlock StatusText = null!;
+    private FluentControlExamples Examples = null!;
+    public IReadOnlyList<Element> LiveControls => Examples.Rows.Select(row => row.Control!).ToArray();
+    public string Status => StatusText.Runs[0].Text;
+    private int _clicks;
+    private ThemeVariant _mode;
+
+    protected override void OnInitialized()
+    {
+        base.OnInitialized();
+        _mode = InitialTheme;
+        ThemeButton.Label = $"Theme: {_mode}";
+        WireControls();
+    }
+
+    private void CycleTheme()
+    {
+        _mode = _mode switch
+        {
+            ThemeVariant.System => ThemeVariant.Light,
+            ThemeVariant.Light => ThemeVariant.Dark,
+            _ => ThemeVariant.System,
+        };
+        ThemeButton.Label = $"Theme: {_mode}";
+        ApplyTheme(FluentTheme.For(_mode));
+    }
+
+    public void ResetControls()
+    {
+        var previous = Examples;
+        Viewer.Children.Clear();
+        previous.Dispose();
+        Examples = new FluentControlExamples();
+        Examples.EnsureInitialized();
+        Viewer.Children.Add(Examples);
+        _clicks = 0;
+        WireControls();
+        SetStatus("Ready to explore");
+    }
+
+    private void WireControls()
+    {
+        var controls = LiveControls;
+        ((Button)controls[0]).AddHandler(Button.ClickEvent, () => SetStatus($"Button clicked {++_clicks} time{(_clicks == 1 ? "" : "s")}"));
+        foreach (var control in controls)
+        {
+            control.AddHandler(Element.GotFocusEvent, () => Reveal(control));
+            if (control is TextBox editor) editor.AddHandler(TextBox.TextChangedEvent, () => SetStatus($"Text updated: {editor.Text}"));
+            if (control is CheckBox check) check.AddHandler(CheckBox.CheckedChangedEvent, () => SetStatus($"{check.GetType().Name}: {(check.IsIndeterminate ? "mixed" : check.Checked ? "on" : "off")}"));
+            if (control is ToggleButton toggle) toggle.AddHandler(ToggleButton.CheckedChangedEvent, () => SetStatus($"Toggle button: {(toggle.Checked ? "on" : "off")}"));
+            if (control is ComboBox combo) combo.AddHandler(ComboBox.SelectionChangedEvent, () => SetStatus($"Selected: {combo.SelectedItem}"));
+        }
+        var slider = controls.OfType<Slider>().Single();
+        var progress = controls.OfType<ProgressBar>().Single();
+        slider.AddHandler(RangeControl.ValueChangedEvent, () => { progress.Value = slider.Value; SetStatus($"Value: {slider.Value:0}%"); });
+        foreach (var toggle in controls.OfType<ToggleSwitch>())
+            toggle.AddHandler(CheckBox.CheckedChangedEvent, () => toggle.Label = toggle.Checked ? "On" : "Off");
+    }
+
+    private void SetStatus(string text) => StatusText.Runs[0].Text = text;
+
+    private void Reveal(Element control)
+    {
+        var origin = control.PointFromRoot(Point.Zero);
+        var viewport = Viewer.PointFromRoot(Point.Zero);
+        var y = viewport.Y - origin.Y;
+        if (y < 0) Viewer.ScrollToVerticalOffset(Viewer.VerticalOffset + y - 8);
+        else if (y + control.FinalRect.Height > Viewer.ViewportHeight)
+            Viewer.ScrollToVerticalOffset(Viewer.VerticalOffset + y + control.FinalRect.Height - Viewer.ViewportHeight + 8);
+    }
+}

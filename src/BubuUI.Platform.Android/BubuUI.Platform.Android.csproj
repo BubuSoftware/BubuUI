@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net11.0-android</TargetFramework>
+    <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../BubuUI.Platform.Shared/MobileTextEdit.cs" Link="MobileTextEdit.cs" />
+    <ProjectReference Include="../BubuUI.Rendering.Vello/BubuUI.Rendering.Vello.csproj" />
+  </ItemGroup>
+</Project>

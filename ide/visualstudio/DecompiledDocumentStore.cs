@@ -3,7 +3,7 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace EclipseUI.VisualStudio;
+namespace BubuUI.VisualStudio;
 
 internal static class DecompiledDocumentStore
 {

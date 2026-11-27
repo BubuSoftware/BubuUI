@@ -3,7 +3,7 @@
 在本次补全协议验收中，override 和 `StringBuilder` 自动导入的 LSP 文本、附加编辑、snippet
 光标及方法体断言均已通过，但提交编辑后对 Gallery 项目整体编译的检查暴露了原有的 `CS0121`。
 该错误位于 `GalleryApp.cs` 的 `Services.GetRequiredService<GalleryLaunchOptions>()`，并非新生成的
-`.ui` 方法或类型使用位置。
+`.bui` 方法或类型使用位置。
 
 ## 原因与修正
 

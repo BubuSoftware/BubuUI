@@ -1,0 +1,5 @@
+@namespace BubuUI.Themes.Fluent
+@using BubuUI.Elements
+@template ItemsControl
+
+<Grid><ItemsPresenter Owner={Owner} /></Grid>

@@ -40,17 +40,17 @@ if [[ ! "$java_major" =~ ^(21|22|23|24)$ ]]; then
 fi
 
 server_dir="$ide_dir/vscode/server"
-dotnet publish "$ide_dir/EclipseUI.LanguageServer" -c Release -o "$server_dir" \
+dotnet publish "$ide_dir/BubuUI.LanguageServer" -c Release -o "$server_dir" \
     --nologo --no-self-contained -p:UseAppHost=false
 
 # The metadata catalog uses these assemblies without loading platform code.
-dotnet build "$repo_dir/src/EclipseUI.Rendering" -c Release --nologo
-for assembly in EclipseUI.Runtime EclipseUI.Rendering; do
+dotnet build "$repo_dir/src/BubuUI.Rendering" -c Release --nologo
+for assembly in BubuUI.Runtime BubuUI.Rendering; do
     cp "$repo_dir/src/$assembly/bin/Release/net11.0/$assembly.dll" "$server_dir/"
 done
 
 if [[ "$skip_tests" == false ]]; then
-    dotnet test "$repo_dir/tests/EclipseUI.Ide.Tests" -c Release --nologo
+    dotnet test "$repo_dir/tests/BubuUI.Ide.Tests" -c Release --nologo
 fi
 
 cd -- "$rider_dir"
@@ -61,4 +61,4 @@ fi
 ./gradlew "${gradle_tasks[@]}"
 
 plugin_version="$(sed -n 's/^pluginVersion=//p' "$rider_dir/gradle.properties")"
-printf '\nRider plugin: %s/build/distributions/eclipseui-rider-%s.zip\n' "$rider_dir" "$plugin_version"
+printf '\nRider plugin: %s/build/distributions/bubuui-rider-%s.zip\n' "$rider_dir" "$plugin_version"

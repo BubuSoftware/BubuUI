@@ -1,4 +1,4 @@
-using EclipseUI;
+using BubuUI;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Gallery;

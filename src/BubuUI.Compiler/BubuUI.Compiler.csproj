@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RootNamespace>BubuUI.Compiler</RootNamespace>
+    <Description>BubuUI .bui template compiler front-end: lexer, parser, catalog, analyzer.</Description>
+  </PropertyGroup>
+
+</Project>

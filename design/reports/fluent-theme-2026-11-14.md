@@ -4,12 +4,12 @@
 
 ## 构建与测试
 
-`dotnet build EclipseUI.slnx --no-restore --nologo -v quiet`：通过，0 警告，0 错误。
+`dotnet build BubuUI.slnx --no-restore --nologo -v quiet`：通过，0 警告，0 错误。
 
 最终全量命令：
 
 ```powershell
-dotnet test EclipseUI.slnx --no-build --no-restore -m:1 --nologo -v minimal --logger 'trx;LogFilePrefix=fluent-final' -- xUnit.ParallelizeTestCollections=false xUnit.MaxParallelThreads=1
+dotnet test BubuUI.slnx --no-build --no-restore -m:1 --nologo -v minimal --logger 'trx;LogFilePrefix=fluent-final' -- xUnit.ParallelizeTestCollections=false xUnit.MaxParallelThreads=1
 ```
 
 | 项目 | 通过 | 跳过 |
@@ -43,4 +43,4 @@ Windows 原生自检通过：中文/emoji 的 WM_CHAR 与字体回退、键盘�
 
 ## 工作区
 
-保留了开始工作前已有的 samples/Gallery/Counter.ui 与 Prefs.ui 改动。本次范围的 `git diff --check` 通过；Counter.ui 原有空白问题未更改。
+保留了开始工作前已有的 samples/Gallery/Counter.bui 与 Prefs.bui 改动。本次范围的 `git diff --check` 通过；Counter.bui 原有空白问题未更改。

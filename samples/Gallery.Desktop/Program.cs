@@ -1,16 +1,16 @@
-using EclipseUI;
-using EclipseUI.Platform.Windows;
-using EclipseUI.Platform.Linux;
-using EclipseUI.Platform.MacOS;
-using EclipseUI.Rendering;
-using EclipseUI.Themes.Fluent;
-using EclipseUI.Rendering.Vello;
-using EclipseUI.Text.Shaping;
+using BubuUI;
+using BubuUI.Platform.Windows;
+using BubuUI.Platform.Linux;
+using BubuUI.Platform.MacOS;
+using BubuUI.Rendering;
+using BubuUI.Themes.Fluent;
+using BubuUI.Rendering.Vello;
+using BubuUI.Text.Shaping;
 using Gallery;
 using Gallery.Services;
 using Microsoft.Extensions.DependencyInjection;
 
-// EclipseUI 画廊 · Windows/Linux/macOS 桌面入口；共享 UI 在 samples/Gallery。
+// BubuUI 画廊 · Windows/Linux/macOS 桌面入口；共享 UI 在 samples/Gallery。
 //   dotnet run --project samples/Gallery.Desktop -c Release
 //   dotnet run --project samples/Gallery.Desktop -c Release -- --shot out/gallery-cpu.png   （离屏快照）
 //   dotnet run --project samples/Gallery.Desktop -c Release -- --cpu --shot out/gallery-cpu.png
@@ -27,7 +27,7 @@ var builder = AppBuilder.Configure<GalleryApp>()
     .ConfigureServices(s =>
     {
         s.AddSingleton(options);
-        // K37 @inject 示例：DependencyInjectionExample.ui 经 @inject 解析的单例状态服务。
+        // K37 @inject 示例：DependencyInjectionExample.bui 经 @inject 解析的单例状态服务。
         s.AddSingleton<IGalleryDemoState, GalleryDemoState>();
     });
 

@@ -1,0 +1,470 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "BubuUI",
+  "scopeName": "source.bubuui",
+  "fileTypes": ["bui"],
+  "comment": "BubuUI .bui 模板（spec/01 是语法正本）。两类注释、四种指令、标签属性、{expr} 内嵌 C#。",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#directive" },
+    { "include": "#end-tag" },
+    { "include": "#element" },
+    { "include": "#block-brace" },
+    { "include": "#switch-keyword" },
+    { "include": "#expression" }
+  ],
+  "repository": {
+    "comment": {
+      "patterns": [
+        {
+          "begin": "<!--",
+          "end": "-->",
+          "name": "comment.block.bubuui",
+          "beginCaptures": { "0": { "name": "punctuation.definition.comment.begin.bubuui" } },
+          "endCaptures": { "0": { "name": "punctuation.definition.comment.end.bubuui" } }
+        },
+        {
+          "begin": "@\\*",
+          "end": "\\*@",
+          "name": "comment.block.bubuui",
+          "beginCaptures": { "0": { "name": "punctuation.definition.comment.begin.bubuui" } },
+          "endCaptures": { "0": { "name": "punctuation.definition.comment.end.bubuui" } }
+        }
+      ]
+    },
+
+    "directive": {
+      "patterns": [
+        { "include": "#if-directive" },
+        { "include": "#foreach-directive" },
+        { "include": "#switch-directive" },
+        { "include": "#code-block" },
+        { "include": "#style-block" },
+        { "include": "#namespace-directive" },
+        { "include": "#template-directive" },
+        { "include": "#using-directive" },
+        { "include": "#else-directive" },
+        { "include": "#unknown-directive" }
+      ]
+    },
+
+    "else-directive": {
+      "comment": "else / else if 是 @if 的续接，不带 @（K23 ③）。顺带吃掉块起始的 '{'，否则它会落进 text 模式的表达式规则。",
+      "patterns": [
+        {
+          "match": "(\\b)(else)\\b(\\s+)(if)\\b",
+          "captures": {
+            "2": { "name": "keyword.control.conditional.bubuui" },
+            "4": { "name": "keyword.control.conditional.bubuui" }
+          }
+        },
+        {
+          "match": "(\\b)(else)\\b(\\s*)(\\{)?",
+          "captures": {
+            "2": { "name": "keyword.control.conditional.bubuui" },
+            "4": { "name": "punctuation.section.block.begin.bubuui" }
+          }
+        }
+      ]
+    },
+
+    "if-directive": {
+      "begin": "(@)(if)\\b\\s*(\\()",
+      "end": "(\\))(\\s*)(\\{)?",
+      "name": "meta.directive.if.bubuui",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.directive.bubuui" },
+        "2": { "name": "keyword.control.conditional.bubuui" },
+        "3": { "name": "punctuation.section.parens.begin.bubuui" }
+      },
+      "endCaptures": {
+        "1": { "name": "punctuation.section.parens.end.bubuui" },
+        "3": { "name": "punctuation.section.block.begin.bubuui" }
+      },
+      "patterns": [{ "include": "#csharp-in-parens" }]
+    },
+
+    "foreach-directive": {
+      "begin": "(@)(foreach)\\b\\s*(\\()",
+      "end": "(\\))(\\s*)(\\{)?",
+      "name": "meta.directive.foreach.bubuui",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.directive.bubuui" },
+        "2": { "name": "keyword.control.loop.bubuui" },
+        "3": { "name": "punctuation.section.parens.begin.bubuui" }
+      },
+      "endCaptures": {
+        "1": { "name": "punctuation.section.parens.end.bubuui" },
+        "3": { "name": "punctuation.section.block.begin.bubuui" }
+      },
+      "patterns": [{ "include": "#csharp-in-parens" }]
+    },
+
+    "switch-directive": {
+      "begin": "(@)(switch)\\b\\s*(\\()",
+      "end": "(\\))(\\s*)(\\{)?",
+      "name": "meta.directive.switch.bubuui",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.directive.bubuui" },
+        "2": { "name": "keyword.control.switch.bubuui" },
+        "3": { "name": "punctuation.section.parens.begin.bubuui" }
+      },
+      "endCaptures": {
+        "1": { "name": "punctuation.section.parens.end.bubuui" },
+        "3": { "name": "punctuation.section.block.begin.bubuui" }
+      },
+      "patterns": [{ "include": "#csharp-in-parens" }]
+    },
+
+    "switch-keyword": {
+      "comment": "@switch 体的 case/default/break 是模板级控制流关键字：生成器把它们转成脚手架、无逐字映射，语义着色按「映不回就丢」丢弃，故归 TextMate 上色（design/18 §8 模板表面）。用冒号/分号界定，避免误伤正文里的同名词。",
+      "patterns": [
+        { "match": "\\bcase\\b(?=\\s+[^:\\n]*:)", "name": "keyword.control.switch.bubuui" },
+        { "match": "\\bdefault\\b(?=\\s*:)", "name": "keyword.control.switch.bubuui" },
+        { "match": "\\bbreak\\b(?=\\s*;)", "name": "keyword.control.switch.bubuui" }
+      ]
+    },
+
+    "code-block": {
+      "begin": "(@)(code)\\b\\s*(\\{)",
+      "end": "(\\})",
+      "name": "meta.embedded.block.csharp.bubuui",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.directive.bubuui" },
+        "2": { "name": "keyword.control.directive.bubuui" },
+        "3": { "name": "punctuation.section.block.begin.bubuui" }
+      },
+      "endCaptures": { "1": { "name": "punctuation.section.block.end.bubuui" } },
+      "patterns": [{ "include": "#csharp" }, { "include": "#csharp-block" }]
+    },
+
+    "style-block": {
+      "begin": "(@)(style)\\b\\s*(\\{)",
+      "end": "(\\})",
+      "name": "meta.embedded.block.bss.bubuui",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.directive.bubuui" },
+        "2": { "name": "keyword.control.directive.bubuui" },
+        "3": { "name": "punctuation.section.block.begin.bubuui" }
+      },
+      "endCaptures": { "1": { "name": "punctuation.section.block.end.bubuui" } },
+      "patterns": [{ "include": "#style-nested-block" }, { "include": "source.bss" }]
+    },
+
+    "namespace-directive": {
+      "comment": "spec/02 §2.2：@namespace 必填，值是点分命名空间；没有保留值（global 只是普通名字，全局命名空间的 code-behind 无法匹配任何声明，报 EUI056）。",
+      "patterns": [
+        {
+          "match": "(@)(namespace)\\b\\s+([A-Za-z_][A-Za-z0-9_.]*)",
+          "captures": {
+            "1": { "name": "punctuation.definition.directive.bubuui" },
+            "2": { "name": "keyword.control.namespace.bubuui" },
+            "3": { "name": "entity.name.namespace.bubuui" }
+          }
+        }
+      ]
+    },
+
+    "using-directive": {
+      "patterns": [
+        {
+          "match": "(@)(using)\\b\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(=)\\s*([A-Za-z_][A-Za-z0-9_.]*)",
+          "captures": {
+            "1": { "name": "punctuation.definition.directive.bubuui" },
+            "2": { "name": "keyword.control.import.bubuui" },
+            "3": { "name": "entity.name.type.alias.bubuui" },
+            "4": { "name": "punctuation.separator.key-value.bubuui" },
+            "5": { "name": "entity.name.type.bubuui" }
+          }
+        },
+        {
+          "match": "(@)(using)\\b\\s+([A-Za-z_][A-Za-z0-9_.]*)",
+          "captures": {
+            "1": { "name": "punctuation.definition.directive.bubuui" },
+            "2": { "name": "keyword.control.import.bubuui" },
+            "3": { "name": "entity.name.namespace.bubuui" }
+          }
+        }
+      ]
+    },
+
+    "template-directive": {
+      "match": "(@)(template)\\b\\s+([A-Za-z_][A-Za-z0-9_.]*)",
+      "captures": {
+        "1": { "name": "punctuation.definition.directive.bubuui" },
+        "2": { "name": "keyword.control.directive.bubuui" },
+        "3": { "name": "entity.name.type.bubuui" }
+      }
+    },
+    "unknown-directive": {
+      "match": "(@)([A-Za-z_][A-Za-z0-9_]*)",
+      "captures": {
+        "1": { "name": "punctuation.definition.directive.bubuui" },
+        "2": { "name": "keyword.control.directive.bubuui" }
+      }
+    },
+
+    "block-brace": {
+      "comment": "块定界符独占一行时（`@foreach (...)` 换行再写 `{`），它既不是表达式也不是标签——单独上色，否则会被 text 模式的表达式规则吞掉。",
+      "patterns": [
+        {
+          "match": "^\\s*(\\{)\\s*$",
+          "captures": { "1": { "name": "punctuation.section.block.begin.bubuui" } }
+        },
+        {
+          "match": "^\\s*(\\})\\s*$",
+          "captures": { "1": { "name": "punctuation.section.block.end.bubuui" } }
+        }
+      ]
+    },
+
+    "end-tag": {
+      "match": "(</)([A-Za-z_][A-Za-z0-9_]*)(\\s*)(>)",
+      "captures": {
+        "1": { "name": "punctuation.definition.tag.begin.bubuui" },
+        "2": { "name": "entity.name.tag.bubuui" },
+        "4": { "name": "punctuation.definition.tag.end.bubuui" }
+      }
+    },
+
+    "element": {      "begin": "(<)([A-Za-z_][A-Za-z0-9_]*)",
+      "end": "(/?)(>)",
+      "name": "meta.tag.bubuui",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.tag.begin.bubuui" },
+        "2": { "name": "entity.name.tag.bubuui" }
+      },
+      "endCaptures": {
+        "1": { "name": "punctuation.definition.tag.self-close.bubuui" },
+        "2": { "name": "punctuation.definition.tag.end.bubuui" }
+      },
+      "patterns": [
+        { "include": "#style-attribute-value" },
+        { "include": "#tag-attribute-value" },
+        { "include": "#expression" },
+        { "include": "#bind-attribute" },
+        { "include": "#attached-attribute" },
+        { "include": "#equals" },
+        { "include": "#attribute-name" },
+        { "include": "#comment" }
+      ]
+    },
+
+    "style-attribute-value": {
+      "begin": "\\b(Style)(\\s*)(=)(\\s*)(\")",
+      "end": "\"",
+      "name": "meta.style-attribute.bubuui",
+      "contentName": "meta.embedded.block.bss.bubuui",
+      "beginCaptures": {
+        "1": {
+          "name": "entity.other.attribute-name.bubuui"
+        },
+        "3": {
+          "name": "punctuation.separator.key-value.bubuui"
+        },
+        "5": {
+          "name": "punctuation.definition.string.begin.bubuui"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.string.end.bubuui"
+        }
+      },
+      "patterns": [
+        {
+          "include": "source.bss"
+        }
+      ]
+    },
+
+    "style-nested-block": {
+      "begin": "\\{",
+      "end": "\\}",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.section.block.bss"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.section.block.bss"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#style-nested-block"
+        },
+        {
+          "include": "source.bss"
+        }
+      ]
+    },
+
+    "tag-attribute-value": {
+      "begin": "\"",
+      "end": "\"",
+      "name": "string.quoted.double.bubuui",
+      "comment": "属性字面量是原始文本：不做 XML 实体解析，也不解释 {expr}（spec/01 §2.5）。",
+      "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.bubuui" } },
+      "endCaptures": { "0": { "name": "punctuation.definition.string.end.bubuui" } }
+    },
+
+    "bind-attribute": {
+      "comment": "用 keyword.control 前缀而不是 keyword.operator：主流主题里 operator 与正文默认前景同色，@bind- 看上去会像没有高亮。",
+      "match": "(@bind-)([A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)?)",
+      "captures": {
+        "1": { "name": "keyword.control.binding.bubuui" },
+        "2": { "name": "entity.other.attribute-name.bubuui" }
+      }
+    },
+
+    "attached-attribute": {
+      "match": "([A-Za-z_][A-Za-z0-9_]*)(\\.)([A-Za-z_][A-Za-z0-9_]*)(?=\\s*=)",
+      "captures": {
+        "1": { "name": "support.class.attached-owner.bubuui" },
+        "2": { "name": "punctuation.separator.bubuui" },
+        "3": { "name": "entity.other.attribute-name.bubuui" }
+      }
+    },
+
+    "attribute-name": {
+      "match": "[A-Za-z_][A-Za-z0-9_]*",
+      "name": "entity.other.attribute-name.bubuui"
+    },
+
+    "equals": {
+      "match": "=",
+      "name": "punctuation.separator.key-value.bubuui"
+    },
+
+    "expression": {
+      "begin": "\\{",
+      "end": "\\}",
+      "name": "meta.embedded.expression.bubuui",
+      "beginCaptures": { "0": { "name": "punctuation.section.expression.begin.bubuui" } },
+      "endCaptures": { "0": { "name": "punctuation.section.expression.end.bubuui" } },
+      "contentName": "meta.embedded.line.csharp.bubuui",
+      "patterns": [
+        { "include": "#csharp-comment" },
+        { "include": "#csharp-string" },
+        { "include": "#csharp-char" },
+        { "include": "#expression" },
+        { "include": "#csharp-literal" },
+        { "include": "#csharp-type" },
+        { "include": "#csharp-keyword" },
+        { "include": "#csharp-number" },
+        { "include": "#csharp-member-access" },
+        { "include": "#csharp-identifier" }
+      ]
+    },
+
+    "csharp-in-parens": {
+      "patterns": [
+        { "include": "#csharp-comment" },
+        { "include": "#csharp-string" },
+        { "include": "#csharp-char" },
+        {
+          "begin": "\\(",
+          "end": "\\)",
+          "name": "meta.group.csharp.bubuui",
+          "beginCaptures": { "0": { "name": "punctuation.section.parens.begin.bubuui" } },
+          "endCaptures": { "0": { "name": "punctuation.section.parens.end.bubuui" } },
+          "patterns": [{ "include": "#csharp-in-parens" }]
+        },
+        { "include": "#csharp-literal" },
+        { "include": "#csharp-type" },
+        { "include": "#csharp-keyword" },
+        { "include": "#csharp-number" },
+        { "include": "#csharp-member-access" },
+        { "include": "#csharp-identifier" }
+      ]
+    },
+
+    "csharp-block": {
+      "begin": "\\{",
+      "end": "\\}",
+      "name": "meta.block.csharp.bubuui",
+      "beginCaptures": { "0": { "name": "punctuation.section.block.begin.bubuui" } },
+      "endCaptures": { "0": { "name": "punctuation.section.block.end.bubuui" } },
+      "patterns": [{ "include": "#csharp" }, { "include": "#csharp-block" }]
+    },
+
+    "csharp": {
+      "patterns": [
+        { "include": "#csharp-comment" },
+        { "include": "#csharp-string" },
+        { "include": "#csharp-char" },
+        { "include": "#csharp-literal" },
+        { "include": "#csharp-type" },
+        { "include": "#csharp-keyword" },
+        { "include": "#csharp-number" },
+        { "include": "#csharp-member-access" },
+        { "include": "#csharp-identifier" }
+      ]
+    },
+
+    "csharp-comment": {
+      "patterns": [
+        { "match": "//.*$", "name": "comment.line.double-slash.csharp" },
+        {
+          "begin": "/\\*",
+          "end": "\\*/",
+          "name": "comment.block.csharp"
+        }
+      ]
+    },
+
+    "csharp-string": {
+      "patterns": [
+        {
+          "begin": "\\$?@?\"",
+          "end": "\"",
+          "name": "string.quoted.double.csharp",
+          "patterns": [{ "match": "\\\\.", "name": "constant.character.escape.csharp" }]
+        }
+      ]
+    },
+
+    "csharp-char": {
+      "match": "'(?:\\\\.|[^'\\\\])'",
+      "name": "string.quoted.single.csharp"
+    },
+
+    "csharp-literal": {
+      "match": "\\b(?:true|false|null)\\b",
+      "name": "constant.language.csharp"
+    },
+
+    "csharp-type": {
+      "match": "\\b(?:bool|byte|sbyte|char|decimal|double|float|int|uint|long|ulong|short|ushort|object|string|void|var|dynamic)\\b",
+      "name": "storage.type.csharp"
+    },
+
+    "csharp-keyword": {
+      "match": "\\b(?:if|else|for|foreach|while|do|switch|case|default|break|continue|return|await|async|yield|new|this|base|is|as|in|out|ref|params|typeof|nameof|sizeof|throw|try|catch|finally|using|lock|public|private|protected|internal|static|readonly|const|sealed|partial|override|virtual|abstract|class|struct|interface|record|enum|namespace|where|get|set|init|when|and|or|not)\\b",
+      "name": "keyword.control.csharp"
+    },
+
+    "csharp-number": {
+      "match": "\\b(?:0[xX][0-9a-fA-F_]+|\\d[\\d_]*(?:\\.\\d[\\d_]*)?(?:[eE][+-]?\\d+)?)[fFdDmMlLuU]?\\b",
+      "name": "constant.numeric.csharp"
+    },
+
+    "csharp-member-access": {
+      "comment": "没有这条时 model.Name 整段落进默认前景，{expr} 看上去不上色。放在关键字/类型/字面量之后，避免抢它们的匹配。",
+      "match": "([A-Za-z_][A-Za-z0-9_]*)(\\.)([A-Za-z_][A-Za-z0-9_]*)",
+      "captures": {
+        "1": { "name": "variable.other.object.csharp" },
+        "2": { "name": "punctuation.accessor.csharp" },
+        "3": { "name": "variable.other.object.property.csharp" }
+      }
+    },
+
+    "csharp-identifier": {
+      "comment": "兜底：普通标识符也要有 scope。embeddedLanguages 的二次着色依赖装了 C# grammar，不能把上色押在它身上。",
+      "match": "[A-Za-z_][A-Za-z0-9_]*",
+      "name": "variable.other.readwrite.csharp"
+    }
+  }
+}

@@ -52,20 +52,20 @@ if ($CheckOnly) { return }
 [IO.Directory]::CreateDirectory($output) | Out-Null
 
 if (-not $SkipTests) {
-    foreach ($suite in @('EclipseUI.Compiler.Tests', 'EclipseUI.Ide.Tests')) {
+    foreach ($suite in @('BubuUI.Compiler.Tests', 'BubuUI.Ide.Tests')) {
         dotnet test (Join-Path $repo "tests\$suite") -c Release --nologo --verbosity quiet
         if ($LASTEXITCODE -ne 0) { throw "$suite failed ($LASTEXITCODE)." }
     }
 }
 & (Join-Path $PSScriptRoot 'build.ps1') -SkipNpm:$SkipNpm -SkipTests:$SkipTests
 if (-not $SkipTests) {
-    & (Join-Path $PSScriptRoot 'visualstudio\verify-server.ps1') -ServerPath (Join-Path $vscode 'server\EclipseUI.LanguageServer.dll')
-    & (Join-Path $PSScriptRoot 'visualstudio\verify-server.ps1') -ServerPath (Join-Path $vscode 'server\EclipseUI.LanguageServer.dll') -MaterializeDecompiled
+    & (Join-Path $PSScriptRoot 'visualstudio\verify-server.ps1') -ServerPath (Join-Path $vscode 'server\BubuUI.LanguageServer.dll')
+    & (Join-Path $PSScriptRoot 'visualstudio\verify-server.ps1') -ServerPath (Join-Path $vscode 'server\BubuUI.LanguageServer.dll') -MaterializeDecompiled
 }
 
 Push-Location $vscode
 try {
-    & '.\node_modules\.bin\vsce.cmd' package --out (Join-Path $output "EclipseUI-VSCode-$version.vsix") --skip-license
+    & '.\node_modules\.bin\vsce.cmd' package --out (Join-Path $output "BubuUI-VSCode-$version.vsix") --skip-license
     if ($LASTEXITCODE -ne 0) { throw "VS Code packaging failed ($LASTEXITCODE)." }
 }
 finally { Pop-Location }
@@ -75,7 +75,7 @@ $vsServer = Join-Path $PSScriptRoot 'visualstudio\server'
 [IO.Directory]::CreateDirectory($vsServer) | Out-Null
 Copy-Item -Path (Join-Path $vscode 'server\*') -Destination $vsServer -Recurse -Force
 & (Join-Path $PSScriptRoot 'visualstudio\build.ps1') -SkipPublish -SkipTests:$SkipTests
-Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'visualstudio\bin\Release\net472\EclipseUI.VisualStudio.vsix') -Destination (Join-Path $output "EclipseUI-VisualStudio-$version.vsix") -Force
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'visualstudio\bin\Release\net472\BubuUI.VisualStudio.vsix') -Destination (Join-Path $output "BubuUI-VisualStudio-$version.vsix") -Force
 
 Push-Location (Join-Path $PSScriptRoot 'rider')
 try {
@@ -83,9 +83,9 @@ try {
     if (-not $SkipTests) { $tasks = @('test', 'verifyShell') + $tasks }
     & '.\gradlew.bat' @tasks
     if ($LASTEXITCODE -ne 0) { throw "Rider packaging failed ($LASTEXITCODE)." }
-    $zip = Join-Path $PSScriptRoot "rider\build\distributions\eclipseui-rider-$version.zip"
+    $zip = Join-Path $PSScriptRoot "rider\build\distributions\bubuui-rider-$version.zip"
     if (-not (Test-Path -LiteralPath $zip)) { throw "Missing Rider package: $zip" }
-    Copy-Item -LiteralPath $zip -Destination (Join-Path $output "EclipseUI-Rider-$version.zip") -Force
+    Copy-Item -LiteralPath $zip -Destination (Join-Path $output "BubuUI-Rider-$version.zip") -Force
 }
 finally { Pop-Location }
 
