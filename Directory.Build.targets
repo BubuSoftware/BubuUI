@@ -1,4 +1,23 @@
 <Project>
+  <!-- MinVer's minimum option accepts only major.minor. Apply our bootstrap
+       patch version while retaining its prerelease identifiers and Git height. -->
+  <Target Name="ApplyBubuDefaultVersion" AfterTargets="MinVer"
+          Condition="'$(MinVerMajor).$(MinVerMinor).$(MinVerPatch)' == '0.0.0' And '$(MinVerVersionOverride)' == ''">
+    <PropertyGroup>
+      <MinVerMajor>$(BubuDefaultVersion.Split('.')[0])</MinVerMajor>
+      <MinVerMinor>$(BubuDefaultVersion.Split('.')[1])</MinVerMinor>
+      <MinVerPatch>$(BubuDefaultVersion.Split('.')[2])</MinVerPatch>
+      <PackageVersion>$(BubuDefaultVersion)</PackageVersion>
+      <PackageVersion Condition="'$(MinVerPreRelease)' != ''">$(PackageVersion)-$(MinVerPreRelease)</PackageVersion>
+      <Version>$(PackageVersion)</Version>
+      <MinVerVersion>$(PackageVersion)</MinVerVersion>
+      <MinVerVersion Condition="'$(MinVerBuildMetadata)' != ''">$(MinVerVersion)+$(MinVerBuildMetadata)</MinVerVersion>
+      <AssemblyVersion>$(MinVerMajor).0.0.0</AssemblyVersion>
+      <FileVersion>$(BubuDefaultVersion).0</FileVersion>
+      <InformationalVersion>$(MinVerVersion)</InformationalVersion>
+    </PropertyGroup>
+  </Target>
+
   <!-- Template inputs must participate in dotnet watch's compilation updates. -->
   <ItemGroup>
     <!-- Absolute paths keep referenced UI libraries relative to their own

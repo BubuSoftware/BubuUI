@@ -8,7 +8,7 @@
 完成后下载 Artifacts；也可本地执行 `pwsh -File ./publish.ps1`。
 详见 [IDE 插件打包说明](./ide/README.md#三个-ide-插件一键打包)。
 
-NuGet 包由 MinVer 根据 `v` 前缀的 Git tag 统一版本，通过 GitHub Actions 信任发布到 NuGet.org。
+NuGet 包由 MinVer 根据 Git 历史和 `v` 前缀的版本 tag 统一版本，手动运行 GitHub Actions 后通过信任发布到 NuGet.org。
 首次配置、发布和本地打包见 [NuGet 发布说明](./eng/nuget-release.md)。
 
 模板引擎优先的自绘 UI 框架。`.bui` 和纯 C# 是相同 UI 类型的两种编写方式：**根标签决定生成类基类，生成对象本身就是 UI 实例。**

@@ -4,7 +4,7 @@
 
 ## 首次配置
 
-1. 在 GitHub 仓库创建名为 `nuget` 的 Environment，并允许发布用的 `v*` tag。
+1. 在 GitHub 仓库创建名为 `nuget` 的 Environment。在 Deployment branches and tags 中选择 Selected branches and tags，添加 Branch 规则 `main`；如果也要从版本 tag 手动运行，再添加 Tag 规则 `v*`。已有配置若只允许 `v*`，需补上 `main`。
 2. 在该 Environment 或仓库的 Actions secrets 中设置 `NUGET_USER`，值为创建信任发布策略的个人 NuGet.org 用户名（不是邮箱，也不是 API key）。发布组织的包时，这里仍填个人用户名，在 NuGet.org 策略的 Package owner 中选择组织，并保持该账号为组织的有效成员。
 3. 在 NuGet.org 的 Trusted Publishing 中创建 GitHub 策略：
 
@@ -23,24 +23,33 @@
 ## 版本与触发
 
 MinVer 配置位于根目录 `Directory.Build.props`，使用 `PrivateAssets="all"`，不会成为用户项目的 NuGet 依赖。
-使用 `v` 前缀的 SemVer tag；尚无版本 tag 时从 `0.1.0-alpha.0` 加提交高度开始。
+使用 `v` 前缀的 SemVer tag；默认版本基线由 `BubuDefaultVersion` 设置为 `0.0.1`，尚无版本 tag 时从 `0.0.1-alpha.0` 加提交高度开始。
+MinVer 的最低版本选项仅支持主版本和次版本，因此 `Directory.Build.targets` 将其初始 `0.0.0` 基线调整为该默认值，同时保留预发布标识、提交高度和构建元数据。后续有效版本 tag 继续由 MinVer 推导。
 未打 tag 的构建按 MinVer 规则产生带提交高度的预发布版本。CI 必须获取完整 Git 历史与 tags（`fetch-depth: 0`）。
 VSIX 保留其独立的 Marketplace 版本。
 
-提交修改后，在要发布的提交上创建并推送 tag，例如：
+工作流仅支持手动触发。在 GitHub **Actions → Publish NuGet packages → Run workflow** 中选择 `main` 后运行，会构建并发布该分支的 MinVer 版本。无需提前打 tag；尚无 tag 时发布的是 `0.0.1-alpha.0.<提交高度>` 预发布版本。
+
+需要指定发布版本时，在要发布的提交上创建并推送 tag，例如：
 
 ```sh
-git tag v0.1.0-preview.1
-git push origin v0.1.0-preview.1
+git tag v0.0.1-preview.1
+git push origin v0.0.1-preview.1
 
-# 正式版使用 v0.1.0 等 tag
+# 正式版使用 v0.0.1 等 tag
 ```
 
-工作流构建所有包，逐一检查 MinVer 生成的包版本与 tag 一致，然后进入 `nuget` Environment 发布。
+推送 tag 本身不会触发发布。可以使用 GitHub CLI 从该 tag 手动运行：
+
+```sh
+gh workflow run nuget-release.yml --ref v0.0.1-preview.1
+```
+
+工作流构建所有包；从 tag 运行时，还会逐一检查 MinVer 生成的包版本与 tag 一致，然后进入 `nuget` Environment 发布。
 不要在同一提交上放置多个不同版本 tag。tag 不使用 `+build` 元数据；NuGet 包版本不包含该元数据。
 `--skip-duplicate` 允许失败后重跑，已有版本不会被覆盖。修正已发布的包应新建版本和 tag。
 
-在 Actions 手动运行工作流只构建、验证并上传 artifacts，不发布；可用于首次发布前检查。
+手动运行会上传 artifacts 并发布到 NuGet.org。如只需检查打包结果，请使用下方的本地打包命令。
 
 ## 包范围
 
@@ -68,5 +77,5 @@ git push origin v0.1.0-preview.1
 ./eng/pack-nuget.ps1 -Group iOS
 ```
 
-输出在 `out/nuget`。可用 `-OutputPath` 指定其他目录，或用 `-ExpectedVersion 0.1.0-preview.1` 检查某个 tag 对应的构建。
+输出在 `out/nuget`。可用 `-OutputPath` 指定其他目录，或用 `-ExpectedVersion 0.0.1-preview.1` 检查某个 tag 对应的构建。
 详细版本推导规则见 [MinVer 文档](https://github.com/adamralph/minver)。
