@@ -23,6 +23,12 @@
     <!-- 样式属性目录由 StyleBuilder/StyledProperty 符号派生（design/17 §4.3）；
          缺了渲染程序集，`Style="CornerRadius: 8"` 的补全会是空表。 -->
     <ProjectReference Include="..\..\src\BubuUI.Rendering\BubuUI.Rendering.csproj" />
+    <!-- ProjectReferenceContextTests evaluates Gallery from disk. Restore its assets
+         and build its dependencies in Debug, the workspace evaluator's default,
+         even when this test assembly is built in Release. Keep fixture types out. -->
+    <ProjectReference Include="..\..\samples\Gallery\Gallery.csproj"
+                      ReferenceOutputAssembly="false" PrivateAssets="all"
+                      AdditionalProperties="Configuration=Debug" />
   </ItemGroup>
 
 </Project>
