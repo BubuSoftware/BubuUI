@@ -1,0 +1,5 @@
+<Project>
+  <ItemGroup>
+    <AdditionalFiles Include="**/*.bui;**/*.bss" Exclude="$(DefaultItemExcludes);$(DefaultExcludesInProjectFolder);@(AdditionalFiles)" />
+  </ItemGroup>
+</Project>

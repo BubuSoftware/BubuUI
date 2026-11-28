@@ -5,7 +5,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../BubuUI.Rendering/BubuUI.Rendering.csproj" />
-    <ProjectReference Include="../BubuUI.Compiler.Generator/BubuUI.Compiler.Generator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../BubuUI.Compiler.Generator/BubuUI.Compiler.Generator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" PrivateAssets="all" />
     <AdditionalFiles Include="**/*.bui;**/*.bss" />
   </ItemGroup>
 </Project>

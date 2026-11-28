@@ -1,0 +1,114 @@
+name: Publish NuGet packages
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  # Manual runs build artifacts only; publishing requires a pushed version tag.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nuget-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  pack:
+    name: Pack ${{ matrix.group }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - group: Desktop
+            os: ubuntu-latest
+            workload: ''
+          - group: Android
+            os: ubuntu-latest
+            workload: android
+          - group: iOS
+            os: macos-latest
+            workload: ios
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Install platform workload
+        if: matrix.workload != ''
+        env:
+          WORKLOAD: ${{ matrix.workload }}
+        run: dotnet workload install $env:WORKLOAD
+
+      - name: Test compiler
+        if: matrix.group == 'Desktop'
+        run: dotnet test tests/BubuUI.Compiler.Tests -c Release -p:ContinuousIntegrationBuild=true
+
+      - name: Pack and verify version
+        env:
+          PACKAGE_GROUP: ${{ matrix.group }}
+        run: |
+          $expectedVersion = ''
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            if ($env:GITHUB_REF_NAME -notmatch '^v\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') {
+              throw "Expected a version tag such as v0.1.0 or v0.1.0-preview.1."
+            }
+            $expectedVersion = $env:GITHUB_REF_NAME.Substring(1)
+          }
+          ./eng/pack-nuget.ps1 -Group $env:PACKAGE_GROUP -ExpectedVersion $expectedVersion
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nuget-${{ matrix.group }}
+          path: out/nuget/*.nupkg
+          if-no-files-found: error
+
+  publish:
+    name: Publish to NuGet.org
+    needs: pack
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: nuget
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 11.0.x
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: nuget-*
+          merge-multiple: true
+          path: out/nuget
+
+      - name: NuGet login with OIDC
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
+      - name: Push packages
+        shell: pwsh
+        env:
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+        run: |
+          $packages = @(Get-ChildItem out/nuget/*.nupkg)
+          if ($packages.Count -ne 11) { throw "Expected 11 packages; found $($packages.Count)." }
+          foreach ($package in $packages) {
+            dotnet nuget push $package.FullName --api-key $env:NUGET_API_KEY --source https://api.nuget.org/v3/index.json --skip-duplicate
+            if ($LASTEXITCODE -ne 0) { throw "Failed to publish $($package.Name)." }
+          }

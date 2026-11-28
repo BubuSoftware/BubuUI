@@ -3,7 +3,13 @@
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>0.1.0</Version>
+    <MinVerTagPrefix>v</MinVerTagPrefix>
+    <MinVerMinimumMajorMinor>0.1</MinVerMinimumMajorMinor>
+    <IsPackable>false</IsPackable>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
   </PropertyGroup>
+  <!-- VSIX keeps its own marketplace version. MinVer 7 also supports its .NET 8 build host. -->
+  <ItemGroup Condition="'$(MSBuildProjectName)' != 'BubuUI.VisualStudio'">
+    <PackageReference Include="MinVer" Version="7.0.0" PrivateAssets="all" />
+  </ItemGroup>
 </Project>

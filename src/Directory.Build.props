@@ -1,0 +1,17 @@
+<Project>
+  <Import Project="../Directory.Build.props" />
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <!-- These compiler helpers are embedded in the generator and used by the IDE tooling. -->
+    <IsPackable Condition="'$(MSBuildProjectName)' == 'BubuUI.Compiler' Or '$(MSBuildProjectName)' == 'BubuUI.Compiler.Metadata' Or '$(MSBuildProjectName)' == 'BubuUI.Compiler.Probe'">false</IsPackable>
+    <Authors>BubuSoftware</Authors>
+    <PackageProjectUrl>https://github.com/BubuSoftware/BubuUI</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/BubuSoftware/BubuUI</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description Condition="'$(Description)' == ''">$(MSBuildProjectName) for the BubuUI framework.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+</Project>
