@@ -86,6 +86,44 @@ public sealed class ShellTests : IDisposable
     }
 
     [Fact]
+    public async Task Initialize_RequestsExpandedTemplatesEvenWithoutWorkspace()
+    {
+        var middle = new BubuUiMiddleLayer();
+        var request = JObject.Parse("{capabilities:{textDocument:{completion:{completionItem:{snippetSupport:true}}}}}");
+        await middle.HandleRequestAsync("initialize", request, parameters =>
+        {
+            var completion = parameters["capabilities"]!["textDocument"]!["completion"]!;
+            Assert.False(completion["completionItem"]!["snippetSupport"]!.Value<bool>());
+            Assert.Equal(1, completion["completionItem"]!["insertTextModeSupport"]!["valueSet"]![0]!.Value<int>());
+            Assert.Equal(1, completion["insertTextMode"]!.Value<int>());
+            return Task.FromResult<JToken?>(new JObject());
+        });
+    }
+
+    [Fact]
+    public async Task Completion_ForwardsTheDocumentEditorOptions()
+    {
+        const string uri = "file:///workspace/Demo.bui";
+        var middle = new BubuUiMiddleLayer
+        {
+            CompletionOptions = document =>
+            {
+                Assert.Equal(uri, document);
+                return Task.FromResult<JObject?>(new JObject { ["tabSize"] = 4, ["indentSize"] = 2, ["insertSpaces"] = true });
+            },
+        };
+        Assert.True(middle.CanHandle("textDocument/completion"));
+        var request = new JObject { ["textDocument"] = new JObject { ["uri"] = uri } };
+        await middle.HandleRequestAsync("textDocument/completion", request, parameters =>
+        {
+            Assert.Equal(2, parameters["_bubuuiFormatting"]!["indentSize"]!.Value<int>());
+            Assert.Equal(4, parameters["_bubuuiFormatting"]!["tabSize"]!.Value<int>());
+            Assert.True(parameters["_bubuuiFormatting"]!["insertSpaces"]!.Value<bool>());
+            return Task.FromResult<JToken?>(new JObject());
+        });
+    }
+
+    [Fact]
     public async Task Definitions_MaterializeVirtualDocumentThroughActualJsonRpc()
     {
         var (clientStream, serverStream) = FullDuplexStream.CreatePair();

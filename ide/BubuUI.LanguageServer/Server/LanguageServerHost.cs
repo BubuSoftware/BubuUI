@@ -17,7 +17,9 @@ public sealed class LanguageServerHost
     private readonly CatalogProvider _catalogs;
     private readonly Action<string>? _log;
 
-    private bool _snippetSupport = true;
+    private bool _snippetSupport;
+    private bool _adjustCompletionIndentation;
+    private bool _completionTextModeSupport;
     private bool _shutdownRequested;
     private readonly Dictionary<string, CancellationTokenSource> _tier2Debounce = new(StringComparer.Ordinal);
     // Retain a few lists so a delayed selection still describes its original snapshot.
@@ -261,8 +263,12 @@ public sealed class LanguageServerHost
 
     private JsonNode? Initialize(JsonNode? parameters)
     {
-        _snippetSupport = parameters?["capabilities"]?["textDocument"]?["completion"]
-            ?["completionItem"]?["snippetSupport"]?.GetValue<bool>() ?? true;
+        var completion = parameters?["capabilities"]?["textDocument"]?["completion"];
+        _snippetSupport = completion?["completionItem"]?["snippetSupport"]?.GetValue<bool>() ?? false;
+        var modes = completion?["completionItem"]?["insertTextModeSupport"]?["valueSet"] as JsonArray;
+        _completionTextModeSupport = modes is { Count: > 0 };
+        _adjustCompletionIndentation = modes?.Any(m => m?.GetValue<int>() == 2) == true
+            || completion?["insertTextMode"]?.GetValue<int>() == 2;
 
         return new JsonObject
         {
@@ -364,15 +370,20 @@ public sealed class LanguageServerHost
                 snippet = true;
             }
             if (snippet && !_snippetSupport) insertion = PlainSnippet(insertion);
+            if (item.IsSnippet && !_adjustCompletionIndentation && document is not null)
+                insertion = CompletionText.IndentTemplate(document.Text,
+                    (item.Replacement ?? list.Replacement).Start, insertion,
+                    parameters?["_bubuuiFormatting"]);
             var entry = new JsonObject
             {
                 ["label"] = item.Label,
                 ["kind"] = (int)ToCompletionKind(item.Kind),
-                ["insertTextMode"] = 2, // adjust multiline snippet indentation to the insertion line
                 ["insertTextFormat"] = snippet && _snippetSupport
                     ? (int)InsertTextFormat.Snippet
                     : (int)InsertTextFormat.PlainText,
             };
+            if (_completionTextModeSupport)
+                entry["insertTextMode"] = _adjustCompletionIndentation ? 2 : 1;
             if (item.Detail is not null) entry["detail"] = item.Detail;
             if (item.Documentation is not null)
                 entry["documentation"] = new JsonObject

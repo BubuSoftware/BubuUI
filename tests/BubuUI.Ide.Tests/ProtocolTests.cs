@@ -15,6 +15,72 @@ namespace BubuUI.Ide.Tests;
 /// </summary>
 public class ProtocolTests
 {
+    [Theory]
+    [InlineData(false, false, false, "\n", "    ", 2, 4, true)]
+    [InlineData(false, false, false, "\r\n", "    ", 2, 4, true)]
+    [InlineData(true, false, false, "\n", "\t\t", 2, 4, false)]
+    [InlineData(true, true, false, "\r\n", "    ", 2, 4, true)]
+    [InlineData(true, true, true, "\n", "    ", 2, 4, true)]
+    public async Task Session_DirectiveTemplatesRespectSnippetAndIndentationCapabilities(
+        bool advertise, bool snippets, bool adjust, string newline, string prefix, int indentSize, int tabSize, bool spaces)
+    {
+        const string uri = "file:///workspace/DirectiveIndent.bui";
+        var text = "@namespace Demo" + newline + "@using BubuUI.Elements" + newline
+            + "<StackPanel>" + newline + prefix + "@" + newline + "</StackPanel>";
+        var initialization = new JsonObject();
+        if (advertise)
+            initialization["capabilities"] = new JsonObject
+            {
+                ["textDocument"] = new JsonObject
+                {
+                    ["completion"] = new JsonObject
+                    {
+                        ["completionItem"] = new JsonObject
+                        {
+                            ["snippetSupport"] = snippets,
+                            ["insertTextModeSupport"] = new JsonObject { ["valueSet"] = new JsonArray(adjust ? 2 : 1) },
+                        },
+                    },
+                },
+            };
+        var request = Position(uri, 3, prefix.Length + 1);
+        request["_bubuuiFormatting"] = new JsonObject
+        {
+            ["tabSize"] = tabSize, ["indentSize"] = indentSize, ["insertSpaces"] = spaces,
+        };
+        var transcript = await RunSession(Request(1, "initialize", initialization),
+            Notification("initialized", new JsonObject()), DidOpen(uri, text),
+            Request(2, "textDocument/completion", request));
+        var items = transcript.Single(m => m["id"]?.ToString() == "2")["result"]!["items"]!.AsArray();
+        foreach (var label in new[] { "@if", "@for", "@foreach", "@while", "@do", "@switch", "@code", "@style" })
+        {
+            var item = Assert.Single(items, i => i!["label"]!.GetValue<string>() == label)!;
+            var insertion = item["textEdit"]!["newText"]!.GetValue<string>();
+            Assert.Equal(snippets ? 2 : 1, item["insertTextFormat"]!.GetValue<int>());
+            if (!advertise) Assert.Null(item["insertTextMode"]);
+            else Assert.Equal(adjust ? 2 : 1, item["insertTextMode"]!.GetValue<int>());
+            if (snippets) Assert.Contains("$0", insertion);
+            else { Assert.DoesNotContain("$0", insertion); Assert.DoesNotContain("${", insertion); }
+            if (adjust)
+            {
+                // VS Code/Rider can adjust this relative snippet themselves: no prefix duplication.
+                Assert.Contains("\n\t", insertion);
+                Assert.DoesNotContain("\n" + prefix, insertion);
+            }
+            else
+            {
+                string unit = spaces ? new string(' ', indentSize)
+                    : new string('\t', indentSize / tabSize) + new string(' ', indentSize % tabSize);
+                Assert.Contains(newline + prefix + unit, insertion);
+                Assert.Contains(newline + prefix + "}", insertion);
+                var applied = ApplyCompletion(text, item);
+                Assert.Contains(newline + prefix + label, applied);
+                Assert.EndsWith(newline + "</StackPanel>", applied);
+                if (newline == "\r\n") Assert.DoesNotContain("\n", insertion.Replace("\r\n", ""));
+            }
+        }
+    }
+
     [Fact]
     public async Task Session_StylesheetFeaturesUseRealLspRanges()
     {

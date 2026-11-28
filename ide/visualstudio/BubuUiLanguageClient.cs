@@ -30,6 +30,8 @@ public sealed class BubuUiLanguageClient : ILanguageClient, ILanguageClientCusto
     private string? _logPath;
     private bool _disposed;
 
+    public BubuUiLanguageClient() => _middleLayer.CompletionOptions = CompletionEditorSettings.ReadAsync;
+
     [Import(typeof(SVsServiceProvider))]
     internal IServiceProvider ServiceProvider { get; set; } = null!;
 

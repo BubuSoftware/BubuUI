@@ -402,8 +402,8 @@ grammar 测试值得单说：TextMate 写错不会报错，只会「某个地方
 
 `.bui` 支持 `@for`、`@while`、`@do { ... } while (...);`，包括循环变量的补全、跳转、悬停、重命名和语法高亮。循环的条目重建语义见 [模板语法](../spec/01-template-syntax.md#4111-forwhiledo)。
 
-模板格式化、范围格式化和输入时格式化共用缩进扫描器，识别内联标签、多行属性、循环块及 C# 字符串/注释，并遵守编辑器的空格/Tab 和宽度设置。补全返回相对缩进模式。
+模板格式化、范围格式化和输入时格式化共用缩进扫描器，识别内联标签、多行属性、循环块及 C# 字符串/注释，并遵守编辑器的空格/Tab 和宽度设置。补全按客户端能力协商：支持片段及缩进调整的客户端接收相对缩进；其余客户端接收按当前行对齐的文本。
 
-- Visual Studio：Enter 使用 Smart Indent；多行粘贴在同一次撤销操作内整理缩进。
+- Visual Studio：Enter 使用 Smart Indent；多行粘贴在同一次撤销操作内整理缩进。`@` 指令补全使用已展开的文本，避免 `$0`/`${1:...}` 原样出现；补全读取当前文档视图的缩进宽度、Tab 宽度及空格设置。
 - VS Code：默认启用 BubuUI/Bss 的 formatOnPaste、formatOnType；可在编辑器设置中覆盖。
-- Rider：通过 LSP4IJ 使用同一服务端的 Enter/输入及范围格式化；粘贴整理遵守 Rider 的 Reformat on paste 设置。多行字符串和注释内部空白保持不变。
+- Rider：通过 LSP4IJ 使用同一服务端的 Enter/输入及范围格式化；粘贴整理遵守 Rider 的 Reformat on paste 设置。指令补全按当前文件的 Code Style 对齐，保留 IntelliJ 模板占位符；补上 LSP4IJ 0.21 多行 textEdit 缺少当前行缩进的问题。多行字符串和注释内部空白保持不变。

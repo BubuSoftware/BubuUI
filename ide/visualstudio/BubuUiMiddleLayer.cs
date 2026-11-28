@@ -11,11 +11,13 @@ internal sealed class BubuUiMiddleLayer : ILanguageClientMiddleLayer2<JToken>
 {
     internal JsonRpc? Rpc { get; set; }
     internal string? Workspace { get; set; }
+    internal Func<string, Task<JObject?>>? CompletionOptions { get; set; }
     internal string CacheDirectory { get; set; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "BubuUI", "VisualStudio", "decompiled");
 
-    public bool CanHandle(string methodName) => methodName == "initialize" || methodName == "textDocument/definition";
+    public bool CanHandle(string methodName) => methodName == "initialize" || methodName == "textDocument/definition"
+        || methodName == "textDocument/completion";
 
     public Task HandleNotificationAsync(string methodName, JToken methodParam, Func<JToken, Task> sendNotification)
         => sendNotification(methodParam);
@@ -24,12 +26,26 @@ internal sealed class BubuUiMiddleLayer : ILanguageClientMiddleLayer2<JToken>
         Func<JToken, Task<JToken?>> sendRequest)
     {
         // VS solution mode does not always supply a workspace root (open-folder mode does).
-        if (methodName == "initialize" && methodParam is JObject initialization && Workspace != null)
+        if (methodName == "initialize" && methodParam is JObject initialization)
         {
-            var root = new Uri(Workspace.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar).AbsoluteUri;
-            initialization["rootUri"] = root;
-            initialization["workspaceFolders"] = new JArray(new JObject { ["uri"] = root, ["name"] = Path.GetFileName(Workspace) });
+            // The custom code-remote content type has no VS snippet expansion service.
+            // Ask for expanded, already-indented text instead of inserting literal $0/${1:...}.
+            var capabilities = Object(initialization, "capabilities");
+            var completion = Object(Object(capabilities, "textDocument"), "completion");
+            var item = Object(completion, "completionItem");
+            item["snippetSupport"] = false;
+            item["insertTextModeSupport"] = new JObject { ["valueSet"] = new JArray(1) };
+            completion["insertTextMode"] = 1;
+            if (Workspace != null)
+            {
+                var root = new Uri(Workspace.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar).AbsoluteUri;
+                initialization["rootUri"] = root;
+                initialization["workspaceFolders"] = new JArray(new JObject { ["uri"] = root, ["name"] = Path.GetFileName(Workspace) });
+            }
         }
+        if (methodName == "textDocument/completion" && methodParam is JObject request
+            && request["textDocument"]?["uri"]?.Value<string>() is string document && CompletionOptions != null)
+            request["_bubuuiFormatting"] = await CompletionOptions(document).ConfigureAwait(false);
         var result = await sendRequest(methodParam).ConfigureAwait(false);
         if (methodName == "textDocument/definition" && result != null)
         {
@@ -38,6 +54,14 @@ internal sealed class BubuUiMiddleLayer : ILanguageClientMiddleLayer2<JToken>
             else await RewriteLocationAsync(result).ConfigureAwait(false);
         }
         return result;
+    }
+
+    private static JObject Object(JObject parent, string name)
+    {
+        if (parent[name] is JObject existing) return existing;
+        var created = new JObject();
+        parent[name] = created;
+        return created;
     }
 
     private async Task RewriteLocationAsync(JToken location)

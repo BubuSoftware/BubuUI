@@ -5,11 +5,17 @@ import com.intellij.notification.NotificationType;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
 import com.redhat.devtools.lsp4ij.LanguageServerFactory;
+import com.redhat.devtools.lsp4ij.client.features.LSPClientFeatures;
 import com.redhat.devtools.lsp4ij.server.StreamConnectionProvider;
 import org.jetbrains.annotations.NotNull;
 
 /** LSP4IJ factory referenced from plugin.xml (com.redhat.devtools.lsp4ij.server). */
 public final class BubuUiLanguageServerFactory implements LanguageServerFactory {
+
+    @Override
+    public @NotNull LSPClientFeatures createClientFeatures() {
+        return new LSPClientFeatures().setCompletionFeature(new BubuUiCompletionFeature());
+    }
 
     @Override
     public @NotNull StreamConnectionProvider createConnectionProvider(@NotNull Project project) {
