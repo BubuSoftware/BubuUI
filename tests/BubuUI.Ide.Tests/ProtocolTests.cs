@@ -37,6 +37,23 @@ public class ProtocolTests
         Assert.NotEmpty(transcript.Single(m => m["id"]?.ToString() == "6")["result"]!["data"]!.AsArray());
     }
 
+    [Fact]
+    public async Task Formatting_UsesClientOptionsAndOnTypeOnlyEditsTheCurrentLine()
+    {
+        const string uri = "file:///workspace/Indent.bui";
+        const string text = "@namespace Demo\n@using BubuUI.Elements\n<StackPanel>\n\n<TextBlock />\n</StackPanel>";
+        var parameters = Position(uri, 3, 0);
+        parameters["ch"] = "\n";
+        parameters["options"] = new JsonObject { ["tabSize"] = 2, ["insertSpaces"] = false };
+        var transcript = await RunSession(Request(1, "initialize"), Notification("initialized", new JsonObject()),
+            DidOpen(uri, text), Request(2, "textDocument/onTypeFormatting", parameters));
+        Assert.NotNull(transcript.Single(m => m["id"]?.ToString() == "1")["result"]!["capabilities"]!["documentOnTypeFormattingProvider"]);
+        var edit = Assert.Single(transcript.Single(m => m["id"]?.ToString() == "2")["result"]!.AsArray());
+        Assert.Equal("\t", edit!["newText"]!.GetValue<string>());
+        Assert.Equal(3, edit["range"]!["start"]!["line"]!.GetValue<int>());
+        Assert.Equal(3, edit["range"]!["end"]!["line"]!.GetValue<int>());
+    }
+
     private static JsonObject Request(int id, string method, JsonObject? parameters = null) => new()
     {
         ["jsonrpc"] = "2.0",

@@ -469,20 +469,19 @@ public class S6SyntaxTests
     // ------------------------------------------------------------------
 
     [Fact]
-    public void ForLoop_ReportsEUI009_WithRewriteHint()
+    public void ForLoop_Parses()
     {
         var (_, diags) = Parse("<StackPanel>\n@for (int i = 0; i < 3; i++) { <TextBlock>x</TextBlock> }\n</StackPanel>");
 
-        var diag = Assert.Single(diags, d => d.Code == UiDiagnostics.UnknownDirective);
-        Assert.Contains("Enumerable.Range", diag.Message);
+        Assert.Empty(diags);
     }
 
     [Fact]
-    public void WhileAndDo_ReportEUI009()
+    public void WhileLoop_Parses()
     {
         var (_, diags) = Parse("<StackPanel>\n@while (flag) { <TextBlock>x</TextBlock> }\n</StackPanel>");
 
-        Assert.Contains(diags, d => d.Code == UiDiagnostics.UnknownDirective);
+        Assert.Empty(diags);
     }
 
     [Fact]

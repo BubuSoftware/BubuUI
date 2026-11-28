@@ -16,6 +16,15 @@ namespace BubuUI.Compiler;
 /// </summary>
 public static class CSharpSnippet
 {
+    /// <summary>Skip one C# literal/comment without interpreting its braces as structure.</summary>
+    public static int SkipLiteralOrComment(string text, int i)
+    {
+        if (i >= text.Length) return i;
+        if (text[i] == '/' && i + 1 < text.Length && (text[i + 1] == '/' || text[i + 1] == '*'))
+            return SkipComment(text, i);
+        if (text[i] == '\'') return SkipCharLiteral(text, i);
+        return text[i] is '"' or '@' or '$' ? SkipString(text, i) : i;
+    }
     /// <summary>
     /// 从 <paramref name="openIndex"/> 处的 <c>{</c> 或 <c>(</c> 出发，返回配对闭括号的下标；
     /// 未闭合返回 -1。<paramref name="openIndex"/> 前的字符不参与扫描。

@@ -72,7 +72,9 @@ public static class EmbeddedCSharpService
         if (probe is null || analysis.Ast is null || expression.Length == 0) return null;
         try
         {
-            var env = ExpressionEnvironment.Build(analysis.Ast, context.OpenForeaches, probe, probe.Compilation);
+            var header = context.Directive is "for" or "while";
+            var scopes = header ? context.OpenForeaches.Where(s => s.LoopKind is null || s.LoopHeaderStart != context.ExpressionStart).ToArray() : context.OpenForeaches;
+            var env = ExpressionEnvironment.Build(analysis.Ast, scopes, probe, probe.Compilation);
             var usings = TemplateAnalyzer.CollectUsingLines(analysis.Ast.Nodes);
             var type = probe.ThisType;
             var namespaceName = type?.ContainingNamespace is { IsGlobalNamespace: false } ns
@@ -100,10 +102,10 @@ public static class EmbeddedCSharpService
             foreach (var (envType, name) in env)
                 sb.Append("        ").Append(envType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat))
                     .Append(' ').Append(name).AppendLine(" = default!;");
-            sb.Append("        var __value = (");
+            sb.Append(header ? "        " + context.Directive + " (" : "        var __value = (");
             var bodyStart = sb.Length;
             sb.Append(expression);
-            sb.AppendLine(");");
+            sb.AppendLine(header ? ") { }" : ");");
             sb.AppendLine("    }");
             sb.AppendLine("}");
 
@@ -626,75 +628,49 @@ public static class EmbeddedCSharpService
     /// （Workspaces 层，锁 4.9.2 与现有 Roslyn 同版）。返回逐行最小编辑，
     /// rangeFormatting 只需按请求区间过滤同一批编辑。
     /// </summary>
-    public static IReadOnlyList<UiTextEdit> Format(DocumentAnalysis analysis)
+    public static IReadOnlyList<UiTextEdit> Format(DocumentAnalysis analysis, int tabSize = 4,
+        bool insertSpaces = true, bool indentOnly = false, bool includeBlankLines = false)
     {
         var text = analysis.Text;
         var edits = new List<UiTextEdit>();
-        var codeRanges = analysis.Ast?.Nodes.OfType<UiCodeBlock>()
-            .Select(static b => (Start: b.CodeSpan.Start, End: b.CodeSpan.Start + b.CodeSpan.Length))
-            .Concat(analysis.Ast.Nodes.OfType<UiStyleBlock>().Select(static b => (Start: b.CodeSpan.Start, End: b.CodeSpan.End)))
-            .ToArray() ?? Array.Empty<(int Start, int End)>();
-
-        var depth = 0;
-        var offset = 0;
-        while (offset <= text.Length)
+        var codeBlocks = analysis.Ast?.Nodes.OfType<UiCodeBlock>().ToArray() ?? [];
+        foreach (var line in TemplateIndentation.Analyze(text))
         {
-            var lineEnd = text.IndexOf('\n', offset);
-            if (lineEnd < 0) lineEnd = text.Length;
-            var lineStart = offset;
-            var contentStart = lineStart;
-            while (contentStart < lineEnd && (text[contentStart] == ' ' || text[contentStart] == '\t'))
-                contentStart++;
-            var trimmed = contentStart < lineEnd ? text.Substring(contentStart, lineEnd - contentStart).Trim() : "";
-
-            var inCode = codeRanges.Any(r => contentStart >= r.Start && contentStart < r.End);
-            if (!inCode && trimmed.Length > 0)
-            {
-                if (trimmed.StartsWith("</", StringComparison.Ordinal) ||
-                    trimmed.StartsWith("}", StringComparison.Ordinal) ||
-                    trimmed.StartsWith(")", StringComparison.Ordinal))
-                    depth = Math.Max(0, depth - 1);
-                var expected = new string(' ', depth * 4);
-                var current = text.Substring(lineStart, contentStart - lineStart);
-                if (!string.Equals(current, expected, StringComparison.Ordinal))
-                    edits.Add(new UiTextEdit(new UiSpan(lineStart, contentStart - lineStart), expected));
-                if (trimmed.StartsWith("<", StringComparison.Ordinal) &&
-                    !trimmed.StartsWith("</", StringComparison.Ordinal) &&
-                    !trimmed.StartsWith("<!", StringComparison.Ordinal) &&
-                    !trimmed.EndsWith("/>", StringComparison.Ordinal))
-                    depth++;
-                if (trimmed.EndsWith("{", StringComparison.Ordinal)) depth++;
-            }
-
-            if (lineEnd == text.Length) break;
-            offset = lineEnd + 1;
+            if (line.Preserve || (!includeBlankLines && text.Substring(line.ContentStart, line.End - line.ContentStart).Trim().Length == 0)) continue;
+            if (!indentOnly && codeBlocks.Any(b => line.ContentStart >= b.CodeSpan.Start && line.ContentStart < b.CodeSpan.End)) continue;
+            var desired = TemplateIndentation.Whitespace(line.Depth, tabSize, insertSpaces);
+            if (text.Substring(line.Start, line.ContentStart - line.Start) != desired)
+                edits.Add(new UiTextEdit(new UiSpan(line.Start, line.ContentStart - line.Start), desired));
         }
-
-        if (analysis.Ast is not null)
+        if (!indentOnly)
         {
-            foreach (var block in analysis.Ast.Nodes.OfType<UiCodeBlock>())
+            foreach (var block in codeBlocks)
             {
-                var formatted = FormatCode(block.Code);
-                if (formatted is null || string.Equals(formatted, block.Code, StringComparison.Ordinal)) continue;
-                edits.Add(new UiTextEdit(
-                    new UiSpan(block.CodeSpan.Start, block.CodeSpan.Length), formatted));
+                var formatted = FormatCode(block.Code, tabSize, insertSpaces, text.Contains("\r\n") ? "\r\n" : "\n");
+                if (formatted is not null && formatted != block.Code)
+                    edits.Add(new UiTextEdit(block.CodeSpan, formatted));
             }
         }
-        return edits;
+        return edits.OrderBy(e => e.Span.Start).ToArray();
     }
 
-    private static string? FormatCode(string body)
+    private static string? FormatCode(string body, int tabSize, bool insertSpaces, string newline)
     {
         try
         {
             using var workspace = new AdhocWorkspace();
-            var wrapped = "class __BubuUiFormat\n{\n" + body + "\n}";
+            var wrapped = "class __BubuUiFormat" + newline + "{" + body + "}";
             var tree = CSharpSyntaxTree.ParseText(Microsoft.CodeAnalysis.Text.SourceText.From(wrapped));
-            var formatted = Formatter.Format(tree.GetRoot(), workspace).ToFullString();
+            var options = workspace.Options
+                .WithChangedOption(FormattingOptions.UseTabs, LanguageNames.CSharp, !insertSpaces)
+                .WithChangedOption(FormattingOptions.TabSize, LanguageNames.CSharp, tabSize)
+                .WithChangedOption(FormattingOptions.IndentationSize, LanguageNames.CSharp, tabSize)
+                .WithChangedOption(FormattingOptions.NewLine, LanguageNames.CSharp, newline);
+            var formatted = Formatter.Format(tree.GetRoot(), workspace, options).ToFullString();
             var open = formatted.IndexOf('{');
             var close = formatted.LastIndexOf('}');
             if (open < 0 || close <= open) return null;
-            return formatted.Substring(open + 1, close - open - 1).Trim('\r', '\n');
+            return formatted.Substring(open + 1, close - open - 1);
         }
         catch (Exception)
         {

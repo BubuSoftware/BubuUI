@@ -261,6 +261,7 @@ internal sealed partial class StyleLanguageProvider
                 foreach (var branch in condition.ElseIfs) foreach (var child in Elements(branch.Children, boundaryCatalog)) yield return child;
                 foreach (var child in Elements(condition.ElseChildren ?? [], boundaryCatalog)) yield return child;
             }
+            else if (node is UiLoop imperativeLoop) foreach (var child in Elements(imperativeLoop.Children, boundaryCatalog)) yield return child;
             else if (node is UiForeach loop) foreach (var child in Elements(loop.Children, boundaryCatalog)) yield return child;
             else if (node is UiSwitch choice) foreach (var section in choice.Sections) foreach (var child in Elements(section.Children, boundaryCatalog)) yield return child;
         }
@@ -562,7 +563,7 @@ internal sealed partial class StyleLanguageProvider
         }
         return result;
     }
-    public IReadOnlyList<UiTextEdit> Format()
+    public IReadOnlyList<UiTextEdit> Format(int tabSize = 4, bool insertSpaces = true, bool includeBlankLines = false)
     {
         if (_document.Inline) return [];
         // Indentation only: preserve literals, comments, line endings and incomplete input.
@@ -573,11 +574,11 @@ internal sealed partial class StyleLanguageProvider
             var indent = line.TakeWhile(c => c is ' ' or '\t').Count();
             var first = offset + indent;
             if (first >= _document.Region.Start && first < _document.Region.End && offset >= _document.Region.Start &&
-                indent < line.TrimEnd('\r').Length && !_document.InCommentOrString(first))
+                (includeBlankLines || indent < line.TrimEnd('\r').Length) && !_document.InCommentOrString(first))
             {
                 var depth = _document.AllNodes.Count(n => n.Block && n.Open < first && n.End > first);
-                if (line[indent] == '}') depth = Math.Max(0, depth - 1);
-                var desired = new string(' ', depth * 4 + (_document.Embedded ? 4 : 0));
+                if (indent < line.Length && line[indent] == '}') depth = Math.Max(0, depth - 1);
+                var desired = TemplateIndentation.Whitespace(depth + (_document.Embedded ? 1 : 0), tabSize, insertSpaces);
                 if (line[..indent] != desired) edits.Add(new(new(offset, indent), desired));
             }
             offset += line.Length + 1;

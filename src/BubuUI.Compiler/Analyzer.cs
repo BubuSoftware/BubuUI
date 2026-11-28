@@ -20,7 +20,7 @@ public static class TemplateAnalyzer
                 $"template must contain exactly one root element, found {roots}", TextSpan.Zero));
         foreach (var node in doc.Nodes)
         {
-            if (node is UiIf or UiForeach or UiSwitch)
+            if (node is UiIf or UiForeach or UiLoop or UiSwitch)
                 diags.Add(UiDiagnostics.Error(UiDiagnostics.TextNotAllowed,
                     "control flow blocks are not allowed at the template root", node.Span));
             // K21/K22：@code 与 @using 是文档顶层的合法节点，与单根元素任意交错；
@@ -231,6 +231,9 @@ public static class TemplateAnalyzer
                     if (ifNode.ElseChildren is not null)
                         foreach (var descendant in Nodes(ifNode.ElseChildren)) yield return descendant;
                     break;
+                case UiLoop loop:
+                    foreach (var descendant in Nodes(loop.Children)) yield return descendant;
+                    break;
                 case UiForeach foreachNode:
                     foreach (var descendant in Nodes(foreachNode.Children)) yield return descendant;
                     break;
@@ -404,7 +407,7 @@ public static class TemplateAnalyzer
                 return;
             }
 
-            var rootCount = fill.Children.Count(c => c is UiElement or UiIf or UiForeach or UiSwitch);
+            var rootCount = fill.Children.Count(c => c is UiElement or UiIf or UiForeach or UiLoop or UiSwitch);
             if (rootCount > 1)
                 diags.Add(UiDiagnostics.Error(UiDiagnostics.SlotInvalid,
                     $"slot '{name}' of '{parent.Tag}' takes a single root ({slot.ClrTypeDisplayName}); " +
@@ -449,6 +452,9 @@ public static class TemplateAnalyzer
                     VisitBlock(elseIf.ConditionSpan, elseIf.Children, ctx, catalog, diags, allowKeyRoot: false, scope, styleClasses, localStyleClasses);
                 if (ifNode.ElseChildren is not null)
                     VisitBlock(ifNode.ConditionSpan, ifNode.ElseChildren, ctx, catalog, diags, allowKeyRoot: false, scope, styleClasses, localStyleClasses);
+                break;
+            case UiLoop loop:
+                VisitBlock(loop.HeaderSpan, loop.Children, ctx, catalog, diags, allowKeyRoot: false, scope, styleClasses, localStyleClasses);
                 break;
             case UiForeach foreachNode:
                 if (foreachNode.VarName.StartsWith("__eui", StringComparison.Ordinal))
@@ -1069,12 +1075,12 @@ public static class TemplateAnalyzer
                 : contentParam.ContentIsMultiple ? Ctx.ContentMulti : Ctx.ContentSingle;
             if (contentCtx == Ctx.ContentSingle)
             {
-                var rootCount = element.Children.Count(c => c is UiElement or UiIf or UiForeach or UiSwitch);
+                var rootCount = element.Children.Count(c => c is UiElement or UiIf or UiForeach or UiLoop or UiSwitch);
                 if (rootCount > 1)
                     diags.Add(UiDiagnostics.Error(UiDiagnostics.ContentTargetInvalid,
                         $"'{element.Tag}' has a single-root content parameter ({contentParam!.ClrTypeDisplayName}); " +
                         $"only one child element or block is allowed, found {rootCount}",
-                        element.Children.First(c => c is UiElement or UiIf or UiForeach or UiSwitch).Span));
+                        element.Children.First(c => c is UiElement or UiIf or UiForeach or UiLoop or UiSwitch).Span));
             }
         }
         else
@@ -1086,7 +1092,7 @@ public static class TemplateAnalyzer
                 UiContentModel.Children => def.ContentIsSingle ? Ctx.ContentSingle : Ctx.Container,
                 _ => Ctx.None,
             };
-            if (def.ContentIsSingle && element.Children.Count(c => c is UiElement or UiIf or UiForeach or UiSwitch) > 1)
+            if (def.ContentIsSingle && element.Children.Count(c => c is UiElement or UiIf or UiForeach or UiLoop or UiSwitch) > 1)
                 diags.Add(UiDiagnostics.Error(UiDiagnostics.ContentTargetInvalid,
                     $"'{element.Tag}.{def.ContentTarget}' accepts a single Element; only one child is allowed",
                     element.Span));

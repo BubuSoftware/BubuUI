@@ -265,9 +265,10 @@ public sealed class TemplateGenerator : IIncrementalGenerator
         var probeDiags = new List<UiDiagnostic>();
         var switchTypes = new List<SwitchTypeFact>();
         var classKinds = new List<ClassKindFact>();
+        var loopLocals = new List<LoopLocalFact>();
         if (symbolType is not null || codeBlocks.Count > 0)
         {
-            var itemTypes = ProbeSemantics(doc, probe, symbolCompilation, probeDiags, switchTypes, classKinds)
+            var itemTypes = ProbeSemantics(doc, probe, symbolCompilation, probeDiags, switchTypes, classKinds, loopLocals)
                 .Select(kv => new ItemTypeFact(kv.Key.CollectionSpan.Start, kv.Value))
                 .OrderBy(fact => fact.SpanStart)
                 .ToImmutableArray();
@@ -281,7 +282,8 @@ public sealed class TemplateGenerator : IIncrementalGenerator
                 probeDiags.ToImmutableArray(),
                 itemTypes,
                 switchTypes.OrderBy(fact => fact.SpanStart).ToImmutableArray(),
-                classKinds.OrderBy(fact => fact.SpanStart).ToImmutableArray());
+                classKinds.OrderBy(fact => fact.SpanStart).ToImmutableArray(),
+                loopLocals.ToImmutableArray());
         }
 
         // 无 code-behind、无 @code：没有成员作用域可探针，但类壳仍要落到模板声明的命名空间
@@ -292,7 +294,7 @@ public sealed class TemplateGenerator : IIncrementalGenerator
             probeDiags.ToImmutableArray(),
             ImmutableArray<ItemTypeFact>.Empty,
             ImmutableArray<SwitchTypeFact>.Empty,
-            ImmutableArray<ClassKindFact>.Empty);
+            ImmutableArray<ClassKindFact>.Empty, ImmutableArray<LoopLocalFact>.Empty);
     }
 
     /// <summary>K22/K31：根层 @using 的 using 子句正文（命名空间 + 别名，按文档顺序去重）。</summary>
@@ -513,13 +515,15 @@ public sealed class TemplateGenerator : IIncrementalGenerator
             // E5：本文件 @style 块的 @states 声明——InitializeUi 首行的 __RegisterStyles 先注册状态位
             localStates,
             // design/17 §4.3：Style= 内联发射的目标字段来自同一份符号派生目录
-            catalog.StyleProperties).Emit();
+            catalog.StyleProperties,
+            facts.LoopLocals.GroupBy(f => f.SpanStart).ToDictionary(g => g.Key,
+                g => (IReadOnlyList<(string Type, string Name)>)g.Select(f => (f.Type, f.Name)).ToArray())).Emit();
 
         var hintName = $"{className}.{StableHash(input.Path)}.g.cs";
         // design/18 §5.2：IDE 旁路窗口开着时，把本轮发射记录的映射与 hint name 关联
         // （build 路径 IsActive=false，SetHintName 直接返回，零开销）。
         IdeSourceMappingSideband.SetHintName(input.Path, hintName);
-        spc.AddSource(hintName, code);
+        spc.AddSource(hintName, SourceText.From(code, Encoding.UTF8));
     }
 
     /// <summary>
@@ -669,6 +673,9 @@ public sealed class TemplateGenerator : IIncrementalGenerator
                     if (ifNode.ElseChildren is not null)
                         foreach (var e in DirectChildElements(ifNode.ElseChildren)) yield return e;
                     break;
+                case UiLoop loop:
+                    foreach (var e in DirectChildElements(loop.Children)) yield return e;
+                    break;
                 case UiForeach foreachNode:
                     foreach (var e in DirectChildElements(foreachNode.Children)) yield return e;
                     break;
@@ -724,6 +731,9 @@ public sealed class TemplateGenerator : IIncrementalGenerator
                         foreach (var d in WalkElements(elseIf.Children)) yield return d;
                     if (ifNode.ElseChildren is not null)
                         foreach (var d in WalkElements(ifNode.ElseChildren)) yield return d;
+                    break;
+                case UiLoop loop:
+                    foreach (var descendant in WalkElements(loop.Children)) yield return descendant;
                     break;
                 case UiForeach foreachNode:
                     foreach (var descendant in WalkElements(foreachNode.Children))
@@ -1089,7 +1099,7 @@ public sealed class TemplateGenerator : IIncrementalGenerator
     /// </summary>
     private static Dictionary<UiForeach, string> ProbeSemantics(
         UiDocument doc, ExpressionProbe probe, Compilation compilation, List<UiDiagnostic> diags,
-        List<SwitchTypeFact> switchTypes, List<ClassKindFact> classKinds)
+        List<SwitchTypeFact> switchTypes, List<ClassKindFact> classKinds, List<LoopLocalFact> loopLocals)
     {
         var itemTypes = new Dictionary<UiForeach, string>();
         var env = new List<(ITypeSymbol Type, string Name)>();
@@ -1137,6 +1147,26 @@ public sealed class TemplateGenerator : IIncrementalGenerator
                         break;
                     case UiSwitch switchNode:
                         ProbeSwitch(switchNode, probe, compilation, scope, diags, switchTypes);
+                        foreach (var section in switchNode.Sections) Walk(section.Children, scope);
+                        break;
+                    case UiLoop loop:
+                        var loopProbe = probe.ProbeLoop(loop.Kind, loop.Header, scope);
+                        foreach (var error in loopProbe.Errors)
+                            diags.Add(UiDiagnostics.Error(UiDiagnostics.Syntax, error, loop.HeaderSpan));
+                        foreach (var local in loopProbe.Locals)
+                        {
+                            if (local.Name.StartsWith("__eui", StringComparison.Ordinal))
+                                diags.Add(UiDiagnostics.Error(UiDiagnostics.CodeBehindConflict,
+                                    "loop locals cannot use the reserved '__eui' prefix", loop.HeaderSpan));
+                            if (local.Type.IsRefLikeType || local.Type.IsAnonymousType)
+                                diags.Add(UiDiagnostics.Error(UiDiagnostics.Syntax,
+                                    "loop locals must have a named, capturable type", loop.HeaderSpan));
+                            loopLocals.Add(new LoopLocalFact(loop.HeaderSpan.Start,
+                                local.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat), local.Name));
+                        }
+                        var loopScope = new List<(ITypeSymbol Type, string Name)>(scope);
+                        loopScope.AddRange(loopProbe.Locals);
+                        Walk(loop.Children, loopScope);
                         break;
                     case UiForeach foreachNode:
                         var collectionType = probe.InferType(foreachNode.Collection, scope);
@@ -1443,6 +1473,8 @@ internal sealed record StyleStatesCatalog(ImmutableArray<string> Names)
 /// <summary>E2：Class={expr} 的集合形态事实（ValueSpan.Start → 形态；String 形态为默认不记录）。</summary>
 internal sealed record ClassKindFact(int SpanStart, UiClassListKind Kind);
 
+internal sealed record LoopLocalFact(int SpanStart, string Type, string Name);
+
 internal sealed record ItemTypeFact(int SpanStart, string Type);
 
 /// <summary>@switch selector 的值类型事实（K29）：ValueSpan.Start → 全限定类型名。</summary>
@@ -1483,7 +1515,8 @@ internal sealed record UiFileFacts(
     ImmutableArray<UiDiagnostic> ProbeDiags,
     ImmutableArray<ItemTypeFact> ItemTypes,
     ImmutableArray<SwitchTypeFact> SwitchTypes,
-    ImmutableArray<ClassKindFact> ClassKinds)
+    ImmutableArray<ClassKindFact> ClassKinds,
+    ImmutableArray<LoopLocalFact> LoopLocals)
 {
     public bool Equals(UiFileFacts? other) =>
         other is not null &&
@@ -1495,7 +1528,8 @@ internal sealed record UiFileFacts(
         ProbeDiags.SequenceEqual(other.ProbeDiags) &&
         ItemTypes.SequenceEqual(other.ItemTypes) &&
         SwitchTypes.SequenceEqual(other.SwitchTypes) &&
-        ClassKinds.SequenceEqual(other.ClassKinds);
+        ClassKinds.SequenceEqual(other.ClassKinds) &&
+        LoopLocals.SequenceEqual(other.LoopLocals);
 
     public override int GetHashCode()
     {
@@ -1509,6 +1543,7 @@ internal sealed record UiFileFacts(
         foreach (var fact in ItemTypes) hash = Add(hash, fact);
         foreach (var fact in SwitchTypes) hash = Add(hash, fact);
         hash = Add(hash, ClassKinds.Length);
+        foreach (var fact in LoopLocals) hash = Add(hash, fact);
         return hash;
 
         // netstandard2.0 没有 System.HashCode，与 CatalogValueEq 同口径累加。

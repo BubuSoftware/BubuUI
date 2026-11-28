@@ -37,6 +37,7 @@
       "patterns": [
         { "include": "#if-directive" },
         { "include": "#foreach-directive" },
+        { "include": "#do-directive" },
         { "include": "#switch-directive" },
         { "include": "#code-block" },
         { "include": "#style-block" },
@@ -85,8 +86,23 @@
       "patterns": [{ "include": "#csharp-in-parens" }]
     },
 
+    "do-directive": {
+      "patterns": [
+        { "match": "(@)(do)\\b\\s*(\\{)?", "captures": {
+          "1": { "name": "punctuation.definition.directive.bubuui" },
+          "2": { "name": "keyword.control.loop.bubuui" },
+          "3": { "name": "punctuation.section.block.begin.bubuui" }
+        } },
+        { "begin": "\\b(while)\\s*(\\()", "end": "(\\))\\s*(;)",
+          "beginCaptures": { "1": { "name": "keyword.control.loop.bubuui" } },
+          "contentName": "meta.embedded.line.csharp.bubuui source.cs",
+          "patterns": [{ "include": "#csharp-in-parens" }]
+        }
+      ]
+    },
+
     "foreach-directive": {
-      "begin": "(@)(foreach)\\b\\s*(\\()",
+      "begin": "(@)(foreach|for|while)\\b\\s*(\\()",
       "end": "(\\))(\\s*)(\\{)?",
       "name": "meta.directive.foreach.bubuui",
       "beginCaptures": {

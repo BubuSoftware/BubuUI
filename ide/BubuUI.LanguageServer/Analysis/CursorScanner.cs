@@ -1,4 +1,6 @@
 using BubuUI.Compiler;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace BubuUI.LanguageServer.Analysis;
 
@@ -44,6 +46,8 @@ public sealed record ForeachScope
 
     /// <summary>集合表达式原文（<c>in</c> 之后的部分），item 类型由探针推断。</summary>
     public string Collection { get; init; } = "";
+    public string? LoopKind { get; init; }
+    public int LoopHeaderStart { get; init; } = -1;
 
     /// <summary>变量名在文档里的起点（跳转定义落回 foreach 头用）；头解析不了为 -1。</summary>
     public int NameOffset { get; init; } = -1;
@@ -58,7 +62,8 @@ public sealed record ForeachHeader(
     string Collection,
     int NameOffset,
     int CollectionStart,
-    int CollectionEnd);
+    int CollectionEnd,
+    string? LoopKind = null);
 
 /// <summary>
 /// 全文档收集到的一个表达式（<see cref="CursorScanner.CollectExpressions"/>）：
@@ -158,8 +163,10 @@ public static class CursorScanner
         var i = 0;
         var blockDepth = 0;
         var expectBlockBrace = false;
+        var expectDo = false;
+        var doDepths = new HashSet<int>();
         var foreaches = new List<(ForeachHeader Header, int Depth)>();
-        ForeachHeader? pendingForeach = null;
+        IReadOnlyList<ForeachHeader>? pendingForeach = null;
 
         while (i < text.Length)
         {
@@ -170,8 +177,10 @@ public static class CursorScanner
                 if (j < text.Length && text[j] == '{')
                 {
                     blockDepth++;
+                    if (expectDo) doDepths.Add(blockDepth);
+                    expectDo = false;
                     if (pendingForeach is not null)
-                        foreaches.Add((pendingForeach, blockDepth));
+                        foreaches.AddRange(pendingForeach.Select(h => (h, blockDepth)));
                     pendingForeach = null;
                     expectBlockBrace = false;
                     i = j + 1;
@@ -258,7 +267,7 @@ public static class CursorScanner
                     }
                 }
 
-                if (word is "if" or "foreach" or "switch")
+                if (word is "if" or "foreach" or "switch" or "for" or "while" or "do")
                 {
                     // 惰性构造：offset 可能已被前面的跳过区间（@code 块、注释）越过，
                     // 先判范围再取原文——offset < i 时 Substring 会得到负长度。
@@ -277,6 +286,9 @@ public static class CursorScanner
                     {
                         int close = CSharpSnippet.FindMatchingClose(text, paren);
                         int condEnd = close < 0 ? text.Length : close;
+                        var loopHeaders = word is "for" or "while"
+                            ? ParseLoopHeaders(text, word, paren + 1, condEnd - paren - 1)
+                            : Array.Empty<ForeachHeader>();
                         if (offset > paren && offset <= condEnd)
                             return new CursorContext
                             {
@@ -287,19 +299,21 @@ public static class CursorScanner
                                 ExpressionStart = paren + 1,
                                 ExpressionEnd = condEnd,
                                 OpenTags = open,
-                                OpenForeaches = SnapshotForeaches(foreaches),
+                                OpenForeaches = SnapshotForeaches(foreaches.Concat(
+                                    loopHeaders.Select(h => (h, blockDepth + 1))).ToList()),
                             };
                         next = close < 0 ? text.Length : close + 1;
                         // @foreach 的头在块开启前先记下：`{` 真出现（expectBlockBrace 命中）才压栈。
                         pendingForeach = word == "foreach" && close >= 0
-                            ? ParseForeachHeader(text, paren + 1, close - paren - 1)
-                            : null;
+                            ? ParseForeachHeader(text, paren + 1, close - paren - 1) is { } fh ? new[] { fh } : null
+                            : loopHeaders;
                     }
                     else
                     {
                         pendingForeach = null;
                     }
 
+                    expectDo = word == "do";
                     expectBlockBrace = true;
                     i = next;
                     continue;
@@ -445,10 +459,35 @@ public static class CursorScanner
             }
             if (c == '}')
             {
+                var endsDo = doDepths.Remove(blockDepth);
                 if (blockDepth > 0) blockDepth--;
                 // 块闭合：弹掉比当前深度更深的所有 foreach 作用域（嵌套按深度归位）。
                 while (foreaches.Count > 0 && foreaches[^1].Depth > blockDepth)
                     foreaches.RemoveAt(foreaches.Count - 1);
+                if (endsDo)
+                {
+                    int word = SkipTemplateTrivia(text, i + 1);
+                    if (StartsWith(text, word, "while"))
+                    {
+                        int paren = SkipTemplateTrivia(text, word + 5);
+                        if (paren < text.Length && text[paren] == '(')
+                        {
+                            int close = CSharpSnippet.FindMatchingClose(text, paren);
+                            int end = close < 0 ? text.Length : close;
+                            if (offset > paren && offset <= end)
+                                return new CursorContext
+                                {
+                                    Kind = CursorKind.Expression, Directive = "do while",
+                                    Prefix = ExpressionPrefix(text, paren + 1, offset),
+                                    TokenStart = ExpressionTokenStart(text, paren + 1, offset),
+                                    ExpressionStart = paren + 1, ExpressionEnd = end,
+                                    OpenTags = open, OpenForeaches = SnapshotForeaches(foreaches),
+                                };
+                            i = end + 1;
+                            continue;
+                        }
+                    }
+                }
                 i++;
                 continue;
             }
@@ -664,6 +703,8 @@ public static class CursorScanner
                     VarName = s.Header.VarName,
                     Collection = s.Header.Collection,
                     NameOffset = s.Header.NameOffset,
+                    LoopKind = s.Header.LoopKind,
+                    LoopHeaderStart = s.Header.CollectionStart,
                 })
                 .ToArray();
 
@@ -710,6 +751,21 @@ public static class CursorScanner
     /// 解析失败返回 null——该层不进环境，而不是猜一个错答案。变量名与集合的偏移都按
     /// 文档绝对位置给（跳转定义落回变量名、重命名扫集合引用用）。
     /// </summary>
+    public static IReadOnlyList<ForeachHeader> ParseLoopHeaders(string text, string kind, int start, int length)
+    {
+        var header = text.Substring(start, Math.Max(0, length));
+        var prefix = kind + " (";
+        var statement = SyntaxFactory.ParseStatement(prefix + header + ") { }");
+        var tokens = statement.DescendantNodes().Select(n => n switch
+        {
+            VariableDeclaratorSyntax v when v.Parent?.Parent is ForStatementSyntax => v.Identifier,
+            SingleVariableDesignationSyntax v when !v.Ancestors().Any(a => a is AnonymousFunctionExpressionSyntax) => v.Identifier,
+            _ => default,
+        }).Where(t => t.RawKind != 0 && t.SpanStart >= prefix.Length && t.Span.End <= prefix.Length + header.Length);
+        return tokens.Select(t => new ForeachHeader(t.ValueText, header,
+            start + t.SpanStart - prefix.Length, start, start + length, kind)).ToArray();
+    }
+
     public static ForeachHeader? ParseForeachHeader(string text, int start, int length)
     {
         var header = text.Substring(start, length);
@@ -736,6 +792,19 @@ public static class CursorScanner
             docStart + nameInTrimmed,
             docStart + collectionStart,
             docStart + collectionStart + collection.Length);
+    }
+
+    private static int SkipTemplateTrivia(string text, int i)
+    {
+        while (true)
+        {
+            i = SkipWhitespace(text, i);
+            string? end = StartsWith(text, i, "@*") ? "*@" : StartsWith(text, i, "<!--") ? "-->" : null;
+            if (end is null) return i;
+            int close = text.IndexOf(end, i + 2, StringComparison.Ordinal);
+            if (close < 0) return text.Length;
+            i = close + end.Length;
+        }
     }
 
     private static int SkipWhitespace(string text, int i)

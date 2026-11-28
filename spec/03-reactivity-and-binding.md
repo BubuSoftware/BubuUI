@@ -89,6 +89,7 @@ HeadlessRoot 接受 UiObject，经控件本身或通用单内容服务取得布�
 Render 只刷新已知动态槽、绑定和块，不重新建立静态树。根动态表达式在 U 函数中重算；分支/条目动态表达式在 BlockScope 的 R 动作中刷新。
 
 - if：选择首个为真的分支，或 default；分支不变只刷新动作，分支变化释放旧作用域并构造新内容。
+- for/while/do：每次刷新释放旧作用域，再执行循环构建全部根；失败时清理本轮已构建的资源。循环头声明的局部变量按迭代快照传给事件回调。不提供 Key 复用。
 - foreach：每轮枚举 IEnumerable<T>；null 为空。Key 相等且 item 身份相同才复用，引用 item 按引用、值 item 按值比较；同 Key 不同 item 重建并清理旧作用域。
 - switch：按 EqualityComparer<T>.Default 顺序匹配 case；无贯穿，default 至多一个，未匹配且无 default 为空。
 

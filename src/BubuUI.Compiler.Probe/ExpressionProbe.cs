@@ -66,6 +66,66 @@ public sealed class ExpressionProbe
     /// <summary>包含根继承关系、code-behind 和 @code 的统一符号编译单元。</summary>
     public Compilation Compilation => _compilation;
 
+    /// <summary>Bind an actual C# loop header, including inferred locals and pattern/out variables.</summary>
+    public (IReadOnlyList<(ITypeSymbol Type, string Name)> Locals, IReadOnlyList<string> Errors)
+        ProbeLoop(string kind, string header, IReadOnlyList<(ITypeSymbol Type, string Name)> env)
+    {
+        var statement = kind == "do" ? $"do {{ }} while ({header});" : $"{kind} ({header}) {{ }}";
+        var tree = ProbeTree(statement, env);
+        var model = _compilation.AddSyntaxTrees(tree).GetSemanticModel(tree);
+        var loop = tree.GetRoot().DescendantNodes().First(n =>
+            n is ForStatementSyntax or WhileStatementSyntax or DoStatementSyntax);
+        var locals = new List<(ITypeSymbol Type, string Name)>();
+        if (kind != "do")
+        {
+            var body = loop is ForStatementSyntax f ? f.Statement : ((WhileStatementSyntax)loop).Statement;
+            foreach (var symbol in model.LookupSymbols(body.SpanStart).OfType<ILocalSymbol>())
+            {
+                if (!symbol.Locations.Any(l => l.SourceTree == tree && loop.Span.Contains(l.SourceSpan))) continue;
+                locals.Add((symbol.Type, symbol.Name));
+            }
+        }
+        var errors = model.GetDiagnostics(loop.Span)
+            .Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error).Select(d => d.GetMessage()).ToArray();
+        return (locals, errors);
+    }
+
+    /// <summary>Identifiers in loop headers are statements, not standalone expressions.</summary>
+    public IReadOnlyList<IdentifierBinding> ClassifyLoopIdentifiers(string kind, string header,
+        IReadOnlyList<(ITypeSymbol Type, string Name)> env)
+    {
+        var tree = ProbeTree($"{kind} ({header}) {{ }}", env);
+        var model = _compilation.AddSyntaxTrees(tree).GetSemanticModel(tree);
+        var loop = tree.GetRoot().DescendantNodes().First(n => n is ForStatementSyntax or WhileStatementSyntax);
+        var start = loop is ForStatementSyntax f ? f.OpenParenToken.Span.End : ((WhileStatementSyntax)loop).OpenParenToken.Span.End;
+        var end = start + header.Length;
+        var hits = new List<IdentifierBinding>();
+        foreach (var node in loop.DescendantNodes())
+        {
+            SyntaxToken token;
+            ISymbol? symbol;
+            switch (node)
+            {
+                case IdentifierNameSyntax name:
+                    token = name.Identifier;
+                    symbol = ResolveIdentifier(model, name);
+                    break;
+                case VariableDeclaratorSyntax variable:
+                    token = variable.Identifier;
+                    symbol = model.GetDeclaredSymbol(variable);
+                    break;
+                case SingleVariableDesignationSyntax designation:
+                    token = designation.Identifier;
+                    symbol = model.GetDeclaredSymbol(designation);
+                    break;
+                default: continue;
+            }
+            if (symbol is not null && token.SpanStart >= start && token.Span.End <= end)
+                hits.Add(new IdentifierBinding(token.SpanStart - start, token.Span.Length, symbol));
+        }
+        return hits;
+    }
+
     /// <summary>当前模板类型符号（含继承成员和 @code）；裸前缀补全由此枚举。</summary>
     public INamedTypeSymbol? ThisType => _type;
 

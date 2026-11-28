@@ -135,6 +135,18 @@ public static class RenameProvider
             return ResolveCodeBlockTarget(analysis, offset, context);
         if (context.Kind != CursorKind.Expression || context.ExpressionStart < 0) return null;
 
+        if (context.Directive is "for" or "while")
+        {
+            foreach (var binding in ExpressionEnvironment.HeaderBindings(analysis, context))
+            {
+                var span = new TextSpan(context.ExpressionStart + binding.Offset, binding.Length);
+                if (offset < span.Start || offset > span.End) continue;
+                return Classify(probe, binding, span, context.OpenForeaches) is { } hit
+                    ? (hit.Target, hit.Span, context) : null;
+            }
+            return null;
+        }
+
         // foreach 头：光标在变量名上 → 变量目标；在集合表达式上 → 常规符号路径。
         // 头文本整体不是合法 C#（`var x in y`），只有这两段能单独探针。
         if (context.Directive == "foreach")
@@ -260,6 +272,8 @@ public static class RenameProvider
             enclosing.Add(scope);
         }
         var env = ExpressionEnvironment.Build(analysis.Ast!, enclosing, probe, probe.Compilation);
+        if (target.LoopKind is { } kind)
+            return probe.ProbeLoop(kind, target.Collection, env).Locals.Any(l => l.Name == target.VarName);
         var collectionType = probe.InferType(target.Collection, env);
         if (collectionType is null) return false;
         var itemType = ExpressionProbe.ItemTypeOf(collectionType, probe.Compilation);
@@ -296,9 +310,13 @@ public static class RenameProvider
             }
 
             var snippet = analysis.Text.Substring(rangeStart, rangeEnd - rangeStart);
-            foreach (var hit in probe.ClassifyIdentifiers(snippet, env))
+            var bindings = collected.Directive is "for" or "while"
+                ? ExpressionEnvironment.HeaderBindings(analysis, CursorScanner.Scan(analysis.Text, rangeStart + 1))
+                : probe.ClassifyIdentifiers(snippet, env);
+            foreach (var hit in bindings)
             {
-                if (Matches(target, hit.Symbol, collected.ForeachStack))
+                if (Matches(target, hit.Symbol, collected.ForeachStack) &&
+                    !edits.Any(e => e.Span.Start == rangeStart + hit.Offset && e.Span.Length == hit.Length))
                     edits.Add(new UiTextEdit(new TextSpan(rangeStart + hit.Offset, hit.Length), newName));
             }
         }

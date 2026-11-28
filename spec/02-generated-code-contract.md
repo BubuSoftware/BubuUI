@@ -103,7 +103,7 @@ public partial class Card : global::BubuUI.Elements.StackPanel
 | 非 void 委托 | 按值能力处理 | 普通值表达式，不包装为事件 |
 | 文本 | 静态 Text/TextRun | 动态 Text/TextRun 槽重算 |
 
-根层动态槽为 `U{N}` 实例方法，捕获目标提升为字段；根自身直接用 this。块内动态槽为 `R{N}` 局部函数，登记到条目/分支 BlockScope。参数推送首次发生于 EnsureInitialized 之前；未初始化目标的 Invalidate 为 no-op，首次初始化读取当前输入。
+根层动态槽为 `U{N}` 实例方法。Release 捕获目标提升为字段；Debug 使用固定 `__euiValues` 字典及类型化属性，避免标签插入/删除改变 CLR 字段布局。所有模板预先生成 Render 覆盖，支持热重载首次加入动态槽；根自身直接用 this。块内动态槽为 `R{N}` 局部函数，登记到条目/分支 BlockScope。参数推送首次发生于 EnsureInitialized 之前；未初始化目标的 Invalidate 为 no-op，首次初始化读取当前输入。
 
 ### 4.3 绑定
 
@@ -158,6 +158,10 @@ protected override void InitializeUi()
 - `@template` 控件模板的 `__TemplateView` 同样支持 `@inject`（视图在 `Build` 内 `EnsureInitialized`，解析时机不变）。
 - 纯 C# 侧无对应语法：直接声明属性并从 `Application.Current.Services` 解析（或构造注入），
   与 `@inject` 生成形态等价——不引入第二个运行时机制。
+
+### 4.8 命令式模板循环
+
+`@for`、`@while`、`@do` 由 Roslyn 检查循环头，并推断循环头声明的局部变量。生成每次迭代的局部构建函数，以值参数传入这些变量，避免事件捕获共享的可变计数器。普通容器使用 LoopBlock，每次刷新重建整个作用域；组件传入内容使用同一循环发射器，但只在构建时展开。循环头及用户表达式保留源码映射。
 
 ## 5. 作用域与资源
 

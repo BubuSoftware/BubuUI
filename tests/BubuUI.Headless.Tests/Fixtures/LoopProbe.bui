@@ -1,0 +1,24 @@
+@namespace BubuUI.Headless.Tests
+@using BubuUI.Elements
+
+<StackPanel>
+    @for (int i = 0, j = Count; i < Count; i++, j--) {
+        <Button OnClick={() => Selected = i + j * 10}>{i}:{j}</Button>
+        @for (var k = 0; k < i; k++) {
+            <TextBlock>{i}:{k}</TextBlock>
+        }
+    }
+    @while (Next(out var value)) {
+        <Button OnClick={() => Selected = value}>{value}</Button>
+    }
+    @do {
+        <TextBlock>once</TextBlock>
+    } while (false);
+</StackPanel>
+
+@code {
+    public int Count = 3;
+    public int Selected = -1;
+    public int Remaining = 2;
+    private bool Next(out int value) { value = Remaining--; return value > 0; }
+}

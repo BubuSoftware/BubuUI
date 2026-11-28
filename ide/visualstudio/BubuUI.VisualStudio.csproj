@@ -4,7 +4,7 @@
     <TargetFramework>net472</TargetFramework>
     <RootNamespace>BubuUI.VisualStudio</RootNamespace>
     <AssemblyName>BubuUI.VisualStudio</AssemblyName>
-    <Version>0.2.7</Version>
+    <Version>0.2.8</Version>
     <ImplicitUsings>disable</ImplicitUsings>
     <GeneratePkgDefFile>false</GeneratePkgDefFile>
     <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
@@ -31,6 +31,9 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include="BubuUI.pkgdef" IncludeInVSIX="true" />
+    <!-- Keep smart indent and paste on the same scanner as the language server. -->
+    <Compile Include="..\..\src\BubuUI.Compiler\TemplateIndentation.cs" Link="Editor\TemplateIndentation.cs" />
+    <Compile Include="..\..\src\BubuUI.Compiler\CSharpSnippet.cs" Link="Editor\CSharpSnippet.cs" />
     <EmbeddedResource Include="..\vscode\highlighting\palette.json" LogicalName="BubuUI.VisualStudio.palette.json" />
     <Content Include="Grammars\*.tmTheme" IncludeInVSIX="true" />
     <Content Include="..\vscode\syntaxes\csharp-LICENSE.txt" Link="Grammars\csharp-LICENSE.txt" IncludeInVSIX="true" />

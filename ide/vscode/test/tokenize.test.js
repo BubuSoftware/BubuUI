@@ -125,6 +125,29 @@ $accent: theme(#ffffff, #000000);
 `;
 
 (async () => {
+  const loops = await tokenize('source.bubuui', `@for (var i = 0; i < 2; i++) {
+<TextBlock>{i}</TextBlock>
+}
+@while (Ready()) {
+<TextBlock />
+}
+@do {
+<TextBlock />
+} while (Ready());
+<TextBlock>after</TextBlock>`);
+  expectAt(loops, 0, 'for', 0, 'keyword.control.loop.bubuui', 'for directive');
+  expectAt(loops, 0, 'var', 0, 'meta.embedded.line.csharp.bubuui', 'for header');
+  expectAt(loops, 3, 'while', 0, 'keyword.control.loop.bubuui', 'while directive');
+  expectAt(loops, 6, 'do', 0, 'keyword.control.loop.bubuui', 'do directive');
+  expectAt(loops, 8, 'while', 0, 'keyword.control.loop.bubuui', 'do continuation');
+  expectAt(loops, 9, 'TextBlock', 0, 'entity.name.type.class.bubuui', 'leave do condition');
+  const config = JSON.parse(fs.readFileSync(path.join(root, 'language-configuration.json'), 'utf8'));
+  const increases = new RegExp(config.indentationRules.increaseIndentPattern);
+  for (const source of ['<A>', '<StackPanel Gap="2">', '@for (var i=0;i<2;i++) {'])
+    if (!increases.test(source)) failures.push('indent expected: ' + source);
+  for (const source of ['<A />', '<TextBlock>hello</TextBlock>', '<A></A>'])
+    if (increases.test(source)) failures.push('unexpected indent: ' + source);
+
   const doc = await tokenize('source.bubuui', template);
 
   if (dump) {

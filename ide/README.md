@@ -397,3 +397,13 @@ grammar 测试值得单说：TextMate 写错不会报错，只会「某个地方
   项目里的真实路径——2026-11-11 的「脚本全绿、编辑器全废」就是这个分支。`DocumentStore.UriToPath`
   自己解转义并按盘符/UNC 还原，`ProjectSystemTests.UriConversion_*` 与 `Fixture7_*` 钉住这个行为。
   新增任何「从 URI 取路径」的代码都必须走它，不要直接 `new Uri(...).LocalPath`。
+
+## 循环和缩进（0.2.8）
+
+`.bui` 支持 `@for`、`@while`、`@do { ... } while (...);`，包括循环变量的补全、跳转、悬停、重命名和语法高亮。循环的条目重建语义见 [模板语法](../spec/01-template-syntax.md#4111-forwhiledo)。
+
+模板格式化、范围格式化和输入时格式化共用缩进扫描器，识别内联标签、多行属性、循环块及 C# 字符串/注释，并遵守编辑器的空格/Tab 和宽度设置。补全返回相对缩进模式。
+
+- Visual Studio：Enter 使用 Smart Indent；多行粘贴在同一次撤销操作内整理缩进。
+- VS Code：默认启用 BubuUI/Bss 的 formatOnPaste、formatOnType；可在编辑器设置中覆盖。
+- Rider：通过 LSP4IJ 使用同一服务端的 Enter/输入及范围格式化；粘贴整理遵守 Rider 的 Reformat on paste 设置。多行字符串和注释内部空白保持不变。

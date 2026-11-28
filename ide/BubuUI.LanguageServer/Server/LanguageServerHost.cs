@@ -89,6 +89,8 @@ public sealed class LanguageServerHost
             case "textDocument/formatting":
                 return Formatting(request.Parameters);
 
+            case "textDocument/onTypeFormatting":
+                return OnTypeFormatting(request.Parameters);
             case "textDocument/rangeFormatting":
                 return RangeFormatting(request.Parameters);
 
@@ -299,6 +301,11 @@ public sealed class LanguageServerHost
                 {
                     ["codeActionKinds"] = new JsonArray("quickfix"),
                 },
+                ["documentOnTypeFormattingProvider"] = new JsonObject
+                {
+                    ["firstTriggerCharacter"] = "\n",
+                    ["moreTriggerCharacter"] = new JsonArray("}", ">", ";"),
+                },
                 ["documentFormattingProvider"] = true,
                 ["documentRangeFormattingProvider"] = true,
             },
@@ -361,6 +368,7 @@ public sealed class LanguageServerHost
             {
                 ["label"] = item.Label,
                 ["kind"] = (int)ToCompletionKind(item.Kind),
+                ["insertTextMode"] = 2, // adjust multiline snippet indentation to the insertion line
                 ["insertTextFormat"] = snippet && _snippetSupport
                     ? (int)InsertTextFormat.Snippet
                     : (int)InsertTextFormat.PlainText,
@@ -746,7 +754,7 @@ public sealed class LanguageServerHost
         var analysis = _service.Analyze(uri);
         return analysis is null
             ? new JsonArray()
-            : ToTextEdits(analysis.Positions, _service.Format(uri));
+            : ToTextEdits(analysis.Positions, _service.Format(uri, FormattingTabSize(parameters), FormattingInsertSpaces(parameters)));
     }
 
     private JsonNode? RangeFormatting(JsonNode? parameters)
@@ -760,8 +768,28 @@ public sealed class LanguageServerHost
         var start = ToOffset(analysis.Positions, range?["start"]);
         var end = ToOffset(analysis.Positions, range?["end"]);
         return ToTextEdits(analysis.Positions,
-            _service.Format(uri)
-                .Where(edit => edit.Span.Start >= start && edit.Span.Start <= end));
+            _service.Format(uri, FormattingTabSize(parameters), FormattingInsertSpaces(parameters), indentOnly: true)
+                .Where(edit => edit.Span.Start >= start && edit.Span.End <= end));
+    }
+
+    private static int FormattingTabSize(JsonNode? parameters) =>
+        Math.Clamp(Int(parameters?["options"], "tabSize") ?? 4, 1, 16);
+
+    private static bool FormattingInsertSpaces(JsonNode? parameters) =>
+        parameters?["options"]?["insertSpaces"]?.GetValue<bool>() ?? true;
+
+    private JsonNode? OnTypeFormatting(JsonNode? parameters)
+    {
+        var uri = String(parameters, "textDocument", "uri");
+        if (uri is null || _service.Analyze(uri) is not { } analysis) return new JsonArray();
+        var offset = ToOffset(analysis.Positions, parameters?["position"]);
+        var lineStart = offset > 0 ? analysis.Text.LastIndexOf('\n', offset - 1) + 1 : 0;
+        var lineEnd = analysis.Text.IndexOf('\n', offset);
+        if (lineEnd < 0) lineEnd = analysis.Text.Length;
+        return ToTextEdits(analysis.Positions,
+            _service.Format(uri, FormattingTabSize(parameters), FormattingInsertSpaces(parameters),
+                indentOnly: true, includeBlankLines: true)
+            .Where(e => e.Span.Start >= lineStart && e.Span.End <= lineEnd));
     }
 
     private static int ToOffset(PositionMap positions, JsonNode? position) =>

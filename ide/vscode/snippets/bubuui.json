@@ -46,6 +46,21 @@
     "body": ["@if (${1:condition}) {", "    ${2}", "}", "else {", "    ${0}", "}"],
     "description": "条件块 + else（else 不带 @）"
   },
+  "@for": {
+    "prefix": "@for",
+    "body": ["@for (var ${1:i} = 0; ${1:i} < ${2:count}; ${1:i}++) {", "    ${0}", "}"],
+    "description": "Counted template loop"
+  },
+  "@while": {
+    "prefix": "@while",
+    "body": ["@while (${1:condition}) {", "    ${0}", "}"],
+    "description": "Conditional template loop"
+  },
+  "@do": {
+    "prefix": "@do",
+    "body": ["@do {", "    ${0}", "} while (${1:condition});"],
+    "description": "Post-tested template loop"
+  },
   "@foreach": {
     "prefix": "uforeach",
     "body": ["@foreach (var ${1:item} in ${2:Items}) {", "    <${3:TextBlock}>${0}</${3:TextBlock}>", "}"],

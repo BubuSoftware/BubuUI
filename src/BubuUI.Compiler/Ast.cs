@@ -192,6 +192,15 @@ public sealed class UiForeach : UiNode
     public List<UiNode> Children { get; set; } = new();
 }
 
+/// <summary>A C# for, while, or do/while loop whose body is a UI template.</summary>
+public sealed class UiLoop : UiNode
+{
+    public string Kind { get; set; } = "for";
+    public string Header { get; set; } = "";
+    public TextSpan HeaderSpan { get; set; }
+    public List<UiNode> Children { get; set; } = new();
+}
+
 /// <summary>
 /// <c>@code { … }</c>（K21/K23 ④，D86）：文档顶层的类成员区域，原文透传进 partial 类。
 /// 位置不限、可多个块、书写顺序不影响成员可见性（生成器先全量收集再建探针 Compilation）。

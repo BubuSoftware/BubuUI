@@ -396,11 +396,7 @@ public sealed class Parser
                     $"'{directive.Text}' must directly follow an @if or else-if block", directive.Span);
                 break;
             case "for" or "while" or "do":
-                // K24：@for/@while/@do 本波不提供，给出改写建议
-                Advance();
-                _diags.Add(UiDiagnostics.Error(UiDiagnostics.UnknownDirective,
-                    $"@{directive.Text} is not supported; use @foreach with Enumerable.Range or a code-behind method",
-                    directive.Span));
+                ParseLoopInto(list, directive);
                 break;
             default:
                 Advance();
@@ -506,6 +502,57 @@ public sealed class Parser
             ifNode.ElseChildren = elseChildren;
             return;
         }
+    }
+
+    private void ParseLoopInto(List<UiNode> list, Token directive)
+    {
+        if (directive.Text != "do" && string.IsNullOrWhiteSpace(directive.Aux))
+        {
+            Diag(UiDiagnostics.Syntax, $"@{directive.Text} requires a parenthesized header", directive.Span);
+            Advance();
+            return;
+        }
+        if (directive.Text == "do" && directive.Aux is not null)
+            Diag(UiDiagnostics.Syntax, "@do takes its condition after the body: @do { ... } while (condition);", directive.Span);
+        _lexer.SetNextBraceIsBlock();
+        Advance();
+        if (_tok.Kind != TokenKind.BlockOpen)
+        {
+            Diag(UiDiagnostics.Syntax, $"expected '{{' after @{directive.Text}", _tok.Span);
+            return;
+        }
+        Advance();
+        var children = ParseNodeList(Terminator.BlockEnd, null);
+        var end = _tok.Span.Start + _tok.Span.Length;
+        if (_tok.Kind == TokenKind.BlockClose)
+        {
+            if (directive.Text == "do") _lexer.EnableDoContinuation();
+            Advance();
+        }
+        else Diag(UiDiagnostics.Syntax, $"expected '}}' to close @{directive.Text} block", _tok.Span);
+        var header = directive;
+        if (directive.Text == "do")
+        {
+            if (_tok.Kind != TokenKind.Directive || _tok.Text != "do while")
+            {
+                Diag(UiDiagnostics.Syntax, "expected 'while (condition);' after @do body", _tok.Span);
+                return;
+            }
+            header = _tok;
+            end = header.Span.Start + header.Span.Length;
+            if (string.IsNullOrWhiteSpace(header.Aux))
+                Diag(UiDiagnostics.Syntax, "@do requires a nonempty while condition", header.Span);
+            Advance();
+        }
+        NormalizeChildren(children);
+        list.Add(new UiLoop
+        {
+            Kind = directive.Text,
+            Header = header.Aux ?? "",
+            HeaderSpan = header.InnerSpan,
+            Children = children,
+            Span = new TextSpan(directive.Span.Start, end - directive.Span.Start),
+        });
     }
 
     private void ParseForeachInto(List<UiNode> list, Token directive)

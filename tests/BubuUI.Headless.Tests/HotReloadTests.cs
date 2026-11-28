@@ -6,6 +6,24 @@ namespace BubuUI.Headless.Tests;
 #if DEBUG
 public class HotReloadTests
 {
+    [Fact]
+    public void GeneratedUnicode_SurvivesColdStartAndRepeatedRebuilds()
+    {
+        using var view = new UnicodeTemplateProbe();
+        view.EnsureInitialized();
+        for (var i = 1; i <= 3; i++)
+        {
+            view.Count = i;
+            HotReload.UpdateApplication([typeof(UnicodeTemplateProbe)]);
+            view.ProcessInvalidations();
+            Assert.Equal("你好 Bubu UI🐻", view.Title);
+            var content = Assert.IsType<StackPanel>(view.Content);
+            var text = Assert.IsType<TextBlock>(content.Children[0]);
+            Assert.Equal("欢迎使用 Bubu UI🐻 你好啊！！！", string.Concat(text.Runs.Select(r => r.Text)));
+            Assert.Equal($"🐻 {i} 👩‍💻", Assert.IsType<Button>(content.Children[1]).Label);
+        }
+    }
+
     private sealed class Probe : StackPanel
     {
         public int Builds, Initialized, Cleanups, BuildThread;

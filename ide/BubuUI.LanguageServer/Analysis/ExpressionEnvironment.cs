@@ -13,6 +13,15 @@ namespace BubuUI.LanguageServer.Analysis;
 /// </summary>
 public static class ExpressionEnvironment
 {
+    public static IReadOnlyList<IdentifierBinding> HeaderBindings(DocumentAnalysis analysis, CursorContext context)
+    {
+        if (analysis.Probe is not { } probe || context.Directive is not ("for" or "while")) return [];
+        var scopes = context.OpenForeaches.Where(s => s.LoopKind is null || s.LoopHeaderStart != context.ExpressionStart).ToArray();
+        var env = Build(analysis.Ast!, scopes, probe, probe.Compilation);
+        var header = analysis.Text.Substring(context.ExpressionStart, context.ExpressionEnd - context.ExpressionStart);
+        return probe.ClassifyLoopIdentifiers(context.Directive, header, env);
+    }
+
     /// <summary>单层解析结果：注入 / 同名遮蔽跳过 / 推断失败——三者语义不同，不能合并。</summary>
     private enum ScopeOutcome { Added, Skipped, Failed }
 
@@ -75,6 +84,14 @@ public static class ExpressionEnvironment
             if (scopes[j].VarName == scope.VarName)
                 return (ScopeOutcome.Skipped, default);
 
+        if (scope.LoopKind is { } kind)
+        {
+            var siblingNames = scopes.Where(s => s.LoopHeaderStart == scope.LoopHeaderStart && s.LoopKind is not null)
+                .Select(s => s.VarName).ToHashSet();
+            var outer = env.Where(e => !siblingNames.Contains(e.Name)).ToArray();
+            var local = probe.ProbeLoop(kind, scope.Collection, outer).Locals.FirstOrDefault(l => l.Name == scope.VarName);
+            return local.Type is null ? (ScopeOutcome.Failed, default) : (ScopeOutcome.Added, local);
+        }
         var collectionType = probe.InferType(scope.Collection, env);
         if (collectionType is null) return (ScopeOutcome.Failed, default);
         var itemType = ExpressionProbe.ItemTypeOf(collectionType, compilation);

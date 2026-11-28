@@ -76,6 +76,14 @@ public static class HoverProvider
         var probe = analysis.Probe;
         if (probe is null || context.ExpressionStart < 0 || context.ExpressionStart >= offset) return null;
 
+        if (context.Directive is "for" or "while")
+        {
+            var cursor = offset - context.ExpressionStart;
+            foreach (var binding in ExpressionEnvironment.HeaderBindings(analysis, context))
+                if (cursor >= binding.Offset && cursor <= binding.Offset + binding.Length)
+                    return new UiHoverResult(new TextSpan(context.ExpressionStart + binding.Offset, binding.Length),
+                        "```csharp\n" + binding.Symbol.ToDisplayString() + "\n```");
+        }
         var text = analysis.Text.Substring(context.ExpressionStart, offset - context.ExpressionStart).Trim();
         if (text.Length == 0) return null;
 
@@ -263,6 +271,9 @@ public static class HoverProvider
     private static string? DirectiveMarkdown(string name) => name switch
     {
         "if" => "**@if** — conditional block\n\n`@if (condition) { … }`, with `else if` / `else` continuations (no `@`).",
+        "for" => "**@for** — C# counted loop; executes again on refresh. Iteration locals are captured separately.",
+        "while" => "**@while** — repeats while the condition is true; executes again on refresh.",
+        "do" => "**@do** — executes at least once: `@do { … } while (condition);`.",
         "foreach" => "**@foreach** — repeated block\n\n`@foreach (var item in items) { … }`; `Key={expr}` on the item root drives reuse.",
         "switch" => "**@switch** — multi-branch block\n\n`@switch (value) { case CONST: … break; default: … break; }`",
         "using" => "**@using** — namespace import (or `@using Alias = Ns.Type`)\n\nTags resolve only inside imported namespaces (K22).",

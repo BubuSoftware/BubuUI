@@ -1,6 +1,8 @@
 using BubuUI.Compiler;
 using BubuUI.Compiler.Probe;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace BubuUI.LanguageServer.Analysis;
 
@@ -88,6 +90,14 @@ public static class CompletionProvider
             // 成员访问：接收者类型 → 实例成员。替换区间只覆盖点号后的部分标识符
             // （tasks.Cou → "Cou"），整段 "tasks.Cou" 不能被候选整词替换掉。
             var receiver = full.Substring(0, lastDot).Trim();
+            if (context.Directive is "for" or "while")
+            {
+                var prefix = context.Directive + " (";
+                var header = analysis.Text.Substring(context.ExpressionStart, context.ExpressionEnd - context.ExpressionStart);
+                var statement = SyntaxFactory.ParseStatement(prefix + header + ") { }");
+                receiver = statement.DescendantNodes().OfType<MemberAccessExpressionSyntax>()
+                    .FirstOrDefault(m => m.OperatorToken.SpanStart == prefix.Length + lastDot)?.Expression.ToString() ?? receiver;
+            }
             if (receiver.Length == 0) return UiCompletionList.Empty;
             var receiverType = probe.InferType(receiver, env);
             if (receiverType is null) return UiCompletionList.Empty;
@@ -101,7 +111,7 @@ public static class CompletionProvider
         foreach (var (envType, name) in env)
         {
             items.Add(new UiCompletionItem(name, UiCompletionKind.Variable,
-                TypeDisplay(envType) + " · foreach item", SortText: "0" + name));
+                TypeDisplay(envType) + " · loop variable", SortText: "0" + name));
         }
         if (probe.ThisType is { } self)
             items.AddRange(Members(self, includeStatic: true, sortPrefix: "1"));
@@ -457,6 +467,12 @@ public static class CompletionProvider
                 "@namespace ${1:Gallery}", IsSnippet: true),
             new("@if", UiCompletionKind.Directive, "conditional block", "renders the block when the condition is true",
                 "@if (${1:condition}) {\n\t$0\n}", IsSnippet: true),
+            new("@for", UiCompletionKind.Directive, "counted loop",
+                InsertText: "@for (var ${1:i} = 0; ${1:i} < ${2:count}; ${1:i}++) {\n\t$0\n}", IsSnippet: true),
+            new("@while", UiCompletionKind.Directive, "conditional loop",
+                InsertText: "@while (${1:condition}) {\n\t$0\n}", IsSnippet: true),
+            new("@do", UiCompletionKind.Directive, "post-tested loop",
+                InsertText: "@do {\n\t$0\n} while (${1:condition});", IsSnippet: true),
             new("@foreach", UiCompletionKind.Directive, "repeated block",
                 "keyed by `Key={expr}` on the item root",
                 "@foreach (var ${1:item} in ${2:items}) {\n\t$0\n}", IsSnippet: true),

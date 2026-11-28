@@ -98,7 +98,10 @@ public static class DefinitionProvider
         }
 
         var env = ExpressionEnvironment.Build(analysis.Ast!, context.OpenForeaches, probe, probe.Compilation);
-        var symbol = probe.Locate(expression, cursor, env);
+        var symbol = context.Directive is "for" or "while"
+            ? ExpressionEnvironment.HeaderBindings(analysis, context)
+                .Where(b => cursor >= b.Offset && cursor <= b.Offset + b.Length).Select(b => b.Symbol).FirstOrDefault()
+            : probe.Locate(expression, cursor, env);
         if (symbol is null) return null;
 
         // 1) @foreach 迭代变量：定义就在本文档（foreach 头里的变量名）。
@@ -368,6 +371,9 @@ public static class DefinitionProvider
                         foreach (var attr in WalkAttributes(elseIf.Children)) yield return attr;
                     if (uiIf.ElseChildren is not null)
                         foreach (var attr in WalkAttributes(uiIf.ElseChildren)) yield return attr;
+                    break;
+                case UiLoop loop:
+                    foreach (var attr in WalkAttributes(loop.Children)) yield return attr;
                     break;
                 case UiForeach uiForeach:
                     foreach (var attr in WalkAttributes(uiForeach.Children)) yield return attr;

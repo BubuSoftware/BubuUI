@@ -52,6 +52,7 @@ public sealed class Lexer
     private bool _inMarkup;
     private bool _nextBraceIsBlock;
     private bool _elsePending;
+    private bool _doPending;
     private readonly StringBuilder _buf = new();
     private int _bufStart;
     private Token? _pending;
@@ -66,6 +67,7 @@ public sealed class Lexer
     /// （不带 @ 前缀，K23 ③）。无论匹配成败，期待只生效一次。
     /// </summary>
     public void EnableElseContinuation() => _elsePending = true;
+    public void EnableDoContinuation() => _doPending = true;
 
     public Token Next()
     {
@@ -88,6 +90,11 @@ public sealed class Lexer
 
             if (!_inMarkup)
             {
+                if (_doPending)
+                {
+                    _doPending = false;
+                    return ReadDoContinuation();
+                }
                 // 文本模式；块标志置位时跳过空白，让指令后的 '{' 直达块分支
                 if (_nextBraceIsBlock && char.IsWhiteSpace(c)) { _i++; continue; }
 
@@ -446,6 +453,36 @@ public sealed class Lexer
 
         _i = saved;
         return false;
+    }
+
+    private Token ReadDoContinuation()
+    {
+        TrySkipTrivia();
+        int start = _i;
+        if (!MatchWord("while"))
+            return ErrorToken(start, "expected 'while (condition);' after @do body");
+        TrySkipTrivia();
+        if (_i >= _s.Length || _s[_i] != '(')
+            return ErrorToken(start, "expected '(' after do/while");
+        int open = _i;
+        int close = CSharpSnippet.FindMatchingClose(_s, open);
+        if (close < 0)
+        {
+            _i = _s.Length;
+            return ErrorToken(start, "unterminated do/while condition", _i);
+        }
+        _i = close + 1;
+        TrySkipTrivia();
+        if (_i >= _s.Length || _s[_i] != ';')
+            return ErrorToken(start, "expected ';' after do/while condition", _i);
+        _i++;
+        return new Token
+        {
+            Kind = TokenKind.Directive, Text = "do while",
+            Aux = _s.Substring(open + 1, close - open - 1),
+            InnerSpan = new TextSpan(open + 1, close - open - 1),
+            Span = new TextSpan(start, _i - start),
+        };
     }
 
     private Token ErrorToken(int start, string message, int end = -1)

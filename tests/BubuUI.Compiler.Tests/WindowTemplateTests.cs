@@ -131,7 +131,7 @@ public class WindowTemplateTests
     }
 
     [Fact]
-    public void WindowTemplate_StaticOnly_HasNoRender()
+    public void WindowTemplate_StaticOnly_KeepsRenderForHotReload()
     {
         const string ui = """
             @using BubuUI.Elements
@@ -144,7 +144,7 @@ public class WindowTemplateTests
 
         Assert.Contains("this.Title = \"Static\";", code);
         Assert.Contains("this.CloseOnEscape = false;", code);
-        Assert.DoesNotContain("protected override void Render()", code);
+        Assert.Contains("protected override void Render()", code);
     }
 
     [Fact]

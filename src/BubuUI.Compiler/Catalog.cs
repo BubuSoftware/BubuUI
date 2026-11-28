@@ -440,11 +440,35 @@ public static class UiLiterals
     {
         var sb = new StringBuilder(s.Length + 2);
         sb.Append('"');
-        foreach (var ch in s)
+        bool supplementary = false;
+        for (var i = 0; i < s.Length; i++)
         {
-            sb.Append(EscapeChar(ch));
+            if (char.IsHighSurrogate(s[i]) && i + 1 < s.Length && char.IsLowSurrogate(s[i + 1]))
+            {
+                // Keep supplementary characters out of generated source transport and
+                // EnC user-string deltas. Recreate the scalar as one UTF-16 pair at runtime.
+                supplementary = true;
+                sb.Append("\" + global::System.Char.ConvertFromUtf32(")
+                    .Append(char.ConvertToUtf32(s[i], s[++i]).ToString(CultureInfo.InvariantCulture))
+                    .Append(") + \"");
+            }
+            else sb.Append(EscapeChar(s[i]));
         }
         sb.Append('"');
+        return supplementary ? "(" + sb + ")" : sb.ToString();
+    }
+
+    public static string EscapeInterpolatedText(string s)
+    {
+        var sb = new StringBuilder();
+        for (var i = 0; i < s.Length; i++)
+        {
+            if (char.IsHighSurrogate(s[i]) && i + 1 < s.Length && char.IsLowSurrogate(s[i + 1]))
+                sb.Append("{(global::System.Char.ConvertFromUtf32(")
+                    .Append(char.ConvertToUtf32(s[i], s[++i]).ToString(CultureInfo.InvariantCulture)).Append("))}");
+            else if (s[i] == '{' || s[i] == '}') sb.Append(s[i]).Append(s[i]);
+            else sb.Append(EscapeChar(s[i]));
+        }
         return sb.ToString();
     }
 
@@ -461,7 +485,7 @@ public static class UiLiterals
             case '\r': return "\\r";
             case '\t': return "\\t";
             default:
-                if (ch < 32) return $"\\u{((int)ch).ToString("x4", CultureInfo.InvariantCulture)}";
+                if (ch < 32 || char.IsSurrogate(ch)) return $"\\u{((int)ch).ToString("x4", CultureInfo.InvariantCulture)}";
                 return ch.ToString();
         }
     }

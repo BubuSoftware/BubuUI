@@ -2,7 +2,7 @@
   "name": "bubuui",
   "displayName": "BubuUI",
   "description": "BubuUI templates, styles and control themes: completion, diagnostics, navigation, rename and embedded C#.",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "publisher": "bubuui",
   "license": "MIT",
   "engines": {
@@ -169,6 +169,16 @@
           "default": "off",
           "description": "Trace LSP traffic in the BubuUI output channel."
         }
+      }
+    },
+    "configurationDefaults": {
+      "[bubuui]": {
+        "editor.formatOnPaste": true,
+        "editor.formatOnType": true
+      },
+      "[bss]": {
+        "editor.formatOnPaste": true,
+        "editor.formatOnType": true
       }
     }
   },

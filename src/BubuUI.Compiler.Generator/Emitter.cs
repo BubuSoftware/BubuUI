@@ -57,6 +57,7 @@ public sealed class Emitter
     private readonly string _namespace;
     private readonly string _className;
     private readonly IReadOnlyDictionary<int, string> _itemTypes;
+    private readonly IReadOnlyDictionary<int, IReadOnlyList<(string Type, string Name)>> _loopLocals;
     /// <summary>@switch selector 的值类型（探针推断，ValueSpan.Start → 全限定类型名；K29）。</summary>
     private readonly IReadOnlyDictionary<int, string> _switchValueTypes;
     /// <summary>模板 @using 的 using 子句正文（K22/D85 命名空间、K31 别名）：
@@ -97,13 +98,15 @@ public sealed class Emitter
         IReadOnlyList<UiCodeBlock>? codeBlocks = null,
         IReadOnlyList<BssRule>? styleRules = null,
         IReadOnlyList<BssStateDecl>? styleStates = null,
-        StylePropertyCatalog? styleProperties = null)
+        StylePropertyCatalog? styleProperties = null,
+        IReadOnlyDictionary<int, IReadOnlyList<(string Type, string Name)>>? loopLocals = null)
     {
         _doc = doc;
         _accessibility = accessibility;
         _namespace = namespaceName;
         _className = className;
         _itemTypes = itemTypes;
+        _loopLocals = loopLocals ?? new Dictionary<int, IReadOnlyList<(string Type, string Name)>>();
         _switchValueTypes = switchValueTypes ?? new Dictionary<int, string>();
         _usings = usings ?? Array.Empty<string>();
         _codeBlocks = codeBlocks ?? Array.Empty<UiCodeBlock>();
@@ -130,6 +133,9 @@ public sealed class Emitter
         // ?? throw 抛 InvalidOperationException（fail-fast，不构建内容树）。
         foreach (var inject in injects)
             Mapped(inject.Span, ResolutionStatement(inject));
+        Line("#if DEBUG");
+        Line("__euiValues.Clear();");
+        Line("#endif");
         Line("using var __euiConstruction = new global::BubuUI.UiConstructionScope();");
         Line("try");
         Line("{");
@@ -196,10 +202,20 @@ public sealed class Emitter
         }
         if (injects.Count > 0) _sb.AppendLine();
 
+        // Debug storage has a fixed field layout. Inserting/removing template nodes only
+        // adds/removes properties (supported by EnC), never renames or retypes CLR fields.
+        _sb.AppendLine("#if DEBUG");
+        _sb.AppendLine("    private readonly global::System.Collections.Generic.Dictionary<int, object> __euiValues = new();");
+        foreach (var field in _fields.OrderBy(f => f.N))
+            _sb.Append("    private ").Append(field.Type).Append(" __").Append(field.Prefix).Append(field.N)
+                .Append(" { get => (").Append(field.Type).Append(")__euiValues[").Append(field.N)
+                .Append("]; set => __euiValues[").Append(field.N).AppendLine("] = value; }");
+        _sb.AppendLine("#else");
         foreach (var field in _fields.OrderBy(f => f.N))
             _sb.Append("    private ").Append(field.Type).Append(" __").Append(field.Prefix).Append(field.N)
                 .AppendLine(" = null!;");
-        if (_fields.Count > 0) _sb.AppendLine();
+        _sb.AppendLine("#endif");
+        _sb.AppendLine();
 
         // E1（design/17 §4.8）：@style 组件块的注册方法——静态幂等（守卫位），类名在
         // TemplateGenerator 已加组件前缀；注册目标是全局 StyleRegistry.Instance（与
@@ -230,7 +246,7 @@ public sealed class Emitter
 
         _sb.AppendLine("    protected override void ReloadUi() => RebuildUi();");
 
-        if (_renderCalls.Count > 0)
+        // Keep the virtual surface stable when the first dynamic node is added.
         {
             _sb.AppendLine();
             _sb.AppendLine("    protected override void Render()");
@@ -795,7 +811,7 @@ public sealed class Emitter
 
     private void EmitContentParameter(UiElement element, string target, UiParameterDef parameter, EmitContext ctx)
     {
-        if (!element.Children.Any(c => c is UiElement or UiIf or UiForeach or UiSwitch)) return;
+        if (!element.Children.Any(c => c is UiElement or UiIf or UiForeach or UiLoop or UiSwitch)) return;
         var content = NewVar("content");
         Line($"var {content} = new global::System.Collections.Generic.List<global::BubuUI.Element>();");
         EmitContentChildren(element.Children, content, EmitContext.Content(ctx));
@@ -928,6 +944,9 @@ public sealed class Emitter
                     break;
                 case UiIf ifNode:
                     EmitPlainIf(ifNode, contentVar, ctx);
+                    break;
+                case UiLoop loop:
+                    EmitLoopStatement(loop, () => EmitContentChildren(loop.Children, contentVar, ctx));
                     break;
                 case UiForeach foreachNode:
                     EmitPlainForeach(foreachNode, contentVar, ctx);
@@ -1083,6 +1102,9 @@ public sealed class Emitter
                 break;
             case UiIf ifNode:
                 EmitIf(ifNode, parentVar, ctx);
+                break;
+            case UiLoop loop:
+                EmitLoop(loop, parentVar, ctx);
                 break;
             case UiForeach foreachNode:
                 EmitForeach(foreachNode, parentVar, ctx);
@@ -1345,6 +1367,67 @@ public sealed class Emitter
         Line("});");
     }
 
+    private string EmitLoop(UiLoop node, string? parentVar, EmitContext ctx)
+    {
+        string v;
+        if (ctx.IsRoot)
+        {
+            var n = _varCounter++;
+            v = $"__blk{n}";
+            _fields.Add(new FieldDecl(n, "blk", "global::BubuUI.LoopBlock"));
+            Line($"{v} = new global::BubuUI.LoopBlock();");
+        }
+        else
+        {
+            v = NewVar("blk");
+            Line($"var {v} = new global::BubuUI.LoopBlock();");
+        }
+        Line($"{ctx.ConstructionVar}.Track({v});");
+        if (parentVar is not null) Line($"{ChildCollection(parentVar)}.Add({v});");
+        var scope = NewVar("scope");
+        Line($"{v}.SetContent({scope} =>");
+        Line("{");
+        _indent++;
+        EmitLoopStatement(node, () => EmitBlockRoots(node.Children, EmitContext.Block(scope)));
+        _indent--;
+        Line("});");
+        if (ctx.IsRoot)
+        {
+            Line($"Track({v});");
+            Line($"{v}.Refresh();");
+            _renderCalls.Add($"{v}.Refresh();");
+        }
+        else
+        {
+            Line($"{ctx.ScopeVar}.AddDisposable({v});");
+            BlockRefresh(v, ctx);
+        }
+        return v;
+    }
+
+    private void EmitLoopStatement(UiLoop node, Action emitBody)
+    {
+        var locals = _loopLocals.TryGetValue(node.HeaderSpan.Start, out var found)
+            ? found : Array.Empty<(string Type, string Name)>();
+        // The sibling local function receives a fresh copy per iteration. Event handlers
+        // and nested refresh closures must never capture the mutable for-loop variable.
+        var build = "__euiIteration" + _fnCounter++;
+        Line($"void {build}({string.Join(", ", locals.Select(l => l.Type + " @" + l.Name))})");
+        Line("{");
+        _indent++;
+        emitBody();
+        _indent--;
+        Line("}");
+        if (node.Kind == "do") Line("do");
+        else MappedToken(node.HeaderSpan, $"{node.Kind} ({node.Header})", node.Header);
+        Line("{");
+        _indent++;
+        Line($"{build}({string.Join(", ", locals.Select(l => "@" + l.Name))});");
+        _indent--;
+        Line("}");
+        if (node.Kind == "do") MappedToken(node.HeaderSpan, $"while ({node.Header});", node.Header);
+    }
+
     private string EmitForeach(UiForeach node, string? parentVar, EmitContext ctx)
     {
         var fqItem = _itemTypes[node.CollectionSpan.Start];
@@ -1510,6 +1593,9 @@ public sealed class Emitter
                 case UiIf ifNode:
                     roots.Add(EmitIf(ifNode, parentVar: null, ctx));
                     break;
+                case UiLoop loop:
+                    roots.Add(EmitLoop(loop, parentVar: null, ctx));
+                    break;
                 case UiForeach foreachNode:
                     roots.Add(EmitForeach(foreachNode, parentVar: null, ctx));
                     break;
@@ -1523,6 +1609,5 @@ public sealed class Emitter
         return roots;
     }
 
-    private static string EscapeInterpolation(string s) =>
-        s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("{", "{{").Replace("}", "}}");
+    private static string EscapeInterpolation(string s) => UiLiterals.EscapeInterpolatedText(s);
 }

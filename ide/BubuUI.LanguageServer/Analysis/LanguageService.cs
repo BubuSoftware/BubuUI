@@ -270,10 +270,11 @@ public sealed class LanguageService
         return files;
     }
 
-    public IReadOnlyList<UiTextEdit> Format(string uri) => !IsTemplate(uri)
-        ? StyleFor(uri)?.Format() ?? []
-        : (Analyze(uri) is { } analysis ? EmbeddedCSharpService.Format(analysis) : [])
-            .Concat(EmbeddedStylesFor(uri).SelectMany(s => s.Format())).OrderBy(e => e.Span.Start).ToArray();
+    public IReadOnlyList<UiTextEdit> Format(string uri, int tabSize = 4, bool insertSpaces = true,
+        bool indentOnly = false, bool includeBlankLines = false) => !IsTemplate(uri)
+        ? StyleFor(uri)?.Format(tabSize, insertSpaces, includeBlankLines) ?? []
+        : Analyze(uri) is { } analysis
+            ? EmbeddedCSharpService.Format(analysis, tabSize, insertSpaces, indentOnly, includeBlankLines) : [];
 
     public UiSignatureHelp? SignatureHelp(string uri, int offset) => !IsTemplate(uri)
         ? StyleFor(uri)?.SignatureHelp(offset)

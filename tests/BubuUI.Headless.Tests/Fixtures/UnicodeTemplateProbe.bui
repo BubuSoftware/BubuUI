@@ -1,0 +1,9 @@
+@namespace BubuUI.Headless.Tests
+@using BubuUI.Elements
+<Window Title="你好 Bubu UI🐻" Width="800" Height="600">
+    <StackPanel>
+        <TextBlock>欢迎使用 Bubu UI🐻 你好啊！！！</TextBlock>
+        <Button>🐻 {Count} 👩‍💻</Button>
+    </StackPanel>
+</Window>
+@code { public int Count = 1; }

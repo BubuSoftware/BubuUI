@@ -125,8 +125,7 @@
 （`@namespace` 已从本清单移出：2026-11-11 改判为必填契约，见上表与 spec/02 §2.2。）
 `@switch` 已从保留位转入目标语法，不属此列；泛型标签仍按 K19 暂缓、不排期。
 
-**实施细节已拍板（2026-11-08，K24–K30，见 spec/02 §14）**：K24 `@for`/`@while`/`@do` 本波不提供
-（`EUI009` + 改写建议）；K25 `@code` 内容边界（嵌套类型允许、块内 `using` 不允许、空块合法、
+**实施细节已拍板（2026-11-08，K24–K30，见 spec/02 §14）**：K24 `@for`/`@while`/`@do` 已于 2026-11-29 实现（见 §4.11.1）；K25 `@code` 内容边界（嵌套类型允许、块内 `using` 不允许、空块合法、
 顶层语句交 C#、`EUI045` 只扩到生成保留名冲突）；K26 `<!-- -->` 永久保留为等价注释（无弃用期）；
 K27 `P:bind`/`P:value` 本波移除（`EUI043` 停用、新增 `EUI046`）；K28 `@{ }` 不采纳（`EUI100`）；
 K29 `@switch` 分支体为完整内容模板、case 标签须编译期常量（`EUI047`）、无贯穿但要求 `break`、
@@ -236,7 +235,7 @@ bind-attr  ::= "@bind-" attr-base
 
 - `@name` 后可选 `(...)`；括号按平衡圆括号捕获（同 §2.6 的 C# 片段扫描：字符串/注释/插值感知）；
   指令名只含字母/数字/`_`。
-- 指令全集（K21–K31 + K37，✅ S6 + K31）：`@if (...)`、`@foreach (...)`、`@switch (...)`、`@code { ... }`、
+- 指令全集（K21–K31 + K37，✅ S6 + K31）：`@if (...)`、`@foreach (...)`、`@for (...)`、`@while (...)`、`@do { ... } while (...);`、`@switch (...)`、`@code { ... }`、
   `@using Ns`、`@using Alias = Ns.Type`、`@inject TypeName PropertyName`；`else` / `else if (...)` 是不带 `@` 的续接（紧接前一分支的 `}`，
   由词法一次性识别）。
 - `@using` 只接受两种形态，**同一行内写完**：命名空间导入与类型别名。`@using (...)`、`@using static`、
@@ -247,8 +246,7 @@ bind-attr  ::= "@bind-" attr-base
   名称与源码名称范围不包含分号。`.bss` 的 `@using` 遵循同一规则。
 - `@switch` 的块体形态见 §4.16；`EUI008` 随其转实现而停用，停用码保持停用。
 - `@bind-属性名` 只在标记模式属性位置识别，不是指令；文本模式写 `@bind` 仍是未知指令 `EUI009`。
-- 其它 `@name`：`EUI009`（收窄到明确拒绝清单：`@for`/`@while`/`@do` 给 `@foreach` 改写建议，K24；
-  `@page`/`@rendermode` 等 Web/类形状指令按 K23 ② 永久不提供）。
+- 其它 `@name`：`EUI009`（收窄到明确拒绝清单：`@page`/`@rendermode` 等 Web/类形状指令按 K23 ② 永久不提供）。
 - `@` 没有文本转义；要输出字面 `@`，写 `{"@"}`。`@` 后跟 `{`（代码语句块）按 K28 不采纳，报 `EUI100`。
 - 文档顶层（根层）除唯一元素外，还允许 `@code` / `@using` / `@inject` / 注释（K21/K22/K37）；
   其它指令出现在根层仍是 `EUI012`（元素根数量）或 `EUI100`。
@@ -298,7 +296,7 @@ bind-attr  ::= "@bind-" attr-base
 
 ```ebnf
 document      ::= { using-directive | inject-directive | code-block | node } EOF
-node          ::= element | text-run | if-block | foreach-block | switch-block
+node          ::= element | text-run | if-block | foreach-block | loop-block | switch-block
 
 element       ::= "<" tag-name attribute* ( "/>" | ">" node* "</" tag-name ">" )
 attribute     ::= ( attr-name | bind-attr ) "=" ( string | expression )
@@ -310,6 +308,9 @@ text-run      ::= ( text-char | expression )+
 if-block      ::= "@if" "(" csharp-expression ")" "{" node* "}"
                  { "else" "if" "(" csharp-expression ")" "{" node* "}" }
                  [ "else" "{" node* "}" ]
+loop-block    ::= "@for" "(" csharp-for-header ")" "{" node* "}"
+                | "@while" "(" csharp-expression ")" "{" node* "}"
+                | "@do" "{" node* "}" "while" "(" csharp-expression ")" ";"
 foreach-block ::= "@foreach" "(" "var" ident "in" csharp-expression ")" "{" node* "}"
 switch-block  ::= "@switch" "(" csharp-expression ")" "{" section* "}"
 section       ::= ( "case" csharp-expression ":" | "default" ":" ) node* "break" ";"
@@ -341,7 +342,7 @@ string        ::= '"' raw-char* '"'
 - 根层（`document`）在去掉注释/空白后必须恰好是一个 `element`，另允许顶层 `@code`/`@using`/`@inject` 指令节点；
   `text-run` 或控制流块出现在根层是 `EUI006`，0 个或多个元素根是 `EUI012`（K21/K22/K37，D85/D86 ✅）。
 - `node*` 的合法组合由内容模型进一步限制（§4.9），句法层先接受再语义拒绝。
-- `@inherits`/`@model`/`@page`/`@rendermode` 等按 K23 ② 永久不提供；`@for`/`@while`/`@do` 按 K24 不提供；
+- `@inherits`/`@model`/`@page`/`@rendermode` 等按 K23 ② 永久不提供；
   未知 `@` 指令是 `EUI009`，`@{}` 语句块按 K28 报 `EUI100`。
 - 泛型标签（`DataGrid<Order>`）、附加属性（`Grid.Row`）不在当前句法内；附加属性按 G4 保留，
   泛型标签按 K19 暂缓、不排期（§4.15）。
@@ -357,7 +358,7 @@ string        ::= '"' raw-char* '"'
 | 开始/结束标签同名且大小写一致 | `EUI100` | ✅ |
 | 属性必须有 `=` 和值 | `EUI100` | ✅ |
 | 同一元素重复属性 | `EUI025` | ✅ C3（纯普值同名重复；任一侧是绑定的同名重叠仍 `EUI033`，见 §3.3） |
-| `@if`/`@foreach`/`@switch` 只能出现在 `Children` 内容模型内 | `EUI006` | ✅ |
+| `@if`/`@foreach`/`@for`/`@while`/`@do`/`@switch` 只能出现在 `Children` 内容模型内 | `EUI006` | ✅ |
 | 块内容只允许元素与嵌套块，不允许裸文本 | `EUI006` | ✅ |
 | `@switch` 非空 section 缺 `break;` | `EUI100` | ✅ S6 |
 | `@switch` 空 section 未写 `break;`（多标签形态） | `EUI100` | ✅ S6（K30） |
@@ -375,9 +376,9 @@ string        ::= '"' raw-char* '"'
 
 ### 3.3 内容模型的句法后果
 
-块（`@if`/`@foreach`/`@switch`）的内容**永远按"元素容器"处理**，即使外层是 `Text`/`TextRuns` 模型；因此：
+块（`@if`/`@foreach`/`@for`/`@while`/`@do`/`@switch`）的内容**永远按"元素容器"处理**，即使外层是 `Text`/`TextRuns` 模型；因此：
 
-- `@if`/`@foreach`/`@switch` 里不能直接写裸文本或 `{expr}` 文本，必须先包一个 `TextBlock`；
+- `@if`/`@foreach`/`@for`/`@while`/`@do`/`@switch` 里不能直接写裸文本或 `{expr}` 文本，必须先包一个 `TextBlock`；
 - 在 `Text`/`TextRuns` 模型里写块直接 `EUI006`；
 - "条件文本"不能用 `<TextBlock>@if ...</TextBlock>`：把 `@if` 放在容器层控制整个 `TextBlock`，
   或在 `TextBlock` 内写文本表达式（复杂逻辑放 code-behind 方法）。
@@ -563,6 +564,28 @@ string        ::= '"' raw-char* '"'
 - 空集合/单元素不特殊；`Key` 缺失时用 item 自身作为 key。
 - 不建议在 `@foreach` 表达式里做重 LINQ；在 code-behind 缓存投影结果并显式失效（spec/03 §12.2）。
 
+### 4.11.1 `@for`、`@while`、`@do`
+
+```bui
+@for (var i = 0; i < Count; i++) {
+    <Button OnClick={() => Select(i)}>第 {i} 项</Button>
+}
+@while (TryRead(out var item)) {
+    <TextBlock>{item.Name}</TextBlock>
+}
+@do {
+    <TextBlock>至少构建一次</TextBlock>
+} while (ShouldContinue());
+```
+
+- 循环头使用 C# 语法并接受 Roslyn 类型检查；支持多变量、条件中的 `out var`/模式变量与嵌套循环。
+- 每次组件刷新重新执行循环、释放旧作用域并重建所有条目；需要 Key 复用时使用 `@foreach`。这里不接受 `Key`。
+- 循环头声明的变量按每次迭代传值捕获，事件回调中的 `i` 对应当前条目。外部组件字段仍按 C# 引用组件读取。
+- 循环局部变量需要可命名、可捕获的类型，不支持匿名类型及 ref-like 类型。循环体是模板，不能直接写 C# 语句、`@{}`、`@break` 或 `@continue`。
+- `@do` 的尾部为不带 `@` 的 `while (...)`，必须有分号。`while`/`do` 的状态推进由条件或调用的方法负责，调用方须保证循环终止。
+- 块体遵循其他控制块的内容规则，裸文本须包在 `TextBlock` 内；组件传入内容仍在构建时展开。
+- 三个 IDE 共用循环诊断、局部变量补全、悬停、定义、重命名及高亮。
+
 ### 4.12 `Key` 与条目复用
 
 - `Key={expr}` 只用于 `@foreach` 条目身份；非 item 模板根报 `EUI010`；字面量/空表达式报 `EUI010`。
@@ -684,7 +707,7 @@ Element 的 `FocusVisualMode` 是可赋值、可样式化的枚举属性，取�
 
 形态：`@switch (value) { case CONST: … break; default: … break; }`。
 
-- **分支体是完整内容模板**：元素、文本、嵌套 `@if`/`@foreach`/`@switch` 均可，与 `@if` 分支体能力对等（K29 ①）。
+- **分支体是完整内容模板**：元素、文本、嵌套 `@if`/`@foreach`/`@for`/`@while`/`@do`/`@switch` 均可，与 `@if` 分支体能力对等（K29 ①）。
 - **case 标签必须是编译期常量形态**（K29 ②）：字面量、`const` 成员、枚举成员、括号/正负号包裹的常量表达式。
   调用/运算等非常量形态在语法层拒绝（`EUI047`）；常量性由生成器探针判定，不可判定交 C#（经 `#line`）。
 - **无贯穿语义**（K29 ③）：每个 `case`/`default` 是独立分支，等价隐式 `break`。
@@ -919,7 +942,7 @@ Element 的 `FocusVisualMode` 是可赋值、可样式化的枚举属性，取�
 | **K21 / K22 / K23** | **✅ S6 已实现（2026-11-08）**：`@code` 位置不限且单文件可用（K21/K23 ④）；模板 `@using`、标签按导入命名空间解析（内置控件无豁免；**@namespace 链已由 K33/D111 修订为隐式可见**）、生成代码保留 `using Ns;`（K22）；流程控制与 Web 指令清单按 K23 ③/②。偏差 D85–D88 已全部关闭 |
 | **S6 语法对齐** | G3 之后 / G4 之前（K23 ⑦）；阶段 P0–P6 见 design/16；出口标准 = D85–D88 关闭 + 样例/golden 迁移 + 全量测试绿（2026-11-08 达成：用例 497 → 548，新增 `S6SyntaxTests` 26 / `ExpressionCaptureTests` 13 / `SwitchBlock` 运行时 6 / 生成器契约 6，全部通过；唯一红为既有像素 golden `PixelGoldens_MatchBaseline`，与 S6 无关） |
 | **K31** | **✅ 已实现（2026-11-09）**：`@using Alias = Ns.Type` 一体两用——生成 `using Alias = global::Ns.Type;`（服务 `@code`/表达式）并把 `<Alias/>` 解析为该类型（优先于目录 tag，绕过命名空间可见性）。`EUI048` 覆盖目标缺失/重复/撞命名空间；词法层把 `@using static`、`(...)`、泛型、`A.B =` 从误导性的 `EUI006` 改为专属 `EUI100`。2026-11-16 修订：结尾分号可选。回归见 `UsingAliasTests` 与生成器契约测试 |
-| ✅ 当前可用 | 元素/自闭合；属性字面量（string/bool/double/int 及 C3 扩展类型）；控件 `On*` 事件；`Text`/`TextRuns`/`Children` 文本与内容；`@if`/`else if`/`@switch`/`@foreach` 与 `Key`；`@using`、`@using Alias = Ns.Type`、`@code`、`@inject`（K37）、`@* *@` 与 `<!-- -->`；控件与组件 `@bind-P`（含 item 源）；组件标签（参数/委托事件/必填/默认内容）、`Ref={field}`、具名插槽 `<Slot>`/`<ContentSlot>`；空白规范化；code-behind 诊断 |
+| ✅ 当前可用 | 元素/自闭合；属性字面量（string/bool/double/int 及 C3 扩展类型）；控件 `On*` 事件；`Text`/`TextRuns`/`Children` 文本与内容；`@if`/`else if`/`@switch`/`@foreach` 与 `Key`，`@for`/`@while`/`@do`；`@using`、`@using Alias = Ns.Type`、`@code`、`@inject`（K37）、`@* *@` 与 `<!-- -->`；控件与组件 `@bind-P`（含 item 源）；组件标签（参数/委托事件/必填/默认内容）、`Ref={field}`、具名插槽 `<Slot>`/`<ContentSlot>`；空白规范化；code-behind 诊断 |
 | **S1** ✅ | `UiObject.Invalidate/ProcessInvalidations/Render/ShouldRender`；失效队列与合并；生成字段与 `U{N}`；根级 `P=`/文本重算；控件事件自动失效（2026-10-30 通过） |
 | **S2** ✅ | 块 v4：`BlockScope.RenderActions`；`@if` 分支刷新；`@foreach` 任意 `IEnumerable<T>`、null=空、Keyed 复用；嵌套块；`EUI007`/`EUI010`/`EUI033`（文本 + 显式目标）（2026-10-30 通过） |
 | **S3** ✅ | `UiBinding` v4；控件 `@bind`；item 绑定；`EUI033`（`P=` 与绑定冲突）/`EUI037`/`EUI040` —— 控件侧已落地（2026-11-02）；组件 `PChanged` 与组件绑定目标/回调随 C4 落地（2026-11-05，D54/D56 关闭）；旧语法 `EUI043` 随 K27 停用、改报 `EUI046` |

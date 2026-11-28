@@ -92,6 +92,46 @@ public class GeneratorContractTests
             .ToList();
 
     [Fact]
+    public void DebugFieldLayout_IsStableWhenNodesAreInsertedOrRemoved()
+    {
+        string[] templates = {
+            "<StackPanel><TextBlock>static</TextBlock></StackPanel>",
+            "<StackPanel><TextBlock>{message}</TextBlock><Button Label={message} /></StackPanel>",
+            "<StackPanel><Button Label={message} /><TextBlock>{message}</TextBlock><Button Label={message} /></StackPanel>",
+        };
+        foreach (var template in templates)
+        {
+            var code = Generated(Run("Probe.bui", "@using BubuUI.Elements\n" + template));
+            var tree = CSharpSyntaxTree.ParseText(code, CSharpParseOptions.Default.WithPreprocessorSymbols("DEBUG"));
+            var fields = tree.GetRoot().DescendantNodes().OfType<Microsoft.CodeAnalysis.CSharp.Syntax.FieldDeclarationSyntax>().ToArray();
+            Assert.Equal("__euiValues", Assert.Single(fields).Declaration.Variables.Single().Identifier.ValueText);
+            Assert.Contains("protected override void Render()", code);
+        }
+    }
+
+    [Fact]
+    public void SupplementaryCharacters_AreReconstructedWithoutSurrogatesInGeneratedSource()
+    {
+        var code = Generated(Run("Probe.bui", "@using BubuUI.Elements\n<StackPanel><TextBlock>🐻</TextBlock><Button>👩‍💻 {message}</Button></StackPanel>"));
+        Assert.DoesNotContain(code, char.IsSurrogate);
+        Assert.Contains("Char.ConvertFromUtf32(128059)", code);
+        Assert.Contains("Char.ConvertFromUtf32(128105)", code);
+    }
+
+    [Theory]
+    [InlineData("@for (var i = 0 i < 3; i++) { <TextBlock /> }")]
+    [InlineData("@for (var i = 0; missing; i++) { <TextBlock /> }")]
+    [InlineData("@while (42) { <TextBlock /> }")]
+    [InlineData("@do { <TextBlock /> } while (42);")]
+    public void InvalidLoopHeaders_HaveTemplateDiagnostics(string loop)
+    {
+        var result = Run("Probe.bui", "@using BubuUI.Elements\n<StackPanel>" + loop + "</StackPanel>");
+        Assert.Null(result.Exception);
+        Assert.Contains(result.Diagnostics, d => d.Id == UiDiagnostics.Syntax);
+        Assert.Empty(result.GeneratedSources);
+    }
+
+    [Fact]
     public void Generation_IsDeterministic_WithStableHint()
     {
         const string ui = """
@@ -372,7 +412,9 @@ public class GeneratorContractTests
 
         var code = Generated(RunWithReferences("/templates/Probe.bui", ui, codeBehind));
 
-        Assert.Equal(3, code.Split($"private global::BubuUI.ForEachBlock<global::{Fx}.Item>").Length - 1);
+        var fields = CSharpSyntaxTree.ParseText(code).GetRoot().DescendantNodes()
+            .OfType<Microsoft.CodeAnalysis.CSharp.Syntax.FieldDeclarationSyntax>();
+        Assert.Equal(3, fields.Count(f => f.Declaration.Type.ToString() == $"global::BubuUI.ForEachBlock<global::{Fx}.Item>"));
         Assert.Contains(".SetItems(() => items);", code);
         Assert.Contains(".SetItems(() => map.Values);", code);
         Assert.Contains(".SetItems(() => System.Linq.Enumerable.Where(items, i => i.Id > 1));", code);

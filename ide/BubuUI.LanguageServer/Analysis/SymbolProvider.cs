@@ -63,6 +63,15 @@ public static class SymbolProvider
                 break;
             }
 
+            case UiLoop imperativeLoop:
+            {
+                var children = new List<UiSymbol>();
+                foreach (var child in imperativeLoop.Children) Add(child, children, catalog, analysis);
+                into.Add(new UiSymbol($"@{imperativeLoop.Kind} ({Condense(imperativeLoop.Header)})", "loop", UiSymbolKind.Block,
+                    imperativeLoop.Span, imperativeLoop.HeaderSpan, children));
+                break;
+            }
+
             case UiForeach loop:
             {
                 var children = new List<UiSymbol>();
