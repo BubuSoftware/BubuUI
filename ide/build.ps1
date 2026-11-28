@@ -1,7 +1,7 @@
 param(
     # Release for extension use; Debug keeps pdbs so you can break into the server.
     [string]$Configuration = 'Release',
-    # Skip npm install when dependencies are already present.
+    # Skip npm ci when dependencies are already present.
     [switch]$SkipNpm,
     [switch]$SkipTests
 )
@@ -34,11 +34,11 @@ foreach ($name in @('BubuUI.Runtime', 'BubuUI.Rendering')) {
 }
 
 if (-not $SkipNpm) {
-    Write-Host '[2/4] npm install (VS Code shell dependencies)' -ForegroundColor Cyan
+    Write-Host '[2/4] npm ci (VS Code shell dependencies)' -ForegroundColor Cyan
     Push-Location $extensionRoot
     try {
         npm ci --no-audit --no-fund
-        if ($LASTEXITCODE -ne 0) { throw "npm install failed ($LASTEXITCODE)" }
+        if ($LASTEXITCODE -ne 0) { throw "npm ci failed ($LASTEXITCODE)" }
     }
     finally { Pop-Location }
 }
