@@ -38,7 +38,16 @@ VS 使用可在“字体和颜色”中调整的 `BubuUI …` 分类。
 `BubuUI-VisualStudio-<版本>` 或 `BubuUI-Rider-<版本>`；
 校验文件单独放在 `BubuUI-SHA256SUMS-<版本>`，均保存 30 天。
 GitHub Artifacts 下载时会附加 ZIP 外包装，解压后取出对应的 VSIX 或 Rider 插件 ZIP 安装。
-无需配置发布令牌，不上传插件市场或创建 GitHub Release。
+打包和校验成功后，还会自动创建或更新 GitHub Release，附件包含三个安装包和 `SHA256SUMS.txt`。
+
+| 发布类型 | Release 名称 | Tag 示例 |
+|---|---|---|
+| IDE 插件 | `BubuUI IDE <版本>` | `ide-v0.2.7` |
+| 框架 NuGet 包 | `BubuUI <版本>` | `v0.0.1` |
+
+IDE Release 使用三个插件统一的版本，tag 指向本次工作流的构建提交。`ide-v` 前缀不参与框架 MinVer 版本推导；IDE Release 不设为 Latest，保留框架的 Latest 发布标记。
+发布使用内置 `GITHUB_TOKEN`，无需另设发布令牌。同版本重跑可更新附件；发布新版本前需同步更新三个插件的版本。
+此流程发布 GitHub Release，插件市场仍需单独发布。本地执行 `publish.ps1` 仍只生成安装包。
 工作流文件：[ide-release.yml](../.github/workflows/ide-release.yml)。
 
 ### 本地运行

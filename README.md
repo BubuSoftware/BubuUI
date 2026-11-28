@@ -5,7 +5,7 @@
 开发时修改 `.bui` / C# 的使用方式与限制见 [热重载](./design/hot-reload.md)。
 
 生成 VS Code、Visual Studio、Rider 插件安装包：在 GitHub Actions 中运行 **Package IDE plugins**，
-完成后下载 Artifacts；也可本地执行 `pwsh -File ./publish.ps1`。
+成功后会发布独立的 **BubuUI IDE** Release（`ide-v` 前缀 tag），也可下载 Artifacts；本地打包执行 `pwsh -File ./publish.ps1`。
 详见 [IDE 插件打包说明](./ide/README.md#三个-ide-插件一键打包)。
 
 NuGet 包由 MinVer 根据 Git 历史和 `v` 前缀的版本 tag 统一版本，手动运行 GitHub Actions 后通过信任发布到 NuGet.org。
