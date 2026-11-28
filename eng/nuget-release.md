@@ -49,7 +49,7 @@ gh workflow run nuget-release.yml --ref v0.0.1-preview.1
 不要在同一提交上放置多个不同版本 tag。tag 不使用 `+build` 元数据；NuGet 包版本不包含该元数据。
 `--skip-duplicate` 允许失败后重跑，已有版本不会被覆盖。修正已发布的包应新建版本和 tag。
 
-手动运行会上传 artifacts 并发布到 NuGet.org。全部包推送成功后，工作流会创建或更新 GitHub Release，自动生成发布说明，并附上本次发布的 11 个 `.nupkg` 文件。
+手动运行会上传 artifacts 并发布到 NuGet.org。全部包推送成功后，工作流会创建或更新 GitHub Release，自动生成发布说明，并附上本次发布的 12 个 `.nupkg` 文件。
 Release 使用包内实际版本，名称为 `BubuUI <版本>`，tag 为 `v<版本>`；包含预发布后缀的版本会标记为 Pre-release。
 从分支运行且该 tag 不存在时，会在本次构建的提交（`github.sha`）上自动创建 tag，而不是分支运行结束时的最新提交。此 tag 也会参与后续 MinVer 版本推导。
 发布 job 使用 `contents: write` 的内置 `GITHUB_TOKEN` 创建 Release，无需额外设置 GitHub PAT。NuGet 推送失败时不会执行 Release 步骤；Release 步骤失败后可重跑，已有 NuGet 版本会跳过，同版本 Release 会更新附件。
@@ -59,16 +59,34 @@ Release 使用包内实际版本，名称为 `BubuUI <版本>`，tag 为 `v<版�
 
 | 构建组 | 包 |
 |---|---|
-| Desktop | `BubuUI.Compiler.Generator`、`BubuUI.Runtime`、`BubuUI.Rendering`、`BubuUI.Text.Shaping`、`BubuUI.Rendering.Vello`、`BubuUI.Platform.Windows`、`BubuUI.Platform.Linux`、`BubuUI.Platform.MacOS`、`BubuUI.Themes.Fluent` |
+| Desktop | `BubuUI.Compiler.Generator`、`BubuUI.Runtime`、`BubuUI.Rendering`、`BubuUI.Text.Shaping`、`BubuUI.Rendering.Vello`、`BubuUI.Platform.Windows`、`BubuUI.Platform.Linux`、`BubuUI.Platform.MacOS`、`BubuUI.Themes.Fluent`、`BubuUI.Templates` |
 | Android | `BubuUI.Platform.Android` |
 | iOS | `BubuUI.Platform.iOS` |
 
-桌面组先运行编译器测试。Android 使用 Android workload；iOS 在 macOS runner 上使用 iOS workload，runner 的 Xcode 必须与该 workload 兼容。
-所有组成功后才发布共 11 个包。样例、测试、IDE 工具以及编译器内部的 Compiler / Metadata / Probe 项目不发布；这些编译器组件的源码已并入生成器。
+桌面组先运行编译器测试，打包后在隔离的模板注册目录安装 `BubuUI.Templates`，创建项目并使用本批次包还原、编译，验证模板可以实际使用。Android 使用 Android workload；iOS 在 macOS runner 上使用 iOS workload，runner 的 Xcode 必须与该 workload 兼容。
+所有组成功后才发布共 12 个包。样例、测试、IDE 工具以及编译器内部的 Compiler / Metadata / Probe 项目不发布；这些编译器组件的源码已并入生成器。
 新增公共包时，同时更新 `eng/pack-nuget.ps1` 的包列表、工作流的数量检查和本表。
 
 源生成器 DLL 位于包的 `analyzers/dotnet/cs`，随包的 MSBuild targets 自动收集 `.bui` / `.bss`。
 使用模板的应用需直接引用 `BubuUI.Compiler.Generator`（建议 `PrivateAssets="all"`），以及所需 Runtime、主题、平台包。
+
+## 项目模板
+
+`BubuUI.Templates` 提供 `dotnet new bubuui` 桌面项目模板，支持 Windows、Linux 和 macOS，包含 Fluent 主题、主窗口和计数按钮。
+发布到 NuGet.org 后，可安装模板包并创建项目：
+
+```sh
+dotnet new install BubuUI.Templates --prerelease
+dotnet new bubuui -n MyBubuApp
+cd MyBubuApp
+dotnet run
+```
+
+安装指定版本可使用 `dotnet new install BubuUI.Templates::<版本>`。生成项目要求 .NET 11 SDK；各系统的原生依赖见生成项目的 README。
+打包时会将模板包的 MinVer 版本写入生成项目的 `BubuUIVersion`，确保框架依赖与模板来自同批发布。该替换只作用于打包副本，不修改模板源码。
+升级框架时修改生成项目的 `BubuUIVersion` 即可。模板源码位于 `src/BubuUI.Templates/content/Desktop`。
+
+本地执行 `./eng/pack-nuget.ps1` 后，可运行 `./eng/verify-templates.ps1` 验证模板；它不会改动用户已安装的模板。
 
 ## 本地打包
 

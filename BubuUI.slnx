@@ -33,6 +33,7 @@
     <Project Path="src/BubuUI.Rendering.Vello/BubuUI.Rendering.Vello.csproj" />
     <Project Path="src/BubuUI.Rendering/BubuUI.Rendering.csproj" />
     <Project Path="src/BubuUI.Themes.Fluent/BubuUI.Themes.Fluent.csproj" />
+    <Project Path="src/BubuUI.Templates/BubuUI.Templates.csproj" />
     <Project Path="src/BubuUI.Runtime/BubuUI.Runtime.csproj" />
     <Project Path="src/BubuUI.Text.Shaping/BubuUI.Text.Shaping.csproj" />
   </Folder>

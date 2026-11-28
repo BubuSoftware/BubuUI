@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <Description>Project templates for BubuUI. Create a cross-platform desktop app with dotnet new bubuui.</Description>
+    <PackageType>Template</PackageType>
+    <PackageTags>dotnet-new;templates;BubuUI;desktop</PackageTags>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <EnableDefaultItems>false</EnableDefaultItems>
+    <NoDefaultExcludes>true</NoDefaultExcludes>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="content/**/*"
+             Exclude="content/**/bin/**;content/**/obj/**;content/Desktop/BubuApp.csproj"
+             Pack="true" PackagePath="content/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <!-- Stamp only the packaged copy, keeping template sources independent of releases. -->
+  <Target Name="StampTemplateVersion" BeforeTargets="_GetPackageFiles" DependsOnTargets="MinVer">
+    <PropertyGroup>
+      <_TemplateProject>$(IntermediateOutputPath)templates/BubuApp.csproj</_TemplateProject>
+      <_TemplateProjectContents>$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)/content/Desktop/BubuApp.csproj').Replace('__BUBUUI_VERSION__', '$(PackageVersion)'))</_TemplateProjectContents>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(_TemplateProject)" Lines="$(_TemplateProjectContents)" Overwrite="true" Encoding="UTF-8" />
+    <ItemGroup>
+      <Content Include="$(_TemplateProject)" Pack="true" PackagePath="content/Desktop/BubuApp.csproj" />
+    </ItemGroup>
+  </Target>
+</Project>

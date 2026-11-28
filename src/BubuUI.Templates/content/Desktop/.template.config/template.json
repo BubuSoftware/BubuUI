@@ -1,0 +1,18 @@
+{
+  "$schema": "http://json.schemastore.org/template",
+  "author": "BubuSoftware",
+  "classifications": ["Desktop", "UI", "BubuUI"],
+  "identity": "BubuUI.Desktop.CSharp",
+  "name": "BubuUI Desktop App",
+  "description": "A BubuUI desktop app for Windows, Linux and macOS with a Fluent theme.",
+  "shortName": "bubuui",
+  "sourceName": "BubuApp",
+  "preferNameDirectory": true,
+  "tags": {
+    "language": "C#",
+    "type": "project"
+  },
+  "primaryOutputs": [
+    { "path": "BubuApp.csproj" }
+  ]
+}

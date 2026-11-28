@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net11.0</TargetFramework>
+    <RootNamespace>BubuApp</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <BubuUIVersion>__BUBUUI_VERSION__</BubuUIVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="BubuUI.Runtime" Version="$(BubuUIVersion)" />
+    <PackageReference Include="BubuUI.Compiler.Generator" Version="$(BubuUIVersion)" PrivateAssets="all" />
+    <PackageReference Include="BubuUI.Platform.Windows" Version="$(BubuUIVersion)" />
+    <PackageReference Include="BubuUI.Platform.Linux" Version="$(BubuUIVersion)" />
+    <PackageReference Include="BubuUI.Platform.MacOS" Version="$(BubuUIVersion)" />
+    <PackageReference Include="BubuUI.Rendering.Vello" Version="$(BubuUIVersion)" />
+    <PackageReference Include="BubuUI.Text.Shaping" Version="$(BubuUIVersion)" />
+    <PackageReference Include="BubuUI.Themes.Fluent" Version="$(BubuUIVersion)" />
+  </ItemGroup>
+</Project>

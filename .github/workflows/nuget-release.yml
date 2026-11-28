@@ -65,6 +65,10 @@ jobs:
           }
           ./eng/pack-nuget.ps1 -Group $env:PACKAGE_GROUP -ExpectedVersion $expectedVersion
 
+      - name: Verify installed project template
+        if: matrix.group == 'Desktop'
+        run: ./eng/verify-templates.ps1
+
       - uses: actions/upload-artifact@v4
         with:
           name: nuget-${{ matrix.group }}
@@ -96,7 +100,7 @@ jobs:
         shell: pwsh
         run: |
           $packages = @(Get-ChildItem out/nuget/*.nupkg)
-          if ($packages.Count -ne 11) { throw "Expected 11 packages; found $($packages.Count)." }
+          if ($packages.Count -ne 12) { throw "Expected 12 packages; found $($packages.Count)." }
           $versions = @(foreach ($package in $packages) {
             $archive = [IO.Compression.ZipFile]::OpenRead($package.FullName)
             try {

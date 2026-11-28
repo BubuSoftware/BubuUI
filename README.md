@@ -11,6 +11,17 @@
 NuGet 包由 MinVer 根据 Git 历史和 `v` 前缀的版本 tag 统一版本，手动运行 GitHub Actions 后通过信任发布到 NuGet.org。
 首次配置、发布和本地打包见 [NuGet 发布说明](./eng/nuget-release.md)。
 
+安装已发布的项目模板并创建桌面应用：
+
+```sh
+dotnet new install BubuUI.Templates --prerelease
+dotnet new bubuui -n MyBubuApp
+cd MyBubuApp
+dotnet run
+```
+
+模板支持 Windows / Linux / macOS，使用 .NET 11、Fluent 主题和 `.bui` 界面，框架依赖版本与模板包一致。
+
 模板引擎优先的自绘 UI 框架。`.bui` 和纯 C# 是相同 UI 类型的两种编写方式：**根标签决定生成类基类，生成对象本身就是 UI 实例。**
 
 当前规范见 [spec](./spec/README.md)，统一实施与验证见 [design/21](./design/21-root-type-unification.md)。样式和 C# 属性过渡的用法见 [动画系统](./design/29-animation-system.md)。

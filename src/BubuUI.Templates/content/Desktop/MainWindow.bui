@@ -1,0 +1,15 @@
+@namespace BubuApp
+@using BubuUI
+@using BubuUI.Elements
+
+<Window Title="BubuApp" Width="800" Height="600">
+    <StackPanel Padding="24" Gap="16">
+        <TextBlock FontSize="28">Welcome to BubuUI</TextBlock>
+        <TextBlock>Count: {count}</TextBlock>
+        <Button OnClick={() => count++}>Click me</Button>
+    </StackPanel>
+</Window>
+
+@code {
+    private int count;
+}

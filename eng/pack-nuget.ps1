@@ -19,6 +19,7 @@ $projects = switch ($Group) {
         'BubuUI.Platform.Linux'
         'BubuUI.Platform.MacOS'
         'BubuUI.Themes.Fluent'
+        'BubuUI.Templates'
     }
     'Android' { 'BubuUI.Platform.Android' }
     'iOS' { 'BubuUI.Platform.iOS' }
