@@ -31,10 +31,12 @@ public class IndentationTests
         Assert.Empty(EmbeddedCSharpService.Format(again, size, spaces));
     }
 
-    [Fact]
-    public void Formatting_PreservesMultilineStringsAndComments()
+    [Theory]
+    [InlineData("\n")]
+    [InlineData("\r\n")]
+    public void Formatting_PreservesMultilineStringsAndComments(string newline)
     {
-        const string text = """"
+        const string source = """"
             @namespace Demo
             @using BubuUI.Elements
             <StackPanel>
@@ -47,11 +49,12 @@ public class IndentationTests
             <TextBlock>after</TextBlock>
             </StackPanel>
             """";
+        var text = source.ReplaceLineEndings(newline);
         var (analysis, _) = TestHost.Analyze(text);
         var formatted = Apply(text, EmbeddedCSharpService.Format(analysis));
-        Assert.Contains("\npreserve this indentation <Panel> { }\n-->", formatted);
-        Assert.Contains("\n    raw <Button> } {\n    \"\"\"}", formatted);
-        Assert.Contains("\n    <TextBlock>after</TextBlock>\n</StackPanel>", formatted);
+        Assert.Contains(newline + "preserve this indentation <Panel> { }" + newline + "-->", formatted);
+        Assert.Contains(newline + "    raw <Button> } {" + newline + "    \"\"\"}", formatted);
+        Assert.Contains(newline + "    <TextBlock>after</TextBlock>" + newline + "</StackPanel>", formatted);
     }
 
     [Fact]
