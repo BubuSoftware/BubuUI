@@ -49,7 +49,11 @@ gh workflow run nuget-release.yml --ref v0.0.1-preview.1
 不要在同一提交上放置多个不同版本 tag。tag 不使用 `+build` 元数据；NuGet 包版本不包含该元数据。
 `--skip-duplicate` 允许失败后重跑，已有版本不会被覆盖。修正已发布的包应新建版本和 tag。
 
-手动运行会上传 artifacts 并发布到 NuGet.org。如只需检查打包结果，请使用下方的本地打包命令。
+手动运行会上传 artifacts 并发布到 NuGet.org。全部包推送成功后，工作流会创建或更新 GitHub Release，自动生成发布说明，并附上本次发布的 11 个 `.nupkg` 文件。
+Release 使用包内实际版本，名称为 `BubuUI <版本>`，tag 为 `v<版本>`；包含预发布后缀的版本会标记为 Pre-release。
+从分支运行且该 tag 不存在时，会在本次构建的提交（`github.sha`）上自动创建 tag，而不是分支运行结束时的最新提交。此 tag 也会参与后续 MinVer 版本推导。
+发布 job 使用 `contents: write` 的内置 `GITHUB_TOKEN` 创建 Release，无需额外设置 GitHub PAT。NuGet 推送失败时不会执行 Release 步骤；Release 步骤失败后可重跑，已有 NuGet 版本会跳过，同版本 Release 会更新附件。
+如只需检查打包结果，请使用下方的本地打包命令。
 
 ## 包范围
 
